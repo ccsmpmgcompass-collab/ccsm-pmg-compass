@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "timeout": 30,
+            "statusMessage": "Syncing memory to cloud...",
+            "command": "cd \"C:/Users/2011794-MTS/.claude/projects/C--Users-2011794-MTS-Desktop-Worldwide-PMG-Compass-CCSM-PMG-Compass/memory\" 2>/dev/null && git add -A 2>/dev/null && { git diff --cached --quiet || { git -c user.name=\"upmcompass-art\" -c user.email=\"upm.compass@gmail.com\" commit -q -m \"auto-sync memory $(date +%F)\" && git push -q; }; }; true"
+          }
+        ]
+      }
+    ]
+  }
+}
