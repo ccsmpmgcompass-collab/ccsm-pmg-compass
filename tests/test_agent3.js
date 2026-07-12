@@ -30,6 +30,58 @@ addNightlyRaw(env, ss, [
     friend_lessons: 2, effort: 'Algo' },
 ]);
 
+// ---------------------------------------------------------------------------
+// Missed-days alert seeding — makes the alert assertion below REAL instead of
+// vacuous. Three things must all be present for a3_checkMissedDays to send
+// anything (see CCSM_Agent3.gs a3_checkMissedDays / a3_getMissingDates):
+//   1. An active MESSAGE_BANK row with Category='MISSED_DAYS' (else
+//      a3_loadMissedDayMessages() returns [] and the whole step no-ops).
+//   2. A non-blank Companion1_Email on a real (non-leadership) MISSION_ORG
+//      area — required for the Tier-1 companionship reminder.
+//   3. A non-blank Companion email on that area's district's Is_DL='TRUE'
+//      row — required for the Tier-2 District Leader escalation
+//      (a3_buildDistrictLeaderLookup keys off District, case-insensitive).
+//
+// "San Pedro 2" (district "Los Huertos") is deliberately left with ZERO
+// nightly submissions — unlike "San Pedro" above, which already has a
+// 2026-07-10 row. MISSED_DAYS_LOOKBACK defaults to 3 (CCSM_AGENT_CONFIG_ROWS)
+// and a3_getMissingDates scans back from the REAL wall-clock "today" (not a
+// fixture date), so with zero submissions ALL 3 days in that window are
+// missing and always consecutive — a3_findConsecutiveGaps always finds a
+// 3-day run (fires Tier 1) which also meets the default
+// MISSED_DAYS_ESCALATE_THRESHOLD of 3 (fires Tier 2). Anchoring on a
+// partially-submitted area instead would make the gap's consecutiveness
+// depend on which real calendar day the suite happens to run on.
+const messageBank = ss.getSheetByName('MESSAGE_BANK');
+messageBank.appendRow([
+  'MD-001', 'MISSED_DAYS', '', '',
+  'Recordatorio de Informe Nocturno — {{AREA}}',
+  'Hola compañía de {{AREA}}: no hemos recibido su informe nocturno correspondiente a {{MISSING_DATES}}. ' +
+    'Por favor complete el formulario aquí: {{FORM_LINK}}',
+  '', '', '', '', 'TRUE',
+]);
+
+function setMissionOrgField(areaName, header, value) {
+  const sheet = ss.getSheetByName('MISSION_ORG');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const colIdx = headers.indexOf(header);
+  const areaIdx = headers.indexOf('Area_Name');
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][areaIdx] === areaName) {
+      sheet.getRange(i + 1, colIdx + 1).setValue(value);
+      return;
+    }
+  }
+  throw new Error('setMissionOrgField: area not found: ' + areaName);
+}
+
+// "San Pedro 2" (A055) — real submitting area, district "Los Huertos".
+setMissionOrgField('San Pedro 2', 'Companion1_Email', 'sanpedro2.companion@missionary.org');
+// "Los Huertos" (A053) — Is_DL='TRUE' row for the SAME district, so the
+// escalation tier can resolve a DL email via a3_buildDistrictLeaderLookup.
+setMissionOrgField('Los Huertos', 'Companion1_Email', 'dl.loshuertos@missionary.org');
+
 scope.runAgent3();
 
 const log = ss.getSheetByName('DAILY_LOG').getDataRange().getValues();
@@ -46,12 +98,27 @@ assert.strictEqual(row('San Pedro')[h.indexOf('friend_lessons')], 3, 'same-day r
 const snap = ss.getSheetByName('LIVE_SNAPSHOT').getDataRange().getValues();
 assert.strictEqual(snap.length - 1, scope.CCSM_MISSION_ORG_ROWS.length);
 
-// missed-days: with TEST_MODE, any alert emails redirect to the test inbox
-// and use Spanish subject text. (MESSAGE_BANK/companion emails aren't seeded
-// yet — Tasks 13/roster fill-in — so zero alerts is an expected, valid
-// outcome here; this asserts the routing/language CONTRACT, not volume.)
-const alerts = env.state.emails.filter((e) => /Informe/.test(e.subject));
-alerts.forEach((e) => assert.strictEqual(e.to, 'CCSM.PMG.Compass@gmail.com'));
+// missed-days: with the MESSAGE_BANK row + companion/DL emails seeded above,
+// "San Pedro 2" (zero submissions) MUST trip both the Tier-1 companionship
+// reminder and the Tier-2 District Leader escalation. TEST_MODE (default
+// AGENT_CONFIG) redirects every alert to the test inbox regardless of the
+// real recipient, and both templates are Spanish-only.
+const alerts = env.state.emails;
+assert.ok(alerts.length > 0, 'expected at least one missed-days alert to fire');
+alerts.forEach((e) => {
+  assert.strictEqual(e.to, 'CCSM.PMG.Compass@gmail.com', 'TEST_MODE must redirect to the test inbox');
+  const text = e.subject + ' ' + (e.htmlBody || '');
+  assert.ok(
+    /Informe/.test(text) || /Alerta de Informes Faltantes/.test(text),
+    'alert must contain Spanish subject/body text: ' + e.subject
+  );
+  assert.ok(!/Missing|Alert:|missed/i.test(text), 'alert must not leak English: ' + e.subject);
+});
+// At least one Tier-1 companionship reminder (subject carries the injected
+// MESSAGE_BANK Subject_Line) and one Tier-2 DL escalation (fixed Spanish
+// subject built directly in a3_checkMissedDays) must both be present.
+assert.ok(alerts.some((e) => /Recordatorio de Informe Nocturno/.test(e.subject)), 'expected a Tier-1 companionship reminder');
+assert.ok(alerts.some((e) => /Alerta de Informes Faltantes/.test(e.subject)), 'expected a Tier-2 District Leader escalation');
 
 // no Provo/blitz/English residue
 const src = require('fs').readFileSync('CCSM_Agent3.gs', 'utf8');

@@ -270,6 +270,7 @@ function makeGasEnv(options = {}) {
       day: '2-digit',
       hour: 'numeric',
       minute: '2-digit',
+      second: '2-digit',
       hour12: false,
       weekday: 'long',
     });
@@ -278,6 +279,7 @@ function makeGasEnv(options = {}) {
     let hour24 = parseInt(get('hour'), 10);
     if (hour24 === 24) hour24 = 0; // some locales format midnight as 24
     const minute = parseInt(get('minute'), 10);
+    const second = parseInt(get('second'), 10);
     return {
       year: get('year'),
       month: parseInt(get('month'), 10),
@@ -285,42 +287,81 @@ function makeGasEnv(options = {}) {
       weekday: get('weekday'),
       hour24,
       minute,
+      second,
     };
   }
 
   const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'];
+  // getDateParts() only requests `weekday: 'long'` from Intl.DateTimeFormat,
+  // so it never has the abbreviated form on hand — derive EEE from EEEE.
+  const WEEKDAY_ABBR = { Sunday: 'Sun', Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed',
+    Thursday: 'Thu', Friday: 'Fri', Saturday: 'Sat' };
 
   function pad2(n) { return String(n).padStart(2, '0'); }
 
-  function applyPattern(pattern, parts) {
+  // Recognized tokens, LONGEST FIRST within each letter group so a greedy
+  // left-to-right scan never matches a short token (e.g. "M") inside a
+  // longer one (e.g. "MMMM") it should have consumed whole.
+  const TOKENS = ['yyyy', 'yy', 'MMMM', 'MMM', 'MM', 'M', 'dd', 'd',
+    'EEEE', 'EEE', 'HH', 'H', 'hh', 'h', 'mm', 'm', 'ss', 's', 'a'];
+
+  function tokenValue(token, parts) {
     let hour12 = parts.hour24 % 12;
     if (hour12 === 0) hour12 = 12;
     const ampm = parts.hour24 < 12 ? 'AM' : 'PM';
-    switch (pattern) {
-      case 'yyyy-MM-dd':
-        return `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}`;
-      case 'EEEE':
-        return parts.weekday;
-      case 'MMMM d, yyyy':
-        return `${MONTH_NAMES[parts.month - 1]} ${parts.day}, ${parts.year}`;
-      case 'h:mm a':
-        return `${hour12}:${pad2(parts.minute)} ${ampm}`;
-      default:
-        // Best-effort fallback for any other pattern: substitute the tokens
-        // we know about; leave anything else untouched.
-        return pattern
-          .replace(/yyyy/g, parts.year)
-          .replace(/MMMM/g, MONTH_NAMES[parts.month - 1])
-          .replace(/MM/g, pad2(parts.month))
-          .replace(/dd/g, pad2(parts.day))
-          .replace(/d/g, String(parts.day))
-          .replace(/EEEE/g, parts.weekday)
-          .replace(/hh/g, pad2(hour12))
-          .replace(/h/g, String(hour12))
-          .replace(/mm/g, pad2(parts.minute))
-          .replace(/a/g, ampm);
+    switch (token) {
+      case 'yyyy': return String(parts.year);
+      case 'yy':   return String(parts.year).slice(-2);
+      case 'MMMM': return MONTH_NAMES[parts.month - 1];
+      case 'MMM':  return MONTH_NAMES[parts.month - 1].slice(0, 3);
+      case 'MM':   return pad2(parts.month);
+      case 'M':    return String(parts.month);
+      case 'dd':   return pad2(parts.day);
+      case 'd':    return String(parts.day);
+      case 'EEEE': return parts.weekday;
+      case 'EEE':  return WEEKDAY_ABBR[parts.weekday] || parts.weekday.slice(0, 3);
+      case 'HH':   return pad2(parts.hour24);
+      case 'H':    return String(parts.hour24);
+      case 'hh':   return pad2(hour12);
+      case 'h':    return String(hour12);
+      case 'mm':   return pad2(parts.minute);
+      case 'm':    return String(parts.minute);
+      case 'ss':   return pad2(parts.second);
+      case 's':    return String(parts.second);
+      case 'a':    return ampm;
+      default:     return token;
     }
+  }
+
+  // Tokenizes and substitutes `pattern` in a SINGLE left-to-right pass: at
+  // each position, try each known token (longest-first) for a match:
+  //   - on match, emit its substituted value and advance past the token in
+  //     the SOURCE pattern (never re-scanning already-emitted output, so
+  //     letters inside inserted names like "Thursday"/"July" can never be
+  //     re-matched as tokens themselves);
+  //   - otherwise emit the single literal character and advance by one.
+  // This replaces the old chained-.replace() approach, which re-scanned the
+  // whole string after each substitution and corrupted letters inside
+  // inserted weekday/month names (e.g. "Thursday, July 9" -> "T2ursdPMy,
+  // July 9" once the 'h'/'a'/'d' replacements ran over already-substituted
+  // text).
+  function applyPattern(pattern, parts) {
+    let out = '';
+    let i = 0;
+    outer:
+    while (i < pattern.length) {
+      for (const token of TOKENS) {
+        if (pattern.startsWith(token, i)) {
+          out += tokenValue(token, parts);
+          i += token.length;
+          continue outer;
+        }
+      }
+      out += pattern[i];
+      i += 1;
+    }
+    return out;
   }
 
   const Utilities = {
