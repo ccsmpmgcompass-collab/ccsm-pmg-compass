@@ -561,12 +561,24 @@ function checkNoRepeat(areaKey, messageId) {
 /**
  * Records a sent message in FEEDBACK_HISTORY after a successful send.
  * Shifts history: Previous ← Last, then Last = new message ID.
+ *
+ * @param {string} areaKey
+ * @param {string} messageId
+ * @param {string} category
+ * @param {string} [growthMetric] - Optional. When provided and the sheet has
+ *   a Last_Growth_Metric column (see CcsmData.gs CCSM_TAB_SPECS), it is set
+ *   too. Used by CCSM_Agent1C.gs for SUNDAY_COACHING_GROWTH rows so next
+ *   week's ranking (CCSM_Agent1A.gs a1a_rankMetrics) can avoid repeating the
+ *   same growth focus two weeks running — mirrors Provo's
+ *   a1c_writeFeedbackHistory behavior without duplicating its upsert logic.
  */
-function recordMessageSent(areaKey, messageId, category) {
+function recordMessageSent(areaKey, messageId, category, growthMetric) {
   var tabName = getConfig('FEEDBACK_HISTORY_TAB') || 'FEEDBACK_HISTORY';
   var sheet   = getTab(tabName);
   var lastRow = sheet.getLastRow();
   var now     = new Date();
+  var headers = getHeaders_(tabName);
+  var growthColIdx = headers.indexOf('Last_Growth_Metric'); // -1 if the sheet doesn't have it
   var C = {
     areaId:       col_(tabName, 'Area_ID'),
     areaName:     col_(tabName, 'Area_Name'),
@@ -576,7 +588,7 @@ function recordMessageSent(areaKey, messageId, category) {
     prevMsgId:    col_(tabName, 'Previous_Message_ID'),
     prevSentDate: col_(tabName, 'Previous_Sent_Date')
   };
-  var numCols = getHeaders_(tabName).length;
+  var numCols = headers.length;
 
   if (lastRow > 1) {
     var data = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
@@ -588,6 +600,7 @@ function recordMessageSent(areaKey, messageId, category) {
         updated[C.prevSentDate] = data[i][C.lastSentDate] || '';
         updated[C.lastMsgId]    = messageId;
         updated[C.lastSentDate] = now;
+        if (growthColIdx >= 0 && growthMetric) updated[growthColIdx] = growthMetric;
         sheet.getRange(i + 2, 1, 1, updated.length).setValues([updated]);
         SpreadsheetApp.flush();
         return;
@@ -604,6 +617,7 @@ function recordMessageSent(areaKey, messageId, category) {
   newRow[C.lastSentDate] = now;
   newRow[C.prevMsgId]    = '';
   newRow[C.prevSentDate] = '';
+  if (growthColIdx >= 0 && growthMetric) newRow[growthColIdx] = growthMetric;
   sheet.appendRow(newRow);
   SpreadsheetApp.flush();
 }
