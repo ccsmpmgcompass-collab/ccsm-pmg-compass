@@ -413,11 +413,18 @@ function makeGasEnv(options = {}) {
       everyMinutes(n) { spec.everyMinutes = n; return timeBuilder; },
       onWeekDay(d) { spec.onWeekDay = d; return timeBuilder; },
       inTimezone(tz) { spec.timeZone = tz; return timeBuilder; },
+      after(ms) { spec.after = ms; return timeBuilder; },
+      at(date) { spec.at = date; return timeBuilder; },
       create() {
         const trigger = {
           uid: 'trigger_' + (nextTriggerId++),
           handlerFunctionName,
           ...spec,
+          // Real GAS Trigger objects expose accessors, not plain properties —
+          // CCSM_Helpers.gs's deleteTriggerByName() (and any other agent code)
+          // calls trigger.getHandlerFunction(), not trigger.handlerFunctionName.
+          getHandlerFunction() { return handlerFunctionName; },
+          getUniqueId() { return trigger.uid; },
         };
         state.triggers.push(trigger);
         return trigger;
