@@ -29,6 +29,25 @@ function makeGasEnv(options = {}) {
     props: {},
   };
 
+  // ---- Dropped-write modeling ---------------------------------------------
+  // options.dropWriteRate (0..1): models Google Sheets occasionally dropping
+  // a cell write under load. The FIRST attempt to write any given absolute
+  // cell (sheetRecord + 1-indexed row/col) has a dropWriteRate chance of
+  // silently no-op'ing (the cell keeps whatever value it already had — '' if
+  // never written). Every subsequent attempt at that same cell is honest
+  // (always applies). This lets a reopen-verify-fix loop's second attempt at
+  // a previously-dropped cell always succeed, matching real-world recovery.
+  const dropWriteRate = options.dropWriteRate || 0;
+
+  function attemptCell(sheetRecord, row, col) {
+    if (!dropWriteRate) return true; // no drop modeling configured
+    if (!sheetRecord._attemptedCells) sheetRecord._attemptedCells = new Set();
+    const key = row + ',' + col;
+    if (sheetRecord._attemptedCells.has(key)) return true; // 2nd+ attempt: honest
+    sheetRecord._attemptedCells.add(key);
+    return Math.random() >= dropWriteRate; // true => write goes through
+  }
+
   // ---- Range -------------------------------------------------------------
   // A Range is a view onto a rectangular slice of a sheet's backing 2D array.
   // It always reads/writes through to sheetRecord.data (the true stored
@@ -74,7 +93,11 @@ function makeGasEnv(options = {}) {
       const data = this._sheet.data;
       for (let r = 0; r < values.length; r++) {
         for (let c = 0; c < values[r].length; c++) {
-          data[this._row - 1 + r][this._col - 1 + c] = values[r][c];
+          const absRow = this._row + r;
+          const absCol = this._col + c;
+          if (attemptCell(this._sheet, absRow, absCol)) {
+            data[this._row - 1 + r][this._col - 1 + c] = values[r][c];
+          }
         }
       }
       return this;
@@ -82,7 +105,9 @@ function makeGasEnv(options = {}) {
 
     setValue(value) {
       this._ensureCapacity(this._row, this._col);
-      this._sheet.data[this._row - 1][this._col - 1] = value;
+      if (attemptCell(this._sheet, this._row, this._col)) {
+        this._sheet.data[this._row - 1][this._col - 1] = value;
+      }
       return this;
     }
 
@@ -121,7 +146,12 @@ function makeGasEnv(options = {}) {
     }
 
     appendRow(arr) {
-      this._rec.data.push(arr.slice());
+      const rowIndex = this._rec.data.length; // 0-indexed position of the new row
+      const row = new Array(arr.length).fill('');
+      for (let c = 0; c < arr.length; c++) {
+        if (attemptCell(this._rec, rowIndex + 1, c + 1)) row[c] = arr[c];
+      }
+      this._rec.data.push(row);
       return this;
     }
 
@@ -167,6 +197,7 @@ function makeGasEnv(options = {}) {
 
     getId() { return this._rec.id; }
     getName() { return this._rec.name; }
+    getUrl() { return 'https://docs.google.com/spreadsheets/d/' + this._rec.id + '/edit'; }
 
     getSheetByName(name) {
       const rec = this._rec.sheets[name];
@@ -179,6 +210,13 @@ function makeGasEnv(options = {}) {
         this._rec.sheetOrder.push(name);
       }
       return new Sheet(this._rec.sheets[name]);
+    }
+
+    deleteSheet(sheet) {
+      const name = sheet.getName();
+      delete this._rec.sheets[name];
+      const idx = this._rec.sheetOrder.indexOf(name);
+      if (idx !== -1) this._rec.sheetOrder.splice(idx, 1);
     }
 
     getSheets() {
