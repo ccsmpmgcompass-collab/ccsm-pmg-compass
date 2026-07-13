@@ -106,6 +106,27 @@ assert.ok(/Arauco 1/.test(dupEmail.htmlBody || dupEmail.body), 'body must refere
 
 console.log('agentDuplicate OK');
 
+// ---------------------------------------------------------------------------
+// (a-neg) DUPLICATE — negative case: the dup key is area+date, not area
+// alone. Two rows for the SAME area on DIFFERENT dates must NOT be flagged
+// as duplicates — both must survive.
+// ---------------------------------------------------------------------------
+addNightlyRaw(env, ss, [
+  { zone: 'Arauco', area: 'Arauco 2', report_date: '2026-07-08', exchanges: 'Sí', roleplays: 1 },
+  { zone: 'Arauco', area: 'Arauco 2', report_date: '2026-07-09', exchanges: 'Sí', roleplays: 2 },
+]);
+
+const negRowsBefore = ss.getSheetByName('NIGHTLY_FORM_RAW').getDataRange().getValues().length - 1;
+assert.strictEqual(negRowsBefore, 2, 'expected 2 seeded same-area/different-date rows before the agent runs');
+
+scope.onNightlyFormSubmit();
+
+const negRowsAfter = ss.getSheetByName('NIGHTLY_FORM_RAW').getDataRange().getValues().length - 1;
+assert.strictEqual(negRowsAfter, 2,
+  'same area on DIFFERENT dates must NOT be treated as a duplicate — both rows must survive (dup key is area+date, not area alone)');
+
+console.log('agentDuplicate negative case (same area, different dates) OK');
+
 // ===========================================================================
 // (b) REMINDER — CCSM_AgentReminder.gs (weekly compliance half)
 // ===========================================================================
@@ -122,7 +143,10 @@ addWeeklyRaw(env, ss, [
 ]);
 // "Cabrero 2" gets ZERO WEEKLY_FORM_RAW rows — unambiguously non-submitting.
 
-scope.runReminderAgent();
+// skipTimeGate: true — see CCSM_AgentReminder.gs's restored Mon/Tue 8 AM–9 PM
+// day/hour gate on ar_checkWeeklyCompliance(). Bypassing it here keeps this
+// scenario deterministic regardless of which real weekday/hour the suite runs.
+scope.runReminderAgent({ skipTimeGate: true });
 
 const weeklySubject = '[TEST] Recordatorio: Informe Semanal — ' + scope.getMissionName();
 const remindedEmails = env.state.emails.filter((e) => e.subject === weeklySubject);
@@ -180,6 +204,93 @@ assert.ok(
 );
 
 console.log('agentEscalation OK');
+
+// ===========================================================================
+// (d) QUOTA GUARD — CCSM_AgentReminder.gs's weekly compliance half must stop
+// sending once MailApp's remaining daily quota drops below 20, persist
+// progress for areas already reminded (so a re-run does not re-send them),
+// leave areas the guard blocked UNreminded (so a re-run picks them up
+// normally), and never let an exception escape runReminderAgent().
+//
+// Isolated env/spreadsheet so remainingQuota starts clean and unaffected by
+// the emails already sent in scenarios (a)/(b)/(c) above.
+// ===========================================================================
+{
+  const quotaEnv = makeGasEnv({ remainingQuota: 20 });
+  const quotaScope = loadGs(
+    ['CcsmData.gs', 'BuildCcsmSheet.gs', 'CCSM_Helpers.gs', 'CCSM_Agent3.gs',
+     'CCSM_AgentDuplicate.gs', 'CCSM_AgentReminder.gs', 'CCSM_AgentEscalation.gs'],
+    quotaEnv.globals
+  );
+  const quotaSs = makeCcsmSpreadsheet(quotaEnv, quotaScope);
+  setConfig(quotaEnv, quotaSs, 'WEEKLY_FORM_LINK', 'https://forms.example/weekly');
+  // Creates WEEKLY_FORM_RAW with headers only (zero submissions) — ar_checkWeeklyCompliance
+  // requires the tab to exist.
+  addWeeklyRaw(quotaEnv, quotaSs, []);
+
+  function setQuotaOrgField(areaName, header, value) {
+    const sheet = quotaSs.getSheetByName('MISSION_ORG');
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const colIdx = headers.indexOf(header);
+    const areaIdx = headers.indexOf('Area_Name');
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][areaIdx] === areaName) {
+        sheet.getRange(i + 1, colIdx + 1).setValue(value);
+        return;
+      }
+    }
+    throw new Error('setQuotaOrgField: area not found: ' + areaName);
+  }
+
+  // Three non-submitting areas, all in MISSION_ORG row order ahead of any
+  // other area with a companion email set in this isolated fixture (Yumbel,
+  // Galvarino 2, Laja 1 — all zone "Los Angeles Norte"). None get a
+  // WEEKLY_FORM_RAW row, so all three are otherwise eligible for the reminder.
+  setQuotaOrgField('Yumbel', 'Companion1_Email', 'yumbel.companion@missionary.org');
+  setQuotaOrgField('Galvarino 2', 'Companion1_Email', 'galvarino2.companion@missionary.org');
+  setQuotaOrgField('Laja 1', 'Companion1_Email', 'laja1.companion@missionary.org');
+
+  let quotaRunError = null;
+  try {
+    quotaScope.runReminderAgent({ skipTimeGate: true });
+  } catch (e) {
+    quotaRunError = e;
+  }
+  assert.strictEqual(quotaRunError, null,
+    'runReminderAgent must not let an exception escape when the quota guard trips: ' +
+    (quotaRunError && quotaRunError.message));
+
+  const quotaWeeklySubject = '[TEST] Recordatorio: Informe Semanal — ' + quotaScope.getMissionName();
+  const quotaReminded = quotaEnv.state.emails.filter((e) => e.subject === quotaWeeklySubject);
+  assert.strictEqual(quotaReminded.length, 1,
+    'remainingQuota=20 means the <20 check passes once (send, quota drops to 19) then trips on the ' +
+    'next area — exactly 1 weekly reminder should send before the guard stops the run, got ' +
+    quotaReminded.length);
+  assert.ok(/Yumbel/.test(quotaReminded[0].htmlBody || quotaReminded[0].body),
+    'the one area reminded must be the first eligible one in MISSION_ORG row order (Yumbel)');
+
+  // Progress persistence: the reminded area must be recorded (no duplicate
+  // re-send next run); the blocked areas must NOT be recorded (so a re-run
+  // with quota available picks them up normally).
+  const qtz = quotaScope.getMissionTimezone();
+  const qDayName = quotaEnv.globals.Utilities.formatDate(new Date(), qtz, 'EEEE');
+  const qDaysBack = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 }[qDayName] || 0;
+  const qWeekKey = quotaEnv.globals.Utilities.formatDate(
+    new Date(Date.now() - qDaysBack * 86400000), qtz, 'yyyy-MM-dd'
+  );
+  const qRemindedProp = quotaEnv.globals.PropertiesService.getScriptProperties()
+    .getProperty('AR_WEEKLY_REMINDED_' + qWeekKey) || '';
+  const qRemindedList = qRemindedProp.split(',').filter(Boolean);
+  assert.ok(qRemindedList.indexOf('yumbel') !== -1,
+    'Yumbel must be recorded as reminded so a re-run does not re-send it');
+  assert.strictEqual(qRemindedList.indexOf('galvarino 2'), -1,
+    'Galvarino 2 must NOT be recorded as reminded — the guard blocked it before it sent, so a re-run must still try it');
+  assert.strictEqual(qRemindedList.indexOf('laja 1'), -1,
+    'Laja 1 must NOT be recorded as reminded — the guard blocked it before it sent, so a re-run must still try it');
+
+  console.log('agentReminder quota guard OK');
+}
 
 // ===========================================================================
 // No Provo/blitz/English-form residue in any of the three forked files

@@ -15,32 +15,43 @@
  *      literal is replaced.
  *   2. Weekly form compliance reminders — finds active areas that have not
  *      submitted WEEKLY_FORM_RAW since last Sunday and sends a Spanish
- *      reminder. The Provo original only fires on Monday/Tuesday within an
- *      8 AM–9 PM window; that day/hour gate is REMOVED here (see "Deviation"
- *      note below) so the check runs deterministically every time
- *      runReminderAgent() is called, matching how CCSM_Agent3.gs's
- *      missed-days check has no day-of-week gate either.
+ *      reminder. Restores the Provo original's Monday/Tuesday 8 AM–9 PM
+ *      (mission timezone) day/hour gate — see "Weekly compliance time gate"
+ *      below.
  *
- * Deviation — day/hour gate removed from ar_checkWeeklyCompliance():
- * the Provo version only sends Monday/Tuesday 8 AM–9 PM (Mountain Time),
- * so a wall-clock-driven automated test could only ever pass 2 of 7 days.
- * CCSM_Agent3.gs's equivalent missed-day check has no such gate — it is a
- * pure lookback-window check driven by "today" — so removing the day/hour
- * gate here brings this agent in line with that established CCSM pattern
- * and keeps its behavior deterministic and testable on any day. The
- * once-per-week PropertiesService dedup and SYSTEM_START_DATE guard are
- * unchanged, so areas are still reminded at most once per week.
+ * Weekly compliance time gate (restored from Provo, code review finding):
+ * ar_checkWeeklyCompliance() only sends on Monday or Tuesday, between 8 AM
+ * and 9 PM (mission timezone). Without this gate, an hourly trigger (see
+ * setupReminderTrigger()) would fire the weekly reminder at any hour of any
+ * day once Task 14 wires up triggers — including 3 AM. The once-per-week
+ * PropertiesService dedup and SYSTEM_START_DATE guard are unchanged, so
+ * areas are still reminded at most once per week regardless.
+ * TEST BYPASS: runReminderAgent(opts) accepts an optional opts object;
+ * opts.skipTimeGate === true skips ONLY the day/hour gate (not the
+ * SYSTEM_START_DATE guard or the once-per-week dedup), so automated tests
+ * can run deterministically on any day/hour. Production trigger calls
+ * runReminderAgent() with no arguments, so the gate is always active there.
  * OPERATIONAL NOTE (mirrors the Provo original's own comment): if
  * CCSM_AgentEscalation.gs's weekly System 2 is also enabled, both agents
  * will independently remind non-submitting areas — pick one mechanism in
  * production, same caution the Provo original calls out.
  *
- * Deviation — MailApp.getRemainingDailyQuota() checks removed: CCSM's
- * sendEmail() (CCSM_Helpers.gs) always routes escalation-style traffic
- * through the configured relay when available and falls back to the main
- * account otherwise; no other CCSM agent (see CCSM_Agent3.gs) checks the
- * daily quota before sending, so this fork drops the same guard for
- * consistency.
+ * Gmail quota guard (restored from Provo, code review finding): CCSM's
+ * sendEmail() (CCSM_Helpers.gs) never routes AgentReminder traffic through a
+ * relay — only Agent1C/Agent3/Agent6/AgentEscalation/AgentReferral do — so
+ * every email this agent sends goes straight through MailApp.sendEmail()
+ * against the main account's daily Gmail quota. Both halves of this agent
+ * (the NOTES loop and ar_checkWeeklyCompliance's MISSION_ORG loop) check
+ * MailApp.getRemainingDailyQuota() before every send and stop cleanly (no
+ * thrown exception) once it drops below 20, logging QUOTA_LOW to AUDIT_LOG.
+ * Progress already made before the guard trips is never lost: the NOTES loop
+ * marks Reminder_Sent = TRUE on the sheet immediately after each send (not
+ * batched), and ar_checkWeeklyCompliance's per-area reminded-tracking array
+ * is written to PropertiesService in the code path that already runs after
+ * a `break` out of the loop — so areas reminded before the stop are recorded
+ * and are not re-reminded on the next run; areas not yet reached are simply
+ * picked up next run, exactly like the MAX_SENDS pattern already used in
+ * CCSM_AgentEscalation.gs.
  *
  * NOTES tab columns:
  *   Note_ID | Area_Code | Area_Name | Author_Email | Note_Text |
@@ -77,8 +88,14 @@ function setupReminderTrigger() {
  * Scans NOTES tab and sends reminder emails for notes whose Reminder_DateTime
  * falls between now and 6 hours from now (mission timezone). Then runs the
  * weekly form compliance check.
+ *
+ * @param {Object} [opts]
+ * @param {boolean} [opts.skipTimeGate] — when true, bypasses ONLY
+ *   ar_checkWeeklyCompliance()'s Mon/Tue 8 AM–9 PM day/hour gate (see file
+ *   header). Intended for automated tests; production trigger calls this
+ *   function with no arguments.
  */
-function runReminderAgent() {
+function runReminderAgent(opts) {
   try {
     var tz        = getMissionTimezone();
     var now       = new Date();
@@ -160,6 +177,19 @@ function runReminderAgent() {
           // ── Filter: must fall within [now, now + 6 hrs] ───────────────────────
           if (reminderDate < now || reminderDate > windowEnd) continue;
 
+          // ── Quota guard ───────────────────────────────────────────────────────
+          // AgentReminder never routes through a relay (see file header), so
+          // every send here draws straight from the main account's MailApp
+          // quota. Stop cleanly — no thrown exception — once it runs low.
+          // Rows already marked Reminder_Sent = TRUE above this point in the
+          // loop are untouched, so nothing already sent gets duplicated next run.
+          var quota = MailApp.getRemainingDailyQuota();
+          if (quota < 20) {
+            Logger.log('AgentReminder: daily email quota too low (' + quota + ') — stopping NOTES loop.');
+            ar_logAudit('QUOTA_LOW', processed, '', 'Remaining quota: ' + quota);
+            break;
+          }
+
           // ── Gather row values ─────────────────────────────────────────────────
           var noteId      = String(row[colNoteId]).trim();
           var areaName    = colAreaName !== -1 ? String(row[colAreaName]).trim() : '';
@@ -195,9 +225,10 @@ function runReminderAgent() {
       }
     }
 
-    // Weekly form compliance reminders — see the file-header "Deviation" note:
-    // no day/hour gate, deduped once-per-week per area via PropertiesService.
-    var weeklySent = ar_checkWeeklyCompliance(weeklyFormLink);
+    // Weekly form compliance reminders — see the file-header "Weekly
+    // compliance time gate" note: Mon/Tue 8 AM–9 PM only (unless
+    // opts.skipTimeGate), deduped once-per-week per area via PropertiesService.
+    var weeklySent = ar_checkWeeklyCompliance(weeklyFormLink, opts);
     if (weeklySent > 0) Logger.log('AgentReminder: weekly compliance sent ' + weeklySent + ' reminder(s).');
 
   } catch (err) {
@@ -440,19 +471,36 @@ function ar_escapeHtml(str) {
  * Weekly form compliance check.
  * Finds active areas that have not submitted WEEKLY_FORM_RAW since last
  * Sunday and sends them a Spanish reminder. Uses PropertiesService so each
- * area is only reminded once per week. See the file-header "Deviation" note
- * for why the Provo Mon/Tue day gate is not present here.
+ * area is only reminded once per week. Gated to Monday/Tuesday 8 AM–9 PM
+ * (mission timezone) — see the file-header "Weekly compliance time gate" note
+ * — unless opts.skipTimeGate === true.
  *
  * @param {string} weeklyFormLink
+ * @param {Object} [opts]
+ * @param {boolean} [opts.skipTimeGate] — bypasses ONLY the day/hour gate.
  * @returns {number} number of reminder emails sent
  */
-function ar_checkWeeklyCompliance(weeklyFormLink) {
+function ar_checkWeeklyCompliance(weeklyFormLink, opts) {
   var tz = getMissionTimezone();
+
+  // ── Determine day name (mission timezone) — also drives the weekKey calc
+  //    just below and the day/hour gate right after it. ─────────────────────
+  var dayName = Utilities.formatDate(new Date(), tz, 'EEEE');
+
+  // ── Day/hour gate: Monday or Tuesday, 8 AM–9 PM (mission timezone) only.
+  //    Restored from the Provo original — see file-header note. The hourly
+  //    trigger would otherwise fire this at any hour of any day, including
+  //    3 AM. Bypassed ONLY when opts.skipTimeGate === true (tests). ─────────
+  var skipTimeGate = !!(opts && opts.skipTimeGate === true);
+  if (!skipTimeGate) {
+    if (dayName !== 'Monday' && dayName !== 'Tuesday') return 0;
+    var gateHour = Number(Utilities.formatDate(new Date(), tz, 'H'));
+    if (gateHour < 8 || gateHour >= 21) return 0;
+  }
 
   // ── Determine the most recent Sunday (the missed deadline) ───────────────
   // Includes today if today IS Sunday — matches ae_getLastSunday in
   // CCSM_AgentEscalation.gs.
-  var dayName  = Utilities.formatDate(new Date(), tz, 'EEEE');
   var daysBack = {'Sunday':0,'Monday':1,'Tuesday':2,'Wednesday':3,'Thursday':4,'Friday':5,'Saturday':6}[dayName] || 0;
   var weekKey  = Utilities.formatDate(new Date(new Date().getTime() - daysBack * 86400000), tz, 'yyyy-MM-dd');
 
@@ -551,6 +599,20 @@ function ar_checkWeeklyCompliance(weeklyFormLink) {
       emails.push(e);
     });
     if (emails.length === 0) continue;
+
+    // ── Quota guard ─────────────────────────────────────────────────────────
+    // Same reasoning as the NOTES loop above (see file header): no relay for
+    // AgentReminder, so stop cleanly before the main account's MailApp quota
+    // runs out. `newReminded` (and therefore PropertiesService) is written by
+    // the code right after this loop regardless of whether we `break` out
+    // early or finish normally, so every area already reminded before the
+    // stop is recorded — the next run picks up exactly where this one left off.
+    var quota = MailApp.getRemainingDailyQuota();
+    if (quota < 20) {
+      Logger.log('AgentReminder: daily email quota too low (' + quota + ') — stopping weekly compliance early.');
+      ar_logAudit('QUOTA_LOW', sent, '', 'Remaining quota: ' + quota);
+      break;
+    }
 
     var subject = 'Recordatorio: Informe Semanal — ' + getMissionName();
     var body    = ar_buildWeeklyComplianceBody(areaName, weekKey, weeklyFormLink);

@@ -27,6 +27,13 @@ function makeGasEnv(options = {}) {
     logs: [],
     triggers: [],
     props: {},
+    // Gmail daily-send quota modeling. Configurable via
+    // makeGasEnv({ remainingQuota: N }); defaults high (1000) so existing
+    // tests that don't care about quota guards are unaffected. Decrements by
+    // 1 on every MailApp/GmailApp.sendEmail() call so tests can exercise the
+    // "stop mid-run once quota runs low" guard in CCSM_AgentReminder.gs /
+    // CCSM_AgentEscalation.gs deterministically.
+    remainingQuota: options.remainingQuota !== undefined ? options.remainingQuota : 1000,
   };
 
   // ---- Dropped-write modeling ---------------------------------------------
@@ -466,11 +473,16 @@ function makeGasEnv(options = {}) {
       record = { to, subject, body };
     }
     state.emails.push(record);
+    state.remainingQuota -= 1;
     return record;
   }
 
-  const MailApp = { sendEmail };
-  const GmailApp = { sendEmail };
+  function getRemainingDailyQuota() {
+    return state.remainingQuota;
+  }
+
+  const MailApp = { sendEmail, getRemainingDailyQuota };
+  const GmailApp = { sendEmail, getRemainingDailyQuota };
 
   // ---- UrlFetchApp -----------------------------------------------------------
   const UrlFetchApp = {

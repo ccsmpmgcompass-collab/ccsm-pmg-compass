@@ -40,11 +40,21 @@
  * matches that established convention instead of referencing an undefined
  * function.
  *
- * Deviation — MailApp.getRemainingDailyQuota() checks removed, matching
- * CCSM_Agent3.gs's missed-days alerts (no quota check anywhere in that file
- * either): CCSM's sendEmail() (CCSM_Helpers.gs) routes escalation traffic
- * through the configured relay when available and falls back to the main
- * account otherwise.
+ * Gmail quota guard (restored from Provo, code review finding): CCSM's
+ * sendEmail() (CCSM_Helpers.gs) routes 'AgentEscalation' traffic through
+ * RELAY_2_URL (UrlFetchApp) when it and RELAY_SECRET are both configured,
+ * which does NOT consume the main account's MailApp quota — but CCSM's
+ * shipped default has RELAY_2_URL empty, so out of the box every send here
+ * falls through to MailApp.sendEmail() against the main account's daily
+ * Gmail quota. ae_relayConfigured() mirrors that same routing check, so both
+ * runNightlyEscalation() and runWeeklyEscalation() only enforce the MailApp
+ * quota guard when the relay is NOT configured. Both stop cleanly (no thrown
+ * exception, using the same capHit flag already used for MAX_SENDS) once the
+ * quota drops below 20. props.setProperties(updates) already runs after each
+ * run's forEach loop unconditionally — including when capHit stopped it
+ * early — so every area/date already updated before the stop is persisted
+ * and is not re-sent on the next run; areas not yet reached stay at their
+ * prior stage and are simply picked up next run.
  *
  * Deviation — ae_loadWeeklySubmissions() now scans EVERY "¿En qué área
  * sirve?" column occurrence (case-insensitive), not just the first. The
@@ -144,6 +154,11 @@ function runNightlyEscalation() {
   var today       = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
   var todayMs     = new Date(today + 'T00:00:00').getTime();
 
+  // Escalation emails route through RELAY_2_URL (UrlFetchApp), which does NOT
+  // consume the main account's MailApp quota. Only enforce the MailApp quota
+  // guard when the relay is NOT configured (so we'd fall back to the main send).
+  var usingRelay = ae_relayConfigured();
+
   // Read all PropertiesService keys at once for efficiency
   var props    = PropertiesService.getScriptProperties();
   var allProps = props.getProperties();
@@ -179,6 +194,12 @@ function runNightlyEscalation() {
 
       if (MAX_SENDS > 0 && sent >= MAX_SENDS) {
         Logger.log('AgentEscalation: MAX_SENDS (' + MAX_SENDS + ') reached — stopping.');
+        capHit = true;
+        break;
+      }
+
+      if (!usingRelay && MailApp.getRemainingDailyQuota() < 20) {
+        Logger.log('AgentEscalation: main-account quota too low and no relay — stopping.');
         capHit = true;
         break;
       }
@@ -282,6 +303,12 @@ function runWeeklyEscalation() {
     if (stageStr === 'DONE') return;
     if (currentStage >= stageForDay) return;           // already at or past today's stage
     if (currentStage !== stageForDay - 1) return;      // requires previous stage first
+
+    if (!ae_relayConfigured() && MailApp.getRemainingDailyQuota() < 20) {
+      Logger.log('AgentEscalation: main-account quota too low and no relay — stopping.');
+      capHit = true;
+      return;
+    }
 
     if (stageForDay === 1) {
       var subject = 'Recordatorio: Informe Semanal — ' + getMissionName();
@@ -572,6 +599,18 @@ function ae_cfgDateStr(key) {
   if (m) return m[1] + '-' + m[2] + '-' + m[3];
   var d = new Date(s);
   return isNaN(d.getTime()) ? '' : Utilities.formatDate(d, tz, 'yyyy-MM-dd');
+}
+
+/**
+ * True if the alerts relay is configured, meaning sendEmail('AgentEscalation')
+ * will send via UrlFetchApp (relay account quota) instead of MailApp (main
+ * account quota). When true, the main-account MailApp quota guard is irrelevant.
+ * CCSM's shipped default (see CcsmData.gs AGENT_CONFIG rows) leaves RELAY_2_URL
+ * and RELAY_SECRET both blank, so this returns false out of the box.
+ */
+function ae_relayConfigured() {
+  return !!(String(getConfig('RELAY_2_URL') || '').trim() &&
+            String(getConfig('RELAY_SECRET') || '').trim());
 }
 
 /** Returns 'yyyy-MM-dd' string of the most recent past Sunday (mission timezone). */
