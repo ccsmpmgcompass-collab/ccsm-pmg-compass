@@ -14,7 +14,7 @@ const assert = require('assert');
 
 const env = makeGasEnv();
 const scope = loadGs(
-  ['CcsmData.gs', 'BuildCcsmSheet.gs', 'CCSM_Helpers.gs', 'CCSM_Agent3.gs', 'CCSM_Agent5B.gs', 'CCSM_Agent6.gs'],
+  ['CcsmData.gs', 'BuildCcsmSheet.gs', 'CCSM_Helpers.gs', 'CCSM_AgentTestMode.gs', 'CCSM_Agent3.gs', 'CCSM_Agent5B.gs', 'CCSM_Agent6.gs'],
   env.globals
 );
 const ss = makeCcsmSpreadsheet(env, scope);

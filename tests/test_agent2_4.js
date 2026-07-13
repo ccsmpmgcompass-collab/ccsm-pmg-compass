@@ -119,7 +119,7 @@ const assert = require('assert');
 (function testAgent4() {
   const env = makeGasEnv();
   const scope = loadGs(
-    ['CcsmData.gs', 'BuildCcsmSheet.gs', 'CCSM_Helpers.gs', 'CCSM_Agent4.gs'],
+    ['CcsmData.gs', 'BuildCcsmSheet.gs', 'CCSM_Helpers.gs', 'CCSM_AgentTestMode.gs', 'CCSM_Agent4.gs'],
     env.globals
   );
   const ss = makeCcsmSpreadsheet(env, scope);

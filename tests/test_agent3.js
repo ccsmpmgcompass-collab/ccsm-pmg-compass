@@ -10,7 +10,7 @@ const { makeCcsmSpreadsheet, addNightlyRaw, setConfig } = require('./fixtures');
 const assert = require('assert');
 
 const env = makeGasEnv();
-const scope = loadGs(['CcsmData.gs', 'BuildCcsmSheet.gs', 'CCSM_Helpers.gs', 'CCSM_Agent3.gs'], env.globals);
+const scope = loadGs(['CcsmData.gs', 'BuildCcsmSheet.gs', 'CCSM_Helpers.gs', 'CCSM_AgentTestMode.gs', 'CCSM_Agent3.gs'], env.globals);
 const ss = makeCcsmSpreadsheet(env, scope);
 
 // runAgent3 gates on AGENT_CONFIG dates — the builder leaves both blank.

@@ -12,12 +12,12 @@
  * column lookup ("Marca temporal" — see CCSM_Agent5A.gs's same note), and
  * the timezone source are changed.
  *
- * NOTE: the Provo original gates onNightlyFormSubmit() behind
- * av_validateFormRow(e, 'nightly') (AgentValidation.gs). CCSM_AgentValidation.gs
- * has not been forked yet (a later task), so that gate is omitted here — this
- * agent always scans NIGHTLY_FORM_RAW for duplicates when triggered. Re-add
- * the gate once CCSM_AgentValidation.gs exists. `e` is accepted for API
- * compatibility with the real onFormSubmit trigger but otherwise unused.
+ * NOTE: onNightlyFormSubmit() is gated behind av_validateFormRow(e, 'nightly')
+ * (CCSM_AgentValidation.gs, Task 12) — an invalid numeric field on the
+ * just-submitted row is flagged VALIDATION_ERROR and emailed back to the
+ * missionaries BEFORE the duplicate scan runs, and duplicate detection is
+ * skipped for that submission. `e` is accepted for API compatibility with
+ * the real onFormSubmit trigger but otherwise unused.
  *
  * SCHEDULE: Fires automatically on every nightly form submission.
  *           Run setupAgentDuplicateTrigger() ONCE to install the trigger.
@@ -49,6 +49,14 @@ function onNightlyFormSubmit(e) {
 
   try {
     Logger.log('AgentDuplicate: Form submit received - ' + new Date().toISOString());
+
+    // Phase 4 (CCSM_AgentValidation.gs): validate first — skip duplicate
+    // detection entirely for a row that already failed validation.
+    var isValid = av_validateFormRow(e, 'nightly');
+    if (!isValid) {
+      Logger.log('AgentDuplicate: row failed validation — skipping duplicate check.');
+      return;
+    }
 
     var rawData = ad_getSheetData('NIGHTLY_FORM_RAW');
     if (!rawData || rawData.length < 2) {

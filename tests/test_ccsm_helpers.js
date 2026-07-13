@@ -4,7 +4,7 @@ const { makeCcsmSpreadsheet } = require('./fixtures');
 const assert = require('assert');
 
 const env = makeGasEnv();
-const scope = loadGs(['CcsmData.gs', 'BuildCcsmSheet.gs', 'CCSM_Helpers.gs'], env.globals);
+const scope = loadGs(['CcsmData.gs', 'BuildCcsmSheet.gs', 'CCSM_Helpers.gs', 'CCSM_AgentTestMode.gs'], env.globals);
 makeCcsmSpreadsheet(env, scope);
 
 assert.strictEqual(scope.getConfig('MISSION_TIMEZONE'), 'America/Santiago');

@@ -53,11 +53,11 @@
  *   sendEmail(to, subject, body, agentName)
  *   testRelay()
  *
- * ── Test Mode (temporary — see note above resolveRecipient() below) ────────
- *   isTestMode()
- *   getTestInbox()
- *   resolveRecipient(to)
- *   resolveSubject(subject)
+ * ── Test Mode ──────────────────────────────────────────────────────────────
+ *   isTestMode() / getTestInbox() / resolveRecipient() / resolveSubject() are
+ *   defined in CCSM_AgentTestMode.gs (Task 12) — sendEmail() below calls them
+ *   unconditionally, so CCSM_AgentTestMode.gs must always be included
+ *   alongside this file.
  *
  * ── Gemini ─────────────────────────────────────────────────────────────────
  *   callGemini(prompt)
@@ -273,6 +273,8 @@ function sendEmail(to, subject, body, agentName) {
   // resolveRecipient() redirects to TEST_INBOX_EMAIL when TEST_MODE = TRUE.
   // resolveSubject()   prepends [TEST] to the subject line.
   // Both functions pass through unchanged when TEST_MODE = FALSE.
+  // resolveRecipient()/resolveSubject() are defined in CCSM_AgentTestMode.gs
+  // (Task 12) — this file no longer carries its own temporary copies.
   var recipient    = resolveRecipient(rawRecipient);
   var finalSubject = resolveSubject(subject);
   // ─────────────────────────────────────────────────────────────────────────
@@ -342,59 +344,6 @@ function testRelay() {
   try { sendEmail(testTo, 'Relay Test — Main Account',       testBody);            Logger.log('Main OK'); }
   catch (e) { Logger.log('Main FAILED — ' + e.message); }
   Logger.log('testRelay: done. Check pmg.compass@gmail.com for 3 emails.');
-}
-
-// =============================================================================
-// TEST MODE (temporary local copy — see note)
-//
-// sendEmail() calls resolveRecipient()/resolveSubject() unconditionally (the
-// Provo pattern from AgentTestMode.gs), so this fork needs them defined even
-// before CCSM_AgentTestMode.gs exists as its own ported file. These four
-// functions are a direct, config-driven port of Provo's AgentTestMode.gs
-// isTestMode()/getTestInbox()/resolveRecipient()/resolveSubject() — no
-// mission-specific literals to change. When CCSM_AgentTestMode.gs is forked
-// (full TEST_MODE tooling: setupTestTabs, enable/disableTestMode,
-// verifyTestModeSetup, resolveTabName), it should NOT redeclare these four;
-// they stay here so Helpers.gs remains self-sufficient for sendEmail().
-// =============================================================================
-
-/**
- * Returns true if TEST_MODE is TRUE in AGENT_CONFIG.
- * Cached per execution to avoid repeated sheet reads.
- */
-var _testModeCache = null;
-function isTestMode() {
-  if (_testModeCache !== null) return _testModeCache;
-  var val = getConfig('TEST_MODE') || 'FALSE';
-  _testModeCache = (String(val).trim().toUpperCase() === 'TRUE');
-  return _testModeCache;
-}
-
-/**
- * Returns the test inbox email from AGENT_CONFIG.
- * Falls back to the sending account if not set.
- */
-function getTestInbox() {
-  var inbox = getConfig('TEST_INBOX_EMAIL') || '';
-  if (!inbox) {
-    Logger.log('WARNING: TEST_INBOX_EMAIL not set in AGENT_CONFIG. Falling back to SEND_FROM_EMAIL.');
-    inbox = getConfig('SEND_FROM_EMAIL') || '';
-  }
-  return inbox;
-}
-
-/**
- * Returns the real recipient for an email, based on test mode.
- */
-function resolveRecipient(to) {
-  return isTestMode() ? getTestInbox() : to;
-}
-
-/**
- * Returns the email subject with [TEST] prefix if in test mode.
- */
-function resolveSubject(subject) {
-  return isTestMode() ? '[TEST] ' + subject : subject;
 }
 
 // =============================================================================

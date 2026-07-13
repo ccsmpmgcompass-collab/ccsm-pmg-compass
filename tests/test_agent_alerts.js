@@ -38,8 +38,8 @@ const assert = require('assert');
 
 const env = makeGasEnv();
 const scope = loadGs(
-  ['CcsmData.gs', 'BuildCcsmSheet.gs', 'CCSM_Helpers.gs', 'CCSM_Agent3.gs',
-   'CCSM_AgentDuplicate.gs', 'CCSM_AgentReminder.gs', 'CCSM_AgentEscalation.gs'],
+  ['CcsmData.gs', 'BuildCcsmSheet.gs', 'CCSM_Helpers.gs', 'CCSM_AgentTestMode.gs', 'CCSM_Agent3.gs',
+   'CCSM_AgentValidation.gs', 'CCSM_AgentDuplicate.gs', 'CCSM_AgentReminder.gs', 'CCSM_AgentEscalation.gs'],
   env.globals
 );
 const ss = makeCcsmSpreadsheet(env, scope);
@@ -218,8 +218,8 @@ console.log('agentEscalation OK');
 {
   const quotaEnv = makeGasEnv({ remainingQuota: 20 });
   const quotaScope = loadGs(
-    ['CcsmData.gs', 'BuildCcsmSheet.gs', 'CCSM_Helpers.gs', 'CCSM_Agent3.gs',
-     'CCSM_AgentDuplicate.gs', 'CCSM_AgentReminder.gs', 'CCSM_AgentEscalation.gs'],
+    ['CcsmData.gs', 'BuildCcsmSheet.gs', 'CCSM_Helpers.gs', 'CCSM_AgentTestMode.gs', 'CCSM_Agent3.gs',
+     'CCSM_AgentValidation.gs', 'CCSM_AgentDuplicate.gs', 'CCSM_AgentReminder.gs', 'CCSM_AgentEscalation.gs'],
     quotaEnv.globals
   );
   const quotaSs = makeCcsmSpreadsheet(quotaEnv, quotaScope);
