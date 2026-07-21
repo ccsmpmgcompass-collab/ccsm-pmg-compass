@@ -245,4 +245,24 @@ assert.ok(!/Utah Provo/i.test(src), 'no Provo mission name in CCSM source');
 assert.ok(!/America\/Denver/.test(src), 'no Provo timezone');
 assert.ok(!/\bpmg\.compass@gmail\.com\b/i.test(src), 'no Provo support inbox');
 
+// ---------------------------------------------------------------------------
+// CONTENT_REVIEW.md generator — the distinct-reference count must be computed
+// from the real data, never left as a stale/placeholder literal (regression
+// for the "0 distinct references" bug: the placeholder sentence was emitted
+// before the refs map existed, only fixed up afterward by a whole-document
+// string replace that nothing verified).
+// ---------------------------------------------------------------------------
+const { execFileSync } = require('child_process');
+execFileSync(process.execPath, ['tools/gen_content_review.js']);
+const reviewMd = fs.readFileSync('CONTENT_REVIEW.md', 'utf8');
+assert.ok(!/(?<!\d)0 distinct references/.test(reviewMd), 'CONTENT_REVIEW.md must never claim 0 distinct references');
+const distinctRefs = new Set(mb.rows.filter((r) => r.Scripture !== '').map((r) => r.Scripture));
+const statedMatch = reviewMd.match(/There are only (\d+) distinct references/);
+assert.ok(statedMatch, 'CONTENT_REVIEW.md must state the distinct-reference count');
+assert.strictEqual(
+  Number(statedMatch[1]),
+  distinctRefs.size,
+  'stated distinct-reference count must match the actual number of distinct scripture references in the bank'
+);
+
 console.log('seed content OK — ' + mb.rows.length + ' MESSAGE_BANK rows, ' + kb.rows.length + ' KNOWLEDGE_BASE rows');

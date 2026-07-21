@@ -29,6 +29,9 @@ function read(tab) {
 const mb = read('MESSAGE_BANK');
 const kb = read('KNOWLEDGE_BASE');
 
+const refs = {};
+mb.forEach((r) => { if (r.Scripture) { refs[r.Scripture] = refs[r.Scripture] || { blank: 0, total: 0 }; refs[r.Scripture].total++; if (!r.Scripture_Text) refs[r.Scripture].blank++; } });
+
 const display = {};
 scope.CCSM_NIGHTLY_QUESTIONS.forEach((q) => (display[q.key] = q.displayEs));
 scope.A1A_RATE_METRICS.forEach((m) => (display[m.key] = m.display));
@@ -71,15 +74,13 @@ out.push('inventing a plausible-sounding paraphrase of scripture would be far wo
 out.push('with an empty verse (they simply show the reference).');
 out.push('');
 out.push('**To fill these in:** open the Spanish scriptures, copy the wording exactly, and paste it into the');
-out.push('`Scripture_Text` column. There are only ' + 0 + ' distinct references — filling those in covers every blank row.');
+out.push('`Scripture_Text` column. There are only ' + Object.keys(refs).length + ' distinct references — filling those in covers every blank row.');
 out.push('');
-const refs = {};
-mb.forEach((r) => { if (r.Scripture) { refs[r.Scripture] = refs[r.Scripture] || { blank: 0, total: 0 }; refs[r.Scripture].total++; if (!r.Scripture_Text) refs[r.Scripture].blank++; } });
 out.push('| Referencia | Filas que la usan | Filas sin texto |');
 out.push('|---|---|---|');
 Object.keys(refs).sort().forEach((k) => out.push('| ' + k + ' | ' + refs[k].total + ' | ' + refs[k].blank + ' |'));
 out.push('');
-out.push('### 2. No row carries Scripture_Text — all 193 are blank pending native-speaker verification');
+out.push('### 2. About the two brief-supplied example rows');
 out.push('');
 out.push('Two rows (**MSG-CS-ROLEPLAYS-01**, **MSG-CG-CONTACTS-01**) were originally seeded verbatim from the');
 out.push('task brief\'s illustrative examples, including quoted verse wording and English-edition Predicad Mi');
@@ -149,7 +150,6 @@ kb.forEach((r) => {
   out.push('');
 });
 
-let md = out.join('\n');
-md = md.replace('There are only 0 distinct references', 'There are only ' + Object.keys(refs).length + ' distinct references');
+const md = out.join('\n');
 fs.writeFileSync('CONTENT_REVIEW.md', md, 'utf8');
 console.log('CONTENT_REVIEW.md written — ' + md.split('\n').length + ' lines');

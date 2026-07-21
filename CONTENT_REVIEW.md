@@ -56,7 +56,7 @@ with an empty verse (they simply show the reference).
 | Moroni 6:4 | 16 | 16 |
 | Mosíah 18:21 | 8 | 8 |
 
-### 2. No row carries Scripture_Text — all 193 are blank pending native-speaker verification
+### 2. About the two brief-supplied example rows
 
 Two rows (**MSG-CS-ROLEPLAYS-01**, **MSG-CG-CONTACTS-01**) were originally seeded verbatim from the
 task brief's illustrative examples, including quoted verse wording and English-edition Predicad Mi

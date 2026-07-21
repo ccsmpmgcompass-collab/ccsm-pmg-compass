@@ -38,7 +38,7 @@
  * 1. Scripture_Text is BLANK on every row except the two supplied verbatim by
  *    the task brief. Quoting the Spanish LDS edition from memory risks putting
  *    invented scripture in front of missionaries; a blank cell is correct,
- *    a plausible paraphrase is not. CONTENT_REVIEW.md lists the 18 distinct
+ *    a plausible paraphrase is not. CONTENT_REVIEW.md lists the 20 distinct
  *    references so a reviewer can paste the real wording in one pass.
  * 2. NO Predicad Mi Evangelio PAGE numbers. The Spanish edition paginates
  *    differently from the English one, so Provo's page values would be wrong
