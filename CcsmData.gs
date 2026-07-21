@@ -128,6 +128,14 @@ var CCSM_AGENT_CONFIG_ROWS = [
   ['GEMINI_API_KEY', ''],
   ['GEMINI_QA_MODEL', 'gemini-2.5-flash'],
   ['MISSED_DAYS_LOOKBACK', '3'],
+  // Which agent owns weekly-form non-submitter reminders. AgentReminder's
+  // ar_checkWeeklyCompliance() and AgentEscalation's System 2 both email
+  // non-submitting companionships about the weekly form, with the SAME
+  // Spanish subject — running both double-nags every companionship. Exactly
+  // one owner is active at a time. See CCSM_Setup.gs's file header for the
+  // full deployment decision and why AGENT_ESCALATION is the shipped default.
+  // 'AGENT_ESCALATION' (default) | 'AGENT_REMINDER' | 'BOTH' (disables the gate).
+  ['WEEKLY_REMINDER_OWNER', 'AGENT_ESCALATION'],
   ['CONTACT_RATE_TARGET', '0.50'],
   ['MC_RATE_TARGET', '0.50'],
   ['LESSON_RATE_TARGET', '0.20'],

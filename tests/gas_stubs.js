@@ -446,6 +446,16 @@ function makeGasEnv(options = {}) {
   }
 
   const ScriptApp = {
+    // Real GAS exposes ScriptApp.WeekDay as an enum. Every CCSM setup*Trigger()
+    // function (and CCSM_Setup.gs's setupAllCcsmTriggers) passes one of these
+    // to .onWeekDay(), so the stub must expose it or those functions throw the
+    // moment a test actually calls them. Modeled as plain uppercase strings —
+    // the value is opaque to the code under test, which only ever passes it
+    // straight through to the builder.
+    WeekDay: {
+      SUNDAY: 'SUNDAY', MONDAY: 'MONDAY', TUESDAY: 'TUESDAY', WEDNESDAY: 'WEDNESDAY',
+      THURSDAY: 'THURSDAY', FRIDAY: 'FRIDAY', SATURDAY: 'SATURDAY',
+    },
     newTrigger(handlerFunctionName) {
       return makeTriggerBuilder(handlerFunctionName);
     },

@@ -29,7 +29,12 @@
  * (ar_checkWeeklyCompliance) is also enabled, both agents will independently
  * remind non-submitting areas of the weekly form — pick one mechanism in
  * production, same caution the Provo original calls out for its own
- * AgentReminder.gs.
+ * AgentReminder.gs. Task 14 turned that caution into an enforced
+ * single-owner gate: AGENT_CONFIG's WEEKLY_REMINDER_OWNER selects the owner,
+ * and runWeeklyEscalation() returns immediately unless it is the owner. The
+ * SHIPPED DEFAULT is AGENT_ESCALATION, i.e. System 2 owns weekly reminders
+ * out of the box. System 1 (nightly) is unaffected by the setting. See
+ * CCSM_Setup.gs's header for the full deployment decision.
  *
  * Deviation — the Provo timezone literal is replaced with
  * getMissionTimezone() everywhere (grepped clean, see task report), and
@@ -245,16 +250,40 @@ function runNightlyEscalation() {
 // SYSTEM 2 — WEEKLY FORM ESCALATION
 // ─────────────────────────────────────────────────────────────────────────────
 
-function runWeeklyEscalation() {
+/**
+ * @param {Object} [opts]
+ * @param {number} [opts.forceStage] — when 1, 2 or 3, bypasses ONLY the Mon–Wed
+ *   day-to-stage gate below and runs that stage directly. Intended for
+ *   automated tests, which must not depend on which real weekday the suite
+ *   happens to run on. Mirrors the existing runReminderAgent({skipTimeGate})
+ *   pattern: the production trigger (CCSM_Setup.gs runAgentEscalation) calls
+ *   this with NO arguments, so the day gate is always active in production.
+ */
+function runWeeklyEscalation(opts) {
   // ── TEST GUARDS — PRODUCTION DEFAULTS ARE BOTH OFF (see runNightlyEscalation) ──
   var TEST_AREA_ONLY = '';
   var MAX_SENDS      = 0;
   // ─────────────────────────────────────────────────────────────────────────────
 
+  // ── Single-owner gate (AGENT_CONFIG: WEEKLY_REMINDER_OWNER) ──────────────
+  // This system and CCSM_AgentReminder.gs's ar_checkWeeklyCompliance() both
+  // email non-submitting companionships about the weekly form, with the SAME
+  // Spanish subject — running both double-nags every companionship. Exactly
+  // one owns it; the shipped default is AGENT_ESCALATION (this path). See
+  // CCSM_Setup.gs's header for the deployment decision. A missing key falls
+  // back to the same default.
+  var reminderOwner = String(getConfig('WEEKLY_REMINDER_OWNER') || 'AGENT_ESCALATION').trim().toUpperCase();
+  if (reminderOwner !== 'AGENT_ESCALATION' && reminderOwner !== 'BOTH') {
+    Logger.log('AgentEscalation System 2: weekly reminders are owned by ' + reminderOwner +
+      ' (AGENT_CONFIG WEEKLY_REMINDER_OWNER) — skipping to avoid duplicate reminders.');
+    return;
+  }
+
   var tz      = getMissionTimezone();
   var now     = new Date();
   var dayName = Utilities.formatDate(now, tz, 'EEEE');
-  var stageForDay = {'Monday': 1, 'Tuesday': 2, 'Wednesday': 3}[dayName];
+  var forced  = opts && [1, 2, 3].indexOf(opts.forceStage) !== -1 ? opts.forceStage : null;
+  var stageForDay = forced || {'Monday': 1, 'Tuesday': 2, 'Wednesday': 3}[dayName];
   if (!stageForDay) return; // Only Mon–Wed
 
   Logger.log('AgentEscalation System 2: starting ' +

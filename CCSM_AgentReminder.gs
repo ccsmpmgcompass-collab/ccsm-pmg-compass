@@ -34,7 +34,12 @@
  * OPERATIONAL NOTE (mirrors the Provo original's own comment): if
  * CCSM_AgentEscalation.gs's weekly System 2 is also enabled, both agents
  * will independently remind non-submitting areas — pick one mechanism in
- * production, same caution the Provo original calls out.
+ * production, same caution the Provo original calls out. Task 14 turned that
+ * caution into an enforced single-owner gate: AGENT_CONFIG's
+ * WEEKLY_REMINDER_OWNER selects the owner, and ar_checkWeeklyCompliance()
+ * returns 0 immediately unless it is the owner. The SHIPPED DEFAULT is
+ * AGENT_ESCALATION, so this half is OFF out of the box. See CCSM_Setup.gs's
+ * header for the full deployment decision and why.
  *
  * Gmail quota guard (restored from Provo, code review finding): CCSM's
  * sendEmail() (CCSM_Helpers.gs) never routes AgentReminder traffic through a
@@ -482,6 +487,21 @@ function ar_escapeHtml(str) {
  */
 function ar_checkWeeklyCompliance(weeklyFormLink, opts) {
   var tz = getMissionTimezone();
+
+  // ── Single-owner gate (AGENT_CONFIG: WEEKLY_REMINDER_OWNER) ──────────────
+  // This half and CCSM_AgentEscalation.gs's System 2 both email non-submitting
+  // companionships about the weekly form, with the SAME Spanish subject —
+  // running both double-nags every companionship. Exactly one owns it. The
+  // shipped default is AGENT_ESCALATION, so this path is OFF out of the box;
+  // see CCSM_Setup.gs's header for the deployment decision. A missing key
+  // falls back to the same default, so an older AGENT_CONFIG that predates
+  // the row still behaves safely.
+  var reminderOwner = String(getConfig('WEEKLY_REMINDER_OWNER') || 'AGENT_ESCALATION').trim().toUpperCase();
+  if (reminderOwner !== 'AGENT_REMINDER' && reminderOwner !== 'BOTH') {
+    Logger.log('AgentReminder: weekly compliance is owned by ' + reminderOwner +
+      ' (AGENT_CONFIG WEEKLY_REMINDER_OWNER) — skipping to avoid duplicate reminders.');
+    return 0;
+  }
 
   // ── Determine day name (mission timezone) — also drives the weekKey calc
   //    just below and the day/hour gate right after it. ─────────────────────

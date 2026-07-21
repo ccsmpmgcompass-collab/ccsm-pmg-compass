@@ -49,6 +49,14 @@ const TEST_INBOX = 'CCSM.PMG.Compass@gmail.com'; // CCSM_AGENT_CONFIG_ROWS TEST_
 
 setConfig(env, ss, 'NIGHTLY_FORM_LINK', 'https://forms.example/nightly');
 setConfig(env, ss, 'WEEKLY_FORM_LINK', 'https://forms.example/weekly');
+// WEEKLY_REMINDER_OWNER (added in Task 14 — see CCSM_Setup.gs's header) makes
+// the AgentReminder-vs-AgentEscalation weekly-reminder overlap a single-owner
+// choice. The SHIPPED DEFAULT is AGENT_ESCALATION, which switches
+// ar_checkWeeklyCompliance() off; scenario (b) below tests that function
+// specifically, so it opts into the AGENT_REMINDER path explicitly. Set here,
+// with the other config, because CCSM_Helpers.readAgentConfig() caches
+// AGENT_CONFIG on the first getConfig() call of the execution.
+setConfig(env, ss, 'WEEKLY_REMINDER_OWNER', 'AGENT_REMINDER');
 
 function setMissionOrgField(areaName, header, value) {
   const sheet = ss.getSheetByName('MISSION_ORG');
@@ -224,6 +232,9 @@ console.log('agentEscalation OK');
   );
   const quotaSs = makeCcsmSpreadsheet(quotaEnv, quotaScope);
   setConfig(quotaEnv, quotaSs, 'WEEKLY_FORM_LINK', 'https://forms.example/weekly');
+  // See scenario (b): opt into the AgentReminder weekly path explicitly, since
+  // the shipped WEEKLY_REMINDER_OWNER default hands it to AgentEscalation.
+  setConfig(quotaEnv, quotaSs, 'WEEKLY_REMINDER_OWNER', 'AGENT_REMINDER');
   // Creates WEEKLY_FORM_RAW with headers only (zero submissions) — ar_checkWeeklyCompliance
   // requires the tab to exist.
   addWeeklyRaw(quotaEnv, quotaSs, []);

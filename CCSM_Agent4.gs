@@ -57,14 +57,24 @@
 // ─── CONFIGURATION ────────────────────────────────────────────────────────
 
 // Required keys in AGENT_CONFIG — any missing key is flagged as ERROR
+//
+// Task 14 (full-pipeline integration run) fix: the three RELAY_* keys were
+// carried over from the Provo original, which runs two relay accounts. CCSM
+// ships them BLANK on purpose (CcsmData.gs CCSM_AGENT_CONFIG_ROWS) and every
+// send path already treats "no relay" as a supported configuration —
+// CCSM_Helpers.sendEmail() falls through to MailApp, and
+// CCSM_AgentEscalation.ae_relayConfigured() exists precisely to detect the
+// unconfigured case and enforce the MailApp quota guard instead. Requiring
+// them here made Agent4 report a permanent, un-actionable ERROR on a
+// correctly-configured CCSM sheet, which trains the mission to ignore the
+// health report. Relay keys are optional; WEEKLY_FORM_LINK, which every
+// weekly reminder and escalation body links to, genuinely is not.
 var A4_REQUIRED_CONFIG_KEYS = [
   'SYSTEM_START_DATE',
   'TRANSFER_START_DATE',
   'NIGHTLY_FORM_LINK',
-  'MISSED_DAYS_LOOKBACK',
-  'RELAY_1_URL',
-  'RELAY_2_URL',
-  'RELAY_SECRET'
+  'WEEKLY_FORM_LINK',
+  'MISSED_DAYS_LOOKBACK'
 ];
 
 /**
@@ -702,20 +712,26 @@ function a4_check11_triggers(selfHealLog) {
       handlerSet[fn] = (handlerSet[fn] || 0) + 1;
     });
 
-    // Critical triggers: friendly name -> handler function. Grepped from
-    // every CCSM_*.gs setup*Trigger() call — CCSM has no nightly check-in
-    // agent trigger to require here. AgentEscalation's two daily triggers
-    // (runNightlyEscalation/runWeeklyEscalation) are set up separately and
-    // are not treated as "required" here, mirroring the Provo original's own
+    // Critical triggers: friendly name -> handler function. These must match
+    // the handler names CCSM_Setup.gs's CCSM_TRIGGER_SCHEDULE actually
+    // installs — that file is the single source of truth for the project's
+    // schedule. AgentEscalation's and AgentDuplicate's daily triggers are not
+    // treated as "required" here, mirroring the Provo original's own
     // deliberate omission of AgentEscalation from this list.
+    //
+    // Task 14 (full-pipeline integration run) fix: this map required
+    // 'runReminderAgent' (AgentReminder's internal function name), but the
+    // installed handler is CCSM_Setup.gs's zero-argument wrapper
+    // 'runAgentReminder'. On a correctly-installed project Agent4 therefore
+    // reported a permanent false ERROR that no setup function could clear.
     var required = {
       'Agent3 daily 6 AM':      'runAgent3',
       'Agent3 evening 9 PM':    'runAgent3Evening',
-      'Agent4 Tue+Sat 7 AM':    'runAgent4',
-      'Agent5A daily noon':     'runAgent5A',
+      'Agent4 Monday 7 AM':     'runAgent4',
+      'Agent5A Sunday 10 PM':   'runAgent5A',
       'Agent5B Friday noon':    'runAgent5B',
       'Agent1A Sunday 9 PM':    'runAgent1A',
-      'AgentReminder hourly':   'runReminderAgent'
+      'AgentReminder Sunday 6 PM': 'runAgentReminder'
     };
 
     var missing = [];
