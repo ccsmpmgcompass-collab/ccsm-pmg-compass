@@ -91,23 +91,25 @@ var CSC_METRIC_META = {
 };
 
 // =============================================================================
-// PER-ROW OVERRIDES — the two rows the task brief supplied verbatim. They are
-// kept character-for-character (including their page-number style PMG values
-// and their Scripture_Text) rather than regenerated. CONTENT_REVIEW.md flags
-// both for a native-speaker check of the quoted verse wording.
+// PER-ROW OVERRIDES — the two rows the task brief supplied verbatim as
+// illustrative examples. Their page-number PMG style and Scripture_Text were
+// never verified against the Spanish LDS edition, so both are normalized here
+// to the same chapter-level PMG / blank-Scripture_Text convention as the
+// other 191 rows (content rule 1). Scripture references are kept — only the
+// quoted verse wording and the page numbers were uncertain.
 // =============================================================================
 var CSC_ROW_OVERRIDES = {
   'MSG-CS-ROLEPLAYS-01': {
-    pmgChapter:     '175',
-    pmgDescription: 'Predicad Mi Evangelio, pág. 175 — La práctica mejora la enseñanza',
+    pmgChapter:     'Capítulo 10',
+    pmgDescription: 'La práctica mejora la enseñanza',
     scripture:      'D. y C. 84:85',
-    scriptureText:  'Atesorad continuamente en vuestra mente las palabras de vida.'
+    scriptureText:  ''
   },
   'MSG-CG-CONTACTS-01': {
-    pmgChapter:     '156',
-    pmgDescription: 'Predicad Mi Evangelio, pág. 156 — Hablar con todos',
+    pmgChapter:     'Capítulo 9',
+    pmgDescription: 'Hablar con todos',
     scripture:      'D. y C. 33:8-10',
-    scriptureText:  'Abrid vuestra boca, y será llena.'
+    scriptureText:  ''
   }
 };
 

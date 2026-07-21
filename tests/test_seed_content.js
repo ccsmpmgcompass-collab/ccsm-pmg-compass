@@ -6,9 +6,10 @@
 //     CcsmData.gs / CCSM_Agent1A.gs, never hardcoded here)
 //   * Message_IDs are unique and every row is Active
 //   * no English leaks into Spanish body/subject text
-//   * Scripture_Text is blank everywhere except the two rows whose wording
-//     was supplied verbatim by the task brief (HARD RULE: never fabricate
-//     scripture text — a blank cell is the correct answer when unsure)
+//   * Scripture_Text is blank on every row, including the two rows whose
+//     subject/body came verbatim from the task brief (HARD RULE: never
+//     fabricate scripture text — a blank cell is the correct answer when
+//     the exact Spanish LDS wording isn't verified)
 //   * getMessageBank() can read the seeded rows back by header lookup
 //   * re-running the seeders is idempotent (they clear rows 2+ first)
 const assert = require('assert');
@@ -135,16 +136,12 @@ mb.rows.forEach((r) => {
 const bodies = new Set(mb.rows.map((r) => r.Body_Text));
 assert.strictEqual(bodies.size, mb.rows.length, 'every Body_Text must be unique');
 
-// HARD RULE: Scripture_Text is blank unless the exact Spanish LDS wording is
-// known. Only the two rows supplied verbatim by the task brief carry text.
-const BRIEF_SUPPLIED = ['MSG-CS-ROLEPLAYS-01', 'MSG-CG-CONTACTS-01'];
+// HARD RULE: Scripture_Text is blank on every row — the exact Spanish LDS
+// wording is never verified for any row, including the two whose subject/
+// body came verbatim from the task brief, so fabricating verse text is
+// never acceptable anywhere in the bank.
 mb.rows.forEach((r) => {
-  if (r.Scripture_Text !== '') {
-    assert.ok(
-      BRIEF_SUPPLIED.indexOf(r.Message_ID) >= 0,
-      'Scripture_Text must be blank unless verbatim-verified: ' + r.Message_ID
-    );
-  }
+  assert.strictEqual(r.Scripture_Text, '', 'Scripture_Text must be blank: ' + r.Message_ID);
 });
 
 // Scripture references, where present, use Spanish LDS book names.
@@ -153,37 +150,49 @@ mb.rows.forEach((r) => {
   if (r.Scripture !== '') {
     assert.ok(SPANISH_BOOKS.test(r.Scripture), 'non-Spanish scripture reference in ' + r.Message_ID + ': ' + r.Scripture);
   }
-  // No guessed page numbers: PMG references are chapter-level (the Spanish
-  // edition paginates differently from the English one).
-  if (r.PMG_Chapter !== '' && BRIEF_SUPPLIED.indexOf(r.Message_ID) < 0) {
+  // No guessed page numbers: PMG references are chapter-level everywhere,
+  // including the two brief-supplied rows (the Spanish edition paginates
+  // differently from the English one, so page numbers would be guesses).
+  if (r.PMG_Chapter !== '') {
     assert.ok(/^Capítulo \d+$/.test(r.PMG_Chapter), 'PMG_Chapter must be chapter-level: ' + r.Message_ID + ' = ' + r.PMG_Chapter);
   }
+  // PMG_Description must never re-state the "Predicad Mi Evangelio" label —
+  // a1c_formatPmgRef() (CCSM_Agent1C.gs) already prepends it at render time,
+  // and a row that repeats it doubles the label in the rendered email.
+  assert.ok(
+    !/predicad mi evangelio/i.test(r.PMG_Description),
+    'PMG_Description must not repeat the "Predicad Mi Evangelio" label: ' + r.Message_ID
+  );
 });
 
-// The two brief-supplied rows must appear character-for-character.
+// The two brief-supplied rows: subject/body must appear character-for-
+// character as given in the task brief, but their PMG/scripture fields
+// must be normalized to the same convention as every other row (chapter-
+// level PMG reference, no page number, blank Scripture_Text) rather than
+// carrying unverified page numbers and quoted verse text.
 const briefRows = {
   'MSG-CS-ROLEPLAYS-01': [
     'MSG-CS-ROLEPLAYS-01', 'SUNDAY_COACHING_STRENGTH', 'roleplays', '',
     '¡Su preparación se nota!',
     'Esta semana su área se destacó en las prácticas de enseñanza. El Señor honra la preparación diligente: ' +
     'cada práctica les acerca más a enseñar con el Espíritu. ¡Sigan así!',
-    '175', 'Predicad Mi Evangelio, pág. 175 — La práctica mejora la enseñanza',
-    'D. y C. 84:85', 'Atesorad continuamente en vuestra mente las palabras de vida.', 'TRUE'
+    'Capítulo 10', 'La práctica mejora la enseñanza',
+    'D. y C. 84:85', '', 'TRUE'
   ],
   'MSG-CG-CONTACTS-01': [
     'MSG-CG-CONTACTS-01', 'SUNDAY_COACHING_GROWTH', 'contacts_attempted', '',
     'Una invitación: abran la boca',
     'Esta semana hubo menos intentos de contacto que de costumbre. Recuerden que cada persona es un hijo de Dios ' +
     'que espera escuchar el evangelio. Fijen una meta pequeña para mañana: cinco intentos más que hoy.',
-    '156', 'Predicad Mi Evangelio, pág. 156 — Hablar con todos',
-    'D. y C. 33:8-10', 'Abrid vuestra boca, y será llena.', 'TRUE'
+    'Capítulo 9', 'Hablar con todos',
+    'D. y C. 33:8-10', '', 'TRUE'
   ]
 };
 Object.keys(briefRows).forEach((id) => {
   const row = mb.rows.find((r) => r.Message_ID === id);
   assert.ok(row, 'brief-supplied row missing: ' + id);
   const flat = mb.headers.map((h) => row[h]);
-  assert.deepStrictEqual(flat, briefRows[id], 'brief-supplied row must be verbatim: ' + id);
+  assert.deepStrictEqual(flat, briefRows[id], 'brief-supplied row must match normalized values: ' + id);
 });
 
 // ---------------------------------------------------------------------------
