@@ -386,11 +386,40 @@ function makeGasEnv(options = {}) {
   // inserted weekday/month names (e.g. "Thursday, July 9" -> "T2ursdPMy,
   // July 9" once the 'h'/'a'/'d' replacements ran over already-substituted
   // text).
+  //
+  // Quoted literals: java.text.SimpleDateFormat (what Apps Script's
+  // Utilities.formatDate actually uses) treats text inside single quotes as a
+  // LITERAL that must not be tokenized; '' is an escaped literal quote.
+  //
+  // This matters for real CCSM code: CCSM_AgentReminder.gs:423 formats with
+  // "MMMM d, yyyy 'a las' h:mm a". Without quote handling the stub tokenized
+  // the a/l/s inside 'a las' and emitted garbage ("'PM lPM9'") — i.e. the STUB
+  // was wrong while the .gs was right. No test covered that string, which is
+  // the only reason the suite was green. Left unfixed, the next person to test
+  // a reminder body would have "fixed" correct production code to match a
+  // broken stub, so this fidelity gap was more dangerous than a plain failure.
   function applyPattern(pattern, parts) {
     let out = '';
     let i = 0;
     outer:
     while (i < pattern.length) {
+      if (pattern[i] === "'") {
+        // '' outside a quoted run is a literal quote.
+        if (pattern[i + 1] === "'") { out += "'"; i += 2; continue; }
+        // Consume the quoted run character by character so that an embedded ''
+        // yields a literal quote rather than ending the run (e.g. 'o''clock').
+        i += 1;
+        while (i < pattern.length) {
+          if (pattern[i] === "'") {
+            if (pattern[i + 1] === "'") { out += "'"; i += 2; continue; }
+            i += 1;      // closing quote
+            break;
+          }
+          out += pattern[i];
+          i += 1;
+        }
+        continue;
+      }
       for (const token of TOKENS) {
         if (pattern.startsWith(token, i)) {
           out += tokenValue(token, parts);
