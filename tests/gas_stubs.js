@@ -29,8 +29,20 @@
 // machine's timezone rather than just the one that remembered to do it. It
 // does not paper over anything production hits: production genuinely runs with
 // script timezone == mission timezone.
+//
+// WHAT A `TZ=<other> node tests/...` RUN DOES AND DOES NOT PROVE: this pin
+// overwrites the ambient TZ, so such a run is byte-for-byte the same run as an
+// unset one. It proves the pin holds on a differently-configured machine (a UTC
+// CI runner included) — it does NOT independently exercise any timezone. Never
+// cite two such runs as two pieces of evidence; they are one.
+//
+// CCSM_TEST_TZ_PIN=0 disables the pin and leaves the ambient TZ alone. That is
+// the diagnostic mode for the question the pin otherwise hides — "does agent
+// code still depend on the process's local calendar?" — and suites are EXPECTED
+// to fail under it on a non-Santiago machine. Under that flag a failure is the
+// finding, not a regression.
 const MISSION_TZ = 'America/Santiago';
-process.env.TZ = MISSION_TZ;
+if (process.env.CCSM_TEST_TZ_PIN !== '0') process.env.TZ = MISSION_TZ;
 
 let nextId = 1;
 function genId() {

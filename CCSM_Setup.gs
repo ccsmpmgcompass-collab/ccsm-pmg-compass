@@ -120,12 +120,19 @@
  *   previewOneCoachingEmail()  one sample coaching email to the test inbox
  *
  * The editor's function dropdown also still lists the older per-agent
- * installers — setupReminderTrigger(), setupEscalationTriggers(),
- * setupAgentDuplicateTrigger(), setupQAFormTrigger(),
- * setupSuggestionNotifyTrigger(). Every one of them now delegates to
- * setupAllCcsmTriggers() instead of installing its own schedule, so running
- * one by mistake converges the project rather than adding a second, competing
- * schedule on top of it. See "LEGACY PER-AGENT INSTALLERS" below.
+ * installers. They fall into two groups:
+ *
+ *   setupReminderTrigger(), setupEscalationTriggers(),
+ *   setupSuggestionNotifyTrigger() — these three used to install OFF-TABLE
+ *   handler names, so each is now a delegating shim: running one by mistake
+ *   converges the project rather than adding a second, competing schedule on
+ *   top of it. See "LEGACY PER-AGENT INSTALLERS" below.
+ *
+ *   setupAgentDuplicateTrigger(), setupQAFormTrigger() — these two still
+ *   install directly, and must: they create the form-submit triggers in
+ *   CCSM_FORM_SUBMIT_TRIGGERS, which setupAllCcsmTriggers() installs by
+ *   calling them. Delegating would recurse. They are already idempotent
+ *   (each deletes its own handler first), so running one by hand is safe.
  *
  * ─────────────────────────────────────────────────────────────────────────
  * LEGACY PER-AGENT INSTALLERS

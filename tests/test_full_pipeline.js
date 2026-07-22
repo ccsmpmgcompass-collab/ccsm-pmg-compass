@@ -129,12 +129,17 @@ setConfig(env, ss, 'GOAL_new_people_found', '3');
 // east of Santiago turns local-midnight Sunday into Saturday 20:00 Santiago
 // and week-ends slip a day.
 //
-// gas_stubs.js pins process.env.TZ for EVERY suite at require() time; this
-// line re-asserts it from the sheet's own AGENT_CONFIG value, so the pin is
-// still correct if a mission ever forks this repo to another timezone.
-process.env.TZ = scope.getMissionTimezone();
-assert.strictEqual(process.env.TZ, 'America/Santiago',
-  'the mission timezone must come from AGENT_CONFIG and be America/Santiago');
+// gas_stubs.js pins process.env.TZ to a hardcoded MISSION_TZ at require()
+// time. The sheet's AGENT_CONFIG carries the mission timezone independently,
+// so the two can disagree — on a fork to another mission, or under
+// CCSM_TEST_TZ_PIN=0. Assert they agree BEFORE deriving any date: a silent
+// disagreement is what slips every derived week-end by a day.
+const missionTz = scope.getMissionTimezone();
+assert.ok(missionTz, 'AGENT_CONFIG must define MISSION_TIMEZONE');
+assert.strictEqual(process.env.TZ, missionTz,
+  "gas_stubs.js's process timezone pin must equal AGENT_CONFIG MISSION_TIMEZONE " +
+  '(a fork changes the config; the pin has to follow, and CCSM_TEST_TZ_PIN=0 ' +
+  'is expected to trip this on a non-mission machine)');
 
 const _tzNow = new Date();
 const _todayStr = env.globals.Utilities.formatDate(_tzNow, scope.getMissionTimezone(), 'yyyy-MM-dd');
