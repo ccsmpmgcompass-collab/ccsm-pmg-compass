@@ -594,66 +594,71 @@ function ar_checkWeeklyCompliance(weeklyFormLink, opts) {
   var newReminded = reminded.slice();
   var sent        = 0;
 
-  for (var i = 1; i < orgData.length; i++) {
-    var row = orgData[i];
-
-    // Skip inactive areas
-    if (colAct !== -1 && String(row[colAct]).trim().toUpperCase() !== 'TRUE') continue;
-
-    var areaName = String(row[colArea] || '').trim();
-    if (!areaName) continue;
-
-    // Skip leadership/senior tracking rows (never submit → never remind them)
-    if (ar_isLeadershipRow({
-      'Zone':      colZone !== -1 ? String(row[colZone] || '') : '',
-      'Area_Name': areaName
-    })) continue;
-
-    // Skip if already submitted or already reminded this week
-    if (submittedAreas[areaName.toLowerCase()]) continue;
-    if (reminded.indexOf(areaName.toLowerCase()) !== -1) continue;
-
-    // Collect companion emails — skip blanks and placeholders.
-    var emails = [];
-    [colE1, colE2].forEach(function(col) {
-      if (col === -1) return;
-      var e = String(row[col] || '').trim();
-      if (!e || e.indexOf('@') < 0) return;
-      var lower = e.toLowerCase();
-      if (lower.indexOf('notreadyyet') >= 0 || lower.indexOf('tbd@') >= 0) return;
-      emails.push(e);
-    });
-    if (emails.length === 0) continue;
-
-    // ── Quota guard ─────────────────────────────────────────────────────────
-    // Same reasoning as the NOTES loop above (see file header): no relay for
-    // AgentReminder, so stop cleanly before the main account's MailApp quota
-    // runs out. `newReminded` (and therefore PropertiesService) is written by
-    // the code right after this loop regardless of whether we `break` out
-    // early or finish normally, so every area already reminded before the
-    // stop is recorded — the next run picks up exactly where this one left off.
-    var quota = MailApp.getRemainingDailyQuota();
-    if (quota < 20) {
-      Logger.log('AgentReminder: daily email quota too low (' + quota + ') — stopping weekly compliance early.');
-      ar_logAudit('QUOTA_LOW', sent, '', 'Remaining quota: ' + quota);
-      break;
+  try {
+    for (var i = 1; i < orgData.length; i++) {
+      var row = orgData[i];
+  
+      // Skip inactive areas
+      if (colAct !== -1 && String(row[colAct]).trim().toUpperCase() !== 'TRUE') continue;
+  
+      var areaName = String(row[colArea] || '').trim();
+      if (!areaName) continue;
+  
+      // Skip leadership/senior tracking rows (never submit → never remind them)
+      if (ar_isLeadershipRow({
+        'Zone':      colZone !== -1 ? String(row[colZone] || '') : '',
+        'Area_Name': areaName
+      })) continue;
+  
+      // Skip if already submitted or already reminded this week
+      if (submittedAreas[areaName.toLowerCase()]) continue;
+      if (reminded.indexOf(areaName.toLowerCase()) !== -1) continue;
+  
+      // Collect companion emails — skip blanks and placeholders.
+      var emails = [];
+      [colE1, colE2].forEach(function(col) {
+        if (col === -1) return;
+        var e = String(row[col] || '').trim();
+        if (!e || e.indexOf('@') < 0) return;
+        var lower = e.toLowerCase();
+        if (lower.indexOf('notreadyyet') >= 0 || lower.indexOf('tbd@') >= 0) return;
+        emails.push(e);
+      });
+      if (emails.length === 0) continue;
+  
+      // ── Quota guard ─────────────────────────────────────────────────────────
+      // Same reasoning as the NOTES loop above (see file header): no relay for
+      // AgentReminder, so stop cleanly before the main account's MailApp quota
+      // runs out. `newReminded` (and therefore PropertiesService) is written in
+      // the `finally` on this loop regardless of whether we `break` out early,
+      // finish normally, or a send throws — so every area already reminded
+      // before the stop is recorded, and the next run picks up exactly where
+      // this one left off rather than re-sending to everyone.
+      var quota = MailApp.getRemainingDailyQuota();
+      if (quota < 20) {
+        Logger.log('AgentReminder: daily email quota too low (' + quota + ') — stopping weekly compliance early.');
+        ar_logAudit('QUOTA_LOW', sent, '', 'Remaining quota: ' + quota);
+        break;
+      }
+  
+      var subject = 'Recordatorio: Informe Semanal — ' + getMissionName();
+      var body    = ar_buildWeeklyComplianceBody(areaName, weekKey, weeklyFormLink);
+      emails.forEach(function(email) {
+        sendEmail(email, subject, body, 'AgentReminder');
+      });
+  
+      Logger.log('AgentReminder: weekly reminder → ' + areaName + ' (' + emails.join(', ') + ')');
+      ar_logAudit('WEEKLY_REMINDER_SENT', emails.length, areaName, weekKey);
+  
+      newReminded.push(areaName.toLowerCase());
+      sent++;
     }
-
-    var subject = 'Recordatorio: Informe Semanal — ' + getMissionName();
-    var body    = ar_buildWeeklyComplianceBody(areaName, weekKey, weeklyFormLink);
-    emails.forEach(function(email) {
-      sendEmail(email, subject, body, 'AgentReminder');
-    });
-
-    Logger.log('AgentReminder: weekly reminder → ' + areaName + ' (' + emails.join(', ') + ')');
-    ar_logAudit('WEEKLY_REMINDER_SENT', emails.length, areaName, weekKey);
-
-    newReminded.push(areaName.toLowerCase());
-    sent++;
-  }
-
-  if (newReminded.length > reminded.length) {
-    props.setProperty(propKey, newReminded.join(','));
+  } finally {
+    // Load-bearing: a thrown send must not discard the areas already reminded,
+    // or the next run re-sends the weekly reminder to every one of them.
+    if (newReminded.length > reminded.length) {
+      props.setProperty(propKey, newReminded.join(','));
+    }
   }
 
   Logger.log('AgentReminder: weekly compliance done — ' + sent + ' sent for week ' + weekKey);

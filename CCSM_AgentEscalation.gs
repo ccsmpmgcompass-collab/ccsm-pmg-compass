@@ -55,11 +55,16 @@
  * runNightlyEscalation() and runWeeklyEscalation() only enforce the MailApp
  * quota guard when the relay is NOT configured. Both stop cleanly (no thrown
  * exception, using the same capHit flag already used for MAX_SENDS) once the
- * quota drops below 20. props.setProperties(updates) already runs after each
- * run's forEach loop unconditionally — including when capHit stopped it
- * early — so every area/date already updated before the stop is persisted
- * and is not re-sent on the next run; areas not yet reached stay at their
- * prior stage and are simply picked up next run.
+ * quota drops below 20. props.setProperties(updates) runs in a `finally` on
+ * each run's forEach loop — so it persists whether the loop finished, capHit
+ * stopped it early, OR a send threw (the relay fallback can raise a MailApp
+ * quota exception). Every area/date already updated before the stop is
+ * persisted and is not re-sent on the next run; areas not yet reached stay at
+ * their prior stage and are simply picked up next run.
+ *
+ * The `finally` is load-bearing, not defensive style: without it a single
+ * thrown send discards every stage advance made in that run, and the next
+ * morning's run re-sends every reminder to everyone already emailed.
  *
  * Deviation — ae_loadWeeklySubmissions() now scans EVERY "¿En qué área
  * sirve?" column occurrence (case-insensitive), not just the first. The
@@ -159,77 +164,81 @@ function runNightlyEscalation() {
   var sent     = 0;
   var capHit   = false;
 
-  missionOrg.forEach(function(areaObj) {
-    if (capHit) return;                                   // MAX_SENDS reached — stop
-    if (ae_isNonSubmitting(areaObj)) return;
-
-    var areaName   = String(areaObj['Area_Name'] || '').trim();
-    if (TEST_AREA_ONLY && areaName !== TEST_AREA_ONLY) return;   // test: one area only
-    var companions = ae_getCompanionEmails(areaObj);
-    if (!areaName || !companions) return;
-
-    var areaSubmitted = submitted[areaName] || {};
-
-    for (var d = 2; d <= lookback; d++) {
-      var missedMs   = todayMs - d * 86400000;
-      var missedDate = Utilities.formatDate(new Date(missedMs), tz, 'yyyy-MM-dd');
-      if (systemStart && missedDate < systemStart) continue;
-      var propKey    = 'ESC_N_' + areaName + '_' + missedDate;
-      var stage      = updates[propKey] || allProps[propKey] || '0';
-
-      // Form was (late-)submitted — cancel any pending notifications
-      if (areaSubmitted[missedDate]) {
-        if (stage !== '0' && stage !== 'DONE') updates[propKey] = 'DONE';
-        continue;
+  try {
+    missionOrg.forEach(function(areaObj) {
+      if (capHit) return;                                   // MAX_SENDS reached — stop
+      if (ae_isNonSubmitting(areaObj)) return;
+  
+      var areaName   = String(areaObj['Area_Name'] || '').trim();
+      if (TEST_AREA_ONLY && areaName !== TEST_AREA_ONLY) return;   // test: one area only
+      var companions = ae_getCompanionEmails(areaObj);
+      if (!areaName || !companions) return;
+  
+      var areaSubmitted = submitted[areaName] || {};
+  
+      for (var d = 2; d <= lookback; d++) {
+        var missedMs   = todayMs - d * 86400000;
+        var missedDate = Utilities.formatDate(new Date(missedMs), tz, 'yyyy-MM-dd');
+        if (systemStart && missedDate < systemStart) continue;
+        var propKey    = 'ESC_N_' + areaName + '_' + missedDate;
+        var stage      = updates[propKey] || allProps[propKey] || '0';
+  
+        // Form was (late-)submitted — cancel any pending notifications
+        if (areaSubmitted[missedDate]) {
+          if (stage !== '0' && stage !== 'DONE') updates[propKey] = 'DONE';
+          continue;
+        }
+  
+        if (stage === 'DONE' || stage === '3') continue;
+  
+        if (MAX_SENDS > 0 && sent >= MAX_SENDS) {
+          Logger.log('AgentEscalation: MAX_SENDS (' + MAX_SENDS + ') reached — stopping.');
+          capHit = true;
+          break;
+        }
+  
+        if (!usingRelay && MailApp.getRemainingDailyQuota() < 20) {
+          Logger.log('AgentEscalation: main-account quota too low and no relay — stopping.');
+          capHit = true;
+          break;
+        }
+  
+        if (d >= 4 && stage === '2') {
+          // Escalation to district/zone leader
+          var escEmail = ae_getEscalationEmail(areaObj, missionOrg);
+          if (!escEmail) { continue; }
+          var subject = 'Escalamiento: Informes Faltantes — ' + areaName;
+          var body    = ae_buildNightlyEscalationBody(areaName, missedDate, formLink);
+          sendEmail(escEmail, subject, body, 'AgentEscalation');
+          updates[propKey] = '3';
+          ae_logAudit('NIGHTLY_ESCALATED', areaName, missedDate, escEmail);
+          sent++;
+  
+        } else if (d >= 3 && stage === '1') {
+          // Reminder 2
+          var subject = 'Segundo Recordatorio: Informe Nocturno No Enviado — ' + areaName;
+          var body    = ae_buildNightlyReminderBody(areaName, missedDate, 2, formLink);
+          sendEmail(companions, subject, body, 'AgentEscalation');
+          updates[propKey] = '2';
+          ae_logAudit('NIGHTLY_REMINDER_2', areaName, missedDate, companions);
+          sent++;
+  
+        } else if (d >= 2 && stage === '0') {
+          // Reminder 1
+          var subject = 'Recordatorio: Informe Nocturno No Enviado — ' + areaName;
+          var body    = ae_buildNightlyReminderBody(areaName, missedDate, 1, formLink);
+          sendEmail(companions, subject, body, 'AgentEscalation');
+          updates[propKey] = '1';
+          ae_logAudit('NIGHTLY_REMINDER_1', areaName, missedDate, companions);
+          sent++;
+        }
       }
+    });
+  } finally {
+    // Load-bearing: persist stage advances even if a send threw. See file header.
+    if (Object.keys(updates).length) props.setProperties(updates);
+  }
 
-      if (stage === 'DONE' || stage === '3') continue;
-
-      if (MAX_SENDS > 0 && sent >= MAX_SENDS) {
-        Logger.log('AgentEscalation: MAX_SENDS (' + MAX_SENDS + ') reached — stopping.');
-        capHit = true;
-        break;
-      }
-
-      if (!usingRelay && MailApp.getRemainingDailyQuota() < 20) {
-        Logger.log('AgentEscalation: main-account quota too low and no relay — stopping.');
-        capHit = true;
-        break;
-      }
-
-      if (d >= 4 && stage === '2') {
-        // Escalation to district/zone leader
-        var escEmail = ae_getEscalationEmail(areaObj, missionOrg);
-        if (!escEmail) { continue; }
-        var subject = 'Escalamiento: Informes Faltantes — ' + areaName;
-        var body    = ae_buildNightlyEscalationBody(areaName, missedDate, formLink);
-        sendEmail(escEmail, subject, body, 'AgentEscalation');
-        updates[propKey] = '3';
-        ae_logAudit('NIGHTLY_ESCALATED', areaName, missedDate, escEmail);
-        sent++;
-
-      } else if (d >= 3 && stage === '1') {
-        // Reminder 2
-        var subject = 'Segundo Recordatorio: Informe Nocturno No Enviado — ' + areaName;
-        var body    = ae_buildNightlyReminderBody(areaName, missedDate, 2, formLink);
-        sendEmail(companions, subject, body, 'AgentEscalation');
-        updates[propKey] = '2';
-        ae_logAudit('NIGHTLY_REMINDER_2', areaName, missedDate, companions);
-        sent++;
-
-      } else if (d >= 2 && stage === '0') {
-        // Reminder 1
-        var subject = 'Recordatorio: Informe Nocturno No Enviado — ' + areaName;
-        var body    = ae_buildNightlyReminderBody(areaName, missedDate, 1, formLink);
-        sendEmail(companions, subject, body, 'AgentEscalation');
-        updates[propKey] = '1';
-        ae_logAudit('NIGHTLY_REMINDER_1', areaName, missedDate, companions);
-        sent++;
-      }
-    }
-  });
-
-  if (Object.keys(updates).length) props.setProperties(updates);
   Logger.log('AgentEscalation System 1: done — ' + sent + ' action(s).');
 }
 
@@ -296,66 +305,70 @@ function runWeeklyEscalation(opts) {
   var sent     = 0;
   var capHit   = false;
 
-  missionOrg.forEach(function(areaObj) {
-    if (capHit) return;                                          // MAX_SENDS reached
-    if (ae_isNonSubmitting(areaObj)) return;
+  try {
+    missionOrg.forEach(function(areaObj) {
+      if (capHit) return;                                          // MAX_SENDS reached
+      if (ae_isNonSubmitting(areaObj)) return;
+  
+      var areaName   = String(areaObj['Area_Name'] || '').trim();
+      if (TEST_AREA_ONLY && areaName !== TEST_AREA_ONLY) return;   // test: one area only
+      var companions = ae_getCompanionEmails(areaObj);
+      if (!areaName || !companions) return;
+  
+      if (MAX_SENDS > 0 && sent >= MAX_SENDS) { capHit = true; return; }
+  
+      var propKey      = 'ESC_W_' + areaName + '_' + weekKey;
+      var currentStage = parseInt(updates[propKey] || allProps[propKey] || '0', 10);
+  
+      // Form submitted — mark DONE and stop
+      if (submitted[areaName.toLowerCase()]) {
+        if (!isNaN(currentStage) && currentStage > 0) updates[propKey] = 'DONE';
+        return;
+      }
+  
+      var stageStr = updates[propKey] || allProps[propKey] || '0';
+      if (stageStr === 'DONE') return;
+      if (currentStage >= stageForDay) return;           // already at or past today's stage
+      if (currentStage !== stageForDay - 1) return;      // requires previous stage first
+  
+      if (!ae_relayConfigured() && MailApp.getRemainingDailyQuota() < 20) {
+        Logger.log('AgentEscalation: main-account quota too low and no relay — stopping.');
+        capHit = true;
+        return;
+      }
+  
+      if (stageForDay === 1) {
+        var subject = 'Recordatorio: Informe Semanal — ' + getMissionName();
+        var body    = ae_buildWeeklyReminderBody(areaName, weekKey, 1, formLink);
+        sendEmail(companions, subject, body, 'AgentEscalation');
+        updates[propKey] = '1';
+        ae_logAudit('WEEKLY_REMINDER_1', areaName, weekKey, companions);
+        sent++;
+  
+      } else if (stageForDay === 2) {
+        var subject = 'Segundo Recordatorio: Informe Semanal No Enviado — ' + areaName;
+        var body    = ae_buildWeeklyReminderBody(areaName, weekKey, 2, formLink);
+        sendEmail(companions, subject, body, 'AgentEscalation');
+        updates[propKey] = '2';
+        ae_logAudit('WEEKLY_REMINDER_2', areaName, weekKey, companions);
+        sent++;
+  
+      } else if (stageForDay === 3) {
+        var escEmail = ae_getEscalationEmail(areaObj, missionOrg);
+        if (!escEmail) return;
+        var subject = 'Escalamiento: Informes Faltantes — ' + areaName;
+        var body    = ae_buildWeeklyEscalationBody(areaName, weekKey, formLink);
+        sendEmail(escEmail, subject, body, 'AgentEscalation');
+        updates[propKey] = '3';
+        ae_logAudit('WEEKLY_ESCALATED', areaName, weekKey, escEmail);
+        sent++;
+      }
+    });
+  } finally {
+    // Load-bearing: persist stage advances even if a send threw. See file header.
+    if (Object.keys(updates).length) props.setProperties(updates);
+  }
 
-    var areaName   = String(areaObj['Area_Name'] || '').trim();
-    if (TEST_AREA_ONLY && areaName !== TEST_AREA_ONLY) return;   // test: one area only
-    var companions = ae_getCompanionEmails(areaObj);
-    if (!areaName || !companions) return;
-
-    if (MAX_SENDS > 0 && sent >= MAX_SENDS) { capHit = true; return; }
-
-    var propKey      = 'ESC_W_' + areaName + '_' + weekKey;
-    var currentStage = parseInt(updates[propKey] || allProps[propKey] || '0', 10);
-
-    // Form submitted — mark DONE and stop
-    if (submitted[areaName.toLowerCase()]) {
-      if (!isNaN(currentStage) && currentStage > 0) updates[propKey] = 'DONE';
-      return;
-    }
-
-    var stageStr = updates[propKey] || allProps[propKey] || '0';
-    if (stageStr === 'DONE') return;
-    if (currentStage >= stageForDay) return;           // already at or past today's stage
-    if (currentStage !== stageForDay - 1) return;      // requires previous stage first
-
-    if (!ae_relayConfigured() && MailApp.getRemainingDailyQuota() < 20) {
-      Logger.log('AgentEscalation: main-account quota too low and no relay — stopping.');
-      capHit = true;
-      return;
-    }
-
-    if (stageForDay === 1) {
-      var subject = 'Recordatorio: Informe Semanal — ' + getMissionName();
-      var body    = ae_buildWeeklyReminderBody(areaName, weekKey, 1, formLink);
-      sendEmail(companions, subject, body, 'AgentEscalation');
-      updates[propKey] = '1';
-      ae_logAudit('WEEKLY_REMINDER_1', areaName, weekKey, companions);
-      sent++;
-
-    } else if (stageForDay === 2) {
-      var subject = 'Segundo Recordatorio: Informe Semanal No Enviado — ' + areaName;
-      var body    = ae_buildWeeklyReminderBody(areaName, weekKey, 2, formLink);
-      sendEmail(companions, subject, body, 'AgentEscalation');
-      updates[propKey] = '2';
-      ae_logAudit('WEEKLY_REMINDER_2', areaName, weekKey, companions);
-      sent++;
-
-    } else if (stageForDay === 3) {
-      var escEmail = ae_getEscalationEmail(areaObj, missionOrg);
-      if (!escEmail) return;
-      var subject = 'Escalamiento: Informes Faltantes — ' + areaName;
-      var body    = ae_buildWeeklyEscalationBody(areaName, weekKey, formLink);
-      sendEmail(escEmail, subject, body, 'AgentEscalation');
-      updates[propKey] = '3';
-      ae_logAudit('WEEKLY_ESCALATED', areaName, weekKey, escEmail);
-      sent++;
-    }
-  });
-
-  if (Object.keys(updates).length) props.setProperties(updates);
   Logger.log('AgentEscalation System 2: done — ' + sent + ' action(s).');
 }
 
