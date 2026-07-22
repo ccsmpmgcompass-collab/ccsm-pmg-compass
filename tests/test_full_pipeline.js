@@ -19,6 +19,10 @@
 //
 // WALL-CLOCK INDEPENDENCE (this suite must pass on any day of the week —
 // several agents key off the real clock and cannot be frozen):
+//   * "today" is derived by formatting new Date() through
+//     getMissionTimezone() and re-parsing the yyyy-MM-dd — the same idiom the
+//     agents use — so the suite is independent of the DEV MACHINE's timezone
+//     and time of day as well as of the calendar date.
 //   * The simulated window runs from the Monday of the most recently
 //     COMPLETED Mon–Sun week through today, inclusive. That window always
 //     fully contains the week Agent1A / AgentScores analyse (they both derive
@@ -66,21 +70,6 @@ function addDays(d, n) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 }
 
-const today = new Date();
-today.setHours(0, 0, 0, 0);
-// Most recent Sunday (today if today is Sunday) and the Monday 6 days before
-// it — the exact week Agent1A and AgentScores analyse.
-const sunday = addDays(today, -today.getDay());
-const monday = addDays(sunday, -6);
-
-const weekEndStr = ymd(sunday);
-const spanDays = Math.round((today - monday) / 86400000);
-const simDates = [];
-for (let i = 0; i <= spanDays; i++) simDates.push(ymd(addDays(monday, i)));
-
-const gapDates = [ymd(addDays(today, -2)), ymd(addDays(today, -1))];
-const dupDate = simDates[0];
-
 // Gemini envelope: CCSM_Helpers.callGemini() expects a real Gemini HTTP
 // response object; Agent1C's batch-narrative call then expects the text
 // payload to be a JSON map of unit name -> Spanish narrative. Both zones the
@@ -113,6 +102,55 @@ setConfig(env, ss, 'MISSED_DAYS_LOOKBACK', '2');
 // Agent5B/Agent6 qualification threshold — a weekly goal the perfect area
 // clears on the Mon–Thu days it has data for.
 setConfig(env, ss, 'GOAL_new_people_found', '3');
+
+// ---------------------------------------------------------------------------
+// "Today", anchored to the MISSION timezone — NOT to Node's local clock.
+//
+// Every agent that keys off the real clock derives its date by formatting
+// new Date() through getMissionTimezone() and parsing the yyyy-MM-dd back as
+// a local calendar date (CCSM_AgentScores.gs:437-440, CCSM_Agent1A.gs:110-113).
+// Deriving the test's date any other way makes the suite pass only when the
+// dev machine's calendar date happens to equal Santiago's — it fails in the
+// rollover window (e.g. a Saturday 22:30 in America/Denver is already Sunday
+// in Santiago). The idiom below is a verbatim copy of the agents'.
+//
+// It must run AFTER the setConfig() block above: getMissionTimezone() goes
+// through readAgentConfig(), which memoises the whole AGENT_CONFIG map for the
+// execution, and the fixture setConfig() writes the sheet without busting that
+// cache. Reading config any earlier freezes the pre-setConfig values.
+// ---------------------------------------------------------------------------
+// Pin Node's LOCAL calendar to the mission timezone before deriving any date.
+// The agents freely mix two idioms: format-through-getMissionTimezone() (e.g.
+// CCSM_AgentScores.gs:437) and plain local-calendar arithmetic on
+// new Date(y, m, d) (e.g. CCSM_Agent5A.gs:888-896 a5a_getWeekEnd). In the
+// Apps Script runtime those agree, because the project's script timezone IS
+// the mission timezone. Under Node they only agree if the process's local
+// timezone is the mission's — otherwise a machine east of Santiago turns
+// local-midnight Sunday into Saturday 20:00 Santiago and week-ends slip a
+// day. Pinning TZ here is what makes this suite independent of the DEV
+// MACHINE's timezone; it does not paper over anything production hits.
+process.env.TZ = scope.getMissionTimezone();
+
+const _tzNow = new Date();
+const _todayStr = env.globals.Utilities.formatDate(_tzNow, scope.getMissionTimezone(), 'yyyy-MM-dd');
+const _todayParts = _todayStr.split('-');
+const today = new Date(
+  parseInt(_todayParts[0], 10),
+  parseInt(_todayParts[1], 10) - 1,
+  parseInt(_todayParts[2], 10)
+);
+// Most recent Sunday (today if today is Sunday) and the Monday 6 days before
+// it — the exact week Agent1A and AgentScores analyse.
+const sunday = addDays(today, -today.getDay());
+const monday = addDays(sunday, -6);
+
+const weekEndStr = ymd(sunday);
+const spanDays = Math.round((today - monday) / 86400000);
+const simDates = [];
+for (let i = 0; i <= spanDays; i++) simDates.push(ymd(addDays(monday, i)));
+
+const gapDates = [ymd(addDays(today, -2)), ymd(addDays(today, -1))];
+const dupDate = simDates[0];
 
 // Seed content — this is the FIRST time either seeder runs against a real
 // (in-memory) COMPASS_CCSM sheet rather than a unit fixture.
