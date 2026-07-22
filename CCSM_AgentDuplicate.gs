@@ -28,7 +28,12 @@
  *   3. If a duplicate is found:
  *      a. Emails both missionaries (from MISSION_ORG) with an HTML summary of both submissions
  *      b. Deletes ALL rows for that area+date from NIGHTLY_FORM_RAW
- *      c. Logs the event to AGENT_RUN_LOG (via logRun — see CCSM_Helpers.gs)
+ *      c. Logs the event per-group to AUDIT_LOG (via ad_logAudit — same
+ *         Timestamp | Agent | Action | Rows_Affected | Area | Notes layout the
+ *         other CCSM agents use), and the whole run to AGENT_RUN_LOG (via
+ *         logRun — see CCSM_Helpers.gs). AGENT_RUN_LOG records THAT a run
+ *         happened; AUDIT_LOG records WHICH rows it flagged, which is what
+ *         answers "why does this area show 16 contacts instead of 8?".
  */
 
 // --- FORM COLUMN CONSTANTS ---
@@ -122,6 +127,16 @@ function onNightlyFormSubmit(e) {
       });
 
       notes.push('Deleted ' + rowIndicesToDelete.length + ' row(s) for ' + canonArea + ' / ' + dateStr);
+
+      // Per-EVENT trail. logRun() below records that the sweep ran; only this
+      // records which area/date was flagged and how many raw rows went with it.
+      ad_logAudit(
+        'DUPLICATE_RESOLVED',
+        rowIndicesToDelete.length,
+        canonArea,
+        dateStr + ' — ' + group.length + ' submission(s) removed from NIGHTLY_FORM_RAW; ' +
+        (email ? 'notified ' + email : 'no email on file for this area')
+      );
     });
 
     if (duplicatesFound === 0) {
@@ -140,6 +155,40 @@ function onNightlyFormSubmit(e) {
   // logRun(agent, status, recordsProcessed, emailsSent, durationMs, notes, error)
   logRun('AgentDuplicate', status, null, null, null, notes.join(' | '));
 }
+
+// --- AUDIT LOG ---
+
+/**
+ * Appends one row to AUDIT_LOG, in the layout every other CCSM agent uses:
+ * Timestamp | Agent | Action | Rows_Affected | Area | Notes
+ * (cf. ar_logAudit, av_logAudit, ae_logAudit, aqa_logAudit).
+ *
+ * AUDIT_LOG ships headerless (CcsmData.gs CCSM_TAB_SPECS), so the header row
+ * is bootstrapped on first write — same as CCSM_AgentReminder.gs does.
+ * Never throws: a failed audit write must not abort the duplicate sweep.
+ */
+function ad_logAudit(action, rowsAffected, area, notes) {
+  try {
+    var sheet = getTab('AUDIT_LOG');
+    if (!sheet) return;
+
+    if (sheet.getLastColumn() === 0 || sheet.getLastRow() === 0) {
+      sheet.appendRow(['Timestamp', 'Agent', 'Action', 'Rows_Affected', 'Area', 'Notes']);
+    }
+
+    sheet.appendRow([
+      Utilities.formatDate(new Date(), getMissionTimezone(), 'yyyy-MM-dd HH:mm:ss'),
+      'AgentDuplicate',
+      action,
+      rowsAffected,
+      area  || '',
+      notes || ''
+    ]);
+  } catch (e) {
+    Logger.log('AgentDuplicate: audit log write failed — ' + e.message);
+  }
+}
+
 
 // --- DATA LOADERS ---
 

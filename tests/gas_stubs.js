@@ -15,6 +15,23 @@
 // other call reads it back), which later tests rely on to exercise
 // dropped-write recovery paths.
 
+// ---- Process timezone pin -------------------------------------------------
+// In the real Apps Script runtime the PROJECT timezone IS the mission
+// timezone (CCSM_Setup.gs's required one-time manual step), so the agents can
+// and do freely mix two idioms: format-through-getMissionTimezone() (e.g.
+// CCSM_AgentScores.gs:437) and plain local-calendar arithmetic on
+// new Date(y, m, d) (e.g. CCSM_Agent5A.gs:888-896 a5a_getWeekEnd). Under Node
+// those two only agree when the PROCESS's local timezone is the mission's —
+// otherwise a machine east of Santiago turns local-midnight Sunday into
+// Saturday 20:00 Santiago and every derived week-end slips a day.
+//
+// Pinning it here, at require() time, makes EVERY suite independent of the dev
+// machine's timezone rather than just the one that remembered to do it. It
+// does not paper over anything production hits: production genuinely runs with
+// script timezone == mission timezone.
+const MISSION_TZ = 'America/Santiago';
+process.env.TZ = MISSION_TZ;
+
 let nextId = 1;
 function genId() {
   return 'ss_' + (nextId++);
@@ -248,6 +265,10 @@ function makeGasEnv(options = {}) {
       if (!state.activeSpreadsheetId) return null;
       return SpreadsheetApp.openById(state.activeSpreadsheetId);
     },
+    // Real GAS exposes both spellings; CCSM_AgentQA.gs uses the short one.
+    getActive() {
+      return SpreadsheetApp.getActiveSpreadsheet();
+    },
     flush() {
       // no-op: writes in this stub are always immediately committed to
       // state.spreadsheets, so there is nothing to flush.
@@ -412,6 +433,25 @@ function makeGasEnv(options = {}) {
   let nextTriggerId = 1;
   function makeTriggerBuilder(handlerFunctionName) {
     const spec = { handlerFunctionName, type: null };
+    function create() {
+      const trigger = {
+        uid: 'trigger_' + (nextTriggerId++),
+        handlerFunctionName,
+        ...spec,
+        // Real GAS Trigger objects expose accessors, not plain properties —
+        // CCSM_Helpers.gs's deleteTriggerByName() (and any other agent code)
+        // calls trigger.getHandlerFunction(), not trigger.handlerFunctionName.
+        getHandlerFunction() { return handlerFunctionName; },
+        getUniqueId() { return trigger.uid; },
+        // CCSM_Setup.gs's converge-to-table installer tells time-based
+        // triggers (which it owns and rebuilds) apart from installable
+        // form-submit triggers (which it must leave alone) the same way real
+        // Apps Script code does — by event type, not by handler name.
+        getEventType() { return spec.type; },
+      };
+      state.triggers.push(trigger);
+      return trigger;
+    }
     const timeBuilder = {
       atHour(h) { spec.atHour = h; return timeBuilder; },
       nearMinute(m) { spec.nearMinute = m; return timeBuilder; },
@@ -422,25 +462,27 @@ function makeGasEnv(options = {}) {
       inTimezone(tz) { spec.timeZone = tz; return timeBuilder; },
       after(ms) { spec.after = ms; return timeBuilder; },
       at(date) { spec.at = date; return timeBuilder; },
-      create() {
-        const trigger = {
-          uid: 'trigger_' + (nextTriggerId++),
-          handlerFunctionName,
-          ...spec,
-          // Real GAS Trigger objects expose accessors, not plain properties —
-          // CCSM_Helpers.gs's deleteTriggerByName() (and any other agent code)
-          // calls trigger.getHandlerFunction(), not trigger.handlerFunctionName.
-          getHandlerFunction() { return handlerFunctionName; },
-          getUniqueId() { return trigger.uid; },
-        };
-        state.triggers.push(trigger);
-        return trigger;
-      },
+      create,
+    };
+    // .forSpreadsheet(ss) starts an installable spreadsheet trigger;
+    // .onFormSubmit() marks it as the ON_FORM_SUBMIT variant. CCSM installs
+    // two of these (onNightlyFormSubmit, onQAFormSubmit).
+    const sheetBuilder = {
+      onFormSubmit() { spec.type = 'ON_FORM_SUBMIT'; return sheetBuilder; },
+      onEdit() { spec.type = 'ON_EDIT'; return sheetBuilder; },
+      onOpen() { spec.type = 'ON_OPEN'; return sheetBuilder; },
+      onChange() { spec.type = 'ON_CHANGE'; return sheetBuilder; },
+      create,
     };
     return {
       timeBased() {
         spec.type = 'CLOCK';
         return timeBuilder;
+      },
+      forSpreadsheet(ss) {
+        spec.source = 'SPREADSHEETS';
+        spec.spreadsheetId = ss && ss.getId ? ss.getId() : null;
+        return sheetBuilder;
       },
     };
   }
@@ -456,6 +498,12 @@ function makeGasEnv(options = {}) {
       SUNDAY: 'SUNDAY', MONDAY: 'MONDAY', TUESDAY: 'TUESDAY', WEDNESDAY: 'WEDNESDAY',
       THURSDAY: 'THURSDAY', FRIDAY: 'FRIDAY', SATURDAY: 'SATURDAY',
     },
+    // Same modelling choice as WeekDay: opaque uppercase strings. The values
+    // trigger.getEventType() returns above are drawn from this same set.
+    EventType: {
+      CLOCK: 'CLOCK', ON_FORM_SUBMIT: 'ON_FORM_SUBMIT', ON_EDIT: 'ON_EDIT',
+      ON_OPEN: 'ON_OPEN', ON_CHANGE: 'ON_CHANGE',
+    },
     newTrigger(handlerFunctionName) {
       return makeTriggerBuilder(handlerFunctionName);
     },
@@ -470,7 +518,7 @@ function makeGasEnv(options = {}) {
 
   // ---- Session -------------------------------------------------------------
   const Session = {
-    getScriptTimeZone() { return 'America/Santiago'; },
+    getScriptTimeZone() { return MISSION_TZ; },
   };
 
   // ---- MailApp / GmailApp ---------------------------------------------------

@@ -977,14 +977,23 @@ function notifyAcceptedSuggestions() {
 }
 
 /**
- * One-time: installs a 10-minute time-driven trigger for
- * notifyAcceptedSuggestions(). Safe to re-run — removes duplicates first.
+ * DEPRECATED SHIM — delegates to setupAllCcsmTriggers() (CCSM_Setup.gs).
+ *
+ * This used to install a 10-MINUTE time-driven trigger on
+ * notifyAcceptedSuggestions(), a handler name CCSM_TRIGGER_SCHEDULE does not
+ * know about, so setupAllCcsmTriggers() could not clear it and it kept
+ * burning ~144 executions a day polling a low-volume queue.
+ *
+ * CONSEQUENCE, FLAGGED IN THE CCSM_Setup.gs HEADER: after convergence
+ * notifyAcceptedSuggestions() is NOT scheduled at all. It is zero-argument and
+ * can be run by hand from the editor. If the mission wants it automated, add a
+ * row to CCSM_TRIGGER_SCHEDULE — a daily hour is ample — rather than
+ * re-enabling this installer.
  */
 function setupSuggestionNotifyTrigger() {
-  deleteTriggerByName('notifyAcceptedSuggestions');
-  ScriptApp.newTrigger('notifyAcceptedSuggestions')
-    .timeBased()
-    .everyMinutes(10)
-    .create();
-  Logger.log('Installed 10-minute trigger for notifyAcceptedSuggestions.');
+  Logger.log('AgentQA: setupSuggestionNotifyTrigger() is DEPRECATED — the 10-minute ' +
+    'notifyAcceptedSuggestions trigger it used to install is not on CCSM_TRIGGER_SCHEDULE. ' +
+    'Delegating to setupAllCcsmTriggers(); run notifyAcceptedSuggestions() by hand, or add it ' +
+    'to the schedule table.');
+  setupAllCcsmTriggers();
 }

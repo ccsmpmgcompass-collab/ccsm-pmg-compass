@@ -712,37 +712,46 @@ function a4_check11_triggers(selfHealLog) {
       handlerSet[fn] = (handlerSet[fn] || 0) + 1;
     });
 
-    // Critical triggers: friendly name -> handler function. These must match
-    // the handler names CCSM_Setup.gs's CCSM_TRIGGER_SCHEDULE actually
-    // installs — that file is the single source of truth for the project's
-    // schedule. AgentEscalation's and AgentDuplicate's daily triggers are not
-    // treated as "required" here, mirroring the Provo original's own
-    // deliberate omission of AgentEscalation from this list.
+    // The required set is DERIVED from CCSM_TRIGGER_SCHEDULE (CCSM_Setup.gs),
+    // not restated here. Both files load into the same Apps Script scope, so
+    // the table is genuinely reachable — and restating it is exactly what
+    // produced the Task 14 bug where this check required 'runReminderAgent'
+    // (AgentReminder's internal function name) while setupAllCcsmTriggers()
+    // installs the zero-argument wrapper 'runAgentReminder', giving every
+    // correctly-installed project a permanent false ERROR that no setup
+    // function could clear. Deriving also closes the audit gap where
+    // runAgentScores, runAgentEscalation and runAgentDuplicate were never
+    // checked at all.
     //
-    // Task 14 (full-pipeline integration run) fix: this map required
-    // 'runReminderAgent' (AgentReminder's internal function name), but the
-    // installed handler is CCSM_Setup.gs's zero-argument wrapper
-    // 'runAgentReminder'. On a correctly-installed project Agent4 therefore
-    // reported a permanent false ERROR that no setup function could clear.
-    var required = {
-      'Agent3 daily 6 AM':      'runAgent3',
-      'Agent3 evening 9 PM':    'runAgent3Evening',
-      'Agent4 Monday 7 AM':     'runAgent4',
-      'Agent5A Sunday 10 PM':   'runAgent5A',
-      'Agent5B Friday noon':    'runAgent5B',
-      'Agent1A Sunday 9 PM':    'runAgent1A',
-      'AgentReminder Sunday 6 PM': 'runAgentReminder'
-    };
+    // The two installable FORM-SUBMIT triggers are audited from the same
+    // file's CCSM_FORM_SUBMIT_TRIGGERS — losing onNightlyFormSubmit silently
+    // disables submit-time duplicate detection.
+    if (typeof CCSM_TRIGGER_SCHEDULE === 'undefined') {
+      return {
+        label: label, status: 'ERROR',
+        detail: 'CCSM_TRIGGER_SCHEDULE is not defined — CCSM_Setup.gs is missing from this ' +
+                'Apps Script project. Paste it in, then run setupAllCcsmTriggers().'
+      };
+    }
+
+    var required = CCSM_TRIGGER_SCHEDULE.map(function(spec) {
+      return { name: spec.fn + ' (' + spec.describe + ')', fn: spec.fn };
+    });
+    if (typeof CCSM_FORM_SUBMIT_TRIGGERS !== 'undefined') {
+      CCSM_FORM_SUBMIT_TRIGGERS.forEach(function(spec) {
+        required.push({ name: spec.fn + ' (on form submit)', fn: spec.fn });
+      });
+    }
 
     var missing = [];
     var present = [];
 
-    Object.keys(required).forEach(function(name) {
-      var fn = required[name];
-      if (handlerSet[fn]) {
-        present.push(name + ' (' + handlerSet[fn] + ' trigger' + (handlerSet[fn] > 1 ? 's' : '') + ')');
+    required.forEach(function(item) {
+      if (handlerSet[item.fn]) {
+        present.push(item.name + ' (' + handlerSet[item.fn] + ' trigger' +
+                     (handlerSet[item.fn] > 1 ? 's' : '') + ')');
       } else {
-        missing.push({ name: name, fn: fn });
+        missing.push(item);
       }
     });
 
@@ -751,7 +760,13 @@ function a4_check11_triggers(selfHealLog) {
     missing = missing.filter(function(item) {
       if (item.fn !== 'runAgent3') return true;  // cannot auto-fix; keep in missing list
       try {
-        ScriptApp.newTrigger('runAgent3').timeBased().everyDays(1).atHour(6).create();
+        // .inTimezone(getMissionTimezone()) is not optional: without it Apps
+        // Script pins the new trigger to the PROJECT timezone, so a project
+        // whose timezone setting was never changed from the account default
+        // would silently self-heal runAgent3 onto the wrong 6 AM. Every
+        // trigger setupAllCcsmTriggers() creates is pinned the same way.
+        ScriptApp.newTrigger('runAgent3').timeBased()
+          .everyDays(1).atHour(6).inTimezone(getMissionTimezone()).create();
         selfHealLog.push({
           check:  'CHECK 11',
           action: 'Recreated missing runAgent3 daily 6 AM trigger',

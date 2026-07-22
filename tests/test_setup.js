@@ -14,6 +14,11 @@
 //   (e) smokeTestPipeline() sends no email and mutates no tab.
 //   (f) previewOneCoachingEmail() sends exactly one Spanish email, to the
 //       TEST inbox.
+//   (g) setupAllCcsmTriggers() CONVERGES: whatever off-table time-based
+//       triggers a legacy per-agent installer left behind, one run leaves the
+//       project's time-based triggers exactly equal to CCSM_TRIGGER_SCHEDULE —
+//       while the two installable FORM-SUBMIT triggers survive untouched.
+//   (h) The legacy per-agent installers cannot re-create a competing schedule.
 const { makeGasEnv } = require('./gas_stubs');
 const { loadGs } = require('./load_gs');
 const { makeCcsmSpreadsheet, setConfig } = require('./fixtures');
@@ -27,9 +32,17 @@ const GS_FILES = [
   'CCSM_Agent1A.gs', 'CCSM_Agent1B.gs', 'CCSM_Agent1C.gs', 'CCSM_Agent2.gs',
   'CCSM_Agent3.gs', 'CCSM_Agent4.gs', 'CCSM_Agent5A.gs', 'CCSM_Agent5B.gs',
   'CCSM_Agent6.gs', 'CCSM_AgentDuplicate.gs', 'CCSM_AgentEscalation.gs',
-  'CCSM_AgentReminder.gs', 'CCSM_AgentScores.gs', 'CCSM_AgentValidation.gs',
-  'CCSM_SeedContent.gs', 'CCSM_Setup.gs',
+  'CCSM_AgentQA.gs', 'CCSM_AgentReminder.gs', 'CCSM_AgentScores.gs',
+  'CCSM_AgentValidation.gs', 'CCSM_SeedContent.gs', 'CCSM_Setup.gs',
 ];
+
+// The two installable form-submit triggers. Not on CCSM_TRIGGER_SCHEDULE
+// (they are not time-based), but setupAllCcsmTriggers() must install them,
+// never sweep them, and smokeTestPipeline() must fail when they are absent.
+const EXPECTED_FORM_SUBMIT = ['onNightlyFormSubmit', 'onQAFormSubmit'];
+
+const clockTriggers = () => env.state.triggers.filter((t) => t.getEventType() === 'CLOCK');
+const submitTriggers = () => env.state.triggers.filter((t) => t.getEventType() === 'ON_FORM_SUBMIT');
 
 const env = makeGasEnv();
 const scope = loadGs(GS_FILES, env.globals);
@@ -63,10 +76,16 @@ const EXPECTED_TRIGGERS = [
 scope.setupAllCcsmTriggers();
 
 assert.strictEqual(
-  env.state.triggers.length, EXPECTED_TRIGGERS.length,
+  clockTriggers().length, EXPECTED_TRIGGERS.length,
   'setupAllCcsmTriggers must install exactly ' + EXPECTED_TRIGGERS.length +
-  ' triggers, got ' + env.state.triggers.length + ': ' +
-  env.state.triggers.map((t) => t.handlerFunctionName).join(', ')
+  ' time-based triggers, got ' + clockTriggers().length + ': ' +
+  clockTriggers().map((t) => t.handlerFunctionName).join(', ')
+);
+
+assert.deepStrictEqual(
+  submitTriggers().map((t) => t.handlerFunctionName).sort(),
+  EXPECTED_FORM_SUBMIT.slice().sort(),
+  'setupAllCcsmTriggers must also install both installable form-submit triggers'
 );
 
 EXPECTED_TRIGGERS.forEach((want) => {
@@ -112,7 +131,7 @@ env.state.triggers.forEach((t) => {
   secondCounts[t.handlerFunctionName] = (secondCounts[t.handlerFunctionName] || 0) + 1;
 });
 
-assert.strictEqual(env.state.triggers.length, EXPECTED_TRIGGERS.length,
+assert.strictEqual(env.state.triggers.length, EXPECTED_TRIGGERS.length + EXPECTED_FORM_SUBMIT.length,
   'setupAllCcsmTriggers must be idempotent — second run left ' + env.state.triggers.length + ' triggers');
 assert.deepStrictEqual(secondCounts, firstCounts,
   'per-function trigger counts must be identical after a second run');
@@ -130,6 +149,81 @@ assert.strictEqual(env.state.triggers.length, 0,
 scope.setupAllCcsmTriggers();
 
 console.log('deleteAllCcsmTriggers OK');
+
+// ===========================================================================
+// (g) CONVERGENCE — the canonical installer must clear OFF-TABLE handlers.
+//
+// The legacy per-agent installers used to create handler names that appear
+// nowhere in CCSM_TRIGGER_SCHEDULE (runReminderAgent hourly,
+// runNightlyEscalation 10:00, runWeeklyEscalation 20:45,
+// notifyAcceptedSuggestions every 10 min). A per-name refresh cannot clear
+// those, so escalation would fire at 07:00 AND 10:00 AND 20:45. Seed them
+// directly through ScriptApp — the shape a project is in after someone picks
+// one of those functions out of the editor dropdown — and assert one run of
+// setupAllCcsmTriggers() leaves the time-based set EXACTLY equal to the table.
+// ===========================================================================
+const OFF_TABLE = ['runReminderAgent', 'runWeeklyEscalation', 'runNightlyEscalation',
+                   'notifyAcceptedSuggestions'];
+
+env.globals.ScriptApp.newTrigger('runReminderAgent').timeBased().everyHours(1).create();
+env.globals.ScriptApp.newTrigger('runNightlyEscalation').timeBased()
+  .everyDays(1).atHour(10).inTimezone(MISSION_TZ).create();
+env.globals.ScriptApp.newTrigger('runWeeklyEscalation').timeBased()
+  .everyDays(1).atHour(20).nearMinute(45).inTimezone(MISSION_TZ).create();
+env.globals.ScriptApp.newTrigger('notifyAcceptedSuggestions').timeBased().everyMinutes(10).create();
+// A pending one-shot chain trigger, the other thing a real project can be
+// holding when someone runs setup.
+env.globals.ScriptApp.newTrigger('runAgent1B').timeBased().after(300000).create();
+
+const submitUidsBefore = submitTriggers().map((t) => t.uid).sort();
+assert.strictEqual(submitUidsBefore.length, EXPECTED_FORM_SUBMIT.length,
+  'precondition: both form-submit triggers are installed before the converge run');
+
+scope.setupAllCcsmTriggers();
+
+assert.deepStrictEqual(
+  clockTriggers().map((t) => t.handlerFunctionName).sort(),
+  EXPECTED_TRIGGERS.map((t) => t.fn).sort(),
+  'setupAllCcsmTriggers must converge: the project\'s time-based triggers must end up ' +
+  'exactly equal to CCSM_TRIGGER_SCHEDULE, got ' +
+  clockTriggers().map((t) => t.handlerFunctionName).join(', ')
+);
+
+// Named, not merely counted — a matching count would also pass if the sweep
+// had deleted a table handler and left an off-table one.
+OFF_TABLE.concat(['runAgent1B']).forEach((fn) => {
+  assert.ok(!env.state.triggers.some((t) => t.handlerFunctionName === fn),
+    'off-table handler ' + fn + ' must be gone after setupAllCcsmTriggers()');
+});
+
+// Form-submit triggers must SURVIVE — same trigger objects, not deleted and
+// recreated (recreating one re-authorizes and can drop in-flight events).
+assert.deepStrictEqual(submitTriggers().map((t) => t.uid).sort(), submitUidsBefore,
+  'the two form-submit triggers must survive a converge run untouched');
+
+console.log('setup converge-to-table OK');
+
+// ===========================================================================
+// (h) The legacy per-agent installers can no longer create a competing
+//     schedule — each one now delegates to setupAllCcsmTriggers().
+// ===========================================================================
+['setupReminderTrigger', 'setupEscalationTriggers', 'setupSuggestionNotifyTrigger']
+  .forEach((name) => {
+    assert.strictEqual(typeof scope[name], 'function', name + ' must still exist');
+    assert.strictEqual(scope[name].length, 0, name + ' must be zero-argument');
+
+    scope[name]();
+
+    assert.deepStrictEqual(
+      clockTriggers().map((t) => t.handlerFunctionName).sort(),
+      EXPECTED_TRIGGERS.map((t) => t.fn).sort(),
+      name + '() must not install an off-table schedule — after running it the project\'s ' +
+      'time-based triggers must still equal CCSM_TRIGGER_SCHEDULE, got ' +
+      clockTriggers().map((t) => t.handlerFunctionName).join(', ')
+    );
+  });
+
+console.log('legacy installers converge OK');
 
 // ===========================================================================
 // (d) Every human-invoked entry point takes ZERO arguments.
@@ -158,6 +252,9 @@ console.log('setup entry points zero-arg OK');
 // ===========================================================================
 scope.seedCcsmMessageBank();
 scope.seedCcsmKnowledgeBase();
+// runAgentScores (Monday 12:05 AM) is on the schedule, so an unseeded
+// SCORE_CONFIG is a pre-flight ERROR, not a passing state.
+scope.setupCcsmScoreConfig();
 
 function snapshotTabs() {
   return JSON.stringify(ss.getSheets().map((s) => [s.getName(), s.getLastRow(), s.getLastColumn()]));
@@ -177,6 +274,41 @@ assert.ok(report && Array.isArray(report.errors) && Array.isArray(report.warning
 assert.deepStrictEqual(report.errors, [],
   'smokeTestPipeline must report zero errors on a fully-configured sheet: ' + report.errors.join(' | '));
 assert.strictEqual(report.ok, true, 'smokeTestPipeline must report ok=true on a healthy sheet');
+
+// Negative controls — prove the two assertions above discriminate.
+//
+// 1. An unseeded SCORE_CONFIG must be an ERROR, not a silent pass: it is what
+//    runAgentScores reads its weights from.
+(() => {
+  const sc = ss.getSheetByName('SCORE_CONFIG');
+  const saved = sc.getDataRange().getValues();
+  sc.clear();
+  const broken = scope.smokeTestPipeline();
+  assert.ok(broken.errors.some((e) => /SCORE_CONFIG/.test(e)),
+    'an empty SCORE_CONFIG must be a smoke-test ERROR, got: ' + broken.errors.join(' | '));
+  scope.overwriteTab('SCORE_CONFIG', saved);
+})();
+
+// 2. A missing form-submit trigger must be an ERROR (it silently disables
+//    submit-time duplicate detection / all of AgentQA), never a "unrecognized
+//    handler" WARNING for its presence.
+(() => {
+  const victim = env.state.triggers.find((t) => t.handlerFunctionName === 'onNightlyFormSubmit');
+  env.globals.ScriptApp.deleteTrigger(victim);
+
+  const broken = scope.smokeTestPipeline();
+  assert.ok(broken.errors.some((e) => /onNightlyFormSubmit/.test(e)),
+    'a missing onNightlyFormSubmit trigger must be a smoke-test ERROR, got: ' +
+    broken.errors.join(' | '));
+
+  // And nothing may ever call a legitimately-installed form-submit handler
+  // "unrecognized".
+  const healthy = (() => { scope.setupAllCcsmTriggers(); return scope.smokeTestPipeline(); })();
+  assert.deepStrictEqual(healthy.errors, [],
+    'restored project must be error-free: ' + healthy.errors.join(' | '));
+  assert.ok(!healthy.warnings.some((w) => /Unrecognized trigger handler/.test(w)),
+    'form-submit handlers must not be reported as unrecognized: ' + healthy.warnings.join(' | '));
+})();
 
 console.log('smokeTestPipeline OK');
 
@@ -199,9 +331,56 @@ assert.ok(!/Sample|Preview|Coaching Email/i.test(pv.subject),
 console.log('previewOneCoachingEmail OK');
 
 // ===========================================================================
+// (i) A failed wrapped run must leave an AGENT_RUN_LOG ERROR row AND still
+//     throw. Apps Script emails the project owner its automatic "your script
+//     failed" notice only when a trigger handler throws; the eight unwrapped
+//     handlers on the schedule all propagate, so swallowing here would make
+//     AgentReminder and AgentEscalation the only two agents whose total
+//     failure is silent until someone opens a tab.
+// ===========================================================================
+function runLogRows() {
+  return ss.getSheetByName('AGENT_RUN_LOG').getDataRange().getValues();
+}
+const beforeRunLog = runLogRows().length;
+
+assert.throws(
+  () => scope.cs_loggedRun_('AgentReminder', () => { throw new Error('boom-single'); }),
+  /boom-single/,
+  'cs_loggedRun_ must rethrow so Apps Script notifies the project owner'
+);
+
+const afterSingle = runLogRows();
+assert.strictEqual(afterSingle.length, beforeRunLog + 1,
+  'the failed run must still have left exactly one AGENT_RUN_LOG row');
+const errRow = afterSingle[afterSingle.length - 1];
+assert.ok(errRow.indexOf('ERROR') !== -1,
+  'the row cs_loggedRun_ left behind must be an ERROR row: ' + JSON.stringify(errRow));
+
+// cs_runAndLog_ is the multi-body form: it RETURNS the failure instead of
+// throwing, which is what lets runAgentEscalation() run System 2 even when
+// System 1 blew up (they had separate triggers before this file existed).
+const ran = [];
+const err1 = scope.cs_runAndLog_('AgentEscalation', 'System 1 (nightly form)', () => {
+  ran.push('system1'); throw new Error('boom-nightly');
+});
+const err2 = scope.cs_runAndLog_('AgentEscalation', 'System 2 (weekly form)', () => {
+  ran.push('system2');
+});
+assert.deepStrictEqual(ran, ['system1', 'system2'],
+  'System 2 must still run after System 1 throws');
+assert.ok(err1 instanceof Error && /boom-nightly/.test(err1.message),
+  'cs_runAndLog_ must return the caught error rather than throwing it');
+assert.strictEqual(err2, null, 'cs_runAndLog_ must return null on success');
+
+console.log('cs_loggedRun_ logs and rethrows OK');
+
+// ===========================================================================
 // Source hygiene — same acceptance greps every other CCSM file carries.
 // ===========================================================================
-const src = require('fs').readFileSync('CCSM_Setup.gs', 'utf8');
+// Resolved against this file's own directory so the suite runs from anywhere,
+// not only from the repo root.
+const src = require('fs').readFileSync(
+  require('path').join(__dirname, '..', 'CCSM_Setup.gs'), 'utf8');
 assert.ok(!/Utah Provo/i.test(src), 'CCSM_Setup.gs must not contain "Utah Provo"');
 assert.ok(!/America\/Denver/.test(src), 'CCSM_Setup.gs must not contain "America/Denver"');
 assert.ok(!/Session\.getScriptTimeZone/.test(src),

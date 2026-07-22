@@ -71,19 +71,24 @@
 // ── Trigger setup ─────────────────────────────────────────────────────────────
 
 /**
- * Installs an hourly time-based trigger for runReminderAgent().
- * Safe to call multiple times — removes any existing AgentReminder triggers
- * first to avoid duplicates.
+ * DEPRECATED SHIM — delegates to setupAllCcsmTriggers() (CCSM_Setup.gs).
+ *
+ * This used to install an HOURLY trigger on runReminderAgent(), a handler name
+ * CCSM_TRIGGER_SCHEDULE does not know about. Running it after the canonical
+ * installer therefore added a second, competing schedule that re-running
+ * setupAllCcsmTriggers() could not clear, and NOTES reminders fired 24x a day.
+ * The canonical schedule runs this agent Sunday 6 PM through CCSM_Setup.gs's
+ * zero-argument runAgentReminder() wrapper.
+ *
+ * Kept as a shim rather than deleted: it is still in the Apps Script editor's
+ * function dropdown and in older setup notes, so converging is the safest
+ * thing for it to do when someone picks it by mistake.
  */
 function setupReminderTrigger() {
-  deleteTriggerByName('runReminderAgent');
-
-  ScriptApp.newTrigger('runReminderAgent')
-    .timeBased()
-    .everyHours(1)
-    .create();
-
-  Logger.log('AgentReminder: hourly trigger installed for runReminderAgent()');
+  Logger.log('AgentReminder: setupReminderTrigger() is DEPRECATED — the hourly ' +
+    'runReminderAgent trigger it used to install is not on CCSM_TRIGGER_SCHEDULE. ' +
+    'Delegating to setupAllCcsmTriggers(); AgentReminder runs Sunday 6 PM as runAgentReminder.');
+  setupAllCcsmTriggers();
 }
 
 

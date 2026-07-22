@@ -90,37 +90,25 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Installs both daily triggers. Safe to call repeatedly — removes existing
- * AgentEscalation triggers first.
+ * DEPRECATED SHIM — delegates to setupAllCcsmTriggers() (CCSM_Setup.gs).
+ *
+ * This used to install two daily triggers of its own — runNightlyEscalation at
+ * 10:00 and runWeeklyEscalation at 20:45 — neither of which is a handler name
+ * CCSM_TRIGGER_SCHEDULE knows about. Running it after the canonical installer
+ * therefore left escalation firing at 07:00 AND 10:00 AND 20:45, and
+ * re-running setupAllCcsmTriggers() could not clear the extras. The canonical
+ * schedule runs BOTH systems once a day at 07:00 through CCSM_Setup.gs's
+ * zero-argument runAgentEscalation() wrapper.
+ *
+ * Kept as a shim rather than deleted: it is still in the Apps Script editor's
+ * function dropdown and in older setup notes, so converging is the safest
+ * thing for it to do when someone picks it by mistake.
  */
 function setupEscalationTriggers() {
-  var fns = ['runNightlyEscalation', 'runWeeklyEscalation'];
-  ScriptApp.getProjectTriggers().forEach(function(t) {
-    if (fns.indexOf(t.getHandlerFunction()) !== -1) ScriptApp.deleteTrigger(t);
-  });
-
-  var tz = getMissionTimezone();
-
-  // System 1: daily ~10 AM (mission timezone)
-  ScriptApp.newTrigger('runNightlyEscalation')
-    .timeBased()
-    .atHour(10)
-    .nearMinute(0)
-    .everyDays(1)
-    .inTimezone(tz)
-    .create();
-
-  // System 2: daily ~8:45 PM (mission timezone; nearMinute nudges toward :45
-  // within the 8 PM hour)
-  ScriptApp.newTrigger('runWeeklyEscalation')
-    .timeBased()
-    .atHour(20)
-    .nearMinute(45)
-    .everyDays(1)
-    .inTimezone(tz)
-    .create();
-
-  Logger.log('AgentEscalation: triggers installed — nightly ~10 AM, weekly ~8:45 PM (' + tz + ').');
+  Logger.log('AgentEscalation: setupEscalationTriggers() is DEPRECATED — the 10:00 / 20:45 ' +
+    'triggers it used to install are not on CCSM_TRIGGER_SCHEDULE and would double up on the ' +
+    '07:00 runAgentEscalation trigger. Delegating to setupAllCcsmTriggers().');
+  setupAllCcsmTriggers();
 }
 
 

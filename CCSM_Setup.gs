@@ -38,6 +38,16 @@
  *   runAgentScores       Monday   12:05 AM   weekly area scores
  *   runAgent2            (none)              MANUAL — run once per transfer
  *
+ * Plus TWO installable form-submit triggers, which are NOT time-based and so
+ * are not part of the table above (they fire when a missionary presses Submit,
+ * not on a clock):
+ *
+ *   onNightlyFormSubmit  on submit   validation + duplicate detection (CCSM_AgentDuplicate.gs)
+ *   onQAFormSubmit       on submit   question/suggestion handling    (CCSM_AgentQA.gs)
+ *
+ * setupAllCcsmTriggers() installs those two as well, and deliberately leaves
+ * any already-installed form-submit trigger alone.
+ *
  * runAgent2 is deliberately NOT scheduled: goal recalibration is a per-transfer
  * judgement call the mission president signs off on, not an automatic weekly
  * rewrite of every area's goals.
@@ -100,10 +110,48 @@
  * OPERATOR ENTRY POINTS (all ZERO-ARGUMENT — the editor's Run button passes
  * no arguments and there is no console)
  * ─────────────────────────────────────────────────────────────────────────
- *   setupAllCcsmTriggers()     install the whole table (safe to re-run)
- *   deleteAllCcsmTriggers()    remove every trigger in this project
+ *   setupAllCcsmTriggers()     converge this project's triggers to the table
+ *                              above + the two form-submit triggers. Safe to
+ *                              re-run; it is the ONLY trigger installer an
+ *                              operator should ever need.
+ *   deleteAllCcsmTriggers()    remove every trigger in this project, including
+ *                              the two form-submit ones
  *   smokeTestPipeline()        read-only pre-flight; sends nothing, writes nothing
  *   previewOneCoachingEmail()  one sample coaching email to the test inbox
+ *
+ * The editor's function dropdown also still lists the older per-agent
+ * installers — setupReminderTrigger(), setupEscalationTriggers(),
+ * setupAgentDuplicateTrigger(), setupQAFormTrigger(),
+ * setupSuggestionNotifyTrigger(). Every one of them now delegates to
+ * setupAllCcsmTriggers() instead of installing its own schedule, so running
+ * one by mistake converges the project rather than adding a second, competing
+ * schedule on top of it. See "LEGACY PER-AGENT INSTALLERS" below.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * LEGACY PER-AGENT INSTALLERS
+ * ─────────────────────────────────────────────────────────────────────────
+ * Before this file existed, each agent shipped its own setup*Trigger()
+ * function, and four of them installed handler names and hours that are NOT
+ * in CCSM_TRIGGER_SCHEDULE:
+ *
+ *   setupReminderTrigger()          runReminderAgent, HOURLY
+ *   setupEscalationTriggers()       runNightlyEscalation 10:00, runWeeklyEscalation 20:45
+ *   setupSuggestionNotifyTrigger()  notifyAcceptedSuggestions, every 10 minutes
+ *
+ * Left as they were, an operator picking one out of the dropdown would get
+ * escalation firing at 07:00 AND 10:00 AND 20:45 and the reminder agent
+ * firing hourly — the exact duplicate-nagging failure WEEKLY_REMINDER_OWNER
+ * exists to prevent, through a different door. They are therefore now
+ * delegating shims (they log what they used to do, then converge).
+ *
+ * >>> ONE CONSEQUENCE THE MISSION MUST CONFIRM: notifyAcceptedSuggestions()
+ * >>> (AgentQA's "email COMPASS when a suggestion is finally approved" poll)
+ * >>> is not on CCSM_TRIGGER_SCHEDULE, so after convergence it is NOT
+ * >>> scheduled at all. The function still exists and is zero-argument, so it
+ * >>> can be run by hand. If the mission wants it automated, add a row to
+ * >>> CCSM_TRIGGER_SCHEDULE (a daily hour is plenty; the original 10-minute
+ * >>> poll burns ~144 executions/day for a low-volume queue) rather than
+ * >>> re-enabling the old installer.
  */
 
 
@@ -137,18 +185,84 @@ var CCSM_TRIGGER_SCHEDULE = [
  */
 var CCSM_CHAINED_HANDLERS = ['runAgent1B', 'runAgent1C', 'runAgent6'];
 
+/**
+ * The project's two INSTALLABLE FORM-SUBMIT triggers. They are not on
+ * CCSM_TRIGGER_SCHEDULE because they are not time-based — they fire when a
+ * missionary presses Submit — but they are just as required, and every
+ * function in this file has to know about them:
+ *
+ *   - setupAllCcsmTriggers() installs any that is missing, and never deletes
+ *     one that is already there (deleting and recreating a form-submit
+ *     trigger is not free — it re-authorizes and can drop in-flight events).
+ *   - deleteAllCcsmTriggers() DOES remove them, like everything else.
+ *   - smokeTestPipeline() treats their ABSENCE as an error rather than their
+ *     presence as an unknown handler.
+ *
+ * `install` calls the agent file's own installer so the trigger is built
+ * exactly one way, in one place.
+ */
+var CCSM_FORM_SUBMIT_TRIGGERS = [
+  {
+    fn: 'onNightlyFormSubmit',
+    describe: 'On form submit — nightly validation + duplicate detection (CCSM_AgentDuplicate.gs)',
+    install: function() { setupAgentDuplicateTrigger(); }
+  },
+  {
+    fn: 'onQAFormSubmit',
+    describe: 'On form submit — question/suggestion handling (CCSM_AgentQA.gs)',
+    install: function() { setupQAFormTrigger(); }
+  }
+];
+
+/** Handler names of CCSM_FORM_SUBMIT_TRIGGERS. Private to CCSM_Setup.gs. */
+function cs_formSubmitHandlerNames_() {
+  return CCSM_FORM_SUBMIT_TRIGGERS.map(function(s) { return s.fn; });
+}
+
+/**
+ * True when `trigger` is a time-based (clock) trigger — the only kind
+ * setupAllCcsmTriggers() owns and is allowed to sweep away.
+ *
+ * Private to CCSM_Setup.gs.
+ */
+function cs_isTimeBased_(trigger) {
+  try {
+    return String(trigger.getEventType()) === String(ScriptApp.EventType.CLOCK);
+  } catch (e) {
+    // Defensive only. If getEventType() is ever unavailable, fall back to
+    // handler names so that a converge run can still never destroy the two
+    // installable form-submit triggers.
+    return cs_formSubmitHandlerNames_().indexOf(trigger.getHandlerFunction()) === -1;
+  }
+}
+
 
 // ═════════════════════════════════════════════════════════════════════════════
 // TRIGGER INSTALL / REMOVE
 // ═════════════════════════════════════════════════════════════════════════════
 
 /**
- * Installs every trigger in CCSM_TRIGGER_SCHEDULE, in mission-local time.
+ * CONVERGES this project's triggers to CCSM_TRIGGER_SCHEDULE, in mission-local
+ * time, and makes sure the two form-submit triggers exist.
  *
- * Idempotent: each function's existing triggers are deleted immediately
- * before its new one is created, so running this twice leaves exactly one
- * trigger per scheduled function. Zero-argument — run it straight from the
- * Apps Script editor.
+ * "Converge", not "refresh": EVERY time-based trigger in the project is
+ * deleted first — not just the ten this table names — and only then are the
+ * table's ten created. That is what makes the table the single source of
+ * truth. A per-name refresh could not clear an off-table handler such as
+ * runReminderAgent (hourly) or runWeeklyEscalation (20:45) left behind by one
+ * of the legacy per-agent installers, so escalation would end up firing at
+ * 07:00 AND 10:00 AND 20:45. See "LEGACY PER-AGENT INSTALLERS" in the header.
+ *
+ * The sweep also removes any one-shot chain trigger CCSM_Helpers.scheduleNext()
+ * has pending (runAgent1B / runAgent1C / runAgent6). That is correct and
+ * intended — a pending one-shot is a leftover from a chain that is mid-flight,
+ * and the next scheduled runAgent1A / runAgent5B re-creates it. Do not run
+ * this in the middle of a Sunday-evening chain.
+ *
+ * Form-submit triggers are NOT time-based and are never swept; any missing one
+ * is installed at the end.
+ *
+ * Idempotent and zero-argument — run it straight from the Apps Script editor.
  *
  * Nothing calls this automatically. Installing triggers means real emails
  * start flowing on a schedule, so it stays a deliberate human action.
@@ -156,9 +270,19 @@ var CCSM_CHAINED_HANDLERS = ['runAgent1B', 'runAgent1C', 'runAgent6'];
 function setupAllCcsmTriggers() {
   var tz = getMissionTimezone();
 
-  CCSM_TRIGGER_SCHEDULE.forEach(function(spec) {
-    deleteTriggerByName(spec.fn);
+  // ── Converge: clear EVERY time-based trigger, whatever installed it ──────
+  var swept = [];
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (!cs_isTimeBased_(t)) return;   // form-submit triggers survive
+    swept.push(t.getHandlerFunction());
+    ScriptApp.deleteTrigger(t);
+  });
+  if (swept.length) {
+    Logger.log('CCSM_Setup: swept ' + swept.length +
+      ' existing time-based trigger(s) before installing the table: ' + swept.join(', '));
+  }
 
+  CCSM_TRIGGER_SCHEDULE.forEach(function(spec) {
     var builder = ScriptApp.newTrigger(spec.fn).timeBased();
     if (spec.weekDay) {
       builder = builder.onWeekDay(ScriptApp.WeekDay[spec.weekDay]);
@@ -172,15 +296,43 @@ function setupAllCcsmTriggers() {
     Logger.log('CCSM_Setup: installed ' + spec.fn + ' — ' + spec.describe + ' (' + tz + ')');
   });
 
+  // ── Form-submit triggers: install only the ones that are missing ─────────
+  var haveSubmit = {};
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (!cs_isTimeBased_(t)) haveSubmit[t.getHandlerFunction()] = true;
+  });
+
+  CCSM_FORM_SUBMIT_TRIGGERS.forEach(function(spec) {
+    if (haveSubmit[spec.fn]) {
+      Logger.log('CCSM_Setup: ' + spec.fn + ' form-submit trigger already installed — left alone.');
+      return;
+    }
+    try {
+      spec.install();
+      Logger.log('CCSM_Setup: installed ' + spec.fn + ' — ' + spec.describe);
+    } catch (e) {
+      Logger.log('CCSM_Setup: FAILED to install ' + spec.fn + ' — ' + e.message +
+        '. Install it by hand and re-run smokeTestPipeline().');
+    }
+  });
+
   Logger.log('CCSM_Setup: ' + CCSM_TRIGGER_SCHEDULE.length +
-    ' trigger(s) installed. runAgent2 is intentionally NOT scheduled — run it manually once per transfer.');
+    ' scheduled trigger(s) + ' + CCSM_FORM_SUBMIT_TRIGGERS.length +
+    ' form-submit trigger(s) in place. runAgent2 is intentionally NOT scheduled — ' +
+    'run it manually once per transfer.');
 }
 
 /**
- * Removes EVERY trigger in this Apps Script project — the scheduled ones, any
- * one-shot chain trigger CCSM_Helpers.scheduleNext() left behind, and any
- * stale handler from an earlier setup. The CCSM project hosts nothing but
- * PMG Compass, so "all triggers" and "all CCSM triggers" are the same set.
+ * Removes EVERY trigger in this Apps Script project — the ten scheduled ones,
+ * any one-shot chain trigger CCSM_Helpers.scheduleNext() left behind, any
+ * stale handler from an earlier setup, AND the two installable form-submit
+ * triggers (onNightlyFormSubmit, onQAFormSubmit). The CCSM project hosts
+ * nothing but PMG Compass, so "all triggers" and "all CCSM triggers" are the
+ * same set.
+ *
+ * Because the form-submit triggers go too, submit-time duplicate detection and
+ * all of AgentQA stop until something reinstalls them. setupAllCcsmTriggers()
+ * does — it is the single command that brings everything back.
  *
  * Zero-argument. Use before a maintenance window, or to stop all automation
  * immediately.
@@ -333,6 +485,17 @@ function smokeTestPipeline() {
               'they never generate it, so an empty bank means silent coaching.');
   }
 
+  // SCORE_CONFIG has no header row in CCSM_TAB_SPECS — setupCcsmScoreConfig()
+  // writes its own two-section layout (see CCSM_AgentScores.gs), so "populated"
+  // means "has any row at all", not "has more than a header".
+  var sc = present['SCORE_CONFIG'];
+  if (sc) {
+    var scRows = sc.getLastRow();
+    if (scRows > 0) ok('SCORE_CONFIG: ' + scRows + ' row(s).');
+    else fail('SCORE_CONFIG is empty — run setupCcsmScoreConfig(). runAgentScores ' +
+              '(Monday 12:05 AM) has no weights without it.');
+  }
+
   var kb = present['KNOWLEDGE_BASE'];
   if (kb) {
     var kbRows = Math.max(kb.getLastRow() - 1, 0);
@@ -359,7 +522,17 @@ function smokeTestPipeline() {
     ok('All ' + CCSM_TRIGGER_SCHEDULE.length + ' scheduled triggers installed.');
   }
 
-  var known = CCSM_TRIGGER_SCHEDULE.map(function(s) { return s.fn; }).concat(CCSM_CHAINED_HANDLERS);
+  var missingSubmit = CCSM_FORM_SUBMIT_TRIGGERS.filter(function(spec) { return !counts[spec.fn]; })
+                                               .map(function(spec) { return spec.fn + ' (' + spec.describe + ')'; });
+  if (missingSubmit.length) {
+    fail('Missing form-submit trigger(s): ' + missingSubmit.join('; ') + '. Run setupAllCcsmTriggers().');
+  } else {
+    ok('Both form-submit triggers installed (' + cs_formSubmitHandlerNames_().join(', ') + ').');
+  }
+
+  var known = CCSM_TRIGGER_SCHEDULE.map(function(s) { return s.fn; })
+                                   .concat(CCSM_CHAINED_HANDLERS)
+                                   .concat(cs_formSubmitHandlerNames_());
   Object.keys(counts).forEach(function(fn) {
     if (known.indexOf(fn) === -1) warn('Unrecognized trigger handler installed: ' + fn + '.');
   });
@@ -381,12 +554,17 @@ function smokeTestPipeline() {
 
 /**
  * Sends ONE sample Sunday-coaching email to the test inbox so the mission can
- * see what missionaries will actually receive, without waiting for Sunday and
- * without running the 1A -> 1B -> 1C chain over real data.
+ * read the TONE AND CONTENT of the message bank, without waiting for Sunday
+ * and without running the 1A -> 1B -> 1C chain over real data.
  *
  * The sample text is REAL MESSAGE_BANK content, picked (never generated) the
  * same way Agent1B picks it — that is the whole point of the preview. It reads
  * MESSAGE_BANK and MISSION_ORG only; it writes nothing.
+ *
+ * NOT a layout preview. The HTML below is this file's own, deliberately
+ * marked MUESTRA; the email missionaries actually receive is rendered by
+ * Agent1C's template over real weekly metrics. Judge the words here, not the
+ * design.
  *
  * Zero-argument. Always addressed to getTestInbox(), and sendEmail() routes it
  * through the same TEST_MODE redirect every other agent uses.
@@ -524,14 +702,22 @@ function runAgentDuplicate() {
  * Both are called with no arguments, so every day/stage gate stays active.
  */
 function runAgentEscalation() {
-  cs_loggedRun_('AgentEscalation', function() {
-    runNightlyEscalation();
-    runWeeklyEscalation();
-  });
+  // Each system gets its OWN logged run, and BOTH always run: System 2's
+  // weekly reminders must not be skipped for the day just because System 1
+  // threw. (Before this file existed they were on two separate triggers, so
+  // that independence was free; it has to be spelled out now they share one.)
+  var err1 = cs_runAndLog_('AgentEscalation', 'System 1 (nightly form)', runNightlyEscalation);
+  var err2 = cs_runAndLog_('AgentEscalation', 'System 2 (weekly form)',  runWeeklyEscalation);
+
+  // Rethrow AFTER both have run and both have left their AGENT_RUN_LOG row —
+  // see cs_runAndLog_ for why a trigger handler must end up throwing.
+  if (err1) throw err1;
+  if (err2) throw err2;
 }
 
 /**
- * Runs `body` and records the outcome in AGENT_RUN_LOG.
+ * Runs `body`, records the outcome in AGENT_RUN_LOG, and RETURNS the caught
+ * exception (null on success) rather than throwing it.
  *
  * CCSM_AgentReminder.gs and CCSM_AgentEscalation.gs are the only two agents on
  * the trigger schedule that never call CCSM_Helpers.logRun() themselves — both
@@ -541,23 +727,48 @@ function runAgentEscalation() {
  * The trigger entry point is the right place to close that gap without
  * changing either agent's own behaviour.
  *
- * Never rethrows: a failed run must still leave an ERROR row behind.
+ * Returning instead of throwing exists ONLY so a handler that has more than
+ * one body to run (runAgentEscalation) can run all of them and still fail
+ * afterwards. Every caller MUST end up throwing what this returns: Apps
+ * Script emails the project owner its automatic "your script failed" notice
+ * only when a trigger handler throws, and the eight unwrapped handlers on the
+ * schedule all propagate. Swallowing here would make these two the only
+ * agents whose total failure is silent until someone opens a tab. The
+ * AGENT_RUN_LOG ERROR row is already written by the time this returns, so
+ * rethrowing costs nothing.
+ *
  * Private to CCSM_Setup.gs.
+ *
+ * @returns {Error|null} the exception `body` threw, or null
  */
-function cs_loggedRun_(agentName, body) {
+function cs_runAndLog_(agentName, stage, body) {
   var startMs = new Date().getTime();
   var status  = 'SUCCESS';
-  var note    = 'Ran from the ' + agentName + ' trigger (CCSM_Setup.gs).';
+  var label   = agentName + (stage ? ' — ' + stage : '');
+  var note    = 'Ran ' + label + ' from the ' + agentName + ' trigger (CCSM_Setup.gs).';
   var errMsg  = '';
+  var caught  = null;
 
   try {
     body();
   } catch (e) {
+    caught = e;
     status = 'ERROR';
     errMsg = e.message;
-    note   = 'FATAL: ' + e.message;
-    Logger.log(agentName + ' FATAL: ' + e.message + '\n' + (e.stack || ''));
+    note   = 'FATAL in ' + label + ': ' + e.message;
+    Logger.log(label + ' FATAL: ' + e.message + '\n' + (e.stack || ''));
   }
 
   logRun(agentName, status, null, null, new Date().getTime() - startMs, note, errMsg);
+  return caught;
+}
+
+/**
+ * Single-body form of cs_runAndLog_: logs the run, then rethrows any failure
+ * so Apps Script's owner-notification email still fires.
+ * Private to CCSM_Setup.gs.
+ */
+function cs_loggedRun_(agentName, body) {
+  var err = cs_runAndLog_(agentName, '', body);
+  if (err) throw err;
 }

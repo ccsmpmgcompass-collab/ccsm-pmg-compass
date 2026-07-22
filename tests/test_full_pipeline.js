@@ -119,17 +119,22 @@ setConfig(env, ss, 'GOAL_new_people_found', '3');
 // execution, and the fixture setConfig() writes the sheet without busting that
 // cache. Reading config any earlier freezes the pre-setConfig values.
 // ---------------------------------------------------------------------------
-// Pin Node's LOCAL calendar to the mission timezone before deriving any date.
-// The agents freely mix two idioms: format-through-getMissionTimezone() (e.g.
-// CCSM_AgentScores.gs:437) and plain local-calendar arithmetic on
-// new Date(y, m, d) (e.g. CCSM_Agent5A.gs:888-896 a5a_getWeekEnd). In the
-// Apps Script runtime those agree, because the project's script timezone IS
-// the mission timezone. Under Node they only agree if the process's local
-// timezone is the mission's — otherwise a machine east of Santiago turns
-// local-midnight Sunday into Saturday 20:00 Santiago and week-ends slip a
-// day. Pinning TZ here is what makes this suite independent of the DEV
-// MACHINE's timezone; it does not paper over anything production hits.
+// Node's LOCAL calendar must equal the mission timezone before any date is
+// derived. The agents freely mix two idioms: format-through-
+// getMissionTimezone() (e.g. CCSM_AgentScores.gs:437) and plain local-calendar
+// arithmetic on new Date(y, m, d) (e.g. CCSM_Agent5A.gs:888-896
+// a5a_getWeekEnd). In the Apps Script runtime those agree, because the
+// project's script timezone IS the mission timezone. Under Node they only
+// agree if the process's local timezone is the mission's — otherwise a machine
+// east of Santiago turns local-midnight Sunday into Saturday 20:00 Santiago
+// and week-ends slip a day.
+//
+// gas_stubs.js pins process.env.TZ for EVERY suite at require() time; this
+// line re-asserts it from the sheet's own AGENT_CONFIG value, so the pin is
+// still correct if a mission ever forks this repo to another timezone.
 process.env.TZ = scope.getMissionTimezone();
+assert.strictEqual(process.env.TZ, 'America/Santiago',
+  'the mission timezone must come from AGENT_CONFIG and be America/Santiago');
 
 const _tzNow = new Date();
 const _todayStr = env.globals.Utilities.formatDate(_tzNow, scope.getMissionTimezone(), 'yyyy-MM-dd');
@@ -318,10 +323,30 @@ const rlAgent = rlH.indexOf('Agent');
 const rlStatus = rlH.indexOf('Status');
 const rlNotes = rlH.indexOf('Notes');
 
+// AGENT_RUN_LOG records THAT the sweep ran...
 const dupLogRow = runLog.slice(1).find(
   (r) => r[rlAgent] === 'AgentDuplicate' && /duplicate group\(s\) resolved/.test(String(r[rlNotes]))
 );
 assert.ok(dupLogRow, 'AgentDuplicate must record the resolved duplicate group in AGENT_RUN_LOG');
+
+// ...and AUDIT_LOG records WHICH area and date it flagged. That per-event row
+// is what answers "why does this area show 16 contacts instead of 8?" —
+// AGENT_RUN_LOG cannot, it is a run record. Column layout is the one every
+// other CCSM agent writes:
+//   Timestamp | Agent | Action | Rows_Affected | Area | Notes
+const auditLog = ss.getSheetByName('AUDIT_LOG').getDataRange().getValues();
+const alRows = auditLog.filter((r) => String(r[1]) === 'AgentDuplicate');
+assert.strictEqual(alRows.length, 1,
+  'AgentDuplicate must write exactly one AUDIT_LOG row (one per duplicate group flagged), got ' +
+  alRows.length);
+const alRow = alRows[0];
+assert.strictEqual(String(alRow[2]), 'DUPLICATE_RESOLVED', 'AUDIT_LOG Action column');
+assert.strictEqual(Number(alRow[3]), 2, 'AUDIT_LOG Rows_Affected must be the 2 deleted raw rows');
+assert.strictEqual(String(alRow[4]), 'San Pedro', 'AUDIT_LOG Area must name the flagged area');
+assert.ok(String(alRow[5]).indexOf(dupDate) !== -1,
+  'AUDIT_LOG Notes must name the flagged date ' + dupDate + ', got: ' + alRow[5]);
+assert.ok(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(String(alRow[0])),
+  'AUDIT_LOG Timestamp must be mission-tz yyyy-MM-dd HH:mm:ss, got: ' + alRow[0]);
 
 console.log('pipeline duplicate handling OK');
 

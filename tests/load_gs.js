@@ -3,6 +3,15 @@
 // `var`, `const`, and `let` declared across those files so tests can call
 // them directly.
 const fs = require('fs');
+const path = require('path');
+
+// The repo root — one level up from tests/. File names passed to loadGs() are
+// resolved against it rather than against process.cwd(), so a suite behaves
+// the same however it was invoked. Absolute paths pass through unchanged.
+const REPO_ROOT = path.join(__dirname, '..');
+function resolveGs(f) {
+  return path.isAbsolute(f) ? f : path.join(REPO_ROOT, f);
+}
 
 // Matches top-level (column 0) declarations only, so nested helpers inside
 // other functions are correctly excluded. Handles regular functions,
@@ -24,7 +33,7 @@ function declaredNames(src) {
 }
 
 function loadGs(files, globals) {
-  const src = files.map((f) => fs.readFileSync(f, 'utf8')).join('\n;\n');
+  const src = files.map((f) => fs.readFileSync(resolveGs(f), 'utf8')).join('\n;\n');
   const names = Object.keys(globals);
   const values = names.map((n) => globals[n]);
 
