@@ -337,7 +337,11 @@ Everything here happens with `TEST_MODE = TRUE`, so **no missionary can receive 
 
 The pre-flight check. **Read-only: it sends no email and writes nothing.** Run it and read the Execution log.
 
-It checks: the sheet opens by ID; all 23 tabs exist; the two raw form tabs exist; the required config keys are non-blank; the timezone and language are as expected; whether `TEST_MODE` is on; the `WEEKLY_REMINDER_OWNER` value is valid; `MISSION_ORG` has active rows and reachable emails; `QUESTIONS_CONFIG`, `MESSAGE_BANK`, `SCORE_CONFIG`, `KNOWLEDGE_BASE` are populated; and the full trigger inventory.
+It checks: the sheet opens by ID; all 23 tabs exist; the two raw form tabs exist; the required config keys are non-blank; the timezone and language are as expected; **the Apps Script project timezone matches `MISSION_TIMEZONE`**; whether `TEST_MODE` is on; the `WEEKLY_REMINDER_OWNER` value is valid; `MISSION_ORG` has active rows and reachable emails; `QUESTIONS_CONFIG`, `MESSAGE_BANK`, `SCORE_CONFIG`, `KNOWLEDGE_BASE` are populated; and the full trigger inventory, **including duplicate form-submit triggers**.
+
+> **Gotcha 2 is now caught here.** The project-timezone check compares Project Settings against `MISSION_TIMEZONE` and reports an **ERROR** naming both values. That mismatch used to be invisible — it produced dates a day off with no error anywhere — so if you see it, fix Project Settings before doing anything else. It is not cosmetic and it will not "sort itself out".
+>
+> The duplicate-trigger check matters for the same reason: a form-submit handler installed **twice** fires twice on every submission, which means duplicate emails to a real missionary. Note that re-running `setupAllCcsmTriggers()` does **not** clear duplicates — the installer deliberately leaves form-submit triggers alone. The fix is `deleteAllCcsmTriggers()` first, then `setupAllCcsmTriggers()`.
 
 The log ends with `=== smoke test: N error(s), M warning(s) ===`.
 
@@ -415,9 +419,13 @@ Before go-live, delete the dummy rows you created: the test rows in `NIGHTLY_FOR
 
 **`TEST_MODE` must stay `TRUE` until this is signed off.** This is a hard gate, not a formality.
 
-Every missionary-facing word the system can send is listed in **`CONTENT_REVIEW.md`** in this folder. Message selection is *pick-not-generate*: the agents choose a row by ID and send it verbatim, so that file is the system's complete vocabulary. Nothing is invented at send time.
+The seeded content banks — plus the hardcoded leadership messages — are listed in **`CONTENT_REVIEW.md`** in this folder. Selection from the banks is *pick-not-generate*: the agents choose a row by ID and send it verbatim. Nothing in the banks is invented at send time.
 
-Two things must happen before go-live.
+> **`CONTENT_REVIEW.md` used to claim it listed every missionary-facing word. It did not,** and that false claim is what hid the problem in 8.3 below. The banks are only part of the outgoing text: individual agents also build subjects and bodies from hardcoded Spanish templates. The leadership messages are now included; roughly 27 reminder, escalation, validation and duplicate templates are still **not** listed and still want a Spanish read.
+
+**Budget for this step: 4–6 hours, one Spanish speaker, one sitting.** Scripture texts 45–90min · native pass 60–90min · leadership scriptures 60–90min · template polish 60–90min.
+
+Three things must happen before go-live.
 
 ### 8.1 Fill in the scripture text — 193 of 193 rows ship blank
 
@@ -437,6 +445,21 @@ The Spanish in all 193 messages and 10 knowledge-base rows was **model-written**
 - [ ] A native Spanish speaker has read every row in `CONTENT_REVIEW.md`
 - [ ] Mission leadership has approved the tone and the doctrine
 - [ ] Any corrections were made in `CCSM_SeedContent.gs`, re-pasted, re-seeded, and `CONTENT_REVIEW.md` regenerated
+
+### 8.3 Verify the 10 leadership scriptures — these are NOT blank
+
+This one is different from 8.1, and more urgent. The ten leadership messages hardcoded in **`CCSM_Agent1C.gs`** (`_LEADERSHIP_MSGS`) ship with their scripture text **already written** — and that text was written by a model, not copied from the official Spanish edition. It is exactly the fabrication the 193 blank rows exist to avoid, and it escaped the gate only because it lives in an agent file rather than the seed content.
+
+**At least two are attached to the wrong verse.** The text printed under `D. y C. 4:4-5` is actually D&C 4:2; `D. y C. 11:21` carries something else again. These messages go to zone leaders, district leaders, APs and **the mission president**.
+
+All ten are now listed in `CONTENT_REVIEW.md` under *MENSAJES DE LIDERAZGO*, each flagged for verification. For every one: confirm the **reference** is right, then confirm the **wording** against the official Spanish edition. Six of them also carry *Predicad Mi Evangelio* page numbers taken from the **English** edition — check those too.
+
+Corrections go in `CCSM_Agent1C.gs` and need a re-paste (Gotcha 1). There is no seeder to re-run for these.
+
+- [ ] All 10 leadership scripture **references** verified
+- [ ] All 10 leadership scripture **texts** verified word-for-word against the Spanish edition
+- [ ] The 6 PMG page numbers checked against the Spanish edition
+- [ ] `CCSM_Agent1C.gs` re-pasted if anything changed
 
 **Signed off by: ______________________  Date: ____________**
 
