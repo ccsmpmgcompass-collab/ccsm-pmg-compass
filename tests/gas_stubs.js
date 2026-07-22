@@ -558,8 +558,16 @@ function makeGasEnv(options = {}) {
   };
 
   // ---- Session -------------------------------------------------------------
+  // The Apps Script PROJECT timezone, which is a DIFFERENT setting from
+  // AGENT_CONFIG's MISSION_TIMEZONE and is what plain local-date arithmetic
+  // resolves against. This used to be hardcoded to MISSION_TZ, which made the
+  // two permanently equal and the mismatch case (integration I-4) structurally
+  // impossible to test — the stub quietly guaranteed the very invariant the
+  // production code needed checked. makeGasEnv({ scriptTimeZone }) overrides
+  // it so a mismatched project can be simulated.
+  const scriptTimeZone = options.scriptTimeZone || MISSION_TZ;
   const Session = {
-    getScriptTimeZone() { return MISSION_TZ; },
+    getScriptTimeZone() { return scriptTimeZone; },
   };
 
   // ---- MailApp / GmailApp ---------------------------------------------------

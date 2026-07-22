@@ -429,6 +429,36 @@ function smokeTestPipeline() {
   if (String(getConfig('MISSION_TIMEZONE') || '').trim() !== 'America/Santiago') {
     warn('MISSION_TIMEZONE is "' + getConfig('MISSION_TIMEZONE') + '", expected America/Santiago.');
   }
+
+  // ── 3b. Apps Script PROJECT timezone vs MISSION_TIMEZONE ─────────────────
+  // Final-review finding (integration I-4). Triggers are pinned with
+  // .inTimezone(MISSION_TIMEZONE), but the agents ALSO do plain local-calendar
+  // arithmetic (new Date()/getDay() in CCSM_Agent1A.gs and elsewhere), and
+  // that resolves against the Apps Script PROJECT timezone — a separate
+  // setting, in Project Settings, that nothing in this code can control.
+  //
+  // On a project whose timezone was never set (it defaults to the creating
+  // Google account's) the two disagree and the coaching week silently slips:
+  // reports get attributed to the wrong week and the Sunday chain can compute
+  // the wrong week boundary. Nothing else in the system detects this.
+  //
+  // There is no API to SET the project timezone, so the smoke test is the only
+  // place this can be caught — and it fails rather than warns, because the
+  // symptom is silent and off-by-a-day rather than a visible outage.
+  var projectTz = (typeof Session !== 'undefined' && Session.getScriptTimeZone)
+    ? String(Session.getScriptTimeZone() || '').trim()
+    : '';
+  var missionTz = String(getConfig('MISSION_TIMEZONE') || '').trim();
+  if (!projectTz) {
+    warn('Could not read the Apps Script project timezone to compare with MISSION_TIMEZONE.');
+  } else if (projectTz !== missionTz) {
+    fail('Apps Script PROJECT timezone is "' + projectTz + '" but MISSION_TIMEZONE is "' +
+         missionTz + '". Fix it in Project Settings → Time zone. Until they match, every ' +
+         'date the agents compute can be off by a day.');
+  } else {
+    ok('Project timezone matches MISSION_TIMEZONE (' + projectTz + ').');
+  }
+
   if (String(getConfig('MISSION_LANGUAGE') || '').trim().toUpperCase() !== 'ES') {
     warn('MISSION_LANGUAGE is "' + getConfig('MISSION_LANGUAGE') + '", expected ES.');
   }
@@ -535,6 +565,24 @@ function smokeTestPipeline() {
     fail('Missing form-submit trigger(s): ' + missingSubmit.join('; ') + '. Run setupAllCcsmTriggers().');
   } else {
     ok('Both form-submit triggers installed (' + cs_formSubmitHandlerNames_().join(', ') + ').');
+  }
+
+  // DUPLICATE form-submit triggers (final review, known-open minor (d)).
+  // The check above only asks "is there at least one?", so a project with the
+  // handler installed TWICE passed silently. Duplicates are easy to create —
+  // the converge sweep deliberately spares form-submit triggers, so attaching
+  // a form again, or running an installer against a project that already had
+  // one, adds a second — and the consequence is that every form submission
+  // fires the handler twice: two duplicate-detection passes, two AgentQA
+  // answers, two emails to the same missionary.
+  var duplicateSubmit = CCSM_FORM_SUBMIT_TRIGGERS
+    .filter(function(spec) { return counts[spec.fn] > 1; })
+    .map(function(spec) { return spec.fn + ' x' + counts[spec.fn]; });
+  if (duplicateSubmit.length) {
+    fail('Duplicate form-submit trigger(s): ' + duplicateSubmit.join('; ') +
+         '. Every submission fires the handler that many times (duplicate emails). ' +
+         'Delete the extras in Triggers, or run deleteAllCcsmTriggers() then ' +
+         'setupAllCcsmTriggers().');
   }
 
   var known = CCSM_TRIGGER_SCHEDULE.map(function(s) { return s.fn; })

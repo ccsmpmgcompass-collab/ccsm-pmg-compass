@@ -310,6 +310,81 @@ assert.strictEqual(report.ok, true, 'smokeTestPipeline must report ok=true on a 
     'form-submit handlers must not be reported as unrecognized: ' + healthy.warnings.join(' | '));
 })();
 
+// 3. A project timezone that disagrees with MISSION_TIMEZONE must be an ERROR
+//    (integration I-4). The Apps Script PROJECT timezone is a separate setting
+//    from AGENT_CONFIG's MISSION_TIMEZONE, and plain local-date arithmetic in
+//    the agents resolves against the PROJECT one. When they disagree the
+//    coaching week silently slips a day — no exception, no failed send, just
+//    wrong dates. There is no API to set the project timezone, so the smoke
+//    test is the only thing that can catch it.
+//
+//    This needs its own env: the stub used to hardcode getScriptTimeZone() to
+//    MISSION_TZ, which made the two permanently equal and this case impossible
+//    to express — the harness was guaranteeing the invariant the production
+//    code needed to verify.
+(() => {
+  const tzEnv = makeGasEnv({ scriptTimeZone: 'America/Los_Angeles' }); // the Apps Script default
+  const tzScope = loadGs(GS_FILES, tzEnv.globals);
+  const tzSs = makeCcsmSpreadsheet(tzEnv, tzScope);
+  setConfig(tzEnv, tzSs, 'NIGHTLY_FORM_LINK', 'https://forms.example/nightly');
+  setConfig(tzEnv, tzSs, 'WEEKLY_FORM_LINK', 'https://forms.example/weekly');
+
+  const mismatched = tzScope.smokeTestPipeline();
+  assert.ok(
+    mismatched.errors.some((e) => /PROJECT timezone/i.test(e) && /America\/Los_Angeles/.test(e)),
+    'a project timezone differing from MISSION_TIMEZONE must be a smoke-test ERROR naming ' +
+    'both values, got: ' + mismatched.errors.join(' | ')
+  );
+
+  // And a matching project timezone must NOT produce that error.
+  const okEnv = makeGasEnv({ scriptTimeZone: MISSION_TZ });
+  const okScope = loadGs(GS_FILES, okEnv.globals);
+  const okSs = makeCcsmSpreadsheet(okEnv, okScope);
+  setConfig(okEnv, okSs, 'NIGHTLY_FORM_LINK', 'https://forms.example/nightly');
+  setConfig(okEnv, okSs, 'WEEKLY_FORM_LINK', 'https://forms.example/weekly');
+  const matched = okScope.smokeTestPipeline();
+  assert.ok(!matched.errors.some((e) => /PROJECT timezone/i.test(e)),
+    'a matching project timezone must not raise the timezone error: ' + matched.errors.join(' | '));
+})();
+
+// 4. A DUPLICATE form-submit trigger must be an ERROR (known-open minor (d)).
+//    The inventory check only asked "at least one?", so a doubly-installed
+//    handler passed silently — and it is easy to reach, because the converge
+//    sweep deliberately spares form-submit triggers. Every submission then
+//    fires the handler twice: duplicate emails to a real missionary.
+(() => {
+  const spec = env.state.triggers.find((t) => t.handlerFunctionName === 'onNightlyFormSubmit');
+  assert.ok(spec, 'expected an installed onNightlyFormSubmit trigger to duplicate');
+
+  // Install a SECOND trigger for the same handler, exactly as re-attaching the
+  // form would.
+  env.globals.ScriptApp.newTrigger('onNightlyFormSubmit')
+    .forSpreadsheet(ss).onFormSubmit().create();
+
+  const dup = scope.smokeTestPipeline();
+  assert.ok(dup.errors.some((e) => /Duplicate form-submit/i.test(e) && /onNightlyFormSubmit/.test(e)),
+    'a duplicate form-submit trigger must be a smoke-test ERROR, got: ' + dup.errors.join(' | '));
+
+  // Re-running the INSTALLER alone must NOT be enough to clear this: the
+  // converge sweep spares form-submit triggers by design, so it cannot remove
+  // a duplicate one. Asserting that here keeps the remedy in the error message
+  // honest — it tells the operator to deleteAll first, and this is why.
+  scope.setupAllCcsmTriggers();
+  const stillDup = scope.smokeTestPipeline();
+  assert.ok(stillDup.errors.some((e) => /Duplicate form-submit/i.test(e)),
+    'setupAllCcsmTriggers() alone cannot clear a duplicate form-submit trigger (the sweep ' +
+    'spares them), so the error must persist — if this stops being true, update the ' +
+    'remedy text in CCSM_Setup.gs');
+
+  // The documented remedy does work.
+  scope.deleteAllCcsmTriggers();
+  scope.setupAllCcsmTriggers();
+  const restored = scope.smokeTestPipeline();
+  assert.deepStrictEqual(restored.errors, [],
+    'deleteAllCcsmTriggers() + setupAllCcsmTriggers() must produce an error-free project: ' +
+    restored.errors.join(' | '));
+})();
+
 console.log('smokeTestPipeline OK');
 
 // ===========================================================================
@@ -383,8 +458,21 @@ const src = require('fs').readFileSync(
   require('path').join(__dirname, '..', 'CCSM_Setup.gs'), 'utf8');
 assert.ok(!/Utah Provo/i.test(src), 'CCSM_Setup.gs must not contain "Utah Provo"');
 assert.ok(!/America\/Denver/.test(src), 'CCSM_Setup.gs must not contain "America/Denver"');
-assert.ok(!/Session\.getScriptTimeZone/.test(src),
-  'CCSM_Setup.gs must read the timezone from AGENT_CONFIG, not Session.getScriptTimeZone()');
+// The rule this encodes is "timezones that get USED come from AGENT_CONFIG",
+// not "the string Session.getScriptTimeZone never appears". Those were the
+// same thing until integration I-4, whose fix must READ the project timezone
+// in order to compare it with MISSION_TIMEZONE and reject a mismatch. A
+// blanket ban would have forbidden the only available fix for a bug nothing
+// else can detect, so it is narrowed to the actual intent.
+// Counts INVOCATIONS, not mentions: the call site is guarded by a
+// `typeof Session !== 'undefined' && Session.getScriptTimeZone` existence
+// check, which names the method without calling it.
+const scriptTzReads = (src.match(/Session\.getScriptTimeZone\(\)/g) || []).length;
+assert.strictEqual(scriptTzReads, 1,
+  'CCSM_Setup.gs should CALL Session.getScriptTimeZone() exactly once — solely to compare ' +
+  'the project timezone against MISSION_TIMEZONE. Found ' + scriptTzReads + '.');
+assert.ok(!/inTimezone\(\s*Session\./.test(src),
+  'triggers must be pinned with the AGENT_CONFIG timezone, never Session.getScriptTimeZone()');
 assert.ok(!/sister|ellis|agent7|referral/i.test(src),
   'CCSM_Setup.gs must not reintroduce the deliberately-unported systems');
 assert.ok(/America\/Santiago/.test(src),
