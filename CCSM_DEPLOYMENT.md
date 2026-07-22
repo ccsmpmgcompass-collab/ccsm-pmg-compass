@@ -56,7 +56,7 @@ Decision 1 has a trap. Read it before you touch triggers.
 
 # STEP 1 — Build the `COMPASS_CCSM` sheet
 
-The sheet is built by a script, not by hand. That guarantees all 23 tabs, every header, all 99 area rows and all 43 config rows are exactly what the agents expect.
+The sheet is built by a script, not by hand. That guarantees all 23 tabs, every header, all 99 area rows and all 42 config rows are exactly what the agents expect.
 
 This step uses a **standalone** script project — one that is not attached to any spreadsheet. You will throw it away afterwards.
 
@@ -236,7 +236,7 @@ The Gemini key is deliberately **not** kept in the spreadsheet — a spreadsheet
 
 - [ ] `GEMINI_API_KEY` saved in Script Properties
 
-> There is also a `GEMINI_API_KEY` row in the `AGENT_CONFIG` tab. **Nothing reads it.** Every place in the code that needs the key reads Script Properties. Leave the sheet row blank; putting the key there does not work and exposes it to anyone with sheet access.
+> There is **no** `GEMINI_API_KEY` row in the `AGENT_CONFIG` tab, and that is deliberate — the tab is built by a script (Step 1) and gets shared with mission leadership, so no cell exists for the key to leak into. Every place in the code that needs the key reads Script Properties, never the spreadsheet. If you are looking for somewhere to paste the key into the sheet, stop — Script Properties, above, is the only place it goes.
 
 The model name *is* read from the sheet: `AGENT_CONFIG` → `GEMINI_QA_MODEL`, which ships as `gemini-2.5-flash`.
 
@@ -311,7 +311,8 @@ Open `COMPASS_CCSM` → `AGENT_CONFIG` tab. It has two columns, `Key` and `Value
 |---|---|
 | `RELAY_1_URL`, `RELAY_2_URL`, `RELAY_SECRET` | The email-relay system. CCSM does not use it; blank is correct and the health check knows that. |
 | `GOAL_*` (20 rows) | Mission-wide fallback goals per metric. Blank means the agents fall back to their own defaults. Fill later once real numbers exist. |
-| `GEMINI_API_KEY` | **Leave blank** — see Step 4. |
+
+There is no `AGENT_CONFIG` row for the Gemini key — it goes in Script Properties only (Step 4).
 
 ### Missionary email addresses
 
@@ -340,12 +341,11 @@ It checks: the sheet opens by ID; all 23 tabs exist; the two raw form tabs exist
 
 The log ends with `=== smoke test: N error(s), M warning(s) ===`.
 
-- [ ] **0 errors.** Anything logged as `ERROR` must be fixed before going further; each error message names the function to run or the tab to fix.
+- [ ] **Exactly 2 errors, and both are about missing triggers.** No triggers exist yet — that happens in Step 9 — so `smokeTestPipeline()` will always report two `ERROR` lines here: `Missing trigger(s): ...` and `Missing form-submit trigger(s): ...`. Those two, and only those two, are expected right now; do not try to fix them. **Any other `ERROR` line must be fixed before going further** — each error message names the function to run or the tab to fix.
 
 Warnings you should expect at this point, all correct:
 
 - `TEST_MODE = TRUE — every email is redirected...` — that is the ship state.
-- `Missing trigger(s): ...` — reported as an **error** until Step 9. Expected now.
 - `No MISSION_ORG row has a companion email` — if you deferred emails.
 
 ### 7.2 `previewOneCoachingEmail()`
@@ -446,6 +446,14 @@ The Spanish in all 193 messages and 10 knowledge-base rows was **model-written**
 
 Until now nothing has run on its own; you have pressed Run every time. This step makes the system autonomous. Make the three decisions **first** — two of them change what you do here.
 
+### 9.0 — ⚠️ Read this before you run `setupAllCcsmTriggers()` for any reason
+
+Several of the steps below — Decision 1's "switch to `AGENT_REMINDER`" path, Decision 3's check, and 9.1 itself — end with an instruction to run `setupAllCcsmTriggers()`. Before you run it, for any reason, know this:
+
+The Sunday coaching chain schedules its own follow-on triggers (`runAgent1B`, `runAgent1C`) as one-shot "in a few minutes" jobs. `setupAllCcsmTriggers()`'s sweep removes any pending one-shot along with everything else. Running the installer on a **Sunday evening while the chain is in flight** drops that week's coaching emails. Nothing is corrupted — the chain just stops — but that week's missionaries get nothing.
+
+**Install triggers on a weekday morning.** If you must fix something on a Sunday night, wait for the chain to finish (watch `AGENT_RUN_LOG` for Agent1C) or accept losing that week.
+
 ### Decision 1 — Who sends weekly-form reminders (`WEEKLY_REMINDER_OWNER`)
 
 **The choice.** Two different agents can email companionships who have not submitted the weekly form, and both build the *same* Spanish subject line (`Recordatorio: Informe Semanal — <mission>`). Exactly one must own the job.
@@ -527,9 +535,9 @@ It installs 10 scheduled triggers plus the 2 form-submit triggers:
 
 The Run dropdown still lists older per-agent installers: `setupReminderTrigger`, `setupEscalationTriggers`, `setupSuggestionNotifyTrigger`, `setupAgentDuplicateTrigger`, `setupQAFormTrigger`, `setupAgentScoresTrigger`, `setupQA`.
 
-They exist for historical reasons and are wired so that a misclick converges the schedule rather than corrupting it — but **the rule is simple: use `setupAllCcsmTriggers()` and nothing else.**
+They exist for historical reasons and fall into two groups. `setupReminderTrigger`, `setupEscalationTriggers` and `setupSuggestionNotifyTrigger` are delegating shims — each just converges the whole schedule by calling `setupAllCcsmTriggers()` instead of installing anything of its own. `setupAgentDuplicateTrigger`, `setupQAFormTrigger`, `setupAgentScoresTrigger` and `setupQA` install their own single trigger directly (delete-then-recreate); `setupAllCcsmTriggers()` itself calls the first two of those to create the form-submit triggers, so they cannot delegate without recursing. Either way, misclicking one from the dropdown is idempotent and does not corrupt the schedule — but **the rule is still simple: use `setupAllCcsmTriggers()` and nothing else.**
 
-One exception worth knowing: `setupQA()` also writes a header row into the `SUGGESTIONS` tab (the builder leaves that tab empty) and re-checks that `KNOWLEDGE_BASE` has entries. It is idempotent and harmless. Run it once if you want the `SUGGESTIONS` tab labelled; otherwise the agent appends rows there regardless.
+One exception worth knowing: `setupQA()` also writes a header row into the `SUGGESTIONS` tab (the builder leaves that tab empty), installs the `onQAFormSubmit` trigger, and re-checks that `KNOWLEDGE_BASE` has entries. It is idempotent and harmless. Run it once if you want the `SUGGESTIONS` tab labelled; otherwise the agent appends rows there regardless.
 
 ### 9.2b The Q&A form does not exist yet
 
@@ -546,13 +554,7 @@ So until someone builds that form, `CCSM_AgentQA.gs` simply never has anything t
 
 > **Not verified:** that field order was read from the handler's own documentation in `CCSM_AgentQA.gs`. It has never been checked against a real CCSM Q&A form, because no such form exists. Test one submission end to end when the form is built.
 
-### 9.3 Timing warning — do not install triggers mid-chain
-
-The Sunday coaching chain schedules its own follow-on triggers (`runAgent1B`, `runAgent1C`) as one-shot "in a few minutes" jobs. `setupAllCcsmTriggers()`'s sweep removes any pending one-shot along with everything else. Running the installer on a **Sunday evening while the chain is in flight** drops that week's coaching emails. Nothing is corrupted — the chain just stops — but that week's missionaries get nothing.
-
-**Install triggers on a weekday morning.** If you must fix something on a Sunday night, wait for the chain to finish (watch `AGENT_RUN_LOG` for Agent1C) or accept losing that week.
-
-### 9.4 Verify
+### 9.3 Verify
 
 Run `smokeTestPipeline()` again.
 
@@ -669,7 +671,7 @@ All of these take **no arguments**, because the Apps Script Run button cannot pa
 | Tab | Filled by | Notes |
 |---|---|---|
 | `MISSION_ORG` | Builder | 99 area rows, names + leadership flags. **Email columns blank — you fill them.** |
-| `AGENT_CONFIG` | Builder | 43 key/value rows; 4 required blanks you fill (Step 6) |
+| `AGENT_CONFIG` | Builder | 42 key/value rows; 4 required blanks you fill (Step 6) |
 | `QUESTIONS_CONFIG` | Builder | Maps Spanish form headers to metric keys. Do not hand-edit. |
 | `MESSAGE_BANK` | `seedCcsmMessageBank()` | 193 Spanish messages |
 | `KNOWLEDGE_BASE` | `seedCcsmKnowledgeBase()` | 10 Q&A rows |
@@ -710,7 +712,7 @@ All of these take **no arguments**, because the Apps Script Run button cannot pa
 | No weekly reminders at all | `WEEKLY_REMINDER_OWNER` = `AGENT_REMINDER` with the trigger still on Sunday. **The Decision 1 trap.** |
 | Nobody is told when a suggestion is approved | Expected — `notifyAcceptedSuggestions` is unscheduled. Decision 2. |
 | An agent stopped running | Check **Triggers** in the editor, then re-run `setupAllCcsmTriggers()` |
-| Coaching emails missing for one week | Someone ran the trigger installer mid-chain on Sunday night (Step 9.3) |
+| Coaching emails missing for one week | Someone ran the trigger installer mid-chain on Sunday night (Step 9.0) |
 | Gemini answers nothing | `GEMINI_API_KEY` missing from Script Properties (Step 4) — note it is **not** read from the sheet |
 
 ## Related documents

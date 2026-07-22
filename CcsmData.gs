@@ -125,7 +125,6 @@ var CCSM_AGENT_CONFIG_ROWS = [
   ['RELAY_1_URL', ''],
   ['RELAY_2_URL', ''],
   ['RELAY_SECRET', ''],
-  ['GEMINI_API_KEY', ''],
   ['GEMINI_QA_MODEL', 'gemini-2.5-flash'],
   ['MISSED_DAYS_LOOKBACK', '3'],
   // Which agent owns weekly-form non-submitter reminders. AgentReminder's
