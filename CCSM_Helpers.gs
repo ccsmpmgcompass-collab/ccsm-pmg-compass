@@ -244,18 +244,27 @@ function getMissionTimezone() {
  * all emails to TEST_INBOX_EMAIL and resolveSubject() prepends [TEST].
  * When TEST_MODE = FALSE these functions pass through unchanged.
  *
- * ROUTING:
- *   Agent1C → RELAY_1_URL (pmg.compass.coaching@gmail.com) — Sunday coaching
- *   Agent3  → RELAY_2_URL (pmg.compass.alerts@gmail.com)  — Missed days
- *   Agent6  → RELAY_2_URL (pmg.compass.alerts@gmail.com)  — Friday encouragement
- *   All else → MailApp direct from pmg.compass@gmail.com
+ * ROUTING (as implemented below — read the code, not this list, if they ever
+ * disagree again):
+ *   Agent1C          → RELAY_2_URL — Sunday coaching
+ *   Agent3           → RELAY_2_URL — Missed days
+ *   Agent6           → RELAY_2_URL — Friday encouragement
+ *   AgentEscalation  → RELAY_2_URL — Escalation
+ *   All else         → MailApp direct from the script owner's account
  *
- * All three paths set Reply-To: pmg.compass@gmail.com
+ * Every path sets Reply-To: CCSM_REPLY_TO below.
  *
- * REQUIRED AGENT_CONFIG KEYS:
- *   RELAY_1_URL   — Web App URL of pmg.compass.coaching relay script
- *   RELAY_2_URL   — Web App URL of pmg.compass.alerts relay script
- *   RELAY_SECRET  — Shared secret (must match Script Properties in each relay)
+ * KNOWN GAP (final review, integration I-1): RELAY_1_URL is read by NO code
+ * path — Agent1C goes to RELAY_2_URL. Configuring both relays therefore piles
+ * coaching AND alerts onto one account's 100/day limit instead of splitting
+ * them. Left as-is deliberately: splitting the load is a deployment decision
+ * (it needs a second relay account to exist), not a code defect. Decide it
+ * before TEST_MODE=FALSE at full roster scale.
+ *
+ * AGENT_CONFIG KEYS:
+ *   RELAY_2_URL   — Web App URL of the relay script (optional; blank = direct)
+ *   RELAY_SECRET  — Shared secret (must match Script Properties in the relay)
+ *   RELAY_1_URL   — present but currently unread; see KNOWN GAP above
  *
  * @param {string|string[]} to        - Recipient(s).
  * @param {string}          subject   - Email subject line.
@@ -263,7 +272,11 @@ function getMissionTimezone() {
  * @param {string}          [agentName] - Calling agent name for routing.
  */
 function sendEmail(to, subject, body, agentName) {
-  var REPLY_TO    = 'pmg.compass@gmail.com';
+  // CCSM's own reply address. This was inherited verbatim from the fork and
+  // pointed at the ORIGINATING mission's inbox, so every reply from a Chilean
+  // missionary landed in another mission's mail. Must stay a CCSM-owned
+  // address; tests/test_no_provo_residue.js enforces that.
+  var REPLY_TO    = 'ccsm.pmg.compass@gmail.com';
   var SENDER_NAME = 'PMG Compass — ' + getMissionName();
 
   // Normalize array recipients to comma-separated string
@@ -330,12 +343,22 @@ function sendEmail(to, subject, body, agentName) {
 
 /**
  * Sends one test email through each relay and one directly from the main account.
- * Run ONCE after setting up both relay accounts to confirm routing works.
- * Check pmg.compass@gmail.com — three emails should arrive.
+ * Run ONCE after setting up the relay account to confirm routing works.
+ *
+ * Sends to the configured TEST_INBOX_EMAIL — never to a hardcoded address.
+ * This previously mailed three live messages to the ORIGINATING mission's
+ * inbox (inherited from the fork), from a zero-argument function sitting in
+ * the editor's Run dropdown where a misclick reaches it.
  */
 function testRelay() {
-  var testTo   = 'pmg.compass@gmail.com';
-  var testBody = '<p>PMG Compass relay test. If you received this, the relay is working correctly.</p>';
+  var testTo   = (typeof getTestInbox === 'function')
+    ? getTestInbox()
+    : getConfig('TEST_INBOX_EMAIL');
+  if (!testTo) {
+    Logger.log('testRelay: TEST_INBOX_EMAIL is not set — refusing to send. Fill it in AGENT_CONFIG first.');
+    return;
+  }
+  var testBody = '<p>CCSM PMG Compass relay test. If you received this, the relay is working correctly.</p>';
   Logger.log('testRelay: sending three test emails to ' + testTo);
   try { sendEmail(testTo, 'Relay Test — Relay 1 (Coaching)', testBody, 'Agent1C'); Logger.log('Relay 1 OK'); }
   catch (e) { Logger.log('Relay 1 FAILED — ' + e.message); }
@@ -343,7 +366,7 @@ function testRelay() {
   catch (e) { Logger.log('Relay 2 FAILED — ' + e.message); }
   try { sendEmail(testTo, 'Relay Test — Main Account',       testBody);            Logger.log('Main OK'); }
   catch (e) { Logger.log('Main FAILED — ' + e.message); }
-  Logger.log('testRelay: done. Check pmg.compass@gmail.com for 3 emails.');
+  Logger.log('testRelay: done. Check ' + testTo + ' for 3 emails.');
 }
 
 // =============================================================================
