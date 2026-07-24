@@ -55,8 +55,8 @@ for (let i = 0; i < 10; i++) {
     const got = sh.getRange(1, 1, want.length, want[0].length).getValues();
     for (let r = 0; r < want.length; r++) {
       for (let c = 0; c < want[r].length; c++) {
-        assert.strictEqual(String(got[r][c]), String(want[r][c]),
-          `mismatch iter ${i} tab ${tabName} row ${r} col ${c}`);
+        assert.ok(ds.ccsmCellsEqual_(got[r][c], want[r][c]),
+          `mismatch iter ${i} tab ${tabName} row ${r} col ${c}: ${JSON.stringify(got[r][c])} !== ${JSON.stringify(want[r][c])}`);
       }
     }
   });
