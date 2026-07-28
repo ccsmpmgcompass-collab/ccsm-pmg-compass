@@ -15,8 +15,9 @@ app alters CCSM's, or the reverse.
 ## Goal
 
 A standalone Streamlit dashboard, living in CCSM's own repository, reading
-`COMPASS_CCSM`, verified running locally. Cloud deployment is explicitly out of
-scope for this round.
+`COMPASS_CCSM`, fully bilingual (English/Spanish) with a language switch on the
+home page, verified running locally. Cloud deployment is explicitly out of scope
+for this round.
 
 ## Current state (verified 2026-07-28, not assumed)
 
@@ -133,9 +134,66 @@ Plus one write to the live CCSM sheet, confirmed separately with the user before
 execution: add a `MISSION_NAME` row to `AGENT_CONFIG` with the value
 `Chile Concepción South Mission`.
 
-**Language:** UI chrome remains English. Mission-facing content — metric labels,
-mission name, knowledge base — already flows from the sheet, which is Spanish.
-Full UI translation is separate work, deliberately not attempted here.
+### 4a. Bilingual UI (English / Spanish)
+
+The dashboard is fully bilingual, with a language switch at the top of `Home.py`.
+This is the largest single component of the project.
+
+**Size, measured not estimated:** 578 translatable string literals appear in
+direct Streamlit UI calls across the 10 pages. That is a floor — it excludes
+text embedded in `unsafe_allow_html` markdown blocks and in
+`app/components/design_system.py`. Realistic total is 700–900.
+
+Distribution is lopsided; Maintenance, Goals, and Scores together are 59% of it:
+
+| Page | Strings | Page | Strings |
+|---|---|---|---|
+| Maintenance | 143 | Suggestions | 47 |
+| Goals | 107 | Notes | 44 |
+| Scores | 92 | Finding Funnel | 42 |
+| Action Center | 34 | Dashboard | 31 |
+| Breakdowns | 21 | Home | 17 |
+
+**Mechanism.** A new `app/i18n/` package:
+
+- `app/i18n/__init__.py` — exposes `t(text, **kwargs)`, `get_lang()`, `set_lang(lang)`.
+- `app/i18n/es.py` — a single `ES: dict[str, str]` mapping English source string
+  to Spanish.
+
+**The English source string is itself the lookup key.** `t("Area Scores")`
+returns the Spanish value if present and otherwise returns `"Area Scores"`
+unchanged. This makes the retrofit mechanical, requires no invented key
+namespace, and makes an untranslated or renamed string degrade to English
+rather than to a raw key or an exception. Interpolation goes through
+`t("Welcome back, {name}", name=...)`, which looks up the template before
+formatting so word order can differ in Spanish.
+
+**State.** The selection lives in `st.session_state["pmg_lang"]`, defaulting to
+`"en"`. The switch renders at the top of `Home.py` as specified, and is mirrored
+in `render_sidebar()` so the choice can be changed from any page and does not
+reset on navigation.
+
+**Sidebar navigation labels** are derived from filenames under Streamlit's
+file-based page discovery, so `t()` cannot reach them. Translating them requires
+converting `Home.py` to the `st.navigation` / `st.Page` API (available in the
+pinned 1.40.0). This is the structurally riskiest change in the project — it
+alters page URLs — so it is sequenced **last**, and can be abandoned without
+affecting any other translated string.
+
+**Translation quality.** The ~800 Spanish strings are machine-written and must
+get a native-speaker proofread before CCSM relies on them. `MISSION_LOCALE` is
+`es_CL`; prefer Chilean usage and the formal register appropriate to mission
+leadership. Recorded here once as a known limitation, not a blocker.
+
+**Content vs. chrome.** Only UI chrome is translated. Mission content — metric
+labels, mission name, knowledge base, notes — flows from the sheet, which is
+already Spanish, and must not be passed through `t()`.
+
+**Streamlit version.** `requirements.txt:6` pins `streamlit==1.40.0`
+deliberately: newer releases through 1.59.1 have a `st.selectbox` regression
+where clicking a searchable selectbox fails to clear the input. CCSM's venv
+installs the pin. (Note: the Provo working venv has drifted to 1.57.0; CCSM
+should not copy that drift.)
 
 ### 5. Empty-tab behavior
 
@@ -164,12 +222,23 @@ Function:
    raise. Fix every raise.
 6. Confirm the running app never opens `COMPASS_Main`.
 
+Bilingual UI:
+
+7. `t()` returns the English key verbatim for any string absent from `ES` —
+   asserted by a unit test, so a missing translation can never raise.
+8. Toggle to Spanish on Home, navigate to another page, confirm the language
+   persists via `st.session_state["pmg_lang"]`.
+9. A coverage check reports how many extracted UI strings have `ES` entries, so
+   remaining gaps are a known number rather than a surprise.
+10. Walk all 10 pages in each language and confirm neither raises.
+
 ## Out of scope
 
 - Streamlit Cloud deployment and the CCSM-owned GitHub remote (the CCSM repo
   currently has no remote at all).
 - A CCSM-owned GCP project and service account.
-- Spanish UI translation.
+- Native-speaker proofreading of the Spanish translations.
+- Translating sheet-sourced mission content (it is already Spanish).
 - Building the missing tabs or the referral/Tableau/transfer pipelines.
 - `RELAY_2_URL`, still blank in `AGENT_CONFIG` — a known open item from the
   original CCSM deployment, unrelated to the dashboard.
