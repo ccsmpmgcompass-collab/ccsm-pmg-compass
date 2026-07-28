@@ -1,0 +1,45 @@
+{
+  "id": "online_digital",
+  "display_name": "Online & Digital Finding",
+  "description": "Focused on digital-first finding strategies. Emphasizes online referrals, social media outreach, and converting digital contacts into in-person lessons.",
+  "mission_name_placeholder": "Your Mission Name",
+  "primary_language": "English",
+  "ideal_for": "Urban missions in North America and Europe with strong digital finding programs. Missions with dedicated online missionaries.",
+  "nightly_metrics": [
+    "nm_lessons",
+    "member_lessons",
+    "new_found",
+    "online_referrals",
+    "referrals_today",
+    "nm_texts",
+    "nm_meaningful",
+    "nm_contacted",
+    "lsi_given",
+    "mmm_sent"
+  ],
+  "weekly_metrics": ["pew", "date_metric", "gate", "renew", "rc_total"],
+  "kpi_highlights": ["online_referrals", "nm_texts", "new_found", "nm_lessons", "referrals_today"],
+  "coaching_primary_metrics": ["online_referrals", "nm_texts", "new_found", "nm_meaningful", "referrals_today"],
+  "featured_goals": ["baptisms", "on_date", "new_people_to_teach", "at_sacrament", "rc_at_church", "members_nonmember_lessons"],
+  "metric_groups": {
+    "Teaching": ["nm_lessons", "member_lessons"],
+    "Digital Finding": ["online_referrals", "nm_texts", "mmm_sent", "referrals_today"],
+    "Contact Pipeline": ["nm_contacted", "nm_meaningful", "new_found"],
+    "Member Work": ["lsi_given"]
+  },
+  "scoring_weights": {
+    "effort": 0.25,
+    "skill": 0.45,
+    "ki": 0.30
+  },
+  "weekly_ki_patterns": {
+    "(Pew)": "pew",
+    "(Date)": "date_metric",
+    "(Gate)": "gate",
+    "(Renew)": "renew",
+    "(Total)": "rc_total"
+  },
+  "coaching_tone": "online_digital",
+  "form_accent_color": "#5b8dee",
+  "color_theme": "blue"
+}

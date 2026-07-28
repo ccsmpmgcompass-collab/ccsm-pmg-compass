@@ -1,0 +1,45 @@
+{
+  "id": "senior",
+  "display_name": "Senior Missionary",
+  "description": "Designed specifically for senior couple missions. Metrics reflect the unique nature of senior service: member support, less-active visits, mentoring, and community relationships rather than traditional proselytizing volume.",
+  "mission_name_placeholder": "Your Mission Name",
+  "primary_language": "English",
+  "ideal_for": "Senior couple missions in any country. Also useful for missions with a large senior presence alongside young missionaries.",
+  "nightly_metrics": [
+    "nm_lessons",
+    "member_lessons",
+    "la_lessons",
+    "la_Attempt",
+    "rc_lessons",
+    "lsi_given",
+    "referrals_today",
+    "new_found",
+    "fellowshipper_Attempt",
+    "aux_Attempt"
+  ],
+  "weekly_metrics": ["pew", "date_metric", "gate", "renew", "rc_total"],
+  "kpi_highlights": ["la_lessons", "member_lessons", "nm_lessons", "lsi_given", "referrals_today"],
+  "coaching_primary_metrics": ["la_lessons", "member_lessons", "nm_lessons", "lsi_given", "new_found"],
+  "featured_goals": ["baptisms", "on_date", "new_people_to_teach", "at_sacrament", "rc_at_church", "members_nonmember_lessons"],
+  "metric_groups": {
+    "Teaching": ["nm_lessons", "member_lessons", "la_lessons", "rc_lessons"],
+    "Support & Service": ["la_Attempt", "fellowshipper_Attempt", "aux_Attempt"],
+    "Member Work": ["lsi_given"],
+    "Finding & Referrals": ["new_found", "referrals_today"]
+  },
+  "scoring_weights": {
+    "effort": 0.40,
+    "skill": 0.35,
+    "ki": 0.25
+  },
+  "weekly_ki_patterns": {
+    "(Pew)": "pew",
+    "(Date)": "date_metric",
+    "(Gate)": "gate",
+    "(Renew)": "renew",
+    "(Total)": "rc_total"
+  },
+  "coaching_tone": "senior",
+  "form_accent_color": "#4ecda4",
+  "color_theme": "green"
+}

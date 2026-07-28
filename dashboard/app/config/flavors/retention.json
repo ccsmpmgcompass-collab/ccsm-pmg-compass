@@ -1,0 +1,47 @@
+{
+  "id": "retention",
+  "display_name": "Retention Focused",
+  "description": "For missions with high baptism rates but retention challenges. Heavy emphasis on recent convert care — lessons, sacrament attendance, and keeping converts active in the first year.",
+  "mission_name_placeholder": "Your Mission Name",
+  "primary_language": "English",
+  "ideal_for": "Missions in high-growth areas (West Africa, some Latin America) that have many recent converts who need sustained care and fellowship.",
+  "nightly_metrics": [
+    "nm_lessons",
+    "member_lessons",
+    "rc_lessons",
+    "la_lessons",
+    "new_found",
+    "online_referrals",
+    "referrals_today",
+    "lsi_given",
+    "fellowshipper_Attempt",
+    "nm_contacted",
+    "nm_meaningful"
+  ],
+  "weekly_metrics": ["pew", "date_metric", "gate", "renew", "rc_total"],
+  "kpi_highlights": ["rc_lessons", "renew", "gate", "nm_lessons", "new_found"],
+  "coaching_primary_metrics": ["rc_lessons", "renew", "rc_total", "nm_lessons", "fellowshipper_Attempt"],
+  "featured_goals": ["baptisms", "on_date", "new_people_to_teach", "at_sacrament", "rc_at_church", "members_nonmember_lessons"],
+  "metric_groups": {
+    "Recent Convert Care": ["rc_lessons", "fellowshipper_Attempt"],
+    "Teaching": ["nm_lessons", "member_lessons", "la_lessons"],
+    "Finding": ["new_found", "online_referrals", "referrals_today"],
+    "Contact": ["nm_contacted", "nm_meaningful"],
+    "Member Work": ["lsi_given"]
+  },
+  "scoring_weights": {
+    "effort": 0.25,
+    "skill": 0.40,
+    "ki": 0.35
+  },
+  "weekly_ki_patterns": {
+    "(Pew)": "pew",
+    "(Date)": "date_metric",
+    "(Gate)": "gate",
+    "(Renew)": "renew",
+    "(Total)": "rc_total"
+  },
+  "coaching_tone": "retention",
+  "form_accent_color": "#b478ff",
+  "color_theme": "purple"
+}

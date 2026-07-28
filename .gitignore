@@ -1,3 +1,7 @@
 node_modules/
 *.xls
 .superpowers/
+dashboard/venv/
+dashboard/.streamlit/secrets.toml
+dashboard/**/__pycache__/
+.pytest_cache/

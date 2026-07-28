@@ -1,0 +1,45 @@
+{
+  "id": "street_door",
+  "display_name": "Street & Door Finding",
+  "description": "Built for missions where missionaries primarily find through door-to-door and street contacting. Emphasizes contact volume, meaningful conversations, and converting contacts into lessons.",
+  "mission_name_placeholder": "Your Mission Name",
+  "primary_language": "English",
+  "ideal_for": "European missions, some Asian missions, and areas with low member density where cold contacting is the primary finding method.",
+  "nightly_metrics": [
+    "nm_lessons",
+    "member_lessons",
+    "new_found",
+    "online_referrals",
+    "referrals_today",
+    "nm_doors",
+    "nm_contacted",
+    "nm_meaningful",
+    "nm_texts",
+    "lsi_given"
+  ],
+  "weekly_metrics": ["pew", "date_metric", "gate", "renew", "rc_total"],
+  "kpi_highlights": ["nm_doors", "nm_contacted", "nm_meaningful", "nm_lessons", "new_found"],
+  "coaching_primary_metrics": ["nm_doors", "nm_contacted", "nm_meaningful", "nm_lessons", "new_found"],
+  "featured_goals": ["baptisms", "on_date", "new_people_to_teach", "at_sacrament", "rc_at_church", "members_nonmember_lessons"],
+  "metric_groups": {
+    "Teaching": ["nm_lessons", "member_lessons"],
+    "Contacting": ["nm_doors", "nm_contacted", "nm_meaningful", "nm_texts"],
+    "Finding": ["new_found", "online_referrals", "referrals_today"],
+    "Member Work": ["lsi_given"]
+  },
+  "scoring_weights": {
+    "effort": 0.35,
+    "skill": 0.40,
+    "ki": 0.25
+  },
+  "weekly_ki_patterns": {
+    "(Pew)": "pew",
+    "(Date)": "date_metric",
+    "(Gate)": "gate",
+    "(Renew)": "renew",
+    "(Total)": "rc_total"
+  },
+  "coaching_tone": "street_door",
+  "form_accent_color": "#ff6b6b",
+  "color_theme": "red"
+}

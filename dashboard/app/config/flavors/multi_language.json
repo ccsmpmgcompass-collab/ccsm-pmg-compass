@@ -1,0 +1,50 @@
+{
+  "id": "multi_language",
+  "display_name": "Multi-Language",
+  "description": "Designed for missions with two or more language groups operating simultaneously. Tracks primary and secondary language work separately so mission leadership can see each group's contribution.",
+  "mission_name_placeholder": "Your Mission Name",
+  "primary_language": "English",
+  "secondary_language": "Spanish",
+  "ideal_for": "Missions in North America with both English and Spanish-speaking areas, or missions with a distinct language program (Mandarin, French, Portuguese, etc.) alongside the primary language.",
+  "nightly_metrics": [
+    "nm_lessons",
+    "member_lessons",
+    "rc_lessons",
+    "la_lessons",
+    "lsi_given",
+    "new_found",
+    "online_referrals",
+    "referrals_today",
+    "nm_doors",
+    "nm_contacted",
+    "nm_meaningful",
+    "nm_texts",
+    "mmm_sent"
+  ],
+  "weekly_metrics": ["pew", "date_metric", "gate", "renew", "rc_total"],
+  "kpi_highlights": ["nm_lessons", "new_found", "lsi_given", "nm_meaningful", "referrals_today"],
+  "coaching_primary_metrics": ["nm_lessons", "new_found", "lsi_given", "nm_meaningful", "member_lessons"],
+  "featured_goals": ["baptisms", "on_date", "new_people_to_teach", "at_sacrament", "rc_at_church", "members_nonmember_lessons"],
+  "metric_groups": {
+    "Teaching": ["nm_lessons", "member_lessons", "rc_lessons", "la_lessons"],
+    "Finding": ["new_found", "online_referrals", "referrals_today"],
+    "Contacting": ["nm_doors", "nm_contacted", "nm_meaningful", "nm_texts"],
+    "Member Work": ["lsi_given", "mmm_sent"]
+  },
+  "scoring_weights": {
+    "effort": 0.30,
+    "skill": 0.40,
+    "ki": 0.30
+  },
+  "weekly_ki_patterns": {
+    "(Pew)": "pew",
+    "(Date)": "date_metric",
+    "(Gate)": "gate",
+    "(Renew)": "renew",
+    "(Total)": "rc_total"
+  },
+  "coaching_tone": "multi_language",
+  "form_accent_color": "#ff6b6b",
+  "color_theme": "red",
+  "note": "Zone/area structure should separate language groups by zone where possible. Coaching emails will call out per-language performance when zone names indicate the language (e.g., 'Spanish Zone')."
+}

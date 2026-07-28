@@ -1,0 +1,47 @@
+{
+  "id": "reactivation",
+  "display_name": "Less-Active Reactivation",
+  "description": "For missions in established Church areas where much of the work involves reactivating less-active members. Tracks area book contacts, LA visits, return visits, and lessons with less-active members.",
+  "mission_name_placeholder": "Your Mission Name",
+  "primary_language": "English",
+  "ideal_for": "Established church areas in North America, Europe, and South America where there are many less-active members and reactivation is a major focus alongside finding.",
+  "nightly_metrics": [
+    "nm_lessons",
+    "member_lessons",
+    "la_lessons",
+    "rc_lessons",
+    "la_Attempt",
+    "lsi_given",
+    "new_found",
+    "online_referrals",
+    "referrals_today",
+    "nm_contacted",
+    "nm_meaningful"
+  ],
+  "weekly_metrics": ["pew", "date_metric", "gate", "renew", "rc_total"],
+  "kpi_highlights": ["la_lessons", "la_Attempt", "nm_lessons", "new_found", "lsi_given"],
+  "coaching_primary_metrics": ["la_lessons", "la_Attempt", "nm_lessons", "new_found", "member_lessons"],
+  "featured_goals": ["baptisms", "on_date", "new_people_to_teach", "at_sacrament", "rc_at_church", "members_nonmember_lessons"],
+  "metric_groups": {
+    "Less-Active Work": ["la_lessons", "la_Attempt"],
+    "Teaching": ["nm_lessons", "member_lessons", "rc_lessons"],
+    "Finding": ["new_found", "online_referrals", "referrals_today"],
+    "Contacting": ["nm_contacted", "nm_meaningful"],
+    "Member Work": ["lsi_given"]
+  },
+  "scoring_weights": {
+    "effort": 0.30,
+    "skill": 0.40,
+    "ki": 0.30
+  },
+  "weekly_ki_patterns": {
+    "(Pew)": "pew",
+    "(Date)": "date_metric",
+    "(Gate)": "gate",
+    "(Renew)": "renew",
+    "(Total)": "rc_total"
+  },
+  "coaching_tone": "reactivation",
+  "form_accent_color": "#e8a838",
+  "color_theme": "gold"
+}

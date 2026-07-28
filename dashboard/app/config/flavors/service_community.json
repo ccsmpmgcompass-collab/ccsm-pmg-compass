@@ -1,0 +1,45 @@
+{
+  "id": "service_community",
+  "display_name": "Service & Community",
+  "description": "For missions where community service is the primary door-opener for finding people to teach. Tracks service interactions and relationship building as a pathway to teaching opportunities.",
+  "mission_name_placeholder": "Your Mission Name",
+  "primary_language": "English",
+  "ideal_for": "Missions in restricted-access countries, developing world missions, or areas where proselytizing is limited and service opens doors. Also strong for missions with a humanitarian focus.",
+  "nightly_metrics": [
+    "nm_lessons",
+    "member_lessons",
+    "la_lessons",
+    "new_found",
+    "online_referrals",
+    "referrals_today",
+    "nm_meaningful",
+    "nm_contacted",
+    "lsi_given",
+    "fellowshipper_Attempt"
+  ],
+  "weekly_metrics": ["pew", "date_metric", "gate", "renew", "rc_total"],
+  "kpi_highlights": ["nm_lessons", "new_found", "nm_meaningful", "referrals_today", "member_lessons"],
+  "coaching_primary_metrics": ["nm_lessons", "new_found", "nm_meaningful", "lsi_given", "referrals_today"],
+  "featured_goals": ["baptisms", "on_date", "new_people_to_teach", "at_sacrament", "rc_at_church", "members_nonmember_lessons"],
+  "metric_groups": {
+    "Teaching": ["nm_lessons", "member_lessons", "la_lessons"],
+    "Community Finding": ["new_found", "nm_meaningful", "nm_contacted"],
+    "Member & Support": ["lsi_given", "fellowshipper_Attempt"],
+    "Digital": ["online_referrals", "referrals_today"]
+  },
+  "scoring_weights": {
+    "effort": 0.35,
+    "skill": 0.35,
+    "ki": 0.30
+  },
+  "weekly_ki_patterns": {
+    "(Pew)": "pew",
+    "(Date)": "date_metric",
+    "(Gate)": "gate",
+    "(Renew)": "renew",
+    "(Total)": "rc_total"
+  },
+  "coaching_tone": "service_community",
+  "form_accent_color": "#4ecda4",
+  "color_theme": "green"
+}

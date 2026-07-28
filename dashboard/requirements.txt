@@ -1,0 +1,13 @@
+# Pinned exact (not >=): newer Streamlit releases (confirmed through 1.59.1)
+# have a st.selectbox regression — clicking a searchable selectbox doesn't
+# clear the input, so typing appends to the current selection instead of
+# searching. 1.40.0 is confirmed bug-free via direct browser testing. Don't
+# loosen this pin without re-testing selectbox click-and-type behavior.
+streamlit==1.40.0
+gspread>=6.1.2
+google-auth>=2.40.2
+google-auth-oauthlib>=1.2.1
+pandas>=2.0.0
+plotly>=5.0.0
+python-dotenv>=1.0.0
+google-genai>=1.0.0

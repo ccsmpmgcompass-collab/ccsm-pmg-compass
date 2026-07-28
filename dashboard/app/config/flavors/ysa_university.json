@@ -1,0 +1,47 @@
+{
+  "id": "ysa_university",
+  "display_name": "YSA & University",
+  "description": "Built for missions focused on Young Single Adults and university campus work. Tracks campus finding, institute attendance, and the unique rhythms of working with young adults.",
+  "mission_name_placeholder": "Your Mission Name",
+  "primary_language": "English",
+  "ideal_for": "Missions near major universities, missions with a designated YSA district, or missions where a significant portion of the teaching pool is young adults (18-30).",
+  "nightly_metrics": [
+    "nm_lessons",
+    "member_lessons",
+    "rc_lessons",
+    "new_found",
+    "online_referrals",
+    "referrals_today",
+    "nm_contacted",
+    "nm_meaningful",
+    "nm_texts",
+    "lsi_given",
+    "mmm_sent"
+  ],
+  "weekly_metrics": ["pew", "date_metric", "gate", "renew", "rc_total"],
+  "kpi_highlights": ["nm_lessons", "new_found", "nm_meaningful", "lsi_given", "online_referrals"],
+  "coaching_primary_metrics": ["nm_lessons", "new_found", "nm_meaningful", "lsi_given", "referrals_today"],
+  "featured_goals": ["baptisms", "on_date", "new_people_to_teach", "at_sacrament", "rc_at_church", "members_nonmember_lessons"],
+  "metric_groups": {
+    "Teaching": ["nm_lessons", "member_lessons", "rc_lessons"],
+    "Campus & Digital Finding": ["new_found", "online_referrals", "nm_texts", "mmm_sent"],
+    "Contacting": ["nm_contacted", "nm_meaningful"],
+    "Member Work": ["lsi_given"],
+    "Referrals": ["referrals_today"]
+  },
+  "scoring_weights": {
+    "effort": 0.25,
+    "skill": 0.45,
+    "ki": 0.30
+  },
+  "weekly_ki_patterns": {
+    "(Pew)": "pew",
+    "(Date)": "date_metric",
+    "(Gate)": "gate",
+    "(Renew)": "renew",
+    "(Total)": "rc_total"
+  },
+  "coaching_tone": "ysa_university",
+  "form_accent_color": "#5b8dee",
+  "color_theme": "blue"
+}

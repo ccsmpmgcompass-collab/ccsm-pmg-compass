@@ -1,0 +1,52 @@
+{
+  "id": "high_growth",
+  "display_name": "High-Growth / Harvest",
+  "description": "For missions in areas with high receptivity and high volume. Emphasizes rapid progression tracking, lesson volume, and baptism pipeline. Goal targets are set higher than standard missions.",
+  "mission_name_placeholder": "Your Mission Name",
+  "primary_language": "English",
+  "ideal_for": "West Africa, some Asia-Pacific missions, parts of Latin America with very high baptism rates. Areas where the harvest is plentiful and the focus is maximizing teaching volume.",
+  "nightly_metrics": [
+    "nm_lessons",
+    "member_lessons",
+    "rc_lessons",
+    "new_found",
+    "online_referrals",
+    "referrals_today",
+    "nm_doors",
+    "nm_contacted",
+    "nm_meaningful",
+    "lsi_given",
+    "fellowshipper_Attempt",
+    "nm_texts"
+  ],
+  "weekly_metrics": ["pew", "date_metric", "gate", "renew", "rc_total"],
+  "kpi_highlights": ["nm_lessons", "new_found", "gate", "date_metric", "nm_contacted"],
+  "coaching_primary_metrics": ["nm_lessons", "new_found", "nm_meaningful", "member_lessons", "referrals_today"],
+  "featured_goals": ["baptisms", "on_date", "new_people_to_teach", "at_sacrament", "rc_at_church", "members_nonmember_lessons"],
+  "metric_groups": {
+    "Teaching Pipeline": ["nm_lessons", "member_lessons", "rc_lessons"],
+    "Finding": ["new_found", "online_referrals", "referrals_today"],
+    "Contacting": ["nm_doors", "nm_contacted", "nm_meaningful", "nm_texts"],
+    "Fellowship": ["lsi_given", "fellowshipper_Attempt"]
+  },
+  "scoring_weights": {
+    "effort": 0.25,
+    "skill": 0.30,
+    "ki": 0.45
+  },
+  "goal_multipliers": {
+    "baptisms": 2.0,
+    "confirmations": 2.0,
+    "new_people_to_teach": 2.0
+  },
+  "weekly_ki_patterns": {
+    "(Pew)": "pew",
+    "(Date)": "date_metric",
+    "(Gate)": "gate",
+    "(Renew)": "renew",
+    "(Total)": "rc_total"
+  },
+  "coaching_tone": "high_growth",
+  "form_accent_color": "#ff6b6b",
+  "color_theme": "red"
+}

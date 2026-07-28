@@ -1,0 +1,47 @@
+{
+  "id": "standard",
+  "display_name": "Standard Balanced",
+  "description": "A balanced baseline for missions with a healthy mix of finding, teaching, and key indicator tracking. Best for new missions that are still figuring out their primary focus.",
+  "mission_name_placeholder": "Your Mission Name",
+  "primary_language": "English",
+  "ideal_for": "Most mid-size missions with a general proselytizing approach",
+  "nightly_metrics": [
+    "nm_lessons",
+    "member_lessons",
+    "rc_lessons",
+    "la_lessons",
+    "lsi_given",
+    "new_found",
+    "online_referrals",
+    "referrals_today",
+    "nm_doors",
+    "nm_contacted",
+    "nm_meaningful",
+    "nm_texts"
+  ],
+  "weekly_metrics": ["pew", "date_metric", "gate", "renew", "rc_total"],
+  "kpi_highlights": ["nm_lessons", "new_found", "nm_contacted", "lsi_given", "referrals_today"],
+  "coaching_primary_metrics": ["nm_lessons", "new_found", "nm_contacted", "referrals_today"],
+  "featured_goals": ["baptisms", "on_date", "new_people_to_teach", "at_sacrament", "rc_at_church", "members_nonmember_lessons"],
+  "metric_groups": {
+    "Teaching": ["nm_lessons", "member_lessons", "rc_lessons", "la_lessons"],
+    "Finding": ["new_found", "online_referrals", "referrals_today"],
+    "Contacting": ["nm_doors", "nm_contacted", "nm_meaningful", "nm_texts"],
+    "Member Work": ["lsi_given"]
+  },
+  "scoring_weights": {
+    "effort": 0.30,
+    "skill": 0.40,
+    "ki": 0.30
+  },
+  "weekly_ki_patterns": {
+    "(Pew)": "pew",
+    "(Date)": "date_metric",
+    "(Gate)": "gate",
+    "(Renew)": "renew",
+    "(Total)": "rc_total"
+  },
+  "coaching_tone": "standard",
+  "form_accent_color": "#5b8dee",
+  "color_theme": "blue"
+}

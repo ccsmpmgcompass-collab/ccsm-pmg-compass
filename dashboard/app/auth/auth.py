@@ -1,0 +1,134 @@
+"""
+auth.py
+────────────────────────────────────────────────────────────
+Two-layer authentication:
+  Layer 1 — Streamlit Cloud SSO forces Google login (set app to Private).
+  Layer 2 — Code-level allowlist: only approved emails get in regardless of SSO.
+
+Approved emails:
+  - ALWAYS_ALLOWED hardcoded list (owner + mission leadership)
+  - Any AP email from MISSION_ORG (Is_AP = TRUE)
+  - STREAMLIT_DEV_EMAIL in secrets (LOCAL DEV ONLY — must be blank in production)
+"""
+
+import time
+import streamlit as st
+from app.db.queries import get_allowed_emails, get_user_role
+
+_SESSION_TIMEOUT_SECONDS = 4 * 3600  # 4 hours
+
+# ── Hardcoded always-allowed list ──────────────────────────────────────────────
+# These are approved regardless of MISSION_ORG contents.
+# Add or remove emails here to control access tightly.
+_ALWAYS_ALLOWED = {
+    "pmg.compass@gmail.com",                        # system owner/developer
+    "jason.ellis2@churchofjesuschrist.org",         # Mission President
+    "naomi.ellis@churchofjesuschrist.org",          # Sister Ellis
+}
+
+# Mission-leadership roles, plus the always-allowed owner/admin accounts above.
+_LEADERSHIP_ROLES = {"president", "assistant", "leader"}
+
+
+def is_leadership(email: str) -> bool:
+    """
+    True for mission leadership (president/assistant/leader per MISSION_ORG) or
+    for the always-allowed owner/admin accounts. Use this to gate leadership-only
+    pages so the developer/owner account is never locked out.
+    """
+    email = (email or "").lower().strip()
+    if email in _ALWAYS_ALLOWED:
+        return True
+    return get_user_role(email) in _LEADERSHIP_ROLES
+
+
+def require_auth() -> dict:
+    """
+    Enforce authentication. Blocks access and calls st.stop() if not approved.
+    Returns the session dict for authenticated users.
+
+    SECURITY: dev bypass only works when STREAMLIT_DEV_EMAIL is explicitly set
+    in secrets. In production, this key must be absent or empty string.
+    """
+    # ── Session timeout check ─────────────────────────────────────────────────
+    login_at = st.session_state.get("pmg_login_at")
+    if login_at and (time.time() - login_at) > _SESSION_TIMEOUT_SECONDS:
+        st.session_state.pop("pmg_user", None)
+        st.session_state.pop("pmg_login_at", None)
+        st.warning("Your session has expired. Please sign in again.")
+        st.stop()
+
+    cached = st.session_state.get("pmg_user")
+
+    # ── Local dev bypass (MUST be blank in production secrets) ────────────────
+    dev_email = (st.secrets.get("STREAMLIT_DEV_EMAIL", "") or "").strip()
+    if dev_email:
+        if cached and login_at and cached.get("email") == dev_email.lower():
+            return cached
+        return _build_session(dev_email.lower())
+
+    # ── Streamlit Cloud SSO check ─────────────────────────────────────────────
+    viewer = st.user
+    is_logged_in = getattr(viewer, "is_logged_in", None)
+
+    if is_logged_in is False:
+        st.error(
+            "Access denied. You must be signed in with an approved Google account. "
+            "Contact the mission office if you need access."
+        )
+        st.stop()
+
+    email = (getattr(viewer, "email", "") or "").lower().strip()
+    if not email:
+        st.error("Could not verify your identity. Please sign out and sign back in.")
+        st.stop()
+
+    # ── Reuse the cached session only if it belongs to the CURRENT signed-in
+    #    account. Binding to the live SSO email means a different account in the
+    #    same browser session re-resolves instead of showing the prior user.
+    if cached and login_at and cached.get("email") == email:
+        return cached
+
+    # ── Allowlist check — both layers must pass ───────────────────────────────
+    allowed = _ALWAYS_ALLOWED | {e.lower() for e in get_allowed_emails()}
+
+    if email not in allowed:
+        import datetime
+        print(f"[AUTH BLOCKED] {email} attempted access at {datetime.datetime.utcnow().isoformat()}")
+        st.error(
+            "Access denied. Your account is not approved for PMG Compass. "
+            "Contact the mission office to request access."
+        )
+        st.stop()
+
+    # Prefer the real display name from the identity provider; fall back to a
+    # name derived from the email local-part.
+    display_name = (getattr(viewer, "name", "") or "").strip()
+    return _build_session(email, display_name)
+
+
+def _display_name_from_email(email: str) -> str:
+    return email.split("@")[0].replace(".", " ").replace("_", " ").title()
+
+
+def _build_session(email: str, display_name: str = "") -> dict:
+    """Build and cache the session dict for `email` (overwrites any prior user)."""
+    role = get_user_role(email)
+    name = (display_name or "").strip() or _display_name_from_email(email)
+    st.session_state["pmg_user"] = {
+        "email": email,
+        "name":  name,
+        "role":  role,
+    }
+    st.session_state["pmg_login_at"] = time.time()
+    return st.session_state["pmg_user"]
+
+
+def get_session() -> dict:
+    """Return current session or empty dict."""
+    return st.session_state.get("pmg_user", {})
+
+
+def clear_session() -> None:
+    st.session_state.pop("pmg_user", None)
+    st.session_state.pop("pmg_login_at", None)

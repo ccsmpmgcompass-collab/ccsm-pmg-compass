@@ -1,0 +1,55 @@
+{
+  "id": "member_referral",
+  "display_name": "Member-Referral Heavy",
+  "description": "Designed for missions in high-member-density areas where working through ward members is the primary finding strategy. Tracks LSI contacts, member lessons, fellowshippers, and referrals in depth.",
+  "mission_name_placeholder": "Your Mission Name",
+  "primary_language": "English",
+  "ideal_for": "High-member-density missions in North America (Utah, Idaho, Arizona, parts of Canada) where ward members are an active source of referrals.",
+  "nightly_metrics": [
+    "nm_lessons",
+    "member_lessons",
+    "rc_lessons",
+    "la_lessons",
+    "lsi_given",
+    "lsi_followups",
+    "new_found",
+    "online_referrals",
+    "nm_doors",
+    "nm_contacted",
+    "nm_meaningful",
+    "mmm_sent",
+    "la_Attempt",
+    "fellowshipper_Attempt",
+    "aux_Attempt",
+    "info_Attempt",
+    "locos_Attempt",
+    "referrals_today",
+    "nm_texts"
+  ],
+  "weekly_metrics": ["pew", "date_metric", "gate", "renew", "rc_total"],
+  "kpi_highlights": ["nm_lessons", "lsi_given", "new_found", "referrals_today", "member_lessons"],
+  "coaching_primary_metrics": ["lsi_given", "member_lessons", "nm_lessons", "referrals_today", "lsi_followups"],
+  "featured_goals": ["baptisms", "on_date", "new_people_to_teach", "at_sacrament", "rc_at_church", "members_nonmember_lessons"],
+  "metric_groups": {
+    "Teaching": ["nm_lessons", "member_lessons", "rc_lessons", "la_lessons"],
+    "Member Work": ["lsi_given", "lsi_followups", "mmm_sent", "fellowshipper_Attempt"],
+    "Finding": ["new_found", "online_referrals", "referrals_today"],
+    "Contacting": ["nm_doors", "nm_contacted", "nm_meaningful", "nm_texts"],
+    "Support Attempts": ["la_Attempt", "aux_Attempt", "info_Attempt", "locos_Attempt"]
+  },
+  "scoring_weights": {
+    "effort": 0.30,
+    "skill": 0.40,
+    "ki": 0.30
+  },
+  "weekly_ki_patterns": {
+    "(Pew)": "pew",
+    "(Date)": "date_metric",
+    "(Gate)": "gate",
+    "(Renew)": "renew",
+    "(Total)": "rc_total"
+  },
+  "coaching_tone": "member_referral",
+  "form_accent_color": "#e8a838",
+  "color_theme": "gold"
+}

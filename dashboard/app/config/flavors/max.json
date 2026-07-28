@@ -1,0 +1,56 @@
+{
+  "id": "max",
+  "display_name": "Max / Full Featured",
+  "description": "All available metrics enabled. For tech-forward missions that want complete visibility into every activity. Mission leadership can decide which metrics to emphasize in coaching without losing any data.",
+  "mission_name_placeholder": "Your Mission Name",
+  "primary_language": "English",
+  "ideal_for": "Tech-savvy missions with a dedicated data culture. Best when the mission president and APs are comfortable reviewing detailed dashboards. Also useful as a starting point to discover which metrics matter most before switching to a focused flavor.",
+  "nightly_metrics": [
+    "nm_lessons",
+    "member_lessons",
+    "rc_lessons",
+    "la_lessons",
+    "lsi_given",
+    "lsi_followups",
+    "new_found",
+    "online_referrals",
+    "nm_doors",
+    "nm_contacted",
+    "nm_meaningful",
+    "mmm_sent",
+    "la_Attempt",
+    "fellowshipper_Attempt",
+    "aux_Attempt",
+    "info_Attempt",
+    "locos_Attempt",
+    "referrals_today",
+    "nm_texts"
+  ],
+  "weekly_metrics": ["pew", "date_metric", "gate", "renew", "rc_total"],
+  "kpi_highlights": ["nm_lessons", "new_found", "nm_contacted", "lsi_given", "referrals_today"],
+  "coaching_primary_metrics": ["nm_lessons", "new_found", "lsi_given", "nm_meaningful", "member_lessons"],
+  "featured_goals": ["baptisms", "on_date", "new_people_to_teach", "at_sacrament", "rc_at_church", "members_nonmember_lessons"],
+  "metric_groups": {
+    "Teaching": ["nm_lessons", "member_lessons", "rc_lessons", "la_lessons"],
+    "Member Work": ["lsi_given", "lsi_followups", "mmm_sent", "fellowshipper_Attempt"],
+    "Finding": ["new_found", "online_referrals", "referrals_today"],
+    "Contacting": ["nm_doors", "nm_contacted", "nm_meaningful", "nm_texts"],
+    "Support Attempts": ["la_Attempt", "aux_Attempt", "info_Attempt", "locos_Attempt"]
+  },
+  "scoring_weights": {
+    "effort": 0.30,
+    "skill": 0.40,
+    "ki": 0.30
+  },
+  "weekly_ki_patterns": {
+    "(Pew)": "pew",
+    "(Date)": "date_metric",
+    "(Gate)": "gate",
+    "(Renew)": "renew",
+    "(Total)": "rc_total"
+  },
+  "coaching_tone": "max",
+  "form_accent_color": "#b478ff",
+  "color_theme": "purple",
+  "note": "This flavor uses ALL 19 available nightly metrics. Form will be longer than other flavors. Mission leadership should be prepared to explain each metric to missionaries during the first few weeks."
+}

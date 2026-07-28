@@ -1,0 +1,46 @@
+{
+  "id": "teaching_conversion",
+  "display_name": "Teaching & Conversion",
+  "description": "Designed for high-teaching missions where the emphasis is on moving friends through the lesson progression toward baptism. Detailed tracking of lessons, commitments, and progression indicators.",
+  "mission_name_placeholder": "Your Mission Name",
+  "primary_language": "English",
+  "ideal_for": "Latin America, Philippines, parts of Africa and Asia-Pacific where missionary work moves quickly and lesson volume is high.",
+  "nightly_metrics": [
+    "nm_lessons",
+    "member_lessons",
+    "rc_lessons",
+    "new_found",
+    "online_referrals",
+    "referrals_today",
+    "nm_doors",
+    "nm_contacted",
+    "nm_meaningful",
+    "lsi_given",
+    "nm_texts"
+  ],
+  "weekly_metrics": ["pew", "date_metric", "gate", "renew", "rc_total"],
+  "kpi_highlights": ["nm_lessons", "new_found", "nm_meaningful", "gate", "date_metric"],
+  "coaching_primary_metrics": ["nm_lessons", "new_found", "nm_meaningful", "member_lessons", "referrals_today"],
+  "featured_goals": ["baptisms", "on_date", "new_people_to_teach", "at_sacrament", "rc_at_church", "members_nonmember_lessons"],
+  "metric_groups": {
+    "Teaching Pipeline": ["nm_lessons", "member_lessons", "rc_lessons"],
+    "Finding": ["new_found", "online_referrals", "referrals_today"],
+    "Contacting": ["nm_doors", "nm_contacted", "nm_meaningful", "nm_texts"],
+    "Member Work": ["lsi_given"]
+  },
+  "scoring_weights": {
+    "effort": 0.30,
+    "skill": 0.45,
+    "ki": 0.25
+  },
+  "weekly_ki_patterns": {
+    "(Pew)": "pew",
+    "(Date)": "date_metric",
+    "(Gate)": "gate",
+    "(Renew)": "renew",
+    "(Total)": "rc_total"
+  },
+  "coaching_tone": "teaching_conversion",
+  "form_accent_color": "#4ecda4",
+  "color_theme": "green"
+}
