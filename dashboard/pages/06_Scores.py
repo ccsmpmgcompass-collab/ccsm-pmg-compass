@@ -1207,7 +1207,7 @@ def _render_scores_tab():
     st.info(
         "Scores are automatically recomputed each Sunday at 11 PM Mountain Time by the "
         "AgentScores Apps Script engine. To trigger an immediate recalculation, open the "
-        "Google Apps Script editor for COMPASS_Main and run computeAllAreaScores()."
+        "Google Apps Script editor for COMPASS_CCSM and run computeAllAreaScores()."
     )
 
     st.divider()

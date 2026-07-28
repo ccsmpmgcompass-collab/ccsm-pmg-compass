@@ -1,7 +1,7 @@
 """
 18_Maintenance.py
 PMG Compass | Maintenance
-The mission's back office in one tabbed page — COMPASS_Main is meant to be
+The mission's back office in one tabbed page — COMPASS_CCSM is meant to be
 backend-only, so anything that used to require opening the Sheet should be
 doable here instead:
   ✅ To-Do & Health — weekly checklist, data snapshot, pipeline health, agent runs
@@ -259,7 +259,7 @@ if _sec == _TAB_HEALTH:
     # ── Connection & Configuration ────────────────────────────────────────────
     render_section_label("Connection & Configuration")
 
-    # Tabs the app and agents cannot function without. Read from COMPASS_Main
+    # Tabs the app and agents cannot function without. Read from COMPASS_CCSM
     # live so a renamed/deleted tab is caught here before it surfaces as a
     # blank page.
     _REQUIRED_TABS = [
@@ -313,7 +313,7 @@ if _sec == _TAB_HEALTH:
     if _missing_tabs:
         st.caption(
             "A required tab going missing usually means someone renamed or "
-            "deleted it in COMPASS_Main. Restore the exact name — agents and "
+            "deleted it in COMPASS_CCSM. Restore the exact name — agents and "
             "this app look tabs up by name."
         )
 
@@ -949,7 +949,7 @@ elif _sec == _TAB_QUESTIONS:
                 st.info(
                     "The question-sync web app isn't deployed yet, so pushing "
                     "from here is disabled. One-time setup: paste "
-                    "**docs/FormQuestionSyncWebApp.gs** into the COMPASS_Main "
+                    "**docs/FormQuestionSyncWebApp.gs** into the COMPASS_CCSM "
                     "Apps Script editor, deploy it as a web app, then add "
                     "QUESTION_SYNC_WEBAPP_URL and QUESTION_SYNC_WEBAPP_SECRET "
                     "to this app's secrets. Until then, form questions have to "
@@ -998,15 +998,15 @@ elif _sec == _TAB_QUESTIONS:
 elif _sec == _TAB_SYSTEM:
     render_section_label("Quick Links")
     st.caption(
-        "If the app is ever wrong or down, COMPASS_Main is the source of truth "
+        "If the app is ever wrong or down, COMPASS_CCSM is the source of truth "
         "— everything the mission reports lives there."
     )
     _l1, _l2, _l3 = st.columns(3)
     try:
-        _l1.link_button("Open COMPASS_Main ↗", _get_spreadsheet().url,
+        _l1.link_button("Open COMPASS_CCSM ↗", _get_spreadsheet().url,
                         use_container_width=True)
     except Exception as e:
-        _l1.error(f"COMPASS_Main link unavailable — {e}")
+        _l1.error(f"COMPASS_CCSM link unavailable — {e}")
     _nf_link = get_config_value("NIGHTLY_FORM_LINK", "")
     if _nf_link:
         _l2.link_button("Nightly form ↗", _nf_link, use_container_width=True)
@@ -1071,7 +1071,7 @@ elif _sec == _TAB_SYSTEM:
             "Clear data cache",
             use_container_width=True,
             help="Drops all 5-minute cached reads so every page refetches live "
-                 "from COMPASS_Main. Use when the Sheet was just edited and "
+                 "from COMPASS_CCSM. Use when the Sheet was just edited and "
                  "pages still show old numbers.",
         ):
             st.cache_data.clear()
@@ -1091,17 +1091,17 @@ elif _sec == _TAB_SYSTEM:
     # ── Connected systems ─────────────────────────────────────────────────────
     render_section_label("Everything This System Is Connected To")
     st.markdown(
-        "- **COMPASS_Main (Google Sheet)** — the only data store. Every tab the "
+        "- **COMPASS_CCSM (Google Sheet)** — the only data store. Every tab the "
         "agents and this app read or write lives there (link above).\n"
         "- **Google Forms** — the nightly + weekly report forms (links above) "
         "write into NIGHTLY_FORM_RAW / WEEKLY_FORM_RAW; the Questions & "
         "Suggestions form feeds AgentQA.\n"
-        "- **Apps Script agents** — live *inside* COMPASS_Main (Extensions → "
+        "- **Apps Script agents** — live *inside* COMPASS_CCSM (Extensions → "
         "Apps Script). The table below lists them; `docs/` in the git repo "
         "holds reference copies, but **only code pasted into the online editor "
         "actually runs**.\n"
         "- **This app (Streamlit Cloud)** — auto-deploys the `main` branch. "
-        "Reads COMPASS_Main via the service account; writes Notes, Score "
+        "Reads COMPASS_CCSM via the service account; writes Notes, Score "
         "Config, and the tabs this page edits.\n"
         "- **GitHub Actions** — cloud buttons in this app dispatch "
         "`transfer-roster-pull.yml` (portal roster → TRANSFER_IMPORT), "
@@ -1174,7 +1174,7 @@ elif _sec == _TAB_SYSTEM:
             "4. **Check secrets**: Streamlit Cloud → app → Settings → Secrets "
             "must contain the service account, COMPASS_SHEET_NAME, and "
             "GEMINI_API_KEY. The service account email must have access to "
-            "COMPASS_Main (share the Sheet with it).\n"
+            "COMPASS_CCSM (share the Sheet with it).\n"
             "5. **No data at all?** The agents write the tabs this app reads — "
             "check Agent Runs (To-Do & Health tab) and Apps Script triggers, "
             "not the app."
@@ -1182,7 +1182,7 @@ elif _sec == _TAB_SYSTEM:
 
     with st.expander("If agents stopped running or emails stopped sending"):
         st.markdown(
-            "1. Open COMPASS_Main → **Extensions → Apps Script → Triggers** "
+            "1. Open COMPASS_CCSM → **Extensions → Apps Script → Triggers** "
             "(clock icon) and confirm each agent's time-driven trigger still "
             "exists.\n"
             "2. Check **Executions** in the same editor for red failed runs — "

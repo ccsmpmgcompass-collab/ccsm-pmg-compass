@@ -1,7 +1,7 @@
 """
 queries.py
 ────────────────────────────────────────────────────────────
-All data query functions for COMPASS_Main Google Sheets tabs.
+All data query functions for COMPASS_CCSM Google Sheets tabs.
 No Supabase. No external APIs. Read from Google Sheets only.
 
 Tab schemas
@@ -2210,7 +2210,7 @@ def get_mission_recommended_goals() -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# NOTES (read/write to NOTES tab in COMPASS_Main)
+# NOTES (read/write to NOTES tab in COMPASS_CCSM)
 # ══════════════════════════════════════════════════════════════════════════════
 
 _NOTES_HEADER = [
@@ -2550,7 +2550,7 @@ def get_blitz_dates(area: str = None):
 
 def get_tableau_detail() -> tuple:
     """
-    Load persisted Finding Detail CSV from COMPASS_Main.
+    Load persisted Finding Detail CSV from COMPASS_CCSM.
     Returns (df, uploaded_by, uploaded_at) or (empty_df, '', '').
     Row 1 is metadata, row 2 is the real header.
     """
@@ -2570,7 +2570,7 @@ def get_tableau_detail() -> tuple:
 
 def get_tableau_ranking() -> tuple:
     """
-    Load persisted Finding Ranking CSV from COMPASS_Main.
+    Load persisted Finding Ranking CSV from COMPASS_CCSM.
     Returns (df, uploaded_by, uploaded_at) or (empty_df, '', '').
     """
     df = read_tab("TABLEAU_RANKING")

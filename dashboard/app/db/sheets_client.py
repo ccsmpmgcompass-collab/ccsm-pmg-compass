@@ -1,7 +1,7 @@
 """
 sheets_client.py
 ────────────────────────────────────────────────────────────
-Gspread connection and base read/write helpers for COMPASS_Main.
+Gspread connection and base read/write helpers for COMPASS_CCSM.
 
 All read functions are cached with st.cache_data(ttl=300).
 Write functions (notes only) bypass cache and call cache_clear() after.
@@ -126,7 +126,7 @@ def _read_tab_cached(tab_name: str, header_marker: str = None) -> pd.DataFrame:
 
 def read_tab(tab_name: str, header_marker: str = None) -> pd.DataFrame:
     """
-    Read a COMPASS_Main tab and return as a DataFrame. Cached 5 min.
+    Read a COMPASS_CCSM tab and return as a DataFrame. Cached 5 min.
 
     header_marker: name of a column that must exist in the real header row.
     Agent-written tabs (DASHBOARD_SUMMARY, WEEKLY_KI, LIVE_SNAPSHOT) carry their

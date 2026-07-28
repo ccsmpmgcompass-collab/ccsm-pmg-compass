@@ -645,7 +645,7 @@ _APP_KNOWLEDGE = (
     "- AgentReminder (weekly, Monday): emails compliance reminders to areas that missed the weekly Google Form.\n"
     "\n"
     "DATA FLOW:\n"
-    "1. Missionaries fill the nightly or weekly Google Form -> the response lands in a RAW tab in the COMPASS_Main spreadsheet.\n"
+    "1. Missionaries fill the nightly or weekly Google Form -> the response lands in a RAW tab in the COMPASS_CCSM spreadsheet.\n"
     "2. The same night, Agent3 processes the nightly form -> DAILY_LOG and LIVE_SNAPSHOT update. On Mondays, Agent1A/1B/1C also run to send the weekly coaching emails.\n"
     "3. The weekly form flows WEEKLY_FORM_RAW -> WEEKLY_KI, aggregated by Agent5A at noon.\n"
     "4. Agent5A runs daily at noon -> writes DASHBOARD_SUMMARY -> the Dashboard shows the new totals.\n"
