@@ -30,7 +30,7 @@ from app.db.action_center_queries import (
 )
 
 st.set_page_config(
-    page_title="Action Center — PMG Compass",
+    page_title="CCSM · Action Center — PMG Compass",
     page_icon="🔔",
     layout="wide",
 )

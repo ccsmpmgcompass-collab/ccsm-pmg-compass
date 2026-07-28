@@ -16,7 +16,7 @@ from app.analytics.finding_funnel import (
     PRESETS, data_date_bounds, preset_range, filter_by_range, build_area_rankings,
 )
 
-st.set_page_config(page_title="Finding Funnel — PMG Compass", page_icon="", layout="wide")
+st.set_page_config(page_title="CCSM · Finding Funnel — PMG Compass", page_icon="", layout="wide")
 
 user = require_auth()
 inject_global_css()

@@ -44,7 +44,7 @@ from app.db.sheets_client import (
 )
 
 st.set_page_config(
-    page_title="Maintenance — PMG Compass",
+    page_title="CCSM · Maintenance — PMG Compass",
     page_icon="",
     layout="wide",
 )

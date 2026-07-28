@@ -61,7 +61,7 @@ from app.db.queries import (
 )
 
 st.set_page_config(
-    page_title="Breakdowns — PMG Compass",
+    page_title="CCSM · Breakdowns — PMG Compass",
     layout="wide",
 )
 

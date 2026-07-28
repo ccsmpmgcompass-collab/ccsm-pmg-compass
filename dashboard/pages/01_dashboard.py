@@ -41,7 +41,7 @@ from app.utils.area_helpers import (
 from datetime import date, timedelta
 
 st.set_page_config(
-    page_title="Dashboard — PMG Compass",
+    page_title="CCSM · Dashboard — PMG Compass",
     layout="wide",
 )
 

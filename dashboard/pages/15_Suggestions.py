@@ -11,7 +11,7 @@ from app.components.design_system import (
 from app.db.queries import get_suggestions, set_suggestion_status, get_config_value
 
 st.set_page_config(
-    page_title="Suggestions — PMG Compass",
+    page_title="CCSM · Suggestions — PMG Compass",
     page_icon="",
     layout="wide",
 )

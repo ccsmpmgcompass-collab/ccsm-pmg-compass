@@ -51,7 +51,7 @@ from app.db.sheets_client import overwrite_tab, read_tab
 # ── Page config ───────────────────────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="Scores — PMG Compass",
+    page_title="CCSM · Scores — PMG Compass",
     page_icon="",
     layout="wide",
 )
