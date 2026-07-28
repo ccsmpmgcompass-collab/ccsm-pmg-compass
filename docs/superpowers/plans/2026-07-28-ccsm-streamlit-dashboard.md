@@ -17,7 +17,8 @@
 - **Local port:** run on **8502**. Provo's dev app uses 8501; both must be able to run at once.
 - **Python invocation:** always `dashboard/venv/Scripts/python.exe`, never bare `python` — a bare call hits a system install missing these packages.
 - **Translation scope:** UI chrome only. Sheet-sourced content (metric labels, mission name, knowledge base, notes, area names) is already Spanish and must never pass through `t()`.
-- **Live-system boundary:** the only write to `COMPASS_CCSM` in this plan is Task 14, and it requires explicit user confirmation at that moment.
+- **Live-system boundary:** this plan performs **no writes** to `COMPASS_CCSM` or any live system. Every sheet interaction is read-only. If a task appears to need a write, stop and ask.
+- **Non-ASCII output:** mission data contains accented characters (`Chile Concepción South Mission`). Never pipe sheet output through `grep` — it treats the stream as binary and silently drops matching lines. Redirect to a file and read it instead. This exact trap produced a false "MISSION_NAME is missing" finding during planning.
 
 ---
 
@@ -1239,30 +1240,23 @@ git status --short
 
 Expected: only the pre-existing `.gitignore` and `app/config/settings.py` modifications that were there before this work began. Anything else means the isolation promise was broken.
 
-- [ ] **Step 4: Ask the user to confirm the live sheet write**
+- [ ] **Step 4: Verify `MISSION_NAME` reads correctly (read-only — no write)**
 
-`COMPASS_CCSM`'s `AGENT_CONFIG` has no `MISSION_NAME` row, so every page header reads "Mission". Adding it means appending one row to a **live production sheet**.
+`AGENT_CONFIG` **already has** a `MISSION_NAME` row (`Chile Concepción South Mission`, verified 2026-07-28). An earlier draft of this plan claimed it was missing; that was a `grep` artifact — the value contains `ó`, so grep treated the stream as binary and suppressed the line.
 
-Show the user the exact intended change and wait for explicit approval:
-
-```
-Tab:   AGENT_CONFIG (COMPASS_CCSM)
-Action: append one row
-Key:   MISSION_NAME
-Value: Chile Concepción South Mission
-```
-
-Do not proceed without a clear yes. If declined, headers keep reading "Mission" — record that and move on.
-
-- [ ] **Step 5: Perform the write, then verify by reading it back**
-
-Only after approval. Append the row, then confirm:
+**No write to any live sheet occurs in this project.** Confirm the value reaches the UI:
 
 ```powershell
-venv\Scripts\python.exe -c "import tomllib,gspread; from google.oauth2.service_account import Credentials; s=tomllib.load(open('.streamlit/secrets.toml','rb')); c=Credentials.from_service_account_info(dict(s['gcp_service_account']),scopes=['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']); ws=gspread.authorize(c).open('COMPASS_CCSM').worksheet('AGENT_CONFIG'); print([r for r in ws.get_all_values() if r and r[0]=='MISSION_NAME'])"
+venv\Scripts\python.exe -c "import tomllib,gspread; from google.oauth2.service_account import Credentials; s=tomllib.load(open('.streamlit/secrets.toml','rb')); c=Credentials.from_service_account_info(dict(s['gcp_service_account']),scopes=['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']); ws=gspread.authorize(c).open('COMPASS_CCSM').worksheet('AGENT_CONFIG'); print([r[:2] for r in ws.get_all_values() if r and r[0]=='MISSION_NAME'])"
 ```
 
 Expected: `[['MISSION_NAME', 'Chile Concepción South Mission']]`.
+
+If any step in this plan appears to require a write to `COMPASS_CCSM`, stop and ask — it is out of scope.
+
+- [ ] **Step 5: Confirm the mission name renders, including the accent**
+
+Launch the app and confirm page headers read "Chile Concepción South Mission" with the accent intact (a mojibake `Concepci�n` means an encoding bug in the read path, not a sheet problem).
 
 - [ ] **Step 6: Final browser walkthrough**
 
