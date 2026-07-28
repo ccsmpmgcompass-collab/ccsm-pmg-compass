@@ -6,7 +6,7 @@ Two-layer authentication:
   Layer 2 — Code-level allowlist: only approved emails get in regardless of SSO.
 
 Approved emails:
-  - ALWAYS_ALLOWED hardcoded list (owner + mission leadership)
+  - ALWAYS_ALLOWED hardcoded list (CCSM system account + Mission President)
   - Any AP email from MISSION_ORG (Is_AP = TRUE)
   - STREAMLIT_DEV_EMAIL in secrets (LOCAL DEV ONLY — must be blank in production)
 """
@@ -21,9 +21,9 @@ _SESSION_TIMEOUT_SECONDS = 4 * 3600  # 4 hours
 # These are approved regardless of MISSION_ORG contents.
 # Add or remove emails here to control access tightly.
 _ALWAYS_ALLOWED = {
-    "pmg.compass@gmail.com",                        # system owner/developer
-    "jason.ellis2@churchofjesuschrist.org",         # Mission President
-    "naomi.ellis@churchofjesuschrist.org",          # Sister Ellis
+    "ccsm.pmg.compass@gmail.com",   # CCSM system account (from AGENT_CONFIG)
+    # TODO(CCSM): add the Mission President's churchofjesuschrist.org address.
+    # Deliberately left unset - do not guess an address for an auth allowlist.
 }
 
 # Mission-leadership roles, plus the always-allowed owner/admin accounts above.
