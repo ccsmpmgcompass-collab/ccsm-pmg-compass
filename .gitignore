@@ -2,6 +2,25 @@ node_modules/
 *.xls
 .superpowers/
 dashboard/venv/
-dashboard/.streamlit/secrets.toml
 dashboard/**/__pycache__/
 .pytest_cache/
+
+# ── Secrets — never commit ────────────────────────────────────────────────────
+# Broad on purpose: this repo is destined for a CCSM-owned GitHub remote, and a
+# key that reaches a remote must be treated as compromised and rotated even if
+# the commit is later removed. Patterns are unanchored so they match at any
+# depth, not just the repo root.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+secrets.toml
+**/secrets.toml
+*.pem
+*.key
+service_account*.json
+*-service-account*.json
+credentials*.json
+client_secret*.json
+gcp_*.json
