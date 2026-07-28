@@ -629,8 +629,6 @@ _APP_KNOWLEDGE = (
     "- Scores: three tabs. Scores — weekly composite scores per area across four dimensions (Effort, Skill, KI, Effectiveness), weighting configurable with an inline editor. Daily Activity — a day-by-day explorer of the nightly form across every metric, area, and date (from DAILY_LOG). Analyze — automatic anomaly detection (areas down >30% vs their 4-week baseline) and next-week projections via linear regression. (Merged into one page July 2026.)\n"
     "- Finding Funnel: the finding-to-baptism pipeline built from uploaded Tableau CSV exports, plus area rankings. Requires a manual Tableau upload.\n"
     "- Notes: area notes with tags, full-text search, and follow-up-date email reminders.\n"
-    "- Reports: PDF generator — a mission-wide weekly report, a per-stake president report, or quarterly Tableau area/zone/district/mission reports (Tableau tab is MP/AP only; local-machine-only for the Tableau downloads).\n"
-    "- Transfer Flow: when each transfer starts and ends, with 5/6/7-week length editing (leadership only), plus a Roster Update tab that pulls the current roster, previews the diff, applies it to MISSION_ORG, and syncs both forms (MP/AP only).\n"
     "- Maintenance: the back office — weekly maintenance to-do, data freshness + agent-run health, adding knowledge-base Q&As, agent configuration settings, form-question activation, test mode, and cache controls. (Absorbed the former Data Status page.)\n"
     "\n"
     "AGENTS (Google Apps Script automations that run on a schedule):\n"

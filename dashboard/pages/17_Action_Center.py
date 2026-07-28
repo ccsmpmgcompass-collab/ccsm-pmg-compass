@@ -62,18 +62,16 @@ if summary["suggestions_ap_count"] > 0:
     with st.container(border=True):
         st.markdown(f"**{summary['suggestions_ap_count']} suggestion(s) at AP Approval**")
         if st.button("Review in Suggestions", key="ac_go_ap_approval"):
-            st.session_state["sugg_active_tab"] = "Suggestions"
             st.session_state["sug_status"] = "AP Approval"
-            st.switch_page("pages/15_Suggestions_&_Miracles.py")
+            st.switch_page("pages/15_Suggestions.py")
 
 if summary["suggestions_mp_count"] > 0:
     _any_items = True
     with st.container(border=True):
         st.markdown(f"**{summary['suggestions_mp_count']} suggestion(s) at Mission President Approval**")
         if st.button("Review in Suggestions", key="ac_go_mp_approval"):
-            st.session_state["sugg_active_tab"] = "Suggestions"
             st.session_state["sug_status"] = "Mission President Approval"
-            st.switch_page("pages/15_Suggestions_&_Miracles.py")
+            st.switch_page("pages/15_Suggestions.py")
 
 if summary["followups_count"] > 0:
     _any_items = True

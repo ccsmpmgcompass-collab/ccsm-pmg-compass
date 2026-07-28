@@ -71,3 +71,32 @@ def test_miracles_removed():
     assert p.exists(), "page should be renamed to 15_Suggestions.py"
     assert "miracle_pdf" not in p.read_text(encoding="utf-8-sig")
     assert not (ROOT / "app" / "export").exists()
+
+
+def test_no_references_to_missing_pages():
+    """Every st.switch_page/st.page_link target must resolve to a real file.
+    A rename or a cut page leaves callers pointing at nothing, which raises
+    StreamlitAPIException at runtime for the user who clicks it.
+
+    Parses the calls with ast rather than string-matching, so it only flags
+    real switch_page/page_link invocations (not the word appearing in a
+    comment or docstring) and isn't fooled by whitespace/line-wrapping.
+    """
+    bad = []
+    for f in _py_files():
+        tree = ast.parse(f.read_text(encoding="utf-8-sig"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func
+            name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", None)
+            if name not in ("switch_page", "page_link"):
+                continue
+            if not node.args:
+                continue
+            arg = node.args[0]
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                target = arg.value
+                if target.endswith(".py") and not (ROOT / target).exists():
+                    bad.append(f"{f.relative_to(ROOT)} -> {target}")
+    assert bad == [], f"references to nonexistent pages: {bad}"

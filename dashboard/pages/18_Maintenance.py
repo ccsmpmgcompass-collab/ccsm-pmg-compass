@@ -9,7 +9,6 @@ doable here instead:
   ⚙️ Agent Settings — every AGENT_CONFIG value, editable in place
   📝 Form Questions — activate/deactivate form questions + push to Google Forms
   🔧 System         — links, test mode, cache controls, connected-systems inventory
-The transfer schedule lives on its own Transfer Flow sidebar page.
 Writes: KNOWLEDGE_BASE (new entries), AGENT_CONFIG (setting edits + TEST_MODE),
 QUESTIONS_CONFIG (toggles + new questions). Everything else is read-only.
 """
@@ -174,7 +173,6 @@ if _sec == _TAB_HEALTH:
         "DAILY_LOG's latest date is yesterday or today (Data Freshness below)",
         "SCORES has the week that just ended",
         "Any red run: open its Notes/Error message in Agent Runs below",
-        "Transfer week only: transfer applied on Transfer Flow → Roster Update and MISSION_ORG verified",
         "First Monday of the month: Streamlit Cloud analytics + Apps Script quotas checked",
     ]
     _done = 0

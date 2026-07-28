@@ -1,4 +1,4 @@
-from app.config.flavor_loader import flavor, METRIC_LABELS
+﻿from app.config.flavor_loader import flavor, METRIC_LABELS
 import re
 import streamlit as st
 from app.auth.auth import require_auth, is_leadership

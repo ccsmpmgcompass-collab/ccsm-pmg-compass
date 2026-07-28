@@ -144,8 +144,6 @@ with st.expander("App Guide — what each page does"):
 
 **Operations**
 - **Notes** — Area notes with tags, search, and email follow-up reminders.
-- **Reports** — Generate PDFs: mission-wide weekly report, a per-stake president report, or quarterly Tableau area/zone/district reports (MP/AP only).
-- **Transfer Flow** — When each transfer starts and ends with 5/6/7-week length editing, plus the roster update workflow (pull → preview → apply → sync forms, MP/AP only).
 - **Maintenance** — System health, weekly to-do, knowledge base, agent settings, and form-question configuration.
 """)
 
