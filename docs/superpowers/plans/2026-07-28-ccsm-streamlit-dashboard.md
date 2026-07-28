@@ -54,8 +54,12 @@ CUT_PAGES = ["11_Reports.py", "12_Transfer_Flow.py", "14_Referrals.py"]
 
 
 def _py_files():
+    """Exclude tests/ - this module's own source contains the very strings the
+    guards search for ("config.settings", "COMPASS_Main"), so scanning it would
+    make the guards permanently self-matching."""
     return [p for p in ROOT.rglob("*.py")
-            if "__pycache__" not in p.parts and "venv" not in p.parts]
+            if "__pycache__" not in p.parts and "venv" not in p.parts
+            and "tests" not in p.parts]
 
 
 def _module_to_path(mod: str):
@@ -210,7 +214,22 @@ the isolation promise as executable checks."
 
 ---
 
-### Task 2: Remove the Miracles tab from page 15
+### Task 2: ~~Remove the Miracles tab from page 15~~ — ABSORBED INTO TASK 1
+
+**Skip this task.** It was folded into Task 1 during execution and is a no-op.
+
+**Why:** Task 1's `test_no_import_escapes_dashboard` cannot pass while
+`pages/15_Suggestions_&_Miracles.py` still imports `app.export.miracle_pdf`,
+and this task was what removed that import. Splitting them left Task 1 with no
+green state — a sequencing defect in the plan as written. The work below was
+performed as part of Task 1; it is retained for reference only.
+
+---
+
+<details>
+<summary>Original Task 2 text (executed within Task 1)</summary>
+
+### Remove the Miracles tab from page 15
 
 **Files:**
 - Modify: `dashboard/pages/15_Suggestions_&_Miracles.py` (drop the `from app.export.miracle_pdf import ...` at line 12 and the Miracles tab body around line 276)
@@ -262,6 +281,22 @@ git commit -m "feat(dashboard): drop Miracles tab, COMPASS_CCSM has no Miracles 
 Removes the last consumer of app/export/, so the whole export package
 stays out of the closure. Page renamed to 15_Suggestions.py."
 ```
+
+</details>
+
+### Task 2b: Correct the sheet name in user-facing text (done within Task 1)
+
+Found during Task 1, not anticipated by this plan. `COMPASS_Main` appears in
+**14 user-facing strings** — 12 in `18_Maintenance.py`, 1 in `06_Scores.py`, and
+1 in `gemini_chat.py`'s Gemini system prompt. This is a correctness bug, not
+cosmetics: the Maintenance page would instruct CCSM leadership to open **Provo's
+spreadsheet** as their source of truth, and the system prompt would teach the
+assistant the wrong data store.
+
+Fix: replace the sheet-name token with `COMPASS_CCSM` in UI copy, the system
+prompt, and docstrings alike. Change only the token — do not reword surrounding
+prose. Do not touch `_get_spreadsheet()`'s `st.secrets["COMPASS_SHEET_NAME"]`
+lookup; runtime targeting was already correct.
 
 ---
 
