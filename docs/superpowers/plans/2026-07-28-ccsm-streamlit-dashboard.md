@@ -310,7 +310,7 @@ lookup; runtime targeting was already correct.
 - Consumes: `dashboard/app/auth/auth.py` from Task 1.
 - Produces: `_ALWAYS_ALLOWED: set[str]` containing only CCSM accounts. `is_leadership(email) -> bool` and `require_auth() -> dict` keep their existing signatures.
 
-**Open item:** the CCSM Mission President's email is not yet known. Seed with `CCSM.PMG.Compass@gmail.com` (the value in CCSM's `AGENT_CONFIG`) and leave a clearly marked line to add the MP. Do not invent an address.
+**Decided 2026-07-28 — not an open item.** The user will add the Mission President's address themselves after handoff. Seed the allowlist with `CCSM.PMG.Compass@gmail.com` (the value in CCSM's `AGENT_CONFIG`) and leave the marked comment line in place permanently. **Do not wait on this, and do not invent an address** — the marked line is the deliverable, not a placeholder to be filled in later by an implementer.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -424,7 +424,11 @@ STREAMLIT_DEV_EMAIL = "ccsm.pmg.compass@gmail.com"  # LOCAL DEV ONLY
 # ... copied verbatim ...
 ```
 
-`GEMINI_API_KEY` blank only disables the Home chat panel (`Home.py:234` raises a caught `st.error`); every other page works. Ask the user for CCSM's key; do not reuse Provo's.
+**Leave `GEMINI_API_KEY` blank.** Verified 2026-07-28: no CCSM Gemini key exists in any `.env` or `secrets.toml` on this machine — the only key present is **Provo's**, in `PMG-Compass/.streamlit/secrets.toml`. CCSM's key is expected in Apps Script → Project Settings → Script Properties, and the user is retrieving it separately.
+
+**Never copy Provo's Gemini key into this app.** Doing so would re-couple the two missions through a shared quota and a shared billing identity — the exact thing this project exists to prevent. A blank key only disables the Home chat panel (`Home.py:234` raises a caught `st.error`); all 9 other pages work normally.
+
+**Secrets hygiene (applies to every task):** `.gitignore` was hardened in `61eddd6` and verified to ignore `.env` and `secrets.toml` at any depth. Never print a key's value to the console, into a report file, or into a commit — report presence and length only. A key that reaches a git remote must be rotated even if the commit is later removed.
 
 - [ ] **Step 4: Confirm it reads the right sheet before launching any UI**
 
