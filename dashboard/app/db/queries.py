@@ -840,7 +840,7 @@ def get_districts(zone: str = None) -> list:
 
 
 def get_allowed_emails() -> set:
-    """All valid companion email addresses from MISSION_ORG (allowed to view dashboard)."""
+    """All valid companion email addresses from MISSION_ORG only (allowed to view dashboard)."""
     df = get_areas_df()
     emails = set()
     for col in ("Companion1_Email", "Companion2_Email"):
@@ -849,10 +849,6 @@ def get_allowed_emails() -> set:
                 e = str(e).strip().lower()
                 if e and "@" in e and "notreadyyet" not in e and "tbd@" not in e:
                     emails.add(e)
-    emails.update({
-        "jason.ellis2@churchofjesuschrist.org",
-        "naomi.ellis@churchofjesuschrist.org",
-    })
     return emails
 
 

@@ -1119,7 +1119,7 @@ elif _sec == _TAB_SYSTEM:
             ("Agent5A", "Dashboard summary aggregator → DASHBOARD_SUMMARY", "daily at noon"),
             ("Agent5B", "Friday encouragement checker", "Friday"),
             ("Agent6", "Friday encouragement email sender", "Friday PM"),
-            ("Agent7", "Nightly report for Sister Ellis", "nightly ~10:15 PM"),
+            ("Agent7", "Nightly report for the Mission President's wife", "nightly ~10:15 PM"),
             ("AgentScores", "Weekly Effort/Skill/KI/Effectiveness scores → SCORES", "Monday"),
             ("AgentQA", "Auto-answers Q&S form submissions (KNOWLEDGE_BASE + Gemini)", "on form submit"),
             ("AgentEscalation", "Failsafe emails for missing nightly/weekly reports", "daily 10 AM & ~8:45 PM MT"),

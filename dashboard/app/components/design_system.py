@@ -379,13 +379,26 @@ hr {
 </style>
 """
 
-_TEST_MODE_BANNER = (
-    "<div style='background:linear-gradient(135deg,#7f1d1d,#991b1b);"
-    "color:#fecaca;padding:10px 16px;font-weight:700;font-size:13px;"
-    "text-align:center;margin-bottom:12px;border-radius:8px;"
-    "border:1px solid rgba(239,68,68,0.3);letter-spacing:0.02em;'>"
-    "TEST MODE ACTIVE — Emails redirected to pmg.compass@gmail.com</div>"
-)
+def _test_mode_banner() -> str:
+    """Build the TEST MODE banner at render time from the real config value.
+
+    Never falls back to a hardcoded address — if TEST_INBOX_EMAIL is empty,
+    the banner still renders but names no inbox.
+    """
+    from app.db.queries import get_config_value
+    inbox = get_config_value("TEST_INBOX_EMAIL", "").strip()
+    message = (
+        f"TEST MODE ACTIVE — Emails redirected to {inbox}"
+        if inbox
+        else "TEST MODE ACTIVE — Emails redirected to the test inbox"
+    )
+    return (
+        "<div style='background:linear-gradient(135deg,#7f1d1d,#991b1b);"
+        "color:#fecaca;padding:10px 16px;font-weight:700;font-size:13px;"
+        "text-align:center;margin-bottom:12px;border-radius:8px;"
+        "border:1px solid rgba(239,68,68,0.3);letter-spacing:0.02em;'>"
+        f"{_html.escape(message)}</div>"
+    )
 
 _PILL_COLORS: dict[str, tuple[str, str, str]] = {
     "blue":   ("rgba(99,102,241,0.15)",  "rgba(99,102,241,0.4)",  "#a5b4fc"),
@@ -426,7 +439,7 @@ def inject_global_css() -> None:
     try:
         from app.db.queries import get_config_value
         if get_config_value("TEST_MODE", "FALSE").upper() == "TRUE":
-            st.markdown(_TEST_MODE_BANNER, unsafe_allow_html=True)
+            st.markdown(_test_mode_banner(), unsafe_allow_html=True)
     except Exception:
         pass
 

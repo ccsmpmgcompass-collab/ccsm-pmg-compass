@@ -123,7 +123,7 @@ else:
             with btn_col:
                 if status == "Mission President Approval":
                     if st.button("Final Approval", key=f"finapp_{rid}", type="primary",
-                                  help="Mission President's final approval — emails pmg.compass@gmail.com"):
+                                  help="Mission President's final approval — emails ccsm.pmg.compass@gmail.com"):
                         _apply("Final Approval")
                 if status != "AP Approval":
                     if st.button("AP Approval", key=f"apapp_{rid}", type="secondary",
@@ -138,7 +138,7 @@ else:
                         _apply("Hold")
                 if status != "Done":
                     if st.button("Done", key=f"impl_{rid}",
-                                  help="Mark as implemented/deployed — emails pmg.compass@gmail.com"):
+                                  help="Mark as implemented/deployed — emails ccsm.pmg.compass@gmail.com"):
                         _apply("Done")
                 if status != "Rejected":
                     if st.button("Reject", key=f"rej_{rid}"):

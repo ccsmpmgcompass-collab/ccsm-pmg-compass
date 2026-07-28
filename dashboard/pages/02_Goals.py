@@ -118,7 +118,7 @@ def _can_edit_goals(user: dict) -> bool:
     """True for MP, APs, and the system owner account."""
     return (
         user.get("role") in ("president", "assistant")
-        or user.get("email") == "pmg.compass@gmail.com"
+        or str(user.get("email", "")).strip().lower() == "ccsm.pmg.compass@gmail.com"
     )
 
 
