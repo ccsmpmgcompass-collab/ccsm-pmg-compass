@@ -1,22 +1,30 @@
-import re
+import sys
 from pathlib import Path
 
-AUTH = Path(__file__).resolve().parent.parent / "app" / "auth" / "auth.py"
+# Add dashboard directory to path so app.* imports work from parent directory
+dashboard_dir = Path(__file__).resolve().parent.parent
+if str(dashboard_dir) not in sys.path:
+    sys.path.insert(0, str(dashboard_dir))
 
+from app.auth.auth import _ALWAYS_ALLOWED
 
-def _allowlist_block() -> str:
-    text = AUTH.read_text(encoding="utf-8-sig")
-    m = re.search(r"_ALWAYS_ALLOWED\s*=\s*\{(.*?)\}", text, re.S)
-    assert m, "_ALWAYS_ALLOWED literal not found"
-    return m.group(1)
+PROVO_ACCOUNTS = {
+    "jason.ellis2@churchofjesuschrist.org",
+    "naomi.ellis@churchofjesuschrist.org",
+    "pmg.compass@gmail.com",
+}
 
 
 def test_no_provo_accounts_in_allowlist():
-    block = _allowlist_block().lower()
-    # Check for Provo email addresses as complete quoted strings (not substrings of CCSM account)
-    for bad in ('pmg.compass@gmail.com', 'jason.ellis2@churchofjesuschrist.org', 'naomi.ellis@churchofjesuschrist.org'):
-        assert f'"{bad}"' not in block, f"Provo account {bad} still allowlisted"
+    """Assert against the real set, not its source text. A source-text check
+    is fooled by quote style, spacing and line wrapping - and would have been
+    fooled here, since "pmg.compass@gmail.com" is a substring of the CCSM
+    account "ccsm.pmg.compass@gmail.com"."""
+    normalized = {e.strip().lower() for e in _ALWAYS_ALLOWED}
+    leaked = normalized & PROVO_ACCOUNTS
+    assert leaked == set(), f"Provo accounts in CCSM allowlist: {leaked}"
 
 
 def test_ccsm_account_present():
-    assert "ccsm.pmg.compass@gmail.com" in _allowlist_block().lower()
+    normalized = {e.strip().lower() for e in _ALWAYS_ALLOWED}
+    assert "ccsm.pmg.compass@gmail.com" in normalized

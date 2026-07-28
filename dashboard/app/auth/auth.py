@@ -6,7 +6,7 @@ Two-layer authentication:
   Layer 2 — Code-level allowlist: only approved emails get in regardless of SSO.
 
 Approved emails:
-  - ALWAYS_ALLOWED hardcoded list (CCSM system account + Mission President)
+  - ALWAYS_ALLOWED hardcoded list (CCSM system account; Mission President once added — see TODO below)
   - Any AP email from MISSION_ORG (Is_AP = TRUE)
   - STREAMLIT_DEV_EMAIL in secrets (LOCAL DEV ONLY — must be blank in production)
 """
