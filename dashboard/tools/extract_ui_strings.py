@@ -15,6 +15,14 @@ UI_CALLS = {
 }
 TEXT_KWARGS = {"label", "help", "placeholder", "title", "subtitle", "body"}
 
+# Calls whose *choices* are user-visible too. Their options arrive as a list
+# literal, so they are unreachable by the plain positional-arg scan below and
+# were silently absent from the coverage denominator until this was added.
+CHOICE_CALLS = {
+    "selectbox", "radio", "multiselect", "tabs", "segmented_control",
+    "select_slider", "pills",
+}
+
 
 def _is_stylesheet(s: str) -> bool:
     """A `<style>` block reaches st.markdown as a string but is CSS, not UI
@@ -50,6 +58,13 @@ def extract(paths: list[str]) -> list[str]:
             args = list(node.args) + [
                 k.value for k in node.keywords if k.arg in TEXT_KWARGS
             ]
+            if _call_name(node) in CHOICE_CALLS:
+                # Descend one level into option lists. Only literal elements:
+                # a list built from sheet data is mission content, already
+                # Spanish, and must never be translated again.
+                for a in list(args):
+                    if isinstance(a, ast.List):
+                        args.extend(a.elts)
             for a in args:
                 if isinstance(a, ast.Constant) and isinstance(a.value, str):
                     s = a.value.strip()

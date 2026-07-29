@@ -28,6 +28,34 @@ def test_ignores_dynamic_arguments(tmp_path: Path):
     assert all("some_variable" not in s for s in found)
 
 
+CHOICE_FIXTURE = '''
+import streamlit as st
+mode = st.radio("Show", ["All", "Behind only"], horizontal=True)
+tab_a, tab_b = st.tabs(["Scores", "Analyze"])
+zone = st.selectbox("Zone", zone_opts_from_sheet)
+'''
+
+
+def test_option_lists_are_extracted(tmp_path: Path):
+    """Choices are user-visible. They arrive as a list literal, so the plain
+    positional-arg scan never reached them and they sat outside the coverage
+    denominator entirely."""
+    f = tmp_path / "choices.py"
+    f.write_text(CHOICE_FIXTURE, encoding="utf-8")
+    found = extract([str(f)])
+    for s in ("Show", "All", "Behind only", "Scores", "Analyze", "Zone"):
+        assert s in found, f"{s!r} missing from {found}"
+
+
+def test_dynamic_option_lists_are_left_alone(tmp_path: Path):
+    """A list built from sheet data is mission content - already Spanish, and
+    translating it again would corrupt area/zone names."""
+    f = tmp_path / "choices.py"
+    f.write_text(CHOICE_FIXTURE, encoding="utf-8")
+    found = extract([str(f)])
+    assert all("zone_opts_from_sheet" not in s for s in found)
+
+
 CSS_FIXTURE = '''
 import streamlit as st
 st.markdown("<style>div[data-testid='x']{color:#fff !important}</style>",
