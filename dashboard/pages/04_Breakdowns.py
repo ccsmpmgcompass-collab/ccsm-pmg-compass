@@ -49,6 +49,7 @@ from app.components.design_system import (
 )
 from app.components.scope_selector import render_scope_selectors
 from app.config.flavor_loader import flavor
+from app.i18n import t
 from app.db.queries import (
     create_note,
     get_area_goals,
@@ -91,7 +92,7 @@ def _render_area_notes(
     selected_district: str,
 ) -> None:
     """Leadership notes for one area — list them, and add new ones."""
-    render_section_label("Notes")
+    render_section_label(t("Notes"))
 
     try:
         _notes_raw = get_notes(user_email=user["email"], show_resolved=True)
@@ -103,7 +104,7 @@ def _render_area_notes(
     else:
         _area_notes = pd.DataFrame()
 
-    _show_resolved = st.checkbox("Show resolved notes", value=False, key="show_resolved_notes")
+    _show_resolved = st.checkbox(t("Show resolved notes"), value=False, key="show_resolved_notes")
 
     if not _area_notes.empty and "resolved" in _area_notes.columns:
         if not _show_resolved:
@@ -112,7 +113,7 @@ def _render_area_notes(
             ]
 
     if _area_notes.empty:
-        st.info("No notes for this area.")
+        st.info(t("No notes for this area."))
     else:
         for _, _note in _area_notes.iterrows():
             _content = str(_note.get("content", ""))
@@ -137,14 +138,14 @@ def _render_area_notes(
                 unsafe_allow_html=True,
             )
 
-    with st.expander("Add Note", expanded=False):
-        _new_content = st.text_area("Note *", height=100, placeholder="Enter note content...", key="note_content_input")
-        _new_tags = st.text_input("Tags (comma-separated)", placeholder="training, concern", key="note_tags_input")
-        _has_fu = st.checkbox("Set a follow-up date", key="note_has_followup")
-        _new_fu = st.date_input("Follow-up Date", value=date.today(), key="note_followup_date") if _has_fu else None
-        if st.button("Save Note", key="note_save_btn"):
+    with st.expander(t("Add Note"), expanded=False):
+        _new_content = st.text_area(t("Note *"), height=100, placeholder=t("Enter note content..."), key="note_content_input")
+        _new_tags = st.text_input(t("Tags (comma-separated)"), placeholder=t("training, concern"), key="note_tags_input")
+        _has_fu = st.checkbox(t("Set a follow-up date"), key="note_has_followup")
+        _new_fu = st.date_input(t("Follow-up Date"), value=date.today(), key="note_followup_date") if _has_fu else None
+        if st.button(t("Save Note"), key="note_save_btn"):
             if not _new_content.strip():
-                st.warning("Note content is required.")
+                st.warning(t("Note content is required."))
             else:
                 _fu_str = str(_new_fu) if _new_fu is not None else ""
                 create_note(
@@ -156,7 +157,7 @@ def _render_area_notes(
                     area=selected_area,
                     follow_up_date=_fu_str,
                 )
-                st.success("Note saved.")
+                st.success(t("Note saved."))
                 st.rerun()
 
 
@@ -165,8 +166,9 @@ def _render_area_notes(
 # ══════════════════════════════════════════════════════════════════════════════
 
 render_page_header(
-    "Breakdowns",
-    f"{get_config_value('MISSION_NAME', flavor.display_name)} — Zone, District & Area Performance",
+    t("Breakdowns"),
+    t("{mission} — Zone, District & Area Performance",
+      mission=get_config_value("MISSION_NAME", flavor.display_name)),
 )
 
 # Everything from the selectors down lives in ONE st.fragment: a dropdown /
@@ -216,10 +218,10 @@ def _scope_body() -> None:
 
     if _level is None:
         st.info(
-            "Pick a Zone, District or Area above — type in any box to search. "
-            "The deepest selection is what gets broken down: choose a zone for the "
-            "zone view, add a district to drill into it, add an area for the "
-            "single-area deep-dive."
+            t("Pick a Zone, District or Area above — type in any box to search. "
+              "The deepest selection is what gets broken down: choose a zone for the "
+              "zone view, add a district to drill into it, add an area for the "
+              "single-area deep-dive.")
         )
         return
 
@@ -267,7 +269,7 @@ def _scope_body() -> None:
     # no submissions yet should still show who is serving there.
     if _level == "area":
         render_lineage_badge(selected_area)
-        render_section_label("Companionship")
+        render_section_label(t("Companionship"))
         _card_row = _areas_all[
             _areas_all["Area_Name"].astype(str).str.strip() == selected_area
         ]
@@ -279,19 +281,20 @@ def _scope_body() -> None:
                 district=selected_district,
             )
         else:
-            st.warning("Companionship info not found in MISSION_ORG.")
+            st.warning(t("Companionship info not found in MISSION_ORG."))
 
     daily_hist = _scope_to_areas(_load_daily_history(), "Area", group_areas)
 
     if not group_areas:
         st.info(
-            f"MISSION_ORG lists no active areas for {scope_value}."
+            t("MISSION_ORG lists no active areas for {scope}.", scope=scope_value)
         )
         return
 
     if daily_hist.empty:
         st.info(
-            f"No data yet for {scope_value}. Submit the nightly form or run a data refresh."
+            t("No data yet for {scope}. Submit the nightly form or run a data refresh.",
+              scope=scope_value)
         )
         # An area with no submissions yet still gets its Notes — leadership may
         # well want to write one about exactly that.

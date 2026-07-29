@@ -1,6 +1,36 @@
 from pathlib import Path
 
-from tools.extract_ui_strings import extract
+from tools.extract_ui_strings import extract, extract_unwrapped
+
+WRAPPED_FIXTURE = '''
+import streamlit as st
+from app.i18n import t
+st.info(t("Already wrapped"))
+st.button("Not yet wrapped")
+_MSG = t("Wrapped away from any widget")
+'''
+
+
+def test_wrapped_strings_stay_in_the_denominator(tmp_path: Path):
+    """Wrapping a literal in t() makes it an argument of `t`, not of st.info.
+    If the scan only looked at UI-call arguments the string would vanish, and
+    a fully wrapped file with an empty ES dict would report 100% translated
+    while rendering English."""
+    f = tmp_path / "w.py"
+    f.write_text(WRAPPED_FIXTURE, encoding="utf-8")
+    found = extract([str(f)])
+    assert "Already wrapped" in found
+    assert "Not yet wrapped" in found
+    assert "Wrapped away from any widget" in found
+
+
+def test_unwrapped_is_tracked_separately(tmp_path: Path):
+    """A literal still handed straight to a widget renders English however
+    complete ES is, so it is a distinct failure from a missing translation."""
+    f = tmp_path / "w.py"
+    f.write_text(WRAPPED_FIXTURE, encoding="utf-8")
+    todo = extract_unwrapped([str(f)])
+    assert todo == ["Not yet wrapped"], todo
 
 FIXTURE = '''
 import streamlit as st

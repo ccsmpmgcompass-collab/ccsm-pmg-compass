@@ -55,6 +55,31 @@ def test_interpolation_works_in_english_too():
         "Welcome back, Elder Fox"
 
 
+def test_triple_quoted_block_resolves_despite_surrounding_newlines():
+    """The extractor keys ES on the STRIPPED string, but a triple-quoted
+    literal reaches t() with its leading/trailing newlines intact. Without a
+    stripped-key fallback every such block would silently render English
+    while the coverage gate reported it fully translated."""
+    set_lang("es")
+    ES["**Overview**\n- Home"] = "**Resumen**\n- Inicio"
+    assert t("\n**Overview**\n- Home\n") == "\n**Resumen**\n- Inicio\n"
+
+
+def test_surrounding_whitespace_is_preserved():
+    """Markdown spacing is load-bearing - the block must not come back
+    stripped, or list and heading rendering shifts."""
+    set_lang("es")
+    ES["Hello"] = "Hola"
+    assert t("\n\nHello\n") == "\n\nHola\n"
+
+
+def test_exact_key_still_wins_over_stripped():
+    set_lang("es")
+    ES["\nHello\n"] = "EXACT"
+    ES["Hello"] = "STRIPPED"
+    assert t("\nHello\n") == "EXACT"
+
+
 def test_set_lang_rejects_unknown():
     with pytest.raises(ValueError):
         set_lang("fr")

@@ -1,5 +1,17 @@
 """Extract English UI strings from Streamlit calls so translation work is
-driven by a generated list rather than by reading files and hoping."""
+driven by a generated list rather than by reading files and hoping.
+
+Two questions have to be answered separately, and conflating them is how a
+retrofit like this ends up silently green:
+
+  1. Is every user-facing literal routed through t()?   -> extract_unwrapped()
+  2. Does every routed literal have a Spanish entry?    -> extract() vs ES
+
+Measuring only (2) against UI-call arguments would be self-defeating: wrapping
+a literal in t() turns it into an argument of `t` rather than of `st.info`, so
+the string disappears from that scan entirely. A file could be fully wrapped
+with an empty ES dict and report 100% translated while rendering English.
+"""
 
 import ast
 import sys
@@ -10,7 +22,7 @@ UI_CALLS = {
     "warning", "error", "success", "button", "selectbox", "radio", "checkbox",
     "text_input", "text_area", "multiselect", "slider", "expander", "tabs",
     "metric", "toggle", "number_input", "date_input", "toast", "popover",
-    "download_button", "link_button", "form_submit_button",
+    "download_button", "link_button", "form_submit_button", "spinner",
     "render_page_header", "render_section_label",
 }
 TEXT_KWARGS = {"label", "help", "placeholder", "title", "subtitle", "body"}
@@ -22,6 +34,8 @@ CHOICE_CALLS = {
     "selectbox", "radio", "multiselect", "tabs", "segmented_control",
     "select_slider", "pills",
 }
+
+TRANSLATE_FN = "t"
 
 
 def _is_stylesheet(s: str) -> bool:
@@ -46,30 +60,61 @@ def _call_name(node: ast.Call) -> str:
     return ""
 
 
-def extract(paths: list[str]) -> list[str]:
-    found: set[str] = set()
+def _literals(nodes) -> list[str]:
+    out = []
+    for a in nodes:
+        if isinstance(a, ast.Constant) and isinstance(a.value, str):
+            s = a.value.strip()
+            if len(s) > 1 and not _is_stylesheet(s):
+                out.append(s)
+    return out
+
+
+def _ui_call_args(node: ast.Call) -> list:
+    """Positional args, recognised text kwargs, and one level into option
+    lists. Option lists built from sheet data are left alone - that is mission
+    content, already Spanish, and translating it again would corrupt the very
+    values used to look data up."""
+    args = list(node.args) + [
+        k.value for k in node.keywords if k.arg in TEXT_KWARGS
+    ]
+    if _call_name(node) in CHOICE_CALLS:
+        for a in list(args):
+            if isinstance(a, ast.List):
+                args.extend(a.elts)
+    return args
+
+
+def _walk(paths: list[str]):
     for p in paths:
-        tree = ast.parse(Path(p).read_text(encoding="utf-8-sig"))
+        yield p, ast.parse(Path(p).read_text(encoding="utf-8-sig"))
+
+
+def extract(paths: list[str]) -> list[str]:
+    """Every translatable literal: those still passed straight to a UI call,
+    plus those already routed through t(). This is the denominator ES must
+    cover."""
+    found: set[str] = set()
+    for _, tree in _walk(paths):
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
-            if _call_name(node) not in UI_CALLS:
-                continue
-            args = list(node.args) + [
-                k.value for k in node.keywords if k.arg in TEXT_KWARGS
-            ]
-            if _call_name(node) in CHOICE_CALLS:
-                # Descend one level into option lists. Only literal elements:
-                # a list built from sheet data is mission content, already
-                # Spanish, and must never be translated again.
-                for a in list(args):
-                    if isinstance(a, ast.List):
-                        args.extend(a.elts)
-            for a in args:
-                if isinstance(a, ast.Constant) and isinstance(a.value, str):
-                    s = a.value.strip()
-                    if len(s) > 1 and not _is_stylesheet(s):
-                        found.add(s)
+            name = _call_name(node)
+            if name == TRANSLATE_FN:
+                found.update(_literals(node.args[:1]))
+            elif name in UI_CALLS:
+                found.update(_literals(_ui_call_args(node)))
+    return sorted(found)
+
+
+def extract_unwrapped(paths: list[str]) -> list[str]:
+    """Literals still handed straight to a UI call. These render English no
+    matter how complete ES is, so they are tracked separately from coverage."""
+    found: set[str] = set()
+    for _, tree in _walk(paths):
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and _call_name(node) in UI_CALLS:
+                found.update(_literals(_ui_call_args(node)))
     return sorted(found)
 
 

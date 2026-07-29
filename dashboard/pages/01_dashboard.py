@@ -17,6 +17,7 @@ from app.components.design_system import (
     render_section_label, render_kpi_row, render_table,
 )
 from app.config.flavor_loader import flavor, METRIC_LABELS
+from app.i18n import t
 from app.config.theme import CHART_COLORS
 from app.db.queries import (
     get_mission_totals,
@@ -50,14 +51,15 @@ inject_global_css()
 render_sidebar(user)
 
 _mission_name = get_config_value("MISSION_NAME", flavor.display_name)
-render_page_header("PMG Compass", f"{_mission_name} — Executive Dashboard")
+render_page_header(t("PMG Compass"),
+                   t("{mission} — Executive Dashboard", mission=_mission_name))
 
-_EMPTY_MSG = "No data for this section yet."
+_EMPTY_MSG = t("No data for this section yet.")
 
 st.caption(
-    "Summary data refreshes daily at noon. Submission compliance is computed "
-    "live. Mission-level only — drill into a zone, district or area on the "
-    "Breakdowns page."
+    t("Summary data refreshes daily at noon. Submission compliance is computed "
+      "live. Mission-level only — drill into a zone, district or area on the "
+      "Breakdowns page.")
 )
 
 
@@ -112,7 +114,7 @@ def _ki_val(metric_key: str) -> float:
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1. WEEKLY KEY INDICATORS — flavor-driven KPI row (last 7 days)
 # ═══════════════════════════════════════════════════════════════════════════════
-render_section_label("Weekly Key Indicators — Last 7 Days")
+render_section_label(t("Weekly Key Indicators — Last 7 Days"))
 
 render_kpi_row([
     {
@@ -128,7 +130,8 @@ render_kpi_row([
 # ═══════════════════════════════════════════════════════════════════════════════
 ki_week = str(ki_df.iloc[-1]["week_end_date"]) if not ki_df.empty else ""
 render_section_label(
-    f"Key Indicators — Week Ending {ki_week}" if ki_week else "Key Indicators"
+    t("Key Indicators — Week Ending {week}", week=ki_week) if ki_week
+    else t("Key Indicators")
 )
 
 render_kpi_row([
@@ -141,7 +144,7 @@ render_kpi_row([
 # ═══════════════════════════════════════════════════════════════════════════════
 # 3. ZONE LEADERBOARD — flavor-driven columns, ranked (last 7 days)
 # ═══════════════════════════════════════════════════════════════════════════════
-render_section_label("Zone Leaderboard — Last 7 Days")
+render_section_label(t("Zone Leaderboard — Last 7 Days"))
 
 if zone_df.empty or "metric_key" not in zone_df.columns or "zone" not in zone_df.columns:
     st.info(_EMPTY_MSG)
@@ -172,7 +175,7 @@ else:
 # ═══════════════════════════════════════════════════════════════════════════════
 # 4. EIGHT-WEEK TRENDS (mission totals)
 # ═══════════════════════════════════════════════════════════════════════════════
-render_section_label("8-Week Trend — Mission Totals")
+render_section_label(t("8-Week Trend — Mission Totals"))
 
 trends_chart = exclude_current_week(trends_df)
 ki_chart     = exclude_current_week(ki_df)
@@ -227,7 +230,7 @@ else:
 # ═══════════════════════════════════════════════════════════════════════════════
 # 5. DAILY NM LESSONS — last 7 days
 # ═══════════════════════════════════════════════════════════════════════════════
-render_section_label("Daily NM Lessons — Last 7 Days")
+render_section_label(t("Daily NM Lessons — Last 7 Days"))
 
 if daily_df.empty or "nm_lessons" not in daily_df.columns:
     st.info(_EMPTY_MSG)
@@ -252,7 +255,7 @@ else:
 # ═══════════════════════════════════════════════════════════════════════════════
 # 6. DAILY EFFORT BREAKDOWN — last 7 days
 # ═══════════════════════════════════════════════════════════════════════════════
-render_section_label("Daily Effort Breakdown — Last 7 Days")
+render_section_label(t("Daily Effort Breakdown — Last 7 Days"))
 
 if effort_df.empty:
     st.info(_EMPTY_MSG)
@@ -286,26 +289,27 @@ else:
     st.plotly_chart(fig_effort, use_container_width=True)
 
     e1, e2, e3 = st.columns(3)
-    e1.metric("All Effort",  all_count,  help="Areas reporting full effort")
-    e2.metric("Most Effort", most_count, help="Areas reporting most effort")
-    e3.metric("Some Effort", some_count, help="Areas reporting some effort")
+    e1.metric(t("All Effort"),  all_count,  help=t("Areas reporting full effort"))
+    e2.metric(t("Most Effort"), most_count, help=t("Areas reporting most effort"))
+    e3.metric(t("Some Effort"), some_count, help=t("Areas reporting some effort"))
 
     area_effort = get_effort_by_area(days=7)
-    with st.expander("Effort by area — who reported what (last 7 days)"):
+    with st.expander(t("Effort by area — who reported what (last 7 days)")):
         if area_effort.empty:
-            st.caption("No per-area effort responses in the last 7 days.")
+            st.caption(t("No per-area effort responses in the last 7 days."))
         else:
             st.caption(
-                f"{len(area_effort)} areas · sorted by effort score "
-                "(All=3, Most=2, Some=1, averaged per submission). "
-                "Counts are submissions per area over the last 7 days."
+                t("{n} areas · sorted by effort score "
+                  "(All=3, Most=2, Some=1, averaged per submission). "
+                  "Counts are submissions per area over the last 7 days.",
+                  n=len(area_effort))
             )
             render_table(area_effort)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 7. SUBMISSION COMPLIANCE — all-time summary, calendars, per-area detail
 # ═══════════════════════════════════════════════════════════════════════════════
-render_section_label("Submission Compliance")
+render_section_label(t("Submission Compliance"))
 
 comp_df = get_alltime_compliance()
 
@@ -327,7 +331,7 @@ render_kpi_row([
 ])
 
 # ── Nightly submission compliance — daily % calendar heatmap ──────────────────
-render_section_label("Nightly Submission Compliance — Daily %")
+render_section_label(t("Nightly Submission Compliance — Daily %"))
 
 _subm_areas  = get_submitting_areas()
 _daily_all   = get_daily_log(days=45)
@@ -337,7 +341,7 @@ _total_areas = (
 )
 
 if _total_areas == 0 or _daily_all.empty or "Date" not in _daily_all.columns:
-    st.info("No nightly compliance data yet.")
+    st.info(t("No nightly compliance data yet."))
 else:
     _submitting_set = set(_subm_areas["Area_Name"].dropna().astype(str).str.strip())
     _dl = _daily_all.copy()
@@ -425,7 +429,7 @@ else:
         )
 
 # ── Weekly report submission — % of areas submitting the weekly form, by week ─
-render_section_label("Weekly Report Submission — By Week")
+render_section_label(t("Weekly Report Submission — By Week"))
 
 _nightly_avg = (
     sum(_counted_pcts) / len(_counted_pcts)
@@ -445,7 +449,7 @@ def _wk_leg(color, label):
 
 _weekly_avg = None
 if _total_areas == 0 or not _wk_due_weeks:
-    st.info("No weekly submission data yet.")
+    st.info(t("No weekly submission data yet."))
 else:
     _wk_submitting = (
         set(_subm_areas["Area_Name"].dropna().astype(str).str.strip())
@@ -517,9 +521,9 @@ if _nightly_avg is not None and _weekly_avg is not None:
     )
 
 # ── Per-area submission detail (folded in from the old Submissions page) ───────
-with st.expander("Area Submission Detail — all-time compliance per area"):
+with st.expander(t("Area Submission Detail — all-time compliance per area")):
     if comp_df.empty:
-        st.info("No per-area submission data available yet.")
+        st.info(t("No per-area submission data available yet."))
     else:
         detail = comp_df.copy()
 
@@ -533,17 +537,28 @@ with st.expander("Area Submission Detail — all-time compliance per area"):
         detail["Status"] = detail["pct"].apply(_sub_status)
 
         f1, f2 = st.columns([2, 2])
-        zone_opts = ["All Zones"] + sorted(detail["zone"].dropna().astype(str).unique().tolist())
+        # Sentinel is translated for display but compared against the same
+        # t() call below, never against a bare English literal.
+        _all_zones = t("All Zones")
+        zone_opts = [_all_zones] + sorted(detail["zone"].dropna().astype(str).unique().tolist())
         with f1:
-            zsel = st.selectbox("Zone", zone_opts, key="dash_sub_zone")
+            zsel = st.selectbox(t("Zone"), zone_opts, key="dash_sub_zone")
         with f2:
-            ssel = st.radio(
-                "Show", ["All", "Behind only", "On Track only"],
+            # Translated label -> English value. Only the label is shown; every
+            # comparison below still runs on the English value, so filtering
+            # behaves identically in either language.
+            _show_opts = {
+                t("All"): "All",
+                t("Behind only"): "Behind only",
+                t("On Track only"): "On Track only",
+            }
+            ssel = _show_opts[st.radio(
+                t("Show"), list(_show_opts),
                 horizontal=True, key="dash_sub_show",
-            )
+            )]
 
         view = detail
-        if zsel != "All Zones":
+        if zsel != _all_zones:
             view = view[view["zone"] == zsel]
         if ssel == "Behind only":
             view = view[view["Status"] == "Behind"]
@@ -552,15 +567,22 @@ with st.expander("Area Submission Detail — all-time compliance per area"):
 
         view = view.sort_values(["pct", "area"], ascending=[True, True])
 
-        disp = view.rename(columns={
-            "area": "Area", "zone": "Zone", "district": "District",
-            "days_submitted": "Days Submitted", "days_possible": "Days Possible",
-            "pct": "Compliance %", "last_date": "Last Submitted",
-        })[["Area", "Zone", "District", "Days Submitted", "Days Possible",
-            "Compliance %", "Last Submitted", "Status"]]
+        # Headers are translated only at the point of display, after every
+        # filter and sort above has run on the English column names.
+        _cols = {
+            "area": t("Area"), "zone": t("Zone"), "district": t("District"),
+            "days_submitted": t("Days Submitted"),
+            "days_possible": t("Days Possible"),
+            "pct": t("Compliance %"), "last_date": t("Last Submitted"),
+            "Status": t("Status"),
+        }
+        disp = view.rename(columns=_cols)[list(_cols.values())]
+        # detail["Status"] stays English so the filters above keep working;
+        # translate the cell values for display only.
+        disp[t("Status")] = disp[t("Status")].map(lambda s: t(s))
 
-        st.caption(f"{len(disp)} area(s) shown — worst first")
+        st.caption(t("{n} area(s) shown — worst first", n=len(disp)))
         if disp.empty:
-            st.info("No areas match the current filter.")
+            st.info(t("No areas match the current filter."))
         else:
             render_table(disp)

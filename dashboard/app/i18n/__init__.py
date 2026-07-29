@@ -29,13 +29,33 @@ def set_lang(lang: str) -> None:
     st.session_state[_KEY] = lang
 
 
+def _lookup(text: str) -> str:
+    """Resolve `text`, tolerating surrounding whitespace.
+
+    The extractor records each string stripped, so a triple-quoted block keeps
+    its leading and trailing newlines at the call site but is keyed in ES
+    without them. Looking up only the raw string would miss every such block:
+    coverage would report it translated while the page silently rendered
+    English. Falls back to the stripped key and reattaches the original
+    whitespace so layout and markdown spacing are unchanged.
+    """
+    if text in ES:
+        return ES[text]
+    stripped = text.strip()
+    if stripped in ES:
+        lead = text[:len(text) - len(text.lstrip())]
+        trail = text[len(text.rstrip()):]
+        return f"{lead}{ES[stripped]}{trail}"
+    return text
+
+
 def t(text: str, **kwargs) -> str:
     """Translate `text` for the active language, then interpolate.
 
     Lookup happens before formatting so Spanish word order can differ from
     English. Returns `text` unchanged when no translation exists.
     """
-    resolved = ES.get(text, text) if get_lang() == "es" else text
+    resolved = _lookup(text) if get_lang() == "es" else text
     if kwargs:
         try:
             return resolved.format(**kwargs)

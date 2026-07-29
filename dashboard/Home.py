@@ -3,6 +3,7 @@ import streamlit as st
 from app.auth.auth import require_auth
 from app.components.design_system import inject_global_css, render_page_header, render_section_label, render_sidebar
 from app.db.queries import get_meta, get_config_value
+from app.i18n import t
 from app.chat.gemini_chat import (
     load_kb_context,
     load_live_data_context,
@@ -94,8 +95,10 @@ from app.components.design_system import render_language_switch
 render_language_switch("home_lang")
 
 render_page_header(
-    "PMG Compass",
-    f"{get_config_value('MISSION_NAME', 'Mission')} · Welcome back, {user.get('name', user.get('email', ''))}",
+    t("PMG Compass"),
+    t("{mission} · Welcome back, {name}",
+      mission=get_config_value("MISSION_NAME", t("Mission")),
+      name=user.get("name", user.get("email", ""))),
     icon="",
 )
 
@@ -116,9 +119,9 @@ safe_start = html.escape(_fmt_short(_week_start))
 safe_end   = html.escape(_fmt_short(_week_end))
 safe_upd   = html.escape(meta.get("generated_at", ""))
 
-status_parts = f"Week&nbsp;&nbsp;{safe_start} → {safe_end}"
+status_parts = f"{t('Week')}&nbsp;&nbsp;{safe_start} → {safe_end}"
 if safe_upd:
-    status_parts += f"&nbsp;&nbsp;·&nbsp;&nbsp;Last updated&nbsp;&nbsp;{safe_upd}"
+    status_parts += f"&nbsp;&nbsp;·&nbsp;&nbsp;{t('Last updated')}&nbsp;&nbsp;{safe_upd}"
 
 st.markdown(
     f'<div style="display:inline-flex;align-items:center;gap:0.5rem;'
@@ -131,8 +134,8 @@ st.markdown(
 )
 
 # ── App guide (folded in from the old Page Breakdown page) ────────────────────
-with st.expander("App Guide — what each page does"):
-    st.markdown("""
+with st.expander(t("App Guide — what each page does")):
+    st.markdown(t("""
 **Overview & assistant**
 - **Home** — Mission Assistant. Ask natural-language questions about mission data, procedures, or performance.
 - **Dashboard** — Mission pulse: weekly KPIs, submission compliance (with per-area detail), zone summary, and trend charts.
@@ -148,18 +151,18 @@ with st.expander("App Guide — what each page does"):
 **Operations**
 - **Notes** — Area notes with tags, search, and email follow-up reminders.
 - **Maintenance** — System health, weekly to-do, knowledge base, agent settings, and form-question configuration.
-""")
+"""))
 
 # ── Load KB and live data once per session ────────────────────────────────────
 if "kb_context" not in st.session_state:
-    with st.spinner("Loading knowledge base..."):
+    with st.spinner(t("Loading knowledge base...")):
         st.session_state["kb_context"] = load_kb_context()
 
 if "live_data_context" not in st.session_state:
     st.session_state["live_data_context"] = load_live_data_context()
 
 if "supplemental_contexts" not in st.session_state:
-    with st.spinner("Loading mission data..."):
+    with st.spinner(t("Loading mission data...")):
         st.session_state["supplemental_contexts"] = load_supplemental_contexts()
 
 if "chat_history" not in st.session_state:
@@ -168,11 +171,11 @@ if "chat_history" not in st.session_state:
 # ── Chat ──────────────────────────────────────────────────────────────────────
 col_chat_header, col_chat_actions = st.columns([7, 2])
 with col_chat_header:
-    render_section_label("Mission Assistant")
+    render_section_label(t("Mission Assistant"))
 with col_chat_actions:
     action_col1, action_col2 = st.columns(2)
     with action_col1:
-        if st.button("Reload", use_container_width=True, help="Refresh live mission data"):
+        if st.button(t("Reload"), use_container_width=True, help=t("Refresh live mission data")):
             st.session_state.pop("live_data_context", None)
             st.session_state.pop("supplemental_contexts", None)
             st.session_state["live_data_context"] = load_live_data_context()
@@ -180,25 +183,25 @@ with col_chat_actions:
             st.rerun()
     with action_col2:
         if st.session_state["chat_history"]:
-            if st.button("Clear", use_container_width=True, help="Clear chat history"):
+            if st.button(t("Clear"), use_container_width=True, help=t("Clear chat history")):
                 st.session_state["chat_history"] = []
                 st.rerun()
 
 if not st.session_state.get("live_data_context"):
-    st.warning("Live data unavailable — click **Reload** to retry.")
+    st.warning(t("Live data unavailable — click **Reload** to retry."))
 
 # Starter questions — shown only before the first message, for instant first-use
 # value. Clicking one queues it as the next question.
 _STARTERS = [
-    "Give me a 30-second briefing on the mission right now",
-    "Which areas need my attention this week?",
-    "Who are the top-performing areas right now?",
-    "How is our baptism pipeline looking?",
-    "Which zone is strongest at finding new people?",
-    "Who hasn't submitted recently?",
+    t("Give me a 30-second briefing on the mission right now"),
+    t("Which areas need my attention this week?"),
+    t("Who are the top-performing areas right now?"),
+    t("How is our baptism pipeline looking?"),
+    t("Which zone is strongest at finding new people?"),
+    t("Who hasn't submitted recently?"),
 ]
 if not st.session_state["chat_history"]:
-    st.caption("Try asking:")
+    st.caption(t("Try asking:"))
     _srows = [_STARTERS[:3], _STARTERS[3:]]
     for _ri, _row in enumerate(_srows):
         _cols = st.columns(len(_row))
@@ -213,12 +216,12 @@ with st.form(key="chat_form", clear_on_submit=True):
     col_q, col_send = st.columns([8, 1])
     with col_q:
         question = st.text_input(
-            "question",
-            placeholder="Ask about mission data, procedures, or performance...",
+            t("question"),
+            placeholder=t("Ask about mission data, procedures, or performance..."),
             label_visibility="collapsed",
         )
     with col_send:
-        submitted = st.form_submit_button("Send", use_container_width=True)
+        submitted = st.form_submit_button(t("Send"), use_container_width=True)
 
 # A question can arrive either from the form or from a clicked starter chip.
 _pending = st.session_state.pop("pending_question", None)
@@ -234,10 +237,10 @@ if q:
     try:
         api_key = st.secrets["GEMINI_API_KEY"]
     except (KeyError, AttributeError):
-        st.error("GEMINI_API_KEY not configured. Add it to .streamlit/secrets.toml.")
+        st.error(t("GEMINI_API_KEY not configured. Add it to .streamlit/secrets.toml."))
         st.stop()
 
-    with st.spinner("Thinking..."):
+    with st.spinner(t("Thinking...")):
         try:
             answer = ask_gemini(
                 question=q,
@@ -248,9 +251,9 @@ if q:
                 extra_contexts=st.session_state.get("supplemental_contexts", {}),
             )
         except GeminiRateLimitError:
-            answer = "Gemini is rate-limited — please wait a few seconds and try again."
+            answer = t("Gemini is rate-limited — please wait a few seconds and try again.")
         except (GeminiError, Exception):
-            answer = "I wasn't able to generate an answer. Please rephrase your question."
+            answer = t("I wasn't able to generate an answer. Please rephrase your question.")
 
     st.session_state["chat_history"].append({"role": "assistant", "content": answer})
     st.rerun()
