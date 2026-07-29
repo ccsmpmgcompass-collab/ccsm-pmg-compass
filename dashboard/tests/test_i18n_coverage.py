@@ -23,6 +23,8 @@ from tools.extract_ui_strings import extract, extract_unwrapped
 
 GROUPS = {
     "task9":  ["Home.py", "pages/01_dashboard.py", "pages/04_Breakdowns.py"],
+    "task10": ["pages/07_Finding_Funnel.py", "pages/10_Notes.py",
+               "pages/15_Suggestions.py", "pages/17_Action_Center.py"],
 }
 
 

@@ -23,6 +23,7 @@ UI_CALLS = {
     "text_input", "text_area", "multiselect", "slider", "expander", "tabs",
     "metric", "toggle", "number_input", "date_input", "toast", "popover",
     "download_button", "link_button", "form_submit_button", "spinner",
+    "file_uploader",
     "render_page_header", "render_section_label",
 }
 TEXT_KWARGS = {"label", "help", "placeholder", "title", "subtitle", "body"}

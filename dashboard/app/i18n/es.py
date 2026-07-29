@@ -207,4 +207,187 @@ ES: dict[str, str] = {
     "Save Note": "Guardar Nota",
     "Note content is required.": "El contenido de la nota es obligatorio.",
     "Note saved.": "Nota guardada.",
+
+    # ══ Task 10 ═════════════════════════════════════════════════════════════
+    # ── Finding Funnel ───────────────────────────────────────────────────────
+    "Finding Funnel": "Embudo de Búsqueda",
+    "Mission finding & teaching pipeline — auto-synced daily from Tableau":
+        "Proceso de búsqueda y enseñanza de la misión — sincronizado a diario desde Tableau",
+    "Could not parse Ranking CSV: {err}":
+        "No se pudo leer el CSV de Clasificación: {err}",
+    "Could not parse Detail CSV: {err}":
+        "No se pudo leer el CSV de Detalle: {err}",
+    "No finding data yet. It syncs automatically each morning, or upload a "
+    "Tableau export in **Manual upload** below.":
+        "Aún no hay datos de búsqueda. Se sincronizan automáticamente cada mañana, "
+        "o cargue una exportación de Tableau en **Carga manual** más abajo.",
+    "Auto-synced · {source} · {at}":
+        "Sincronizado automáticamente · {source} · {at}",
+    "Uploaded by {by} · {at}": "Cargado por {by} · {at}",
+    "Date range": "Rango de fechas",
+    "Custom": "Personalizado",
+    "Last 7 days": "Últimos 7 días",
+    "Last 14 days": "Últimos 14 días",
+    "Last 30 days": "Últimos 30 días",
+    "Start": "Inicio",
+    "End": "Fin",
+    "No findings in the selected date range — widen the range to see data.":
+        "No hay hallazgos en el rango de fechas seleccionado — amplíe el rango para ver datos.",
+    "Finding Pipeline": "Proceso de Búsqueda",
+    "Found": "Encontradas",
+    "Contact Attempted": "Intento de Contacto",
+    "Successfully Contacted": "Contactadas con Éxito",
+    "Being Taught": "Recibiendo Lecciones",
+    "Attended Church": "Asistió a la Iglesia",
+    "Baptism Date Set": "Fecha de Bautismo Fijada",
+    "Each stage = people found in range who reached that milestone "
+    "(from Tableau finding-event dates).":
+        "Cada etapa = personas encontradas en el rango que alcanzaron ese hito "
+        "(según las fechas de los eventos de búsqueda de Tableau).",
+    "Detail records needed to build the pipeline funnel.":
+        "Se requieren registros de detalle para construir el embudo del proceso.",
+    "Finding Mix": "Composición de Hallazgos",
+    "No detail records to break down.":
+        "No hay registros de detalle para desglosar.",
+    "Contact Performance": "Desempeño de Contacto",
+    "Top Finding Sources": "Principales Fuentes de Hallazgo",
+    "Findings by Zone": "Hallazgos por Zona",
+    "Findings per Day": "Hallazgos por Día",
+    "Detailed Data": "Datos Detallados",
+    "Area Rankings (per-area table)":
+        "Clasificación de Áreas (tabla por área)",
+    "No finding records in the selected range to rank.":
+        "No hay registros de búsqueda en el rango seleccionado para clasificar.",
+    "{n} areas with activity · sorted by people found "
+    "· reflects the selected date range":
+        "{n} áreas con actividad · ordenadas por personas encontradas "
+        "· refleja el rango de fechas seleccionado",
+    "Download Rankings CSV": "Descargar CSV de Clasificación",
+    "Finding Records — {n} people": "Registros de Búsqueda — {n} personas",
+    "No detail export loaded.": "No se ha cargado ninguna exportación de detalle.",
+    "Category": "Categoría",
+    "Source": "Fuente",
+    "{shown} of {total} records": "{shown} de {total} registros",
+    "Showing first 250 — download for the full set.":
+        "Mostrando los primeros 250 — descargue el conjunto completo.",
+    "Download Records CSV": "Descargar CSV de Registros",
+    "Raw Tableau export (all columns)":
+        "Exportación de Tableau sin procesar (todas las columnas)",
+    "**Ranking — raw**": "**Clasificación — sin procesar**",
+    "**Detail — raw**": "**Detalle — sin procesar**",
+    "Showing first 200 of {n} rows — download above for all.":
+        "Mostrando las primeras 200 de {n} filas — descargue arriba para verlas todas.",
+    "Finding Summary PDF": "PDF de Resumen de Búsqueda",
+    "Upload the Finding Summary PDF in Manual upload below to view it here.":
+        "Cargue el PDF de Resumen de Búsqueda en Carga manual más abajo para verlo aquí.",
+    "Download Summary PDF": "Descargar PDF de Resumen",
+    "Manual upload / re-sync (optional)":
+        "Carga manual / re-sincronización (opcional)",
+    "Tableau exports sync automatically every morning. Upload here only "
+    "to override with a fresh export.":
+        "Las exportaciones de Tableau se sincronizan automáticamente cada mañana. "
+        "Cargue aquí solo para reemplazarlas con una exportación nueva.",
+    "Detail CSV": "CSV de Detalle",
+    "Ranking CSV": "CSV de Clasificación",
+    "Summary PDF": "PDF de Resumen",
+
+    # ── Notes page ───────────────────────────────────────────────────────────
+    "Filter Notes": "Filtrar Notas",
+    "Show Resolved Notes": "Mostrar Notas Resueltas",
+    "New Note": "Nota Nueva",
+    "Notes List": "Lista de Notas",
+    "Search notes": "Buscar notas",
+    "Search content…": "Buscar contenido…",
+    "Tag": "Etiqueta",
+    "No notes match the current filters.":
+        "Ninguna nota coincide con los filtros actuales.",
+    "No notes yet. Create your first note above.":
+        "Aún no hay notas. Cree su primera nota arriba.",
+    "Note content cannot be empty.":
+        "El contenido de la nota no puede estar vacío.",
+    "Zone (optional)": "Zona (opcional)",
+    "District (optional)": "Distrito (opcional)",
+    "Area (optional)": "Área (opcional)",
+    "Set follow-up date": "Establecer fecha de seguimiento",
+    "training, concern, zone-x": "capacitación, preocupación, zona-x",
+    "Resolve": "Resolver",
+    "Re-open": "Reabrir",
+    "Resolved": "Resuelta",
+    "Edit": "Editar",
+    "Delete": "Eliminar",
+    "Cancel": "Cancelar",
+    "Save Changes": "Guardar Cambios",
+
+    # ── Suggestions ──────────────────────────────────────────────────────────
+    "Suggestions": "Sugerencias",
+    "Filter": "Filtrar",
+    "Search": "Buscar",
+    "Search message or name…": "Buscar mensaje o nombre…",
+    "Sort": "Ordenar",
+    "Newest": "Más recientes",
+    "Oldest": "Más antiguas",
+    "No suggestions match the current filters.":
+        "Ninguna sugerencia coincide con los filtros actuales.",
+    # Approval statuses. The Spanish is shown; the English value is what stays
+    # in COMPASS_CCSM and what the Apps Script agents read.
+    "Pending": "Pendiente",
+    "AP Approval": "Aprobación de los AP",
+    "Mission President Approval": "Aprobación del Presidente de Misión",
+    "MP Approval": "Aprobación del PM",
+    "→ MP Approval": "→ Aprobación del PM",
+    "Final Approval": "Aprobación Final",
+    "Hold": "En Espera",
+    "On Hold": "En Espera",
+    "Done": "Completada",
+    "Rejected": "Rechazada",
+    "Reject": "Rechazar",
+    "Approved by an AP — send to the Mission President's queue":
+        "Aprobada por un AP — enviar a la fila del Presidente de Misión",
+    "Move to the Mission President's queue":
+        "Mover a la fila del Presidente de Misión",
+    "Mission President's final approval — emails ccsm.pmg.compass@gmail.com":
+        "Aprobación final del Presidente de Misión — envía correo a ccsm.pmg.compass@gmail.com",
+    "Mark as implemented/deployed — emails ccsm.pmg.compass@gmail.com":
+        "Marcar como implementada/desplegada — envía correo a ccsm.pmg.compass@gmail.com",
+    "Park as a future idea": "Guardar como idea futura",
+    "Add a note before Accept/Reject…":
+        "Agregue una nota antes de Aceptar/Rechazar…",
+    "Reviewer note (optional)": "Nota del revisor (opcional)",
+
+    # ── Action Center ────────────────────────────────────────────────────────
+    "Action Center": "Centro de Acción",
+    "Everything that needs mission leadership's attention":
+        "Todo lo que requiere la atención del liderazgo de la misión",
+    "This page is available to mission leadership only.":
+        "Esta página está disponible solo para el liderazgo de la misión.",
+    "Needs Your Action": "Requiere Su Acción",
+    "Nothing needs your action right now.":
+        "Nada requiere su acción en este momento.",
+    "Review in Suggestions": "Revisar en Sugerencias",
+    "Review in Notes": "Revisar en Notas",
+    "Review missionary suggestions": "Revisar las sugerencias de los misioneros",
+    "Open Maintenance page": "Abrir la página de Mantenimiento",
+    "Maintenance": "Mantenimiento",
+    "No maintenance issues detected.":
+        "No se detectaron problemas de mantenimiento.",
+    "Task": "Tarea",
+    "Add Task": "Agregar Tarea",
+    "Add a Task": "Agregar una Tarea",
+    "All open tasks": "Todas las tareas abiertas",
+    "No open tasks.": "No hay tareas abiertas.",
+    "Task name cannot be empty.":
+        "El nombre de la tarea no puede estar vacío.",
+    "What needs to happen?": "¿Qué se necesita hacer?",
+    "Assign to": "Asignar a",
+    "Hand something to another leader — it'll show in their Action Center.":
+        "Entregue algo a otro líder — aparecerá en su Centro de Acción.",
+    "No other leadership accounts found in MISSION_ORG.":
+        "No se encontraron otras cuentas de liderazgo en MISSION_ORG.",
+    "Due date": "Fecha límite",
+    "Set a due date": "Establecer una fecha límite",
+    "Notes (optional)": "Notas (opcional)",
+    "Visible to (comma-separated emails, leave blank for everyone)":
+        "Visible para (correos separados por comas, deje en blanco para todos)",
+    "elder.smith@example.com, sister.jones@example.com":
+        "elder.smith@example.com, sister.jones@example.com",
 }

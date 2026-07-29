@@ -21,7 +21,9 @@ def _empty_sheets(monkeypatch):
 def _text(at) -> str:
     parts = []
     for attr in ("markdown", "caption", "info", "warning", "error", "success",
-                 "button", "radio", "selectbox", "expander", "text_input"):
+                 "button", "radio", "selectbox", "expander", "text_input",
+                 "header", "subheader", "title", "metric", "checkbox",
+                 "text_area", "multiselect"):
         for el in getattr(at, attr, []):
             for f in ("value", "label", "body", "placeholder"):
                 v = getattr(el, f, None)
@@ -62,6 +64,52 @@ def test_breakdowns_renders_spanish():
     es = _text(_run("pages/04_Breakdowns.py", "es"))
     assert "Desgloses" in es
     assert "Zone, District & Area Performance" not in es
+
+
+TASK10 = [
+    "pages/07_Finding_Funnel.py",
+    "pages/10_Notes.py",
+    "pages/15_Suggestions.py",
+    "pages/17_Action_Center.py",
+]
+
+
+@pytest.mark.parametrize("page", TASK10)
+def test_task10_pages_survive_both_languages(page):
+    """These four were wrapped by a codemod rather than by hand, so the real
+    check is that they still execute - in both languages."""
+    for lang in ("en", "es"):
+        _run(page, lang)
+
+
+def test_notes_and_suggestions_render_spanish():
+    assert "Filtrar Notas" in _text(_run("pages/10_Notes.py", "es"))
+    assert "Sugerencias" in _text(_run("pages/15_Suggestions.py", "es"))
+
+
+def test_suggestion_status_filter_sends_english_to_the_sheet(monkeypatch):
+    """The approval statuses are stored in COMPASS_CCSM and read by the Apps
+    Script agents. The dropdown shows Spanish, but the value handed to
+    get_suggestions() must still be the English one, or the query matches
+    nothing and a write would corrupt the status column."""
+    seen = {}
+
+    import app.db.queries as q
+    real = q.get_suggestions
+
+    def spy(*a, **k):
+        seen.update(k)
+        return real(*a, **k)
+
+    monkeypatch.setattr(q, "get_suggestions", spy)
+    at = AppTest.from_file("pages/15_Suggestions.py", default_timeout=90)
+    at.session_state["pmg_lang"] = "es"
+    at.run()
+    assert not at.exception
+    assert seen.get("status") in (
+        "Pending", "AP Approval", "Mission President Approval",
+        "Final Approval", "Hold", "Done", "Rejected", "All",
+    ), f"a translated status reached the sheet query: {seen.get('status')!r}"
 
 
 def test_placeholders_are_filled_not_left_raw():

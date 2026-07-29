@@ -28,6 +28,7 @@ from app.db.action_center_queries import (
     resolve_leadership_task,
     get_leadership_tasks,
 )
+from app.i18n import t
 
 st.set_page_config(
     page_title="CCSM · Action Center — PMG Compass",
@@ -42,18 +43,18 @@ render_sidebar(user)
 current_email = user.get("email", "")
 
 if not is_leadership(current_email):
-    render_page_header("Action Center", "PMG Compass")
-    st.info("This page is available to mission leadership only.")
+    render_page_header(t("Action Center"), t("PMG Compass"))
+    st.info(t("This page is available to mission leadership only."))
     st.stop()
 
-render_page_header("Action Center", "Everything that needs mission leadership's attention")
+render_page_header(t("Action Center"), t("Everything that needs mission leadership's attention"))
 
 summary = get_action_center_summary(current_email)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SECTION 1 — NEEDS YOUR ACTION
 # ══════════════════════════════════════════════════════════════════════════════
-render_section_label("Needs Your Action")
+render_section_label(t("Needs Your Action"))
 
 _any_items = False
 
@@ -61,7 +62,7 @@ if summary["suggestions_ap_count"] > 0:
     _any_items = True
     with st.container(border=True):
         st.markdown(f"**{summary['suggestions_ap_count']} suggestion(s) at AP Approval**")
-        if st.button("Review in Suggestions", key="ac_go_ap_approval"):
+        if st.button(t("Review in Suggestions"), key="ac_go_ap_approval"):
             st.session_state["sug_status"] = "AP Approval"
             st.switch_page("pages/15_Suggestions.py")
 
@@ -69,7 +70,7 @@ if summary["suggestions_mp_count"] > 0:
     _any_items = True
     with st.container(border=True):
         st.markdown(f"**{summary['suggestions_mp_count']} suggestion(s) at Mission President Approval**")
-        if st.button("Review in Suggestions", key="ac_go_mp_approval"):
+        if st.button(t("Review in Suggestions"), key="ac_go_mp_approval"):
             st.session_state["sug_status"] = "Mission President Approval"
             st.switch_page("pages/15_Suggestions.py")
 
@@ -77,7 +78,7 @@ if summary["followups_count"] > 0:
     _any_items = True
     with st.container(border=True):
         st.markdown(f"**{summary['followups_count']} note follow-up(s) due**")
-        if st.button("Review in Notes", key="ac_go_notes"):
+        if st.button(t("Review in Notes"), key="ac_go_notes"):
             st.switch_page("pages/10_Notes.py")
 
 my_tasks = summary["my_tasks_df"]
@@ -92,44 +93,44 @@ if not my_tasks.empty:
             t1.markdown(f"{row['task_name']} — _assigned by {row['assigned_by']}{due}_")
             if str(row.get("notes", "")).strip():
                 t1.caption(row["notes"])
-            if t2.button("Done", key=f"ac_task_done_{task_id}"):
+            if t2.button(t("Done"), key=f"ac_task_done_{task_id}"):
                 resolve_leadership_task(task_id)
                 st.rerun()
 
 if not _any_items:
-    st.success("Nothing needs your action right now.")
+    st.success(t("Nothing needs your action right now."))
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SECTION 2 — ADD A TASK
 # ══════════════════════════════════════════════════════════════════════════════
-render_section_label("Add a Task")
-st.caption("Hand something to another leader — it'll show in their Action Center.")
+render_section_label(t("Add a Task"))
+st.caption(t("Hand something to another leader — it'll show in their Action Center."))
 
 roster = [r for r in get_leadership_roster() if r["email"].lower() != current_email.lower()]
 
 if not roster:
-    st.info("No other leadership accounts found in MISSION_ORG.")
+    st.info(t("No other leadership accounts found in MISSION_ORG."))
 else:
     # Due-date checkbox lives OUTSIDE the form (same pattern as 10_Notes.py's
     # follow-up date) so ticking it reruns immediately and the date picker
     # appears without needing to submit first.
-    has_due = st.checkbox("Set a due date", key="ac_task_has_due")
+    has_due = st.checkbox(t("Set a due date"), key="ac_task_has_due")
     due_date_val = None
     if has_due:
-        due_date_val = st.date_input("Due date", value=date.today(), key="ac_task_due_date")
+        due_date_val = st.date_input(t("Due date"), value=date.today(), key="ac_task_due_date")
 
     with st.form("ac_new_task_form", clear_on_submit=True):
         f1, f2 = st.columns([3, 2])
-        task_name = f1.text_input("Task", placeholder="What needs to happen?")
+        task_name = f1.text_input(t("Task"), placeholder=t("What needs to happen?"))
         assignee_labels = [f"{r['name']} ({r['email']})" for r in roster]
         assignee_idx = f2.selectbox(
-            "Assign to", range(len(roster)), format_func=lambda i: assignee_labels[i]
+            t("Assign to"), range(len(roster)), format_func=lambda i: assignee_labels[i]
         )
-        notes = st.text_input("Notes (optional)")
-        submitted = st.form_submit_button("Add Task")
+        notes = st.text_input(t("Notes (optional)"))
+        submitted = st.form_submit_button(t("Add Task"))
         if submitted:
             if not task_name.strip():
-                st.warning("Task name cannot be empty.")
+                st.warning(t("Task name cannot be empty."))
             else:
                 create_leadership_task(
                     task_name=task_name.strip(),
@@ -141,10 +142,10 @@ else:
                 st.success(f"Task assigned to {roster[assignee_idx]['name']}.")
                 st.rerun()
 
-with st.expander("All open tasks"):
+with st.expander(t("All open tasks")):
     all_open = get_leadership_tasks()
     if all_open.empty:
-        st.caption("No open tasks.")
+        st.caption(t("No open tasks."))
     else:
         for _, row in all_open.iterrows():
             due = f" · due {row['due_date']}" if str(row.get("due_date", "")).strip() else ""
@@ -156,12 +157,12 @@ with st.expander("All open tasks"):
 # ══════════════════════════════════════════════════════════════════════════════
 # SECTION 3 — MAINTENANCE
 # ══════════════════════════════════════════════════════════════════════════════
-render_section_label("Maintenance")
+render_section_label(t("Maintenance"))
 
 if summary["maintenance_issues"]:
     for issue in summary["maintenance_issues"]:
         st.warning(issue)
-    if st.button("Open Maintenance page", key="ac_go_maintenance"):
+    if st.button(t("Open Maintenance page"), key="ac_go_maintenance"):
         st.switch_page("pages/18_Maintenance.py")
 else:
-    st.success("No maintenance issues detected.")
+    st.success(t("No maintenance issues detected."))

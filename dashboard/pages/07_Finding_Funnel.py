@@ -15,6 +15,7 @@ from app.db.sheets_client import save_dataframe
 from app.analytics.finding_funnel import (
     PRESETS, data_date_bounds, preset_range, filter_by_range, build_area_rankings,
 )
+from app.i18n import t
 
 st.set_page_config(page_title="CCSM · Finding Funnel — PMG Compass", page_icon="", layout="wide")
 
@@ -23,8 +24,8 @@ inject_global_css()
 render_sidebar(user)
 
 render_page_header(
-    "Finding Funnel",
-    "Mission finding & teaching pipeline — auto-synced daily from Tableau",
+    t("Finding Funnel"),
+    t("Mission finding & teaching pipeline — auto-synced daily from Tableau"),
     icon="",
 )
 
@@ -82,9 +83,10 @@ def _process_upload(uploaded, tab_name: str) -> tuple:
 
 def _source_caption(by: str, at: str) -> str:
     if by.startswith("auto:"):
-        return f"Auto-synced · {by.split(':', 1)[1].replace('_', ' ')} · {at}"
+        return t("Auto-synced · {source} · {at}",
+                 source=by.split(":", 1)[1].replace("_", " "), at=at)
     if by:
-        return f"Uploaded by {by} · {at}"
+        return t("Uploaded by {by} · {at}", by=by, at=at)
     return ""
 
 
@@ -109,7 +111,7 @@ summary_file = st.session_state.get("summary")
 if ranking_file is not None:
     rank_df, err = _process_upload(ranking_file, "TABLEAU_RANKING")
     if err:
-        st.error(f"Could not parse Ranking CSV: {err}")
+        st.error(t("Could not parse Ranking CSV: {err}", err=err))
         rank_df = pd.DataFrame()
     rank_by, rank_at = user.get("email", ""), "just now"
 else:
@@ -118,34 +120,37 @@ else:
 if detail_file is not None:
     det_df, err = _process_upload(detail_file, "TABLEAU_DETAIL")
     if err:
-        st.error(f"Could not parse Detail CSV: {err}")
+        st.error(t("Could not parse Detail CSV: {err}", err=err))
         det_df = pd.DataFrame()
     det_by, det_at = user.get("email", ""), "just now"
 else:
     det_df, det_by, det_at = get_tableau_detail()
 
 if rank_df.empty and det_df.empty:
-    st.info("No finding data yet. It syncs automatically each morning, or upload a "
-            "Tableau export in **Manual upload** below.")
+    st.info(t("No finding data yet. It syncs automatically each morning, or upload a "
+              "Tableau export in **Manual upload** below."))
     st.stop()
 
 sync_note = _source_caption(rank_by, rank_at) or _source_caption(det_by, det_at)
 
 # ── Global date filter — re-slices every section below ────────────────────────
 _lo, _hi = data_date_bounds(det_df)
-_opts = list(PRESETS.keys()) + ["Custom"]
+# Translated label -> English preset key. The key is what preset_range() looks
+# up in PRESETS, so it must stay English; only the label is translated.
+_opt_labels = {t(k): k for k in list(PRESETS.keys()) + ["Custom"]}
 _pc, _cc = st.columns([3, 2])
 with _pc:
-    _preset = st.radio("Date range", _opts, index=0, horizontal=True,
-                       key="ff_preset", label_visibility="collapsed")
+    _preset = _opt_labels[st.radio(t("Date range"), list(_opt_labels), index=0,
+                                   horizontal=True, key="ff_preset",
+                                   label_visibility="collapsed")]
 if _preset == "Custom":
     with _cc:
         _d1, _d2 = st.columns(2)
         with _d1:
-            sel_start = st.date_input("Start", value=_lo, min_value=_lo,
+            sel_start = st.date_input(t("Start"), value=_lo, min_value=_lo,
                                       max_value=_hi, key="ff_start")
         with _d2:
-            sel_end = st.date_input("End", value=_hi, min_value=_lo,
+            sel_end = st.date_input(t("End"), value=_hi, min_value=_lo,
                                     max_value=_hi, key="ff_end")
     if sel_start > sel_end:
         sel_start, sel_end = sel_end, sel_start
@@ -154,7 +159,7 @@ else:
 
 det_df = filter_by_range(det_df, sel_start, sel_end)
 if det_df.empty:
-    st.info("No findings in the selected date range — widen the range to see data.")
+    st.info(t("No findings in the selected date range — widen the range to see data."))
 
 # Report window — the date range Tableau was pulled for + how many days it spans
 _rstart, _rend = sel_start, sel_end
@@ -189,13 +194,15 @@ referred = int(_date(det_df, "first_referral_event_date").notna().sum()) \
 # ── Detail event milestones — the true finding-to-progress funnel ─────────────
 # Each stage counts people (found in range) who reached that milestone. Ordered
 # so the funnel is monotonic: every later stage is a subset of the earlier one.
+# Labels are display-only (chart axis text); the second element is the Detail
+# column name and must never be translated.
 FUNNEL = [
-    ("Found",                  None),
-    ("Contact Attempted",      "first_contact_attempt_event_date"),
-    ("Successfully Contacted", "first_successful_contact_attempt_event_date"),
-    ("Being Taught",           "first_new_person_being_taught_date"),
-    ("Attended Church",        "first_sacrament_date"),
-    ("Baptism Date Set",       "first_baptism_goal_date_set"),
+    (t("Found"),                  None),
+    (t("Contact Attempted"),      "first_contact_attempt_event_date"),
+    (t("Successfully Contacted"), "first_successful_contact_attempt_event_date"),
+    (t("Being Taught"),           "first_new_person_being_taught_date"),
+    (t("Attended Church"),        "first_sacrament_date"),
+    (t("Baptism Date Set"),       "first_baptism_goal_date_set"),
 ]
 
 found = len(det_df)
@@ -250,7 +257,7 @@ render_kpi_row([
 fcol, dcol = st.columns([3, 2])
 
 with fcol:
-    render_section_label("Finding Pipeline")
+    render_section_label(t("Finding Pipeline"))
     if stage_counts:
         labels = [l for l, _ in FUNNEL]
         values = [stage_counts[l] for l in labels]
@@ -272,13 +279,13 @@ with fcol:
                           xaxis=dict(visible=False, range=[-_fmax * 0.05, _fmax * 1.35]))
         st.plotly_chart(fig, use_container_width=True, theme=None,
                         config={"displayModeBar": False})
-        st.caption("Each stage = people found in range who reached that milestone "
-                   "(from Tableau finding-event dates).")
+        st.caption(t("Each stage = people found in range who reached that milestone "
+                     "(from Tableau finding-event dates)."))
     else:
-        st.caption("Detail records needed to build the pipeline funnel.")
+        st.caption(t("Detail records needed to build the pipeline funnel."))
 
 with dcol:
-    render_section_label("Finding Mix")
+    render_section_label(t("Finding Mix"))
     cat_col = _col(det_df, "finding_category") if not det_df.empty else None
     if cat_col:
         cats = (det_df[cat_col].astype(str).str.strip()
@@ -308,7 +315,7 @@ with dcol:
         st.plotly_chart(donut, use_container_width=True, theme=None,
                         config={"displayModeBar": False})
     else:
-        st.caption("No detail records to break down.")
+        st.caption(t("No detail records to break down."))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -316,7 +323,7 @@ with dcol:
 # ══════════════════════════════════════════════════════════════════════════════
 
 if not det_df.empty:
-    render_section_label("Contact Performance")
+    render_section_label(t("Contact Performance"))
     contact_rate = (attempted / found * 100) if found else 0
     success_rate = (contacted / found * 100) if found else 0
     render_kpi_row([
@@ -338,7 +345,7 @@ if not det_df.empty:
 
     s1, s2 = st.columns(2)
     with s1:
-        render_section_label("Top Finding Sources")
+        render_section_label(t("Top Finding Sources"))
         if src_col:
             src = (det_df[src_col].astype(str).str.strip()
                    .replace({"": "Unknown", "nan": "Unknown"})
@@ -355,7 +362,7 @@ if not det_df.empty:
                             config={"displayModeBar": False})
 
     with s2:
-        render_section_label("Findings by Zone")
+        render_section_label(t("Findings by Zone"))
         if zone_col:
             zn = (det_df[zone_col].astype(str).str.strip()
                   .replace({"": "Unknown", "nan": "Unknown"})
@@ -374,7 +381,7 @@ if not det_df.empty:
     # Daily finding trend
     ev_dates = _date(det_df, "event_date_selected").dt.date.dropna()
     if not ev_dates.empty:
-        render_section_label("Findings per Day")
+        render_section_label(t("Findings per Day"))
         per_day = ev_dates.value_counts().sort_index()
         tbar = go.Figure(go.Bar(
             x=[str(d) for d in per_day.index], y=per_day.values.tolist(),
@@ -392,13 +399,13 @@ if not det_df.empty:
 # SECTION 5 — RAW DATA  (dropdowns)
 # ══════════════════════════════════════════════════════════════════════════════
 
-render_section_label("Detailed Data")
+render_section_label(t("Detailed Data"))
 
 # ── Area Rankings table ───────────────────────────────────────────────────────
-with st.expander("Area Rankings (per-area table)", expanded=False):
+with st.expander(t("Area Rankings (per-area table)"), expanded=False):
     ranks = build_area_rankings(det_df)
     if ranks.empty:
-        st.caption("No finding records in the selected range to rank.")
+        st.caption(t("No finding records in the selected range to rank."))
     else:
         _pct_cols = {"Contact %", "Contacted %"}
         disp = pd.DataFrame()
@@ -409,18 +416,23 @@ with st.expander("Area Rankings (per-area table)", expanded=False):
                 disp[label] = ranks[label].map(_disp_pct)
             else:
                 disp[label] = ranks[label].map(_disp_int)
-        st.caption(f"{disp.shape[0]} areas with activity · sorted by people found "
-                   f"· reflects the selected date range")
+        # Headers translated only for display; the loop above matched on the
+        # English names build_area_rankings() produces, and the CSV below is
+        # exported from `ranks`, so downloads keep their English columns.
+        disp = disp.rename(columns={c: t(c) for c in disp.columns})
+        st.caption(t("{n} areas with activity · sorted by people found "
+                     "· reflects the selected date range", n=disp.shape[0]))
         render_table(disp.reset_index(drop=True))
-        st.download_button("Download Rankings CSV",
+        st.download_button(t("Download Rankings CSV"),
                            data=ranks.to_csv(index=False).encode("utf-8"),
                            file_name="finding_rankings.csv", mime="text/csv")
 
 # ── Finding Records table ─────────────────────────────────────────────────────
-with st.expander(f"Finding Records — {0 if det_df.empty else len(det_df)} people",
+with st.expander(t("Finding Records — {n} people",
+                   n=0 if det_df.empty else len(det_df)),
                  expanded=False):
     if det_df.empty:
-        st.caption("No detail export loaded.")
+        st.caption(t("No detail export loaded."))
     else:
         colmap = [
             ("Date",     _col(det_df, "event_date_selected")),
@@ -436,52 +448,60 @@ with st.expander(f"Finding Records — {0 if det_df.empty else len(det_df)} peop
             if src is not None:
                 recs[label] = det_df[src].astype(str).str.strip().replace({"nan": ""})
 
+        # The "All" sentinel is translated for display and compared against
+        # the same _all below. Every other option is a zone/category/source
+        # value read from the sheet, which stays exactly as stored so the
+        # equality filters keep matching.
+        _all = t("All")
         fc1, fc2, fc3 = st.columns(3)
         with fc1:
-            zsel = (st.selectbox("Zone", ["All"] + sorted(recs["Zone"].dropna().unique()),
-                                 key="rec_zone") if "Zone" in recs.columns else "All")
+            zsel = (st.selectbox(t("Zone"), [_all] + sorted(recs["Zone"].dropna().unique()),
+                                 key="rec_zone") if "Zone" in recs.columns else _all)
         with fc2:
-            csel = (st.selectbox("Category", ["All"] + sorted(recs["Category"].dropna().unique()),
-                                 key="rec_cat") if "Category" in recs.columns else "All")
+            csel = (st.selectbox(t("Category"), [_all] + sorted(recs["Category"].dropna().unique()),
+                                 key="rec_cat") if "Category" in recs.columns else _all)
         with fc3:
-            ssel = (st.selectbox("Source", ["All"] + sorted(recs["Source"].dropna().unique()),
-                                 key="rec_src") if "Source" in recs.columns else "All")
+            ssel = (st.selectbox(t("Source"), [_all] + sorted(recs["Source"].dropna().unique()),
+                                 key="rec_src") if "Source" in recs.columns else _all)
         filt = recs.copy()
-        if "Zone" in filt.columns and zsel != "All":
+        if "Zone" in filt.columns and zsel != _all:
             filt = filt[filt["Zone"] == zsel]
-        if "Category" in filt.columns and csel != "All":
+        if "Category" in filt.columns and csel != _all:
             filt = filt[filt["Category"] == csel]
-        if "Source" in filt.columns and ssel != "All":
+        if "Source" in filt.columns and ssel != _all:
             filt = filt[filt["Source"] == ssel]
-        st.caption(f"{filt.shape[0]} of {recs.shape[0]} records")
-        render_table(filt.head(250).reset_index(drop=True))
+        st.caption(t("{shown} of {total} records",
+                     shown=filt.shape[0], total=recs.shape[0]))
+        render_table(filt.head(250).rename(columns={c: t(c) for c in filt.columns})
+                     .reset_index(drop=True))
         if filt.shape[0] > 250:
-            st.caption("Showing first 250 — download for the full set.")
-        st.download_button("Download Records CSV",
+            st.caption(t("Showing first 250 — download for the full set."))
+        st.download_button(t("Download Records CSV"),
                            data=det_df.to_csv(index=False).encode("utf-8"),
                            file_name="finding_records.csv", mime="text/csv")
 
 # ── Raw Tableau export (every column, untouched) ──────────────────────────────
-with st.expander("Raw Tableau export (all columns)", expanded=False):
+with st.expander(t("Raw Tableau export (all columns)"), expanded=False):
     if not rank_df.empty:
-        st.markdown("**Ranking — raw**")
+        st.markdown(t("**Ranking — raw**"))
         render_table(rank_df.head(200))
     if not det_df.empty:
-        st.markdown("**Detail — raw**")
+        st.markdown(t("**Detail — raw**"))
         # Drop the giant '(combined)' mashup column from the on-screen raw view
         raw_det = det_df[[c for c in det_df.columns if "(combined)" not in str(c).lower()]]
         render_table(raw_det.head(200))
         if len(det_df) > 200:
-            st.caption(f"Showing first 200 of {len(det_df)} rows — download above for all.")
+            st.caption(t("Showing first 200 of {n} rows — download above for all.",
+                         n=len(det_df)))
 
 # ── Finding Summary PDF ───────────────────────────────────────────────────────
-with st.expander("Finding Summary PDF", expanded=False):
+with st.expander(t("Finding Summary PDF"), expanded=False):
     if summary_file is None:
-        st.caption("Upload the Finding Summary PDF in Manual upload below to view it here.")
+        st.caption(t("Upload the Finding Summary PDF in Manual upload below to view it here."))
     else:
         pdf_bytes = summary_file.read()
         st.caption(f"{summary_file.name} · {len(pdf_bytes) / 1024:.1f} KB")
-        st.download_button("Download Summary PDF", data=pdf_bytes,
+        st.download_button(t("Download Summary PDF"), data=pdf_bytes,
                            file_name=summary_file.name, mime="application/pdf")
         b64 = base64.b64encode(pdf_bytes).decode("utf-8")
         st.components.v1.html(
@@ -489,13 +509,13 @@ with st.expander("Finding Summary PDF", expanded=False):
             f'type="application/pdf" sandbox="allow-same-origin"></iframe>', height=820)
 
 # ── Manual upload / re-sync ───────────────────────────────────────────────────
-with st.expander("Manual upload / re-sync (optional)", expanded=False):
-    st.caption("Tableau exports sync automatically every morning. Upload here only "
-               "to override with a fresh export.")
+with st.expander(t("Manual upload / re-sync (optional)"), expanded=False):
+    st.caption(t("Tableau exports sync automatically every morning. Upload here only "
+                 "to override with a fresh export."))
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.file_uploader("Detail CSV", type=["csv"], key="detail")
+        st.file_uploader(t("Detail CSV"), type=["csv"], key="detail")
     with c2:
-        st.file_uploader("Ranking CSV", type=["csv"], key="ranking")
+        st.file_uploader(t("Ranking CSV"), type=["csv"], key="ranking")
     with c3:
-        st.file_uploader("Summary PDF", type=["pdf"], key="summary")
+        st.file_uploader(t("Summary PDF"), type=["pdf"], key="summary")
