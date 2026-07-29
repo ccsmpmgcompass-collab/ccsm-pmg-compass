@@ -42,6 +42,7 @@ from app.db.sheets_client import (
     read_values,
     update_cells,
 )
+from app.i18n import t
 
 st.set_page_config(
     page_title="CCSM · Maintenance — PMG Compass",
@@ -54,7 +55,7 @@ inject_global_css()
 render_sidebar(user)
 
 render_page_header(
-    "Maintenance",
+    t("Maintenance"),
     f"{get_config_value('MISSION_NAME', flavor.display_name)} — PMG Compass",
 )
 
@@ -142,7 +143,7 @@ if hasattr(st, "segmented_control"):
     )
 else:  # Streamlit < 1.40 fallback
     _sec = st.radio(
-        "Maintenance section", _SECTIONS,
+        t("Maintenance section"), _SECTIONS,
         horizontal=True, key="maint_section", label_visibility="collapsed",
     )
 _sec = _sec or _TAB_HEALTH
@@ -158,7 +159,7 @@ if _flash_msg:
 # ══════════════════════════════════════════════════════════════════════════════
 
 if _sec == _TAB_HEALTH:
-    render_section_label("Weekly To-Do")
+    render_section_label(t("Weekly To-Do"))
     _today = date.today()
     _monday = _today - timedelta(days=_today.weekday())
     _wk = _monday.strftime("%Y-%m-%d")
@@ -182,10 +183,10 @@ if _sec == _TAB_HEALTH:
     st.progress(_done / len(_TODOS), text=f"{_done} of {len(_TODOS)} done")
 
     # ── Data snapshot (absorbed from the old Data Status page) ────────────────
-    render_section_label("Data Snapshot")
+    render_section_label(t("Data Snapshot"))
     st.info(
-        "PMG Compass data updates automatically every day at noon from Google "
-        "Sheets. No manual refresh is needed."
+        t("PMG Compass data updates automatically every day at noon from Google "
+        "Sheets. No manual refresh is needed.")
     )
 
     _meta = get_meta()
@@ -242,20 +243,20 @@ if _sec == _TAB_HEALTH:
             _ic1.markdown(f"**Total Areas:** {_total_areas}")
 
     _m1, _m2, _m3, _m4 = st.columns(4)
-    _m1.metric("Areas Submitted Today", _int_label(_submitted_today),
-               help="Number of areas that submitted their nightly report today.")
-    _m2.metric("Compliance Today", _pct_label(_compliance_today),
-               help="Percentage of active areas that submitted today.")
-    _m3.metric("Submitted This Week", _int_label(_submitted_week),
-               help="Total area-day submissions received so far this week (Mon–Sun).")
-    _m4.metric("All-Time Compliance", _pct_label(_alltime_compliance),
-               help="Submissions received vs expected across all areas.")
+    _m1.metric(t("Areas Submitted Today"), _int_label(_submitted_today),
+               help=t("Number of areas that submitted their nightly report today."))
+    _m2.metric(t("Compliance Today"), _pct_label(_compliance_today),
+               help=t("Percentage of active areas that submitted today."))
+    _m3.metric(t("Submitted This Week"), _int_label(_submitted_week),
+               help=t("Total area-day submissions received so far this week (Mon–Sun)."))
+    _m4.metric(t("All-Time Compliance"), _pct_label(_alltime_compliance),
+               help=t("Submissions received vs expected across all areas."))
 
     if not _meta:
-        st.warning("No metadata available yet — Agent5A may not have run today.")
+        st.warning(t("No metadata available yet — Agent5A may not have run today."))
 
     # ── Connection & Configuration ────────────────────────────────────────────
-    render_section_label("Connection & Configuration")
+    render_section_label(t("Connection & Configuration"))
 
     # Tabs the app and agents cannot function without. Read from COMPASS_CCSM
     # live so a renamed/deleted tab is caught here before it surfaces as a
@@ -310,17 +311,17 @@ if _sec == _TAB_HEALTH:
 
     if _missing_tabs:
         st.caption(
-            "A required tab going missing usually means someone renamed or "
+            t("A required tab going missing usually means someone renamed or "
             "deleted it in COMPASS_CCSM. Restore the exact name — agents and "
-            "this app look tabs up by name."
+            "this app look tabs up by name.")
         )
 
     # ── Data freshness ────────────────────────────────────────────────────────
-    render_section_label("Data Freshness")
+    render_section_label(t("Data Freshness"))
     st.caption(
-        "How recently each pipeline stage wrote data. Stale rows here mean an "
+        t("How recently each pipeline stage wrote data. Stale rows here mean an "
         "agent or ingestion run didn't fire — check the agent runs below, then "
-        "the Apps Script triggers."
+        "the Apps Script triggers.")
     )
 
     def _latest_date(tab: str, marker: str, candidates: tuple[str, ...]) -> tuple[str, str]:
@@ -389,11 +390,11 @@ if _sec == _TAB_HEALTH:
         )
 
     # ── Agent runs ────────────────────────────────────────────────────────────
-    render_section_label("Agent Runs")
+    render_section_label(t("Agent Runs"))
     st.caption(
-        "Every Apps Script agent appends a row to AGENT_RUN_LOG when it runs. "
+        t("Every Apps Script agent appends a row to AGENT_RUN_LOG when it runs. "
         "An agent missing from the last-run table, or a red status, means its "
-        "trigger didn't fire or the run errored."
+        "trigger didn't fire or the run errored.")
     )
 
     try:
@@ -403,9 +404,9 @@ if _sec == _TAB_HEALTH:
 
     if _log.empty or "Agent" not in _log.columns:
         st.warning(
-            "AGENT_RUN_LOG is empty or unreadable. If agents are running, they "
+            t("AGENT_RUN_LOG is empty or unreadable. If agents are running, they "
             "log there on every run — an empty log means the whole chain may be "
-            "stopped."
+            "stopped.")
         )
     else:
         _ts_col = next((c for c in _log.columns if c.strip().lower() == "timestamp"), None)
@@ -457,9 +458,9 @@ if _sec == _TAB_HEALTH:
             st.dataframe(_fails[_show_cols].tail(20),
                          use_container_width=True, hide_index=True)
         else:
-            st.success("No failed agent runs in the last 14 days.")
+            st.success(t("No failed agent runs in the last 14 days."))
 
-        with st.expander("Raw log — last 50 runs"):
+        with st.expander(t("Raw log — last 50 runs")):
             _raw_cols = [c for c in _log.columns if not c.startswith("_")]
             st.dataframe(_log[_raw_cols].tail(50),
                          use_container_width=True, hide_index=True)
@@ -470,13 +471,13 @@ if _sec == _TAB_HEALTH:
 # ══════════════════════════════════════════════════════════════════════════════
 
 elif _sec == _TAB_KB:
-    render_section_label("Add a Question & Answer")
+    render_section_label(t("Add a Question & Answer"))
     st.caption(
-        "AgentQA auto-answers missionary questions from the Questions & "
+        t("AgentQA auto-answers missionary questions from the Questions & "
         "Suggestions form using the KNOWLEDGE_BASE tab — every entry added here "
         "makes the next question more likely to be answered without a human. "
         "New entries take the next sequential ID and are live for the very next "
-        "question; no code change needed."
+        "question; no code change needed.")
     )
 
     _kb_grid = read_values("KNOWLEDGE_BASE")
@@ -485,8 +486,8 @@ elif _sec == _TAB_KB:
 
     if not _kb_grid:
         st.warning(
-            "KNOWLEDGE_BASE tab is missing — run setupKnowledgeBase() once from "
-            "the Apps Script editor (AgentQA.gs) to create and seed it."
+            t("KNOWLEDGE_BASE tab is missing — run setupKnowledgeBase() once from "
+            "the Apps Script editor (AgentQA.gs) to create and seed it.")
         )
     else:
         _kbh = [str(h).strip() for h in _kb_grid[0]]
@@ -548,32 +549,32 @@ elif _sec == _TAB_KB:
                 return ", ".join(out)
 
             if not _IS_LEAD:
-                st.caption("Only mission leadership can add knowledge-base entries.")
+                st.caption(t("Only mission leadership can add knowledge-base entries."))
             else:
                 with st.form("kb_add_form", clear_on_submit=True):
                     _kb_q = st.text_area(
-                        "Question",
-                        placeholder="What the missionary asked — or is likely to ask",
+                        t("Question"),
+                        placeholder=t("What the missionary asked — or is likely to ask"),
                     )
                     _kb_a = st.text_area(
-                        "Answer",
-                        placeholder="The answer AgentQA should send back",
+                        t("Answer"),
+                        placeholder=t("The answer AgentQA should send back"),
                     )
                     _kb_kw = st.text_input(
-                        "Keywords",
-                        placeholder="comma-separated — leave blank to auto-generate from the Q&A",
+                        t("Keywords"),
+                        placeholder=t("comma-separated — leave blank to auto-generate from the Q&A"),
                     )
                     _fc1, _fc2 = st.columns(2)
                     _kb_src = _fc1.text_input(
-                        "Added by", value=user.get("name") or user.get("email", ""))
-                    _kb_cat = _fc2.selectbox("Category", _cats,
+                        t("Added by"), value=user.get("name") or user.get("email", ""))
+                    _kb_cat = _fc2.selectbox(t("Category"), _cats,
                                              index=_cats.index("General"))
                     _kb_submit = st.form_submit_button(
                         f"Add to Knowledge Base as {_next_id}", type="primary")
 
                 if _kb_submit:
                     if not _kb_q.strip() or not _kb_a.strip():
-                        st.error("Both the question and the answer are required.")
+                        st.error(t("Both the question and the answer are required."))
                     else:
                         _kw_final = _kb_kw.strip() or _auto_keywords(_kb_q, _kb_a)
                         _new = [""] * len(_kbh)
@@ -602,8 +603,8 @@ elif _sec == _TAB_KB:
             # ── Existing entries ──────────────────────────────────────────────
             render_section_label(f"Existing Entries ({len(_kb_rows)})")
             _kb_search = st.text_input(
-                "Search the knowledge base", key="kb_search",
-                placeholder="Filter by any word in the question, answer, or keywords",
+                t("Search the knowledge base"), key="kb_search",
+                placeholder=t("Filter by any word in the question, answer, or keywords"),
             )
             _kb_df = pd.DataFrame([
                 {c: (r[_kbi[c]] if len(r) > _kbi[c] else "") for c in _KB_COLS}
@@ -623,17 +624,17 @@ elif _sec == _TAB_KB:
 # ══════════════════════════════════════════════════════════════════════════════
 
 elif _sec == _TAB_AGENTS:
-    render_section_label("Agent Configuration (AGENT_CONFIG)")
+    render_section_label(t("Agent Configuration (AGENT_CONFIG)"))
     st.caption(
-        "Every setting the Apps Script agents read at run time. Edits here take "
+        t("Every setting the Apps Script agents read at run time. Edits here take "
         "effect on the next agent run automatically — no Apps Script paste "
         "needed. Secret-looking values are masked; editing one replaces it "
-        "outright."
+        "outright.")
     )
 
     _cfg_grid = read_values("AGENT_CONFIG")
     if not _cfg_grid or len(_cfg_grid) < 2:
-        st.warning("AGENT_CONFIG is missing or empty.")
+        st.warning(t("AGENT_CONFIG is missing or empty."))
     else:
         _ch = [str(h).strip() for h in _cfg_grid[0]]
         _ck = next((i for i, h in enumerate(_ch)
@@ -644,15 +645,15 @@ elif _sec == _TAB_AGENTS:
                     if h.lower() in ("description", "notes", "purpose")), None)
         if _ck is None or _cv is None:
             st.error(
-                "AGENT_CONFIG header row changed — expected Config_Key and "
-                "Value columns. Fix the header in the Sheet."
+                t("AGENT_CONFIG header row changed — expected Config_Key and "
+                "Value columns. Fix the header in the Sheet.")
             )
         else:
             if not _IS_LEAD:
-                st.caption("Only mission leadership can edit settings.")
+                st.caption(t("Only mission leadership can edit settings."))
             _cfg_filter = st.text_input(
-                "Filter settings", key="cfg_filter",
-                placeholder="e.g. EMAIL, TEST, FORM",
+                t("Filter settings"), key="cfg_filter",
+                placeholder=t("e.g. EMAIL, TEST, FORM"),
             )
             _val_a1 = _col_a1(_cv + 1)
 
@@ -679,15 +680,15 @@ elif _sec == _TAB_AGENTS:
                             st.caption(_desc)
                         if _secret:
                             st.caption(
-                                "This value is masked — whatever you type "
-                                "replaces it. Leave and Cancel to keep it.")
+                                t("This value is masked — whatever you type "
+                                "replaces it. Leave and Cancel to keep it."))
                             _new_val = st.text_input(
-                                "New value", key=f"cfg_new_{_key}", type="password")
+                                t("New value"), key=f"cfg_new_{_key}", type="password")
                         else:
                             _new_val = st.text_input(
-                                "New value", value=_val, key=f"cfg_new_{_key}")
+                                t("New value"), value=_val, key=f"cfg_new_{_key}")
                         _bs, _bc, _ = st.columns([1, 1, 4])
-                        if _bs.button("Save", key=f"cfg_save_{_key}", type="primary"):
+                        if _bs.button(t("Save"), key=f"cfg_save_{_key}", type="primary"):
                             try:
                                 update_cells(
                                     "AGENT_CONFIG",
@@ -702,7 +703,7 @@ elif _sec == _TAB_AGENTS:
                                     "their next run."
                                 )
                                 st.rerun()
-                        if _bc.button("Cancel", key=f"cfg_cancel_{_key}"):
+                        if _bc.button(t("Cancel"), key=f"cfg_cancel_{_key}"):
                             st.session_state.pop("_cfg_editing", None)
                             st.rerun()
                 else:
@@ -711,22 +712,22 @@ elif _sec == _TAB_AGENTS:
                     _cc2.markdown(_shown)
                     if _desc:
                         _cc2.caption(_desc)
-                    if _IS_LEAD and _cc3.button("✏️", key=f"cfg_edit_{_r}"):
+                    if _IS_LEAD and _cc3.button(t("✏️"), key=f"cfg_edit_{_r}"):
                         st.session_state["_cfg_editing"] = _key
                         st.rerun()
 
             if _IS_LEAD:
-                with st.expander("➕ Add a new setting"):
+                with st.expander(t("➕ Add a new setting")):
                     st.caption(
-                        "Only useful for a key an agent actually reads — "
-                        "unknown keys are ignored harmlessly."
+                        t("Only useful for a key an agent actually reads — "
+                        "unknown keys are ignored harmlessly.")
                     )
                     _nk = st.text_input(
-                        "Key", key="cfg_add_key",
-                        placeholder="e.g. ESCALATION_NIGHTLY_HOUR",
+                        t("Key"), key="cfg_add_key",
+                        placeholder=t("e.g. ESCALATION_NIGHTLY_HOUR"),
                     )
-                    _nv = st.text_input("Value", key="cfg_add_val")
-                    if st.button("Add setting", key="cfg_add_btn",
+                    _nv = st.text_input(t("Value"), key="cfg_add_val")
+                    if st.button(t("Add setting"), key="cfg_add_btn",
                                  disabled=not _nk.strip()):
                         try:
                             _set_config_value(_nk.strip(), _nv.strip())
@@ -737,12 +738,12 @@ elif _sec == _TAB_AGENTS:
                             st.rerun()
 
     st.info(
-        "The failsafe/escalation email times (nightly ~10 AM, weekly ~8:45 PM "
+        t("The failsafe/escalation email times (nightly ~10 AM, weekly ~8:45 PM "
         "MT) are baked into Apps Script triggers today. To control them from "
         "here: paste **docs/EscalationHoursConfig.gs** into the Apps Script "
         "editor once and run its setup — after that, the "
         "ESCALATION_NIGHTLY_HOUR / ESCALATION_WEEKLY_HOUR settings above are "
-        "what set the send times.",
+        "what set the send times."),
         icon="⏰",
     )
 
@@ -752,13 +753,13 @@ elif _sec == _TAB_AGENTS:
 # ══════════════════════════════════════════════════════════════════════════════
 
 elif _sec == _TAB_QUESTIONS:
-    render_section_label("Form Question Configuration (QUESTIONS_CONFIG)")
+    render_section_label(t("Form Question Configuration (QUESTIONS_CONFIG)"))
     st.caption(
-        "The questions on the nightly and weekly report forms. Active drives "
+        t("The questions on the nightly and weekly report forms. Active drives "
         "what the agents process and what most pages show. Toggling here (or "
         "adding a question) does **not** touch the Google Forms until you push "
         "below — the push adds active questions to every zone's section and "
-        "removes inactive ones."
+        "removes inactive ones.")
     )
 
     _q_grid = read_values("QUESTIONS_CONFIG")
@@ -766,7 +767,7 @@ elif _sec == _TAB_QUESTIONS:
                "Metric_Key", "Metric_Display_Name", "Active"]
 
     if not _q_grid or len(_q_grid) < 2:
-        st.warning("QUESTIONS_CONFIG is missing or empty.")
+        st.warning(t("QUESTIONS_CONFIG is missing or empty."))
     else:
         _qh = [str(h).strip() for h in _q_grid[0]]
         _q_missing = [c for c in _Q_NEED if c not in _qh]
@@ -835,7 +836,7 @@ elif _sec == _TAB_QUESTIONS:
                     "QUESTIONS_CONFIG (agents follow it on their next run) — "
                     "push to the Google Forms separately below."
                 )
-                if st.button("Save question changes", type="primary", key="q_save"):
+                if st.button(t("Save question changes"), type="primary", key="q_save"):
                     try:
                         update_cells("QUESTIONS_CONFIG", _changes)
                     except Exception as e:
@@ -849,44 +850,49 @@ elif _sec == _TAB_QUESTIONS:
 
             # ── Add a question ────────────────────────────────────────────────
             if _IS_LEAD:
-                with st.expander("➕ Add a question"):
+                with st.expander(t("➕ Add a question")):
                     st.caption(
-                        "Adds the question to QUESTIONS_CONFIG as Active. It "
+                        t("Adds the question to QUESTIONS_CONFIG as Active. It "
                         "reaches the real Google Forms when you push below, and "
                         "the agents start processing it on their next run. "
                         "Note: a few hard-coded metric lists (the Breakdowns "
                         "metric picker) still need a code change to show a "
-                        "brand-new metric."
+                        "brand-new metric.")
                     )
-                    _aq_form = st.selectbox("Form", ["NIGHTLY", "WEEKLY"], key="q_add_form")
+                    # Options stay English - these values are written to the form
+                    # config and read by the Apps Script agents. format_func
+                    # translates the display only.
+                    _aq_form = st.selectbox(t("Form"), ["NIGHTLY", "WEEKLY"],
+                                            format_func=t, key="q_add_form")
                     _aq_text = st.text_input(
-                        "Question text — exactly as it should appear on the form",
+                        t("Question text — exactly as it should appear on the form"),
                         key="q_add_text",
-                        placeholder="e.g. Non-member Lessons",
+                        placeholder=t("e.g. Non-member Lessons"),
                     )
                     _aq_name = st.text_input(
-                        "Short display name (charts and reports)",
-                        key="q_add_name", placeholder="e.g. NM Lessons",
+                        t("Short display name (charts and reports)"),
+                        key="q_add_name", placeholder=t("e.g. NM Lessons"),
                     )
                     _aq_key = st.text_input(
-                        "Metric key — leave blank to derive from the display name",
-                        key="q_add_key", placeholder="e.g. nm_lessons",
+                        t("Metric key — leave blank to derive from the display name"),
+                        key="q_add_key", placeholder=t("e.g. nm_lessons"),
                     )
                     _aq_dtype = st.selectbox(
-                        "Data type", ["INTEGER", "TEXT", "DATE"], key="q_add_dtype")
+                        t("Data type"), ["INTEGER", "TEXT", "DATE"],
+                        format_func=t, key="q_add_dtype")
 
-                    if st.button("Add question", key="q_add_btn", type="primary"):
+                    if st.button(t("Add question"), key="q_add_btn", type="primary"):
                         _slug_src = _aq_key.strip() or _aq_name.strip() or _aq_text.strip()
                         _slug = re.sub(r"[^a-z0-9]+", "_", _slug_src.lower()).strip("_")
                         if not _aq_text.strip() or not _slug:
-                            st.error("Question text and a metric key (or display name) are required.")
+                            st.error(t("Question text and a metric key (or display name) are required."))
                         elif any(q["key"] == _slug for q in _qrows):
                             st.error(f"Metric key `{_slug}` already exists — pick another.")
                         elif any(
                             q["header"].lower() == _aq_text.strip().lower()
                             and q["form"] == _aq_form for q in _qrows
                         ):
-                            st.error("That exact question is already on this form.")
+                            st.error(t("That exact question is already on this form."))
                         else:
                             # IDs follow the seeded Q-N-### / Q-W-### convention
                             _pfx = "Q-N-" if _aq_form == "NIGHTLY" else "Q-W-"
@@ -934,7 +940,7 @@ elif _sec == _TAB_QUESTIONS:
                                 st.rerun()
 
             # ── Push to the Google Forms ──────────────────────────────────────
-            render_section_label("Push to Google Forms")
+            render_section_label(t("Push to Google Forms"))
             _sync_url = str(
                 st.secrets.get("QUESTION_SYNC_WEBAPP_URL",
                                get_config_value("QUESTION_SYNC_WEBAPP_URL", ""))
@@ -945,27 +951,27 @@ elif _sec == _TAB_QUESTIONS:
 
             if not _sync_url or not _sync_secret:
                 st.info(
-                    "The question-sync web app isn't deployed yet, so pushing "
+                    t("The question-sync web app isn't deployed yet, so pushing "
                     "from here is disabled. One-time setup: paste "
                     "**docs/FormQuestionSyncWebApp.gs** into the COMPASS_CCSM "
                     "Apps Script editor, deploy it as a web app, then add "
                     "QUESTION_SYNC_WEBAPP_URL and QUESTION_SYNC_WEBAPP_SECRET "
                     "to this app's secrets. Until then, form questions have to "
-                    "be edited in the Google Forms editor by hand.",
+                    "be edited in the Google Forms editor by hand."),
                     icon="🔌",
                 )
             else:
                 st.caption(
-                    "Adds every Active question to every zone section of its "
+                    t("Adds every Active question to every zone section of its "
                     "form and deletes questions that are no longer active. "
-                    "Already-collected responses in the Sheet are never touched."
+                    "Already-collected responses in the Sheet are never touched.")
                 )
                 if st.button(
-                    "Push questions to the Google Forms",
+                    t("Push questions to the Google Forms"),
                     type="primary", key="q_push", disabled=not _IS_LEAD,
                 ):
                     import requests as _requests
-                    with st.spinner("Syncing both forms — this can take a minute..."):
+                    with st.spinner(t("Syncing both forms — this can take a minute...")):
                         try:
                             _resp = _requests.post(
                                 _sync_url,
@@ -994,39 +1000,39 @@ elif _sec == _TAB_QUESTIONS:
 # ══════════════════════════════════════════════════════════════════════════════
 
 elif _sec == _TAB_SYSTEM:
-    render_section_label("Quick Links")
+    render_section_label(t("Quick Links"))
     st.caption(
-        "If the app is ever wrong or down, COMPASS_CCSM is the source of truth "
-        "— everything the mission reports lives there."
+        t("If the app is ever wrong or down, COMPASS_CCSM is the source of truth "
+        "— everything the mission reports lives there.")
     )
     _l1, _l2, _l3 = st.columns(3)
     try:
-        _l1.link_button("Open COMPASS_CCSM ↗", _get_spreadsheet().url,
+        _l1.link_button(t("Open COMPASS_CCSM ↗"), _get_spreadsheet().url,
                         use_container_width=True)
     except Exception as e:
         _l1.error(f"COMPASS_CCSM link unavailable — {e}")
     _nf_link = get_config_value("NIGHTLY_FORM_LINK", "")
     if _nf_link:
-        _l2.link_button("Nightly form ↗", _nf_link, use_container_width=True)
+        _l2.link_button(t("Nightly form ↗"), _nf_link, use_container_width=True)
     _wf_link = get_config_value("WEEKLY_FORM_LINK", "")
     if _wf_link:
-        _l3.link_button("Weekly form ↗", _wf_link, use_container_width=True)
+        _l3.link_button(t("Weekly form ↗"), _wf_link, use_container_width=True)
     st.page_link(
         "pages/06_Scores.py",
         label="Effectiveness score weights are edited on the **Scores** page →",
     )
 
     # ── Test mode ─────────────────────────────────────────────────────────────
-    render_section_label("Test Mode")
+    render_section_label(t("Test Mode"))
     _test_on = get_config_value("TEST_MODE", "FALSE").upper() == "TRUE"
     if _test_on:
         st.warning(
-            "**TEST MODE is ON.** All agent emails are redirected to the test "
+            t("**TEST MODE is ON.** All agent emails are redirected to the test "
             "inbox and data is written to TEST_* tabs. Missionaries receiving "
-            "nothing is expected while this is on."
+            "nothing is expected while this is on.")
         )
         if _IS_LEAD:
-            if st.button("Disable Test Mode (Go Live)", type="primary", key="tm_off"):
+            if st.button(t("Disable Test Mode (Go Live)"), type="primary", key="tm_off"):
                 try:
                     _set_config_value("TEST_MODE", "FALSE")
                 except Exception as e:
@@ -1036,16 +1042,16 @@ elif _sec == _TAB_SYSTEM:
                         "Test Mode disabled — the system is LIVE.")
                     st.rerun()
         else:
-            st.caption("Only mission leadership can change test mode.")
+            st.caption(t("Only mission leadership can change test mode."))
     else:
-        st.success("**System is LIVE.** Test Mode is off.")
+        st.success(t("**System is LIVE.** Test Mode is off."))
         if _IS_LEAD:
             _tm_sure = st.checkbox(
-                "I understand missionaries stop receiving real emails while "
-                "Test Mode is on.",
+                t("I understand missionaries stop receiving real emails while "
+                "Test Mode is on."),
                 key="tm_confirm",
             )
-            if st.button("Enable Test Mode", key="tm_on", disabled=not _tm_sure):
+            if st.button(t("Enable Test Mode"), key="tm_on", disabled=not _tm_sure):
                 try:
                     _set_config_value("TEST_MODE", "TRUE")
                 except Exception as e:
@@ -1055,41 +1061,41 @@ elif _sec == _TAB_SYSTEM:
                         "TEST MODE is ON — emails now go to the test inbox.")
                     st.rerun()
         else:
-            st.caption("Only mission leadership can change test mode.")
+            st.caption(t("Only mission leadership can change test mode."))
 
     # ── App controls ──────────────────────────────────────────────────────────
-    render_section_label("App Controls")
+    render_section_label(t("App Controls"))
     st.caption(
-        "These only affect this Streamlit app — never the Sheet, the agents, "
-        "or any emails. Safe to use any time."
+        t("These only affect this Streamlit app — never the Sheet, the agents, "
+        "or any emails. Safe to use any time.")
     )
     _b1, _b2 = st.columns(2)
     with _b1:
         if st.button(
-            "Clear data cache",
+            t("Clear data cache"),
             use_container_width=True,
-            help="Drops all 5-minute cached reads so every page refetches live "
+            help=t("Drops all 5-minute cached reads so every page refetches live "
                  "from COMPASS_CCSM. Use when the Sheet was just edited and "
-                 "pages still show old numbers.",
+                 "pages still show old numbers."),
         ):
             st.cache_data.clear()
-            st.success("Data cache cleared — pages will refetch on next load.")
+            st.success(t("Data cache cleared — pages will refetch on next load."))
     with _b2:
         if st.button(
-            "Reset Google Sheets connection",
+            t("Reset Google Sheets connection"),
             use_container_width=True,
-            help="Rebuilds the gspread client and reopens the spreadsheet, plus "
+            help=t("Rebuilds the gspread client and reopens the spreadsheet, plus "
                  "clears the data cache. Use when reads fail with "
-                 "auth/connection errors that a cache clear doesn't fix.",
+                 "auth/connection errors that a cache clear doesn't fix."),
         ):
             st.cache_resource.clear()
             st.cache_data.clear()
-            st.success("Connection reset — it will reconnect on next read.")
+            st.success(t("Connection reset — it will reconnect on next read."))
 
     # ── Connected systems ─────────────────────────────────────────────────────
-    render_section_label("Everything This System Is Connected To")
+    render_section_label(t("Everything This System Is Connected To"))
     st.markdown(
-        "- **COMPASS_CCSM (Google Sheet)** — the only data store. Every tab the "
+        t("- **COMPASS_CCSM (Google Sheet)** — the only data store. Every tab the "
         "agents and this app read or write lives there (link above).\n"
         "- **Google Forms** — the nightly + weekly report forms (links above) "
         "write into NIGHTLY_FORM_RAW / WEEKLY_FORM_RAW; the Questions & "
@@ -1106,7 +1112,7 @@ elif _sec == _TAB_SYSTEM:
         "`referral-scraper.yml` (referrals → REFERRAL_DATA), and "
         "`tableau-reports.yml` (quarterly Tableau exports).\n"
         "- **Gemini API** — the Home-page chatbot, AgentQA's auto-answers, and "
-        "Agent1C's leadership narratives."
+        "Agent1C's leadership narratives.")
     )
     _agents_df = pd.DataFrame(
         [
@@ -1133,12 +1139,12 @@ elif _sec == _TAB_SYSTEM:
     )
     st.dataframe(_agents_df, use_container_width=True, hide_index=True)
     st.caption(
-        "Schedules shown are the intended ones — Apps Script → Triggers (clock "
-        "icon) is the live truth."
+        t("Schedules shown are the intended ones — Apps Script → Triggers (clock "
+        "icon) is the live truth.")
     )
 
     # ── Environment ───────────────────────────────────────────────────────────
-    render_section_label("Environment")
+    render_section_label(t("Environment"))
 
     def _pkg_version(name: str) -> str:
         try:
@@ -1160,11 +1166,11 @@ elif _sec == _TAB_SYSTEM:
     )
 
     # ── Runbook ───────────────────────────────────────────────────────────────
-    render_section_label("Runbook")
+    render_section_label(t("Runbook"))
 
-    with st.expander("If the app is stale, blank, or erroring"):
+    with st.expander(t("If the app is stale, blank, or erroring")):
         st.markdown(
-            "1. **Clear data cache** (button above). Fixes 90% of \"the Sheet "
+            t("1. **Clear data cache** (button above). Fixes 90% of \"the Sheet "
             "says X but the app says Y\" — reads are cached for 5 minutes.\n"
             "2. **Reset the Sheets connection** if reads are failing outright.\n"
             "3. **Reboot the app**: Streamlit Cloud → the app's ⋮ menu → "
@@ -1175,12 +1181,12 @@ elif _sec == _TAB_SYSTEM:
             "COMPASS_CCSM (share the Sheet with it).\n"
             "5. **No data at all?** The agents write the tabs this app reads — "
             "check Agent Runs (To-Do & Health tab) and Apps Script triggers, "
-            "not the app."
+            "not the app.")
         )
 
-    with st.expander("If agents stopped running or emails stopped sending"):
+    with st.expander(t("If agents stopped running or emails stopped sending")):
         st.markdown(
-            "1. Open COMPASS_CCSM → **Extensions → Apps Script → Triggers** "
+            t("1. Open COMPASS_CCSM → **Extensions → Apps Script → Triggers** "
             "(clock icon) and confirm each agent's time-driven trigger still "
             "exists.\n"
             "2. Check **Executions** in the same editor for red failed runs — "
@@ -1192,5 +1198,5 @@ elif _sec == _TAB_SYSTEM:
             "5. ⚠️ **Code changes**: editing `docs/*.gs` in the git repo does "
             "NOT change the live agents. Live code is only what's pasted into "
             "the Apps Script editor — every fix must be copy-pasted there by "
-            "hand."
+            "hand.")
         )

@@ -27,6 +27,8 @@ GROUPS = {
                "pages/15_Suggestions.py", "pages/17_Action_Center.py"],
     "task11": ["pages/06_Scores.py", "app/components/design_system.py",
                "app/components/scope_selector.py"],
+    "task12": ["pages/02_Goals.py", "pages/18_Maintenance.py"],
+    "leftovers": ["app/breakdowns_engine.py", "app/auth/auth.py"],
 }
 
 

@@ -50,6 +50,7 @@ from app.utils.area_helpers import (
     mission_today,
     weekly_due_weeks,
 )
+from app.i18n import t
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -682,9 +683,9 @@ def _render_teaching_pipeline(
         # anything longer than a single week (Carson noticed this in Provo South,
         # 2026-07-17 — confirmed expected, not a bug).
         st.caption(
-            "At Sacrament is a weekly headcount, not unique people — someone who "
+            t("At Sacrament is a weekly headcount, not unique people — someone who "
             "attends several Sundays in this period is added again each week, so "
-            "it can run higher than Taught (which counts each person once)."
+            "it can run higher than Taught (which counts each person once).")
         )
         if _coverage_note:
             st.caption(_coverage_note)
@@ -877,7 +878,7 @@ def _render_compliance(
     _due_weeks = weekly_due_weeks(_sys_start, anchor_sunday=_wk_anchor, n_weeks=8)
 
     if not _due_weeks:
-        st.info("No weekly reporting weeks are due yet.")
+        st.info(t("No weekly reporting weeks are due yet."))
         return
 
     if not _wk_all.empty and "area" in _wk_all.columns:
@@ -1030,7 +1031,7 @@ def render_group_breakdown(
         # Defaults to the running month (Carson, 2026-07-17) — index only sets
         # the FIRST render; the widget's own state wins after that.
         kpi_period = st.selectbox(
-            "Period", _KPI_PERIODS,
+            t("Period"), _KPI_PERIODS,
             index=_KPI_PERIODS.index("This Month So Far"),
             key="bd_kpi_period",
         )
@@ -1191,7 +1192,7 @@ def render_group_breakdown(
 
     if not metric_keys:
         if has_rows or any(_weekly_has.values()):
-            st.info("No daily-log metrics available for this group yet.")
+            st.info(t("No daily-log metrics available for this group yet."))
         return
 
     # The 6 headline KIs float to the top, in Carson's fixed order, ahead of
@@ -1206,7 +1207,7 @@ def render_group_breakdown(
     _m_col, _, _ = st.columns(3)
     with _m_col:
         metric = st.selectbox(
-            "Metric",
+            t("Metric"),
             metric_keys,
             # Defaults to NM Lessons (Carson, 2026-07-17) — the pinned KIs still
             # lead the LIST; this only changes which option starts selected.
@@ -1444,7 +1445,7 @@ def render_group_breakdown(
     # IS "reset". Needs no on_click handler and, being a real st.button rather
     # than HTML drawn inside the chart's iframe, it matches the rest of the
     # app's buttons for free instead of carrying its own CSS.
-    st.button("Reset Graph ↻", key="bd_trend_reset")
+    st.button(t("Reset Graph ↻"), key="bd_trend_reset")
 
     # A bucket only counts as missable once its day has passed the nightly
     # cutoff — the current day isn't held against anyone until 9:30 PM MT
@@ -1503,7 +1504,7 @@ def render_group_breakdown(
             _x_title = "Date"
 
     if _t.empty:
-        st.info("No area data for the trend chart.")
+        st.info(t("No area data for the trend chart."))
     else:
         # The x-axis is EVERY bucket in the period, not just the ones that have
         # data. Feeding each trace only its own dates broke the chart two ways
@@ -1818,7 +1819,7 @@ def render_group_breakdown(
             _g_col, _, _ = st.columns(3)
             with _g_col:
                 st.selectbox(
-                    "X-Axis", _GRAN_OPTIONS,
+                    t("X-Axis"), _GRAN_OPTIONS,
                     index=_GRAN_OPTIONS.index(granularity),
                     key=_gran_key,
                 )

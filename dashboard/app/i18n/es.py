@@ -556,4 +556,535 @@ ES: dict[str, str] = {
     # A markdown horizontal rule, not prose - mapped to itself so the coverage
     # gate stays strict without pretending a divider was translated.
     "---": "---",
+
+    # ══ Task 12 + leftovers ═════════════════════════════════════════════════
+    # ── Auth (app/auth/auth.py) ──────────────────────────────────────────────
+    # These are what a locked-out user sees. They cannot reach the language
+    # switch to fix it, so leaving them English would strand a Spanish speaker.
+    "Access denied. You must be signed in with an approved Google account. "
+    "Contact the mission office if you need access.":
+        "Acceso denegado. Debe iniciar sesión con una cuenta de Google aprobada. "
+        "Comuníquese con la oficina de la misión si necesita acceso.",
+    "Access denied. Your account is not approved for PMG Compass. "
+    "Contact the mission office to request access.":
+        "Acceso denegado. Su cuenta no está aprobada para PMG Compass. "
+        "Comuníquese con la oficina de la misión para solicitar acceso.",
+    "Could not verify your identity. Please sign out and sign back in.":
+        "No se pudo verificar su identidad. Cierre sesión y vuelva a iniciarla.",
+    "Your session has expired. Please sign in again.":
+        "Su sesión ha expirado. Por favor inicie sesión nuevamente.",
+
+    # ── Breakdowns engine ────────────────────────────────────────────────────
+    "Period": "Período",
+    "X-Axis": "Eje X",
+    "Reset Graph ↻": "Restablecer Gráfico ↻",
+    "No area data for the trend chart.":
+        "No hay datos de área para el gráfico de tendencia.",
+    "No daily-log metrics available for this group yet.":
+        "Aún no hay métricas del registro diario para este grupo.",
+    "No weekly reporting weeks are due yet.":
+        "Aún no vence ninguna semana de reporte semanal.",
+    "At Sacrament is a weekly headcount, not unique people — someone who "
+    "attends several Sundays in this period is added again each week, so it "
+    "can run higher than Taught (which counts each person once).":
+        "En Sacramental es un conteo semanal de asistentes, no de personas únicas — "
+        "alguien que asiste varios domingos en este período se cuenta de nuevo cada "
+        "semana, así que puede superar a Enseñadas (que cuenta cada persona una vez).",
+
+    # ── Goals page ───────────────────────────────────────────────────────────
+    "Goals": "Metas",
+    "Save Goals": "Guardar Metas",
+    "Monthly Goals": "Metas Mensuales",
+    "Save Monthly Goals": "Guardar Metas Mensuales",
+    "Save Mission Goals": "Guardar Metas de la Misión",
+    "Set Mission Goals — This Month": "Fijar las Metas de la Misión — Este Mes",
+    "Mission Goals vs Actuals — This Month":
+        "Metas de la Misión vs Reales — Este Mes",
+    "Goals vs Actuals by Area — Latest Week":
+        "Metas vs Reales por Área — Última Semana",
+    "Goal from GOALS_CONFIG tab. Actual from the most recent week in WEEKLY_KI. "
+    "Color: green ≥ 100%  amber ≥ 75%  red < 75%.":
+        "La meta proviene de la pestaña GOALS_CONFIG. El valor real proviene de la "
+        "semana más reciente en WEEKLY_KI. Color: verde ≥ 100%  ámbar ≥ 75%  rojo < 75%.",
+    "Area Goal Customization": "Personalización de Metas por Área",
+    "Area Expectation Settings": "Configuración de Expectativas por Área",
+    "Area expectations saved.": "Expectativas de área guardadas.",
+    "Save Area Expectations": "Guardar Expectativas de Área",
+    "Add Area Override": "Agregar Excepción de Área",
+    "Reset to Mission Defaults": "Restablecer a los Valores de la Misión",
+    "Select Area": "Seleccionar Área",
+    "Specific area": "Área específica",
+    "Pick an area…": "Elija un área…",
+    "Pick an area first.": "Primero elija un área.",
+    "Pick a cadence first.": "Primero elija una frecuencia.",
+    "Pick an indicator first.": "Primero elija un indicador.",
+    "Or find by missionary name": "O busque por nombre de misionero",
+    "Filter by Zone": "Filtrar por Zona",
+    "Indicator": "Indicador",
+    "Cadence": "Frecuencia",
+    "weekly": "semanal",
+    "monthly": "mensual",
+    "SELECT CADENCE": "ELIJA LA FRECUENCIA",
+    "SELECT INDICATOR": "ELIJA EL INDICADOR",
+    "Target": "Meta",
+    "Add Category": "Agregar Categoría",
+    "Add another indicator to this category:":
+        "Agregar otro indicador a esta categoría:",
+    "Add": "Agregar",
+    "Remove": "Quitar",
+    "Save": "Guardar",
+    "Save All Recommended": "Guardar Todo lo Recomendado",
+    "FILL ALL RECOMMENDED": "LLENAR TODO LO RECOMENDADO",
+    "RECOMMEND ALL AREA GOALS": "RECOMENDAR TODAS LAS METAS DE ÁREA",
+    "Recommended Goal Nudge": "Ajuste de la Meta Recomendada",
+    "Metric to preview": "Métrica a previsualizar",
+    "Other Metrics": "Otras Métricas",
+    "Nightly Form Goals (weekly totals)":
+        "Metas del Formulario Nocturno (totales semanales)",
+    "Yes, reset": "Sí, restablecer",
+    "✏️": "✏️",
+    "➕ Add a custom expectation category":
+        "➕ Agregar una categoría de expectativa personalizada",
+    "No active area names found.": "No se encontraron nombres de áreas activas.",
+    "No active areas found. Check the MISSION_ORG tab.":
+        "No se encontraron áreas activas. Revise la pestaña MISSION_ORG.",
+    "No area goal data matches the current filter.":
+        "Ningún dato de metas de área coincide con el filtro actual.",
+    "No custom goals saved for this area yet — enter values and save.":
+        "Aún no hay metas personalizadas guardadas para esta área — ingrese valores y guarde.",
+    "No custom goals to reset for this area.":
+        "No hay metas personalizadas que restablecer para esta área.",
+    "No goals or actuals data available yet.":
+        "Aún no hay datos de metas ni de valores reales.",
+    "No completed weeks for this metric yet.":
+        "Aún no hay semanas completadas para esta métrica.",
+    "No weekly history for this metric yet.":
+        "Aún no hay historial semanal para esta métrica.",
+    "Compute the recommended weekly and monthly goals for every active area, "
+    "preview them, then save all at once.":
+        "Calcule las metas semanales y mensuales recomendadas para cada área activa, "
+        "revíselas, y luego guárdelas todas a la vez.",
+    "Nothing here saves itself — edits below (including added or removed "
+    "indicators and categories) only take effect everywhere once you press "
+    "**Save Area Expectations**.":
+        "Nada aquí se guarda solo — los cambios de abajo (incluidos los indicadores y "
+        "categorías agregados o eliminados) solo surten efecto en todas partes cuando "
+        "presione **Guardar Expectativas de Área**.",
+    "Every Recommended (REC) badge on Area Goals and Mission Goals recommends "
+    "that area's (or the whole mission's) own average performance, stretched up "
+    "by this percentage. 0% = the plain average itself; 10% = a light stretch "
+    "(the original behavior); 100% = double the average. Example: an area "
+    "averaging 10/week shows REC 11 at 10%, REC 15 at 50%, and REC 20 at 100%. "
+    "Applies mission-wide, everywhere a REC badge appears.":
+        "Cada distintivo Recomendado (REC) en Metas de Área y Metas de la Misión "
+        "recomienda el propio promedio de desempeño de esa área (o de toda la misión), "
+        "aumentado por este porcentaje. 0% = el promedio tal cual; 10% = un aumento leve "
+        "(el comportamiento original); 100% = el doble del promedio. Ejemplo: un área con "
+        "un promedio de 10 por semana muestra REC 11 al 10%, REC 15 al 50% y REC 20 al "
+        "100%. Se aplica en toda la misión, dondequiera que aparezca un distintivo REC.",
+    "Set a weekly goal for every nightly and weekly form metric for this area. "
+    "Saved goals appear on the Breakdowns page's area view and roll up into "
+    "zone-level goals on its zone view. Gate, Date, New, Pew, Renew, and Mate "
+    "additionally get a MONTHLY goal further down, stored separately.":
+        "Fije una meta semanal para cada métrica de los formularios nocturno y semanal "
+        "de esta área. Las metas guardadas aparecen en la vista de área de la página "
+        "Desgloses y se suman en metas por zona en su vista de zona. Gate, Date, New, "
+        "Pew, Renew y Mate además reciben una meta MENSUAL más abajo, guardada aparte.",
+    "Weekly and monthly expectations by area category — the single source of "
+    "truth for the Goals pages' \"/N\" fractions (including Monthly Goals' Gate "
+    "and Mission Goals' totals), the Breakdowns trend chart's expectation lines "
+    "(any indicator with an expectation gets a line when that metric is selected "
+    "there), and the Scores page's Effort score. Save, and every page reflects "
+    "it immediately. A category is matched off each area's MISSION_ORG "
+    "Language_Type or area name — Haitian, Creole and French are also matched by "
+    "area name even with a blank/English Language_Type — and a category named "
+    "exactly after one area overrides everything else for just that area.":
+        "Expectativas semanales y mensuales por categoría de área — la única fuente de "
+        "verdad para las fracciones \"/N\" de las páginas de Metas (incluidos Gate en "
+        "Metas Mensuales y los totales de Metas de la Misión), las líneas de expectativa "
+        "del gráfico de tendencia de Desgloses (cualquier indicador con expectativa "
+        "recibe una línea cuando esa métrica se selecciona ahí), y el puntaje de Esfuerzo "
+        "de la página Puntajes. Guarde, y cada página lo reflejará de inmediato. La "
+        "categoría se determina según el Language_Type de MISSION_ORG de cada área o el "
+        "nombre del área — haitiano, creole y francés también se detectan por el nombre "
+        "del área aunque el Language_Type esté vacío o en inglés — y una categoría "
+        "nombrada exactamente como un área prevalece sobre todo lo demás solo para esa área.",
+    "Custom category — matched by substring against an area's Language_Type or "
+    "its own name.":
+        "Categoría personalizada — se detecta por coincidencia parcial con el "
+        "Language_Type de un área o con su propio nombre.",
+    "Type a language (e.g. \"Japanese\") or any keyword (e.g. \"BYU\") — it "
+    "matches every area whose Language_Type OR area name contains it, so \"BYU\" "
+    "catches BYU East and BYU North whatever their languages. Add its indicators "
+    "in its own section above once the category exists.":
+        "Escriba un idioma (por ejemplo \"japonés\") o cualquier palabra clave (por "
+        "ejemplo \"BYU\") — coincide con toda área cuyo Language_Type O nombre lo "
+        "contenga, así que \"BYU\" abarca BYU East y BYU North sin importar sus idiomas. "
+        "Agregue sus indicadores en su propia sección más arriba una vez creada la categoría.",
+    "Enter a language or keyword first.": "Primero ingrese un idioma o palabra clave.",
+    "— or override ONE specific area: pick it here and it gets its own section "
+    "above, pre-filled with what it currently resolves to. Its numbers then beat "
+    "its language category everywhere (fractions, Breakdowns lines, Effort score).":
+        "— o defina una excepción para UNA área específica: elíjala aquí y recibirá su "
+        "propia sección arriba, precargada con lo que actualmente le corresponde. Sus "
+        "números entonces prevalecen sobre su categoría de idioma en todas partes "
+        "(fracciones, líneas de Desgloses, puntaje de Esfuerzo).",
+    "Only the Mission President or Assistants can change these.":
+        "Solo el Presidente de Misión o los Asistentes pueden cambiar esto.",
+
+    # ── Maintenance: status and snapshot ─────────────────────────────────────
+    "Data Snapshot": "Instantánea de Datos",
+    "Data Freshness": "Actualidad de los Datos",
+    "Compliance Today": "Cumplimiento de Hoy",
+    "Areas Submitted Today": "Áreas que Enviaron Hoy",
+    "Submitted This Week": "Enviado Esta Semana",
+    "All-Time Compliance": "Cumplimiento Histórico",
+    "Number of areas that submitted their nightly report today.":
+        "Cantidad de áreas que enviaron su reporte nocturno hoy.",
+    "Percentage of active areas that submitted today.":
+        "Porcentaje de áreas activas que enviaron hoy.",
+    "Total area-day submissions received so far this week (Mon–Sun).":
+        "Total de envíos por área y día recibidos hasta ahora esta semana (lun–dom).",
+    "Submissions received vs expected across all areas.":
+        "Envíos recibidos frente a los esperados en todas las áreas.",
+    "How recently each pipeline stage wrote data. Stale rows here mean an agent "
+    "or ingestion run didn't fire — check the agent runs below, then the Apps "
+    "Script triggers.":
+        "Hace cuánto escribió datos cada etapa del proceso. Las filas desactualizadas "
+        "aquí significan que un agente o una carga de datos no se ejecutó — revise las "
+        "ejecuciones de agentes más abajo, y luego los activadores de Apps Script.",
+    "No metadata available yet — Agent5A may not have run today.":
+        "Aún no hay metadatos disponibles — es posible que Agent5A no se haya ejecutado hoy.",
+
+    # ── Maintenance: agents and runbook ──────────────────────────────────────
+    "Agent Runs": "Ejecuciones de Agentes",
+    "Weekly To-Do": "Tareas Semanales",
+    "Raw log — last 50 runs": "Registro sin procesar — últimas 50 ejecuciones",
+    "No failed agent runs in the last 14 days.":
+        "No hubo ejecuciones de agentes fallidas en los últimos 14 días.",
+    "Every Apps Script agent appends a row to AGENT_RUN_LOG when it runs. An "
+    "agent missing from the last-run table, or a red status, means its trigger "
+    "didn't fire or the run errored.":
+        "Cada agente de Apps Script agrega una fila a AGENT_RUN_LOG cuando se ejecuta. "
+        "Un agente ausente de la tabla de últimas ejecuciones, o un estado en rojo, "
+        "significa que su activador no se disparó o que la ejecución falló.",
+    "Schedules shown are the intended ones — Apps Script → Triggers (clock icon) "
+    "is the live truth.":
+        "Los horarios mostrados son los previstos — Apps Script → Activadores (icono de "
+        "reloj) es la verdad real.",
+    "AGENT_RUN_LOG is empty or unreadable. If agents are running, they log there "
+    "on every run — an empty log means the whole chain may be stopped.":
+        "AGENT_RUN_LOG está vacío o no se puede leer. Si los agentes se están "
+        "ejecutando, registran ahí en cada ejecución — un registro vacío puede "
+        "significar que toda la cadena está detenida.",
+    "Runbook": "Guía de Operación",
+    "If the app is stale, blank, or erroring":
+        "Si la aplicación está desactualizada, en blanco o con errores",
+    "If agents stopped running or emails stopped sending":
+        "Si los agentes dejaron de ejecutarse o los correos dejaron de enviarse",
+    "Everything This System Is Connected To":
+        "Todo lo que Está Conectado a Este Sistema",
+    "If the app is ever wrong or down, COMPASS_CCSM is the source of truth — "
+    "everything the mission reports lives there.":
+        "Si la aplicación alguna vez se equivoca o deja de funcionar, COMPASS_CCSM es la "
+        "fuente de verdad — todo lo que reporta la misión vive ahí.",
+    "A required tab going missing usually means someone renamed or deleted it in "
+    "COMPASS_CCSM. Restore the exact name — agents and this app look tabs up by "
+    "name.":
+        "Que falte una pestaña requerida suele significar que alguien la renombró o "
+        "eliminó en COMPASS_CCSM. Restaure el nombre exacto — los agentes y esta "
+        "aplicación buscan las pestañas por nombre.",
+
+    # ── Maintenance: app controls ────────────────────────────────────────────
+    "App Controls": "Controles de la Aplicación",
+    "Connection & Configuration": "Conexión y Configuración",
+    "Environment": "Entorno",
+    "Quick Links": "Enlaces Rápidos",
+    "Maintenance section": "Sección de mantenimiento",
+    "Section": "Sección",
+    "Clear data cache": "Borrar la caché de datos",
+    "Data cache cleared — pages will refetch on next load.":
+        "Caché de datos borrada — las páginas volverán a consultar en la próxima carga.",
+    "Drops all 5-minute cached reads so every page refetches live from "
+    "COMPASS_CCSM. Use when the Sheet was just edited and pages still show old "
+    "numbers.":
+        "Descarta todas las lecturas en caché de 5 minutos para que cada página vuelva a "
+        "consultar en vivo desde COMPASS_CCSM. Úselo cuando la hoja acaba de editarse y "
+        "las páginas siguen mostrando números antiguos.",
+    "Reset Google Sheets connection": "Restablecer la conexión con Google Sheets",
+    "Connection reset — it will reconnect on next read.":
+        "Conexión restablecida — se reconectará en la próxima lectura.",
+    "Rebuilds the gspread client and reopens the spreadsheet, plus clears the "
+    "data cache. Use when reads fail with auth/connection errors that a cache "
+    "clear doesn't fix.":
+        "Reconstruye el cliente gspread y vuelve a abrir la hoja de cálculo, además de "
+        "borrar la caché de datos. Úselo cuando las lecturas fallan con errores de "
+        "autenticación o conexión que no se corrigen borrando la caché.",
+    "These only affect this Streamlit app — never the Sheet, the agents, or any "
+    "emails. Safe to use any time.":
+        "Esto solo afecta a esta aplicación de Streamlit — nunca a la hoja, a los agentes "
+        "ni a los correos. Es seguro usarlo en cualquier momento.",
+    "PMG Compass data updates automatically every day at noon from Google "
+    "Sheets. No manual refresh is needed.":
+        "Los datos de PMG Compass se actualizan automáticamente todos los días al "
+        "mediodía desde Google Sheets. No hace falta actualizar manualmente.",
+    "Open COMPASS_CCSM ↗": "Abrir COMPASS_CCSM ↗",
+    "Nightly form ↗": "Formulario nocturno ↗",
+    "Weekly form ↗": "Formulario semanal ↗",
+
+    # ── Maintenance: test mode ───────────────────────────────────────────────
+    "Test Mode": "Modo de Prueba",
+    "Enable Test Mode": "Activar el Modo de Prueba",
+    "Disable Test Mode (Go Live)": "Desactivar el Modo de Prueba (Salir en Vivo)",
+    "**TEST MODE is ON.** All agent emails are redirected to the test inbox and "
+    "data is written to TEST_* tabs. Missionaries receiving nothing is expected "
+    "while this is on.":
+        "**EL MODO DE PRUEBA ESTÁ ACTIVO.** Todos los correos de los agentes se redirigen "
+        "a la bandeja de prueba y los datos se escriben en las pestañas TEST_*. Que los "
+        "misioneros no reciban nada es lo esperado mientras esto esté activo.",
+    "**System is LIVE.** Test Mode is off.":
+        "**El sistema está EN VIVO.** El Modo de Prueba está desactivado.",
+    "I understand missionaries stop receiving real emails while Test Mode is on.":
+        "Entiendo que los misioneros dejan de recibir correos reales mientras el Modo de "
+        "Prueba esté activo.",
+    "Only mission leadership can change test mode.":
+        "Solo el liderazgo de la misión puede cambiar el modo de prueba.",
+
+    # ── Maintenance: AGENT_CONFIG ────────────────────────────────────────────
+    "Agent Configuration (AGENT_CONFIG)": "Configuración de Agentes (AGENT_CONFIG)",
+    "Filter settings": "Filtrar configuraciones",
+    "Add setting": "Agregar configuración",
+    "➕ Add a new setting": "➕ Agregar una configuración nueva",
+    "Key": "Clave",
+    "Value": "Valor",
+    "New value": "Valor nuevo",
+    "Added by": "Agregado por",
+    "e.g. ESCALATION_NIGHTLY_HOUR": "por ejemplo, ESCALATION_NIGHTLY_HOUR",
+    "Every setting the Apps Script agents read at run time. Edits here take "
+    "effect on the next agent run automatically — no Apps Script paste needed. "
+    "Secret-looking values are masked; editing one replaces it outright.":
+        "Cada configuración que los agentes de Apps Script leen al ejecutarse. Los "
+        "cambios aquí surten efecto automáticamente en la próxima ejecución — no hace "
+        "falta pegar nada en Apps Script. Los valores que parecen secretos se enmascaran; "
+        "editar uno lo reemplaza por completo.",
+    "This value is masked — whatever you type replaces it. Leave and Cancel to "
+    "keep it.":
+        "Este valor está enmascarado — lo que escriba lo reemplazará. Salga y cancele "
+        "para conservarlo.",
+    "Only useful for a key an agent actually reads — unknown keys are ignored "
+    "harmlessly.":
+        "Solo es útil para una clave que un agente realmente lea — las claves "
+        "desconocidas se ignoran sin causar problemas.",
+    "Only mission leadership can edit settings.":
+        "Solo el liderazgo de la misión puede editar la configuración.",
+    "AGENT_CONFIG is missing or empty.": "AGENT_CONFIG falta o está vacía.",
+    "AGENT_CONFIG header row changed — expected Config_Key and Value columns. "
+    "Fix the header in the Sheet.":
+        "La fila de encabezado de AGENT_CONFIG cambió — se esperaban las columnas "
+        "Config_Key y Value. Corrija el encabezado en la hoja.",
+    "The failsafe/escalation email times (nightly ~10 AM, weekly ~8:45 PM MT) "
+    "are baked into Apps Script triggers today. To control them from here: paste "
+    "**docs/EscalationHoursConfig.gs** into the Apps Script editor once and run "
+    "its setup — after that, the ESCALATION_NIGHTLY_HOUR / "
+    "ESCALATION_WEEKLY_HOUR settings above are what set the send times.":
+        "Los horarios de los correos de resguardo/escalamiento (nocturno ~10 AM, semanal "
+        "~8:45 PM MT) hoy están fijados en los activadores de Apps Script. Para "
+        "controlarlos desde aquí: pegue **docs/EscalationHoursConfig.gs** en el editor de "
+        "Apps Script una vez y ejecute su configuración — después de eso, los ajustes "
+        "ESCALATION_NIGHTLY_HOUR / ESCALATION_WEEKLY_HOUR de arriba son los que definen "
+        "las horas de envío.",
+
+    # ── Maintenance: questions config ────────────────────────────────────────
+    "Form Question Configuration (QUESTIONS_CONFIG)":
+        "Configuración de Preguntas del Formulario (QUESTIONS_CONFIG)",
+    "Form": "Formulario",
+    "NIGHTLY": "NOCTURNO",
+    "WEEKLY": "SEMANAL",
+    "Data type": "Tipo de dato",
+    "INTEGER": "ENTERO",
+    "TEXT": "TEXTO",
+    "DATE": "FECHA",
+    "Question": "Pregunta",
+    "Add question": "Agregar pregunta",
+    "➕ Add a question": "➕ Agregar una pregunta",
+    "Save question changes": "Guardar los cambios de las preguntas",
+    "Push to Google Forms": "Enviar a Google Forms",
+    "Push questions to the Google Forms": "Enviar las preguntas a Google Forms",
+    "Syncing both forms — this can take a minute...":
+        "Sincronizando ambos formularios — esto puede tardar un minuto...",
+    "Question text — exactly as it should appear on the form":
+        "Texto de la pregunta — exactamente como debe aparecer en el formulario",
+    "Short display name (charts and reports)":
+        "Nombre corto para mostrar (gráficos e informes)",
+    "Metric key — leave blank to derive from the display name":
+        "Clave de la métrica — déjela en blanco para derivarla del nombre para mostrar",
+    "e.g. Non-member Lessons": "por ejemplo, Lecciones a no miembros",
+    "e.g. NM Lessons": "por ejemplo, Lecciones NM",
+    "e.g. nm_lessons": "por ejemplo, nm_lessons",
+    "Question text and a metric key (or display name) are required.":
+        "Se requiere el texto de la pregunta y una clave de métrica (o nombre para mostrar).",
+    "That exact question is already on this form.":
+        "Esa pregunta exacta ya está en este formulario.",
+    "QUESTIONS_CONFIG is missing or empty.": "QUESTIONS_CONFIG falta o está vacía.",
+    "QUESTIONS_CONFIG has no metrics defined.":
+        "QUESTIONS_CONFIG no tiene métricas definidas.",
+    "The questions on the nightly and weekly report forms. Active drives what "
+    "the agents process and what most pages show. Toggling here (or adding a "
+    "question) does **not** touch the Google Forms until you push below — the "
+    "push adds active questions to every zone's section and removes inactive "
+    "ones.":
+        "Las preguntas de los formularios de reporte nocturno y semanal. La casilla "
+        "Activa determina lo que procesan los agentes y lo que muestran la mayoría de las "
+        "páginas. Cambiarla aquí (o agregar una pregunta) **no** modifica los Google "
+        "Forms hasta que envíe los cambios abajo — el envío agrega las preguntas activas "
+        "a la sección de cada zona y quita las inactivas.",
+    "Adds every Active question to every zone section of its form and deletes "
+    "questions that are no longer active. Already-collected responses in the "
+    "Sheet are never touched.":
+        "Agrega cada pregunta Activa a la sección de cada zona de su formulario y elimina "
+        "las preguntas que ya no están activas. Las respuestas ya recopiladas en la hoja "
+        "nunca se modifican.",
+    "Adds the question to QUESTIONS_CONFIG as Active. It reaches the real Google "
+    "Forms when you push below, and the agents start processing it on their next "
+    "run. Note: a few hard-coded metric lists (the Breakdowns metric picker) "
+    "still need a code change to show a brand-new metric.":
+        "Agrega la pregunta a QUESTIONS_CONFIG como Activa. Llega a los Google Forms "
+        "reales cuando envía los cambios abajo, y los agentes empiezan a procesarla en su "
+        "próxima ejecución. Nota: algunas listas de métricas fijas en el código (el "
+        "selector de métricas de Desgloses) todavía requieren un cambio de código para "
+        "mostrar una métrica totalmente nueva.",
+    "The question-sync web app isn't deployed yet, so pushing from here is "
+    "disabled. One-time setup: paste **docs/FormQuestionSyncWebApp.gs** into the "
+    "COMPASS_CCSM Apps Script editor, deploy it as a web app, then add "
+    "QUESTION_SYNC_WEBAPP_URL and QUESTION_SYNC_WEBAPP_SECRET to this app's "
+    "secrets. Until then, form questions have to be edited in the Google Forms "
+    "editor by hand.":
+        "La aplicación web de sincronización de preguntas aún no está desplegada, así que "
+        "el envío desde aquí está deshabilitado. Configuración por única vez: pegue "
+        "**docs/FormQuestionSyncWebApp.gs** en el editor de Apps Script de COMPASS_CCSM, "
+        "despliéguelo como aplicación web, y luego agregue QUESTION_SYNC_WEBAPP_URL y "
+        "QUESTION_SYNC_WEBAPP_SECRET a los secretos de esta aplicación. Hasta entonces, "
+        "las preguntas del formulario deben editarse a mano en el editor de Google Forms.",
+
+    # ── Maintenance: knowledge base ──────────────────────────────────────────
+    "Add a Question & Answer": "Agregar una Pregunta y Respuesta",
+    "Answer": "Respuesta",
+    "Keywords": "Palabras clave",
+    "Language or keyword": "Idioma o palabra clave",
+    "Search the knowledge base": "Buscar en la base de conocimiento",
+    "Filter by any word in the question, answer, or keywords":
+        "Filtrar por cualquier palabra de la pregunta, la respuesta o las palabras clave",
+    "What the missionary asked — or is likely to ask":
+        "Lo que preguntó el misionero — o lo que probablemente pregunte",
+    "The answer AgentQA should send back":
+        "La respuesta que AgentQA debe enviar",
+    "comma-separated — leave blank to auto-generate from the Q&A":
+        "separadas por comas — deje en blanco para generarlas automáticamente a partir de "
+        "la pregunta y la respuesta",
+    "e.g. EMAIL, TEST, FORM": "por ejemplo, EMAIL, TEST, FORM",
+    "Both the question and the answer are required.":
+        "Se requieren tanto la pregunta como la respuesta.",
+    "Only mission leadership can add knowledge-base entries.":
+        "Solo el liderazgo de la misión puede agregar entradas a la base de conocimiento.",
+    "AgentQA auto-answers missionary questions from the Questions & Suggestions "
+    "form using the KNOWLEDGE_BASE tab — every entry added here makes the next "
+    "question more likely to be answered without a human. New entries take the "
+    "next sequential ID and are live for the very next question; no code change "
+    "needed.":
+        "AgentQA responde automáticamente las preguntas de los misioneros del formulario "
+        "de Preguntas y Sugerencias usando la pestaña KNOWLEDGE_BASE — cada entrada "
+        "agregada aquí hace más probable que la próxima pregunta se responda sin "
+        "intervención humana. Las entradas nuevas toman el siguiente ID secuencial y "
+        "quedan activas para la siguiente pregunta; no se requiere cambio de código.",
+    "KNOWLEDGE_BASE tab is missing — run setupKnowledgeBase() once from the Apps "
+    "Script editor (AgentQA.gs) to create and seed it.":
+        "Falta la pestaña KNOWLEDGE_BASE — ejecute setupKnowledgeBase() una vez desde el "
+        "editor de Apps Script (AgentQA.gs) para crearla y poblarla.",
+    "Areas Involved": "Áreas Involucradas",
+
+    # The architecture overview block on the Maintenance page.
+    "- **COMPASS_CCSM (Google Sheet)** — the only data store. Every tab the "
+    "agents and this app read or write lives there (link above).\n"
+    "- **Google Forms** — the nightly + weekly report forms (links above) write "
+    "into NIGHTLY_FORM_RAW / WEEKLY_FORM_RAW; the Questions & Suggestions form "
+    "feeds AgentQA.\n"
+    "- **Apps Script agents** — live *inside* COMPASS_CCSM (Extensions → Apps "
+    "Script). The table below lists them; `docs/` in the git repo holds "
+    "reference copies, but **only code pasted into the online editor actually "
+    "runs**.\n"
+    "- **This app (Streamlit Cloud)** — auto-deploys the `main` branch. Reads "
+    "COMPASS_CCSM via the service account; writes Notes, Score Config, and the "
+    "tabs this page edits.\n"
+    "- **GitHub Actions** — cloud buttons in this app dispatch "
+    "`transfer-roster-pull.yml` (portal roster → TRANSFER_IMPORT), "
+    "`referral-scraper.yml` (referrals → REFERRAL_DATA), and "
+    "`tableau-reports.yml` (quarterly Tableau exports).\n"
+    "- **Gemini API** — the Home-page chatbot, AgentQA's auto-answers, and "
+    "Agent1C's leadership narratives.":
+        "- **COMPASS_CCSM (Google Sheet)** — el único almacén de datos. Cada pestaña que "
+        "los agentes y esta aplicación leen o escriben vive ahí (enlace arriba).\n"
+        "- **Google Forms** — los formularios de reporte nocturno y semanal (enlaces "
+        "arriba) escriben en NIGHTLY_FORM_RAW / WEEKLY_FORM_RAW; el formulario de "
+        "Preguntas y Sugerencias alimenta a AgentQA.\n"
+        "- **Agentes de Apps Script** — viven *dentro* de COMPASS_CCSM (Extensiones → "
+        "Apps Script). La tabla de abajo los lista; `docs/` en el repositorio git "
+        "contiene copias de referencia, pero **solo el código pegado en el editor en "
+        "línea se ejecuta realmente**.\n"
+        "- **Esta aplicación (Streamlit Cloud)** — se despliega automáticamente desde la "
+        "rama `main`. Lee COMPASS_CCSM mediante la cuenta de servicio; escribe Notas, la "
+        "Configuración de Puntajes y las pestañas que edita esta página.\n"
+        "- **GitHub Actions** — los botones en la nube de esta aplicación disparan "
+        "`transfer-roster-pull.yml` (lista del portal → TRANSFER_IMPORT), "
+        "`referral-scraper.yml` (referencias → REFERRAL_DATA) y `tableau-reports.yml` "
+        "(exportaciones trimestrales de Tableau).\n"
+        "- **API de Gemini** — el chatbot de la página de Inicio, las respuestas "
+        "automáticas de AgentQA y las narrativas de liderazgo de Agent1C.",
+
+    "1. **Clear data cache** (button above). Fixes 90% of \"the Sheet says X but "
+    "the app says Y\" — reads are cached for 5 minutes.\n"
+    "2. **Reset the Sheets connection** if reads are failing outright.\n"
+    "3. **Reboot the app**: Streamlit Cloud → the app's ⋮ menu → Reboot. Also "
+    "forces the latest commit from `main` to deploy.\n"
+    "4. **Check secrets**: Streamlit Cloud → app → Settings → Secrets must "
+    "contain the service account, COMPASS_SHEET_NAME, and GEMINI_API_KEY. The "
+    "service account email must have access to COMPASS_CCSM (share the Sheet "
+    "with it).\n"
+    "5. **No data at all?** The agents write the tabs this app reads — check "
+    "Agent Runs (To-Do & Health tab) and Apps Script triggers, not the app.":
+        "1. **Borre la caché de datos** (botón de arriba). Resuelve el 90% de \"la hoja "
+        "dice X pero la aplicación dice Y\" — las lecturas se guardan en caché por 5 "
+        "minutos.\n"
+        "2. **Restablezca la conexión con Sheets** si las lecturas fallan por completo.\n"
+        "3. **Reinicie la aplicación**: Streamlit Cloud → menú ⋮ de la aplicación → "
+        "Reboot. También fuerza el despliegue del último commit de `main`.\n"
+        "4. **Revise los secretos**: Streamlit Cloud → aplicación → Settings → Secrets "
+        "debe contener la cuenta de servicio, COMPASS_SHEET_NAME y GEMINI_API_KEY. El "
+        "correo de la cuenta de servicio debe tener acceso a COMPASS_CCSM (comparta la "
+        "hoja con él).\n"
+        "5. **¿No hay datos en absoluto?** Los agentes escriben las pestañas que lee esta "
+        "aplicación — revise las Ejecuciones de Agentes (pestaña Tareas y Estado) y los "
+        "activadores de Apps Script, no la aplicación.",
+
+    "1. Open COMPASS_CCSM → **Extensions → Apps Script → Triggers** (clock icon) "
+    "and confirm each agent's time-driven trigger still exists.\n"
+    "2. Check **Executions** in the same editor for red failed runs — the stack "
+    "trace there is more detailed than AGENT_RUN_LOG.\n"
+    "3. Remember **TEST_MODE**: if it's on (see above), all emails go to the "
+    "test inbox — missionaries receiving nothing is expected.\n"
+    "4. The Sunday chain is Agent1A → 1B → 1C; if 1A fails the whole chain "
+    "stops. Start diagnosis at 1A.\n"
+    "5. ⚠️ **Code changes**: editing `docs/*.gs` in the git repo does NOT change "
+    "the live agents. Live code is only what's pasted into the Apps Script "
+    "editor — every fix must be copy-pasted there by hand.":
+        "1. Abra COMPASS_CCSM → **Extensiones → Apps Script → Activadores** (icono de "
+        "reloj) y confirme que el activador por tiempo de cada agente todavía existe.\n"
+        "2. Revise **Ejecuciones** en el mismo editor en busca de ejecuciones fallidas en "
+        "rojo — el seguimiento de la pila ahí es más detallado que AGENT_RUN_LOG.\n"
+        "3. Recuerde el **TEST_MODE**: si está activo (vea más arriba), todos los correos "
+        "van a la bandeja de prueba — que los misioneros no reciban nada es lo esperado.\n"
+        "4. La cadena del domingo es Agent1A → 1B → 1C; si 1A falla, toda la cadena se "
+        "detiene. Empiece el diagnóstico en 1A.\n"
+        "5. ⚠️ **Cambios de código**: editar `docs/*.gs` en el repositorio git NO cambia "
+        "los agentes en vivo. El código en vivo es solo lo que se pega en el editor de "
+        "Apps Script — cada corrección debe copiarse y pegarse ahí a mano.",
 }

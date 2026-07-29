@@ -71,6 +71,27 @@ def _literals(nodes) -> list[str]:
     return out
 
 
+def _translates_via_format_func(node: ast.Call) -> bool:
+    """True when the widget renders its options through t().
+
+    Options whose VALUE is load-bearing - written to COMPASS_CCSM, compared
+    with ==, or used as a lookup key - must stay English, so they cannot be
+    wrapped in t() directly. The correct Streamlit idiom is to keep the option
+    list English and pass format_func=t, which translates the label only. Such
+    options are fully handled, so they are not "unwrapped"; they still need ES
+    entries, which is why extract() keeps collecting them.
+    """
+    for k in node.keywords:
+        if k.arg != "format_func":
+            continue
+        if isinstance(k.value, ast.Name) and k.value.id == TRANSLATE_FN:
+            return True
+        for sub in ast.walk(k.value):
+            if isinstance(sub, ast.Call) and _call_name(sub) == TRANSLATE_FN:
+                return True
+    return False
+
+
 def _ui_call_args(node: ast.Call) -> list:
     """Positional args, recognised text kwargs, and one level into option
     lists. Option lists built from sheet data are left alone - that is mission
@@ -114,8 +135,16 @@ def extract_unwrapped(paths: list[str]) -> list[str]:
     found: set[str] = set()
     for _, tree in _walk(paths):
         for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and _call_name(node) in UI_CALLS:
-                found.update(_literals(_ui_call_args(node)))
+            if not isinstance(node, ast.Call) or _call_name(node) not in UI_CALLS:
+                continue
+            args = _ui_call_args(node)
+            if _translates_via_format_func(node):
+                # Options are rendered through t(); only the widget's own
+                # label/help text can still be unwrapped here.
+                args = [a for a in args if not any(
+                    a is e for x in node.args if isinstance(x, ast.List)
+                    for e in x.elts)]
+            found.update(_literals(args))
     return sorted(found)
 
 

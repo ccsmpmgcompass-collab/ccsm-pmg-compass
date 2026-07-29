@@ -66,18 +66,24 @@ def test_breakdowns_renders_spanish():
     assert "Zone, District & Area Performance" not in es
 
 
-TASK10 = [
+ALL_PAGES = [
+    "Home.py",
+    "pages/01_dashboard.py",
+    "pages/02_Goals.py",
+    "pages/04_Breakdowns.py",
+    "pages/06_Scores.py",
     "pages/07_Finding_Funnel.py",
     "pages/10_Notes.py",
     "pages/15_Suggestions.py",
     "pages/17_Action_Center.py",
+    "pages/18_Maintenance.py",
 ]
 
 
-@pytest.mark.parametrize("page", TASK10)
-def test_task10_pages_survive_both_languages(page):
-    """These four were wrapped by a codemod rather than by hand, so the real
-    check is that they still execute - in both languages."""
+@pytest.mark.parametrize("page", ALL_PAGES)
+def test_every_page_survives_both_languages(page):
+    """Most of these were wrapped by a codemod rather than by hand, so the
+    real check is that all ten still execute - in both languages."""
     for lang in ("en", "es"):
         _run(page, lang)
 
@@ -123,11 +129,26 @@ def test_sign_out_is_translated_on_every_page():
     assert "Cerrar sesión" in _text(_run("Home.py", "es"))
 
 
-def test_placeholders_are_filled_not_left_raw():
+@pytest.mark.parametrize("page", ALL_PAGES)
+def test_placeholders_are_filled_not_left_raw(page):
     """A translation that dropped or renamed a {placeholder} would surface as
     literal brace text on the page."""
-    for page in ("Home.py", "pages/01_dashboard.py", "pages/04_Breakdowns.py"):
-        for lang in ("en", "es"):
-            body = _text(_run(page, lang))
-            for raw in ("{mission}", "{name}", "{week}", "{scope}", "{n}"):
-                assert raw not in body, f"{page} [{lang}] leaked {raw}"
+    for lang in ("en", "es"):
+        body = _text(_run(page, lang))
+        for raw in ("{mission}", "{name}", "{week}", "{scope}", "{n}",
+                    "{err}", "{by}", "{at}", "{source}", "{shown}", "{total}"):
+            assert raw not in body, f"{page} [{lang}] leaked {raw}"
+
+
+def test_every_translation_keeps_its_placeholders():
+    """A Spanish string that dropped or renamed a {placeholder} raises at
+    format() time and t() silently falls back to English - the page still
+    renders, so nothing would surface this at runtime."""
+    import re
+    from app.i18n.es import ES
+
+    def fields(s):
+        return set(re.findall(r"\{(\w+)\}", s))
+
+    bad = [(en, es) for en, es in ES.items() if fields(en) != fields(es)]
+    assert bad == [], f"placeholder mismatch: {bad[:5]}"

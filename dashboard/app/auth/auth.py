@@ -14,6 +14,7 @@ Approved emails:
 import time
 import streamlit as st
 from app.db.queries import get_allowed_emails, get_user_role
+from app.i18n import t
 
 _SESSION_TIMEOUT_SECONDS = 4 * 3600  # 4 hours
 
@@ -55,7 +56,7 @@ def require_auth() -> dict:
     if login_at and (time.time() - login_at) > _SESSION_TIMEOUT_SECONDS:
         st.session_state.pop("pmg_user", None)
         st.session_state.pop("pmg_login_at", None)
-        st.warning("Your session has expired. Please sign in again.")
+        st.warning(t("Your session has expired. Please sign in again."))
         st.stop()
 
     cached = st.session_state.get("pmg_user")
@@ -73,14 +74,14 @@ def require_auth() -> dict:
 
     if is_logged_in is False:
         st.error(
-            "Access denied. You must be signed in with an approved Google account. "
-            "Contact the mission office if you need access."
+            t("Access denied. You must be signed in with an approved Google account. "
+            "Contact the mission office if you need access.")
         )
         st.stop()
 
     email = (getattr(viewer, "email", "") or "").lower().strip()
     if not email:
-        st.error("Could not verify your identity. Please sign out and sign back in.")
+        st.error(t("Could not verify your identity. Please sign out and sign back in."))
         st.stop()
 
     # ── Reuse the cached session only if it belongs to the CURRENT signed-in
@@ -96,8 +97,8 @@ def require_auth() -> dict:
         import datetime
         print(f"[AUTH BLOCKED] {email} attempted access at {datetime.datetime.utcnow().isoformat()}")
         st.error(
-            "Access denied. Your account is not approved for PMG Compass. "
-            "Contact the mission office to request access."
+            t("Access denied. Your account is not approved for PMG Compass. "
+            "Contact the mission office to request access.")
         )
         st.stop()
 

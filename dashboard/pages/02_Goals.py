@@ -68,14 +68,15 @@ user = require_auth()
 inject_global_css()
 render_sidebar(user)
 from app.db.queries import get_config_value as _gcv
+from app.i18n import t
 _mission_name = _gcv("MISSION_NAME", flavor.display_name)
-render_page_header("Goals", f"{_mission_name} — Goals vs Actuals")
+render_page_header(t("Goals"), f"{_mission_name} — Goals vs Actuals")
 
 # ── Sidebar: Zone filter ──────────────────────────────────────────────────────
 
 zones = get_zones()
 zone_options = ["All Zones"] + zones
-zone_filter = st.sidebar.selectbox("Filter by Zone", zone_options, key="goals_zone_filter")
+zone_filter = st.sidebar.selectbox(t("Filter by Zone"), zone_options, key="goals_zone_filter")
 
 # ── Key metrics to display — derived from active flavor ──────────────────────
 
@@ -197,7 +198,7 @@ st.markdown(
 )
 with st.container(key="goals_section_picker"):
     selected_section = st.radio(
-        "Section",
+        t("Section"),
         _GOALS_SECTIONS,
         key="goals_active_section",
         horizontal=True,
@@ -583,7 +584,7 @@ if selected_section == "Mission Goals":
     # ── Section A: Set Mission Goals (MP/AP only) ─────────────────────────────
 
     if _can_edit_goals(user):
-        render_section_label("Set Mission Goals — This Month")
+        render_section_label(t("Set Mission Goals — This Month"))
 
         def _goal_val(key: str) -> int:
             if not current_goal_row:
@@ -740,7 +741,7 @@ if selected_section == "Mission Goals":
         if mission_recommended:
             with st.container(key="fillallrec_mission"):
                 st.button(
-                    "FILL ALL RECOMMENDED",
+                    t("FILL ALL RECOMMENDED"),
                     key="fillall_mission_btn",
                     on_click=_apply_all_mission_rec,
                     args=(mission_recommended,),
@@ -804,7 +805,7 @@ if selected_section == "Mission Goals":
         ]
         extra_values: dict[str, int] = {}
         if other_metrics:
-            with st.expander("Other Metrics"):
+            with st.expander(t("Other Metrics")):
                 for i in range(0, len(other_metrics), 4):
                     # min(4, remaining) instead of a flat 4 (Carson, 2026-07-21:
                     # "boxes look off") — a flat st.columns(4) on a trailing
@@ -833,7 +834,7 @@ if selected_section == "Mission Goals":
 
         _month_label = _month_start_date.strftime("%B %Y")
 
-        if st.button("Save Mission Goals", type="primary", key="mission_goal_save"):
+        if st.button(t("Save Mission Goals"), type="primary", key="mission_goal_save"):
             row, err = upsert_goal(
                 month_start=month_start,
                 baptisms=featured_values.get("baptisms", 0),
@@ -871,7 +872,7 @@ if selected_section == "Mission Goals":
 
     # ── Section B: Mission Goals vs Actuals ───────────────────────────────────
 
-    render_section_label("Mission Goals vs Actuals — This Month")
+    render_section_label(t("Mission Goals vs Actuals — This Month"))
 
     mission_goals_display = get_mission_goals_for_display(month_start)
 
@@ -938,12 +939,12 @@ if selected_section == "Mission Goals":
 
 if selected_section == "Area Goal Customization":
 
-    render_section_label("Area Goal Customization")
+    render_section_label(t("Area Goal Customization"))
     st.caption(
-        "Set a weekly goal for every nightly and weekly form metric for this area. "
+        t("Set a weekly goal for every nightly and weekly form metric for this area. "
         "Saved goals appear on the Breakdowns page's area view and roll up into "
         "zone-level goals on its zone view. Gate, Date, New, Pew, Renew, and Mate "
-        "additionally get a MONTHLY goal further down, stored separately."
+        "additionally get a MONTHLY goal further down, stored separately.")
     )
 
     # ── Load area list (real teaching areas only — no leadership rows) ────────
@@ -951,18 +952,18 @@ if selected_section == "Area Goal Customization":
     areas_df = get_submitting_areas()
 
     if areas_df.empty or "Area_Name" not in areas_df.columns:
-        st.warning("No active areas found. Check the MISSION_ORG tab.")
+        st.warning(t("No active areas found. Check the MISSION_ORG tab."))
         st.stop()
 
     area_names = sorted(areas_df["Area_Name"].dropna().unique().tolist())
 
     if not area_names:
-        st.warning("No active area names found.")
+        st.warning(t("No active area names found."))
         st.stop()
 
     metric_defs = get_question_metrics()
     if not metric_defs:
-        st.warning("QUESTIONS_CONFIG has no metrics defined.")
+        st.warning(t("QUESTIONS_CONFIG has no metrics defined."))
         st.stop()
 
     # UI label overrides (rename rule: never show "Doors Knocked"/"Doors")
@@ -1011,11 +1012,11 @@ if selected_section == "Area Goal Customization":
 
     with st.container(key="fillallareas"):
         st.button(
-            "RECOMMEND ALL AREA GOALS",
+            t("RECOMMEND ALL AREA GOALS"),
             key="fillallareas_btn",
             on_click=_compute_all_area_recs,
-            help="Compute the recommended weekly and monthly goals for every "
-                 "active area, preview them, then save all at once.",
+            help=t("Compute the recommended weekly and monthly goals for every "
+                 "active area, preview them, then save all at once."),
         )
 
     if "bulk_rec_preview" in st.session_state:
@@ -1046,7 +1047,7 @@ if selected_section == "Area Goal Customization":
             )
         _col_bulk_save, _col_bulk_cancel = st.columns([1, 1])
         with _col_bulk_save:
-            if st.button("Save All Recommended", type="primary", key="bulk_rec_save"):
+            if st.button(t("Save All Recommended"), type="primary", key="bulk_rec_save"):
                 try:
                     save_all_area_goals(_preview["weekly"])
                 except Exception as e:
@@ -1076,7 +1077,7 @@ if selected_section == "Area Goal Customization":
                             f"weekly + {_bulk_month_label} monthly."
                         )
         with _col_bulk_cancel:
-            if st.button("Cancel", key="bulk_rec_cancel"):
+            if st.button(t("Cancel"), key="bulk_rec_cancel"):
                 del st.session_state["bulk_rec_preview"]
                 st.rerun()
 
@@ -1091,7 +1092,7 @@ if selected_section == "Area Goal Customization":
     # 1.40.0 doesn't have that bug (or the accept_new_options/filter_mode
     # kwargs newer versions added) — plain defaults are correct here.
     selected_area = st.selectbox(
-        "Select Area",
+        t("Select Area"),
         area_names,
         key="area_goal_selector",
     )
@@ -1126,7 +1127,7 @@ if selected_section == "Area Goal Customization":
         st.session_state["area_goal_missionary_selector"] = ""
 
     st.selectbox(
-        "Or find by missionary name",
+        t("Or find by missionary name"),
         [""] + _missionary_names,
         key="area_goal_missionary_selector",
         on_change=_jump_to_missionary_area,
@@ -1139,7 +1140,7 @@ if selected_section == "Area Goal Customization":
     _sel_meta = areas_df[areas_df["Area_Name"] == selected_area]
     if not _sel_meta.empty:
         _sel_row = _sel_meta.iloc[0]
-        render_section_label("Companionship")
+        render_section_label(t("Companionship"))
         render_companionship_card(
             _sel_row,
             zone=str(_sel_row.get("Zone", "") or ""),
@@ -1153,7 +1154,7 @@ if selected_section == "Area Goal Customization":
     current_goals = get_area_goals(selected_area)
     area_has_custom = bool(current_goals)
     if not area_has_custom:
-        st.caption("No custom goals saved for this area yet — enter values and save.")
+        st.caption(t("No custom goals saved for this area yet — enter values and save."))
 
     recommended_goals = get_recommended_goals(selected_area)
 
@@ -1210,13 +1211,13 @@ if selected_section == "Area Goal Customization":
     if recommended_goals:
         with st.container(key="fillallrec"):
             st.button(
-                "FILL ALL RECOMMENDED",
+                t("FILL ALL RECOMMENDED"),
                 key="fillall_btn",
                 on_click=_apply_all_rec,
                 args=(selected_area, recommended_goals, metric_defs),
             )
 
-    render_section_label("Nightly Form Goals (weekly totals)")
+    render_section_label(t("Nightly Form Goals (weekly totals)"))
     st.caption(
         f"REC is a light stretch goal — about {get_rec_stretch_pct()}% above this area's all-time "
         "weekly average — to nudge the area to do slightly better. Any "
@@ -1275,7 +1276,7 @@ if selected_section == "Area Goal Customization":
     col_save, col_reset = st.columns([1, 1])
 
     with col_save:
-        if st.button("Save Goals", type="primary", key="area_goal_save"):
+        if st.button(t("Save Goals"), type="primary", key="area_goal_save"):
             try:
                 save_area_goals(selected_area, new_goals)
                 st.success(f"Goals saved for **{selected_area}**.")
@@ -1292,7 +1293,7 @@ if selected_section == "Area Goal Customization":
                 )
                 col_yes, col_no = st.columns(2)
                 with col_yes:
-                    if st.button("Yes, reset", key="area_goal_reset_yes"):
+                    if st.button(t("Yes, reset"), key="area_goal_reset_yes"):
                         try:
                             delete_area_goals(selected_area)
                             st.success(f"Custom goals removed for **{selected_area}**.")
@@ -1300,19 +1301,19 @@ if selected_section == "Area Goal Customization":
                         except Exception as e:
                             st.error(f"Failed to reset goals: {e}")
                 with col_no:
-                    if st.button("Cancel", key="area_goal_reset_no"):
+                    if st.button(t("Cancel"), key="area_goal_reset_no"):
                         st.session_state[reset_key] = False
                         st.rerun()
             else:
                 if st.button(
-                    "Reset to Mission Defaults",
+                    t("Reset to Mission Defaults"),
                     key="area_goal_reset_btn",
                     type="secondary",
                 ):
                     st.session_state[reset_key] = True
                     st.rerun()
         else:
-            st.caption("No custom goals to reset for this area.")
+            st.caption(t("No custom goals to reset for this area."))
 
     st.divider()
 
@@ -1327,7 +1328,7 @@ if selected_section == "Area Goal Customization":
     # (member_lessons) ALSO have their own weekly box above in Nightly Form
     # Goals — the two are independent numbers now, not kept in sync.
 
-    render_section_label("Monthly Goals")
+    render_section_label(t("Monthly Goals"))
 
     # Same review-order KIs as before: Gate, Date, New, Pew, Renew, Mate.
     # Gate/Date/Pew/Renew are matched by keyword on the WEEKLY metric's
@@ -1408,7 +1409,7 @@ if selected_section == "Area Goal Customization":
     if monthly_recommended:
         with st.container(key="fillallmonthlyrec"):
             st.button(
-                "FILL ALL RECOMMENDED",
+                t("FILL ALL RECOMMENDED"),
                 key="fillall_monthly_btn",
                 on_click=_apply_all_monthly_rec,
                 args=(selected_area, monthly_recommended, monthly_ki_defs),
@@ -1495,7 +1496,7 @@ if selected_section == "Area Goal Customization":
                 if key in monthly_recommended:
                     _render_rec_pill("m", key, widget_key, monthly_recommended[key])
 
-    if st.button("Save Monthly Goals", type="primary", key="area_monthly_save"):
+    if st.button(t("Save Monthly Goals"), type="primary", key="area_monthly_save"):
         try:
             def _mv(key: str) -> int:
                 return int(monthly_values.get(key, _monthly_current(key)))
@@ -1525,14 +1526,14 @@ if selected_section == "Area Goal Customization":
     actual_df = get_latest_weekly_ki()
     goals_df = get_goals_df()
 
-    render_section_label("Goals vs Actuals by Area — Latest Week")
+    render_section_label(t("Goals vs Actuals by Area — Latest Week"))
     st.caption(
-        "Goal from GOALS_CONFIG tab. Actual from the most recent week in WEEKLY_KI. "
-        "Color: green ≥ 100%  amber ≥ 75%  red < 75%."
+        t("Goal from GOALS_CONFIG tab. Actual from the most recent week in WEEKLY_KI. "
+        "Color: green ≥ 100%  amber ≥ 75%  red < 75%.")
     )
 
     if goals_df.empty and actual_df.empty:
-        st.info("No goals or actuals data available yet.")
+        st.info(t("No goals or actuals data available yet."))
     else:
         rows = []
 
@@ -1580,7 +1581,7 @@ if selected_section == "Area Goal Customization":
                 rows.append(row)
 
         if not rows:
-            st.info("No area goal data matches the current filter.")
+            st.info(t("No area goal data matches the current filter."))
         else:
             tbl = pd.DataFrame(rows)
 
@@ -1618,15 +1619,15 @@ if selected_section == "Goal Settings":
     # get_app_setting() in app/db/queries.py + app/db/goals_queries.py) — a
     # Streamlit-only settings tab, NOT read by any docs/*.gs agent, so changing
     # it here never touches live scoring/emails.
-    render_section_label("Recommended Goal Nudge")
+    render_section_label(t("Recommended Goal Nudge"))
     st.caption(
-        "Every Recommended (REC) badge on Area Goals and Mission Goals recommends that "
+        t("Every Recommended (REC) badge on Area Goals and Mission Goals recommends that "
         "area's (or the whole mission's) own average performance, stretched "
         "up by this percentage. 0% = the plain average itself; 10% = a light "
         "stretch (the original behavior); 100% = double the average. "
         "Example: an area averaging 10/week shows REC 11 at 10%, REC 15 at "
         "50%, and REC 20 at 100%. Applies mission-wide, everywhere a REC "
-        "badge appears."
+        "badge appears.")
     )
 
     _current_nudge_pct = get_rec_stretch_pct()
@@ -1687,7 +1688,7 @@ if selected_section == "Goal Settings":
         _proj_pct = get_rec_stretch_pct()
 
         _proj_key = st.selectbox(
-            "Metric to preview",
+            t("Metric to preview"),
             [k for k, _lbl, _f in _proj_defs],
             format_func=lambda k: next(lbl for kk, lbl, _f in _proj_defs if kk == k),
             key="nudge_proj_metric",
@@ -1697,7 +1698,7 @@ if selected_section == "Goal Settings":
 
         _proj_df = get_weekly_ki() if _proj_cadence == "NIGHTLY" else get_weekly_form_data()
         if _proj_df.empty or _proj_key not in _proj_df.columns or "week_end_date" not in _proj_df.columns:
-            st.info("No weekly history for this metric yet.")
+            st.info(t("No weekly history for this metric yet."))
         else:
             # Same basis as the mission-wide REC math: drop the in-progress
             # week, sum every area together per week.
@@ -1710,7 +1711,7 @@ if selected_section == "Goal Settings":
                 .sort_index()
             )
             if _totals.empty:
-                st.info("No completed weeks for this metric yet.")
+                st.info(t("No completed weeks for this metric yet."))
             else:
                 _avg = float(_totals.mean())
                 _proj_goal = max(1, math.ceil(_avg * (1 + _proj_pct / 100)))
@@ -1778,9 +1779,9 @@ if selected_section == "Area Expectation Settings":
     # built-in language categories — resolve_area_expectations() checks an
     # exact-area-name override first, then substring custom categories,
     # then falls back to the built-in group.
-    render_section_label("Area Expectation Settings")
+    render_section_label(t("Area Expectation Settings"))
     st.caption(
-        "Weekly and monthly expectations by area category — the single "
+        t("Weekly and monthly expectations by area category — the single "
         "source of truth for the Goals pages' \"/N\" fractions (including "
         "Monthly Goals' Gate and Mission Goals' totals), the Breakdowns "
         "trend chart's expectation lines (any indicator with an "
@@ -1790,7 +1791,7 @@ if selected_section == "Area Expectation Settings":
         "Language_Type or area name — Haitian, Creole and French are also "
         "matched by area name even with a blank/English Language_Type — "
         "and a category named exactly after one area overrides everything "
-        "else for just that area."
+        "else for just that area.")
     )
 
     _metric_keys = list(METRIC_LABELS.keys())
@@ -1819,7 +1820,7 @@ if selected_section == "Area Expectation Settings":
             for r in get_all_area_type_indicators()
         ]
         render_table(pd.DataFrame(_display_rows))
-        st.caption("Only the Mission President or Assistants can change these.")
+        st.caption(t("Only the Mission President or Assistants can change these."))
     else:
         # Held in session_state — not re-read from the sheet on every rerun —
         # so an in-progress add/remove/edit survives the rerun each widget
@@ -1847,11 +1848,11 @@ if selected_section == "Area Expectation Settings":
         # — without this, an edit made immediately before the click (no
         # blur/rerun in between) would save one value stale.
         st.info(
-            "Nothing here saves itself — edits below (including added or "
+            t("Nothing here saves itself — edits below (including added or "
             "removed indicators and categories) only take effect everywhere "
-            "once you press **Save Area Expectations**."
+            "once you press **Save Area Expectations**.")
         )
-        if st.button("Save Area Expectations", type="primary", key="save_area_type_exp_btn"):
+        if st.button(t("Save Area Expectations"), type="primary", key="save_area_type_exp_btn"):
             for _r in _rows:
                 _rid = _r["_id"]
                 if f"area_ind_metric_{_rid}" in st.session_state:
@@ -1867,7 +1868,7 @@ if selected_section == "Area Expectation Settings":
             else:
                 st.session_state.pop("area_exp_rows", None)
                 st.session_state.pop("area_exp_next_id", None)
-                st.success("Area expectations saved.")
+                st.success(t("Area expectations saved."))
                 st.rerun()
 
         # Roster names back two things below: telling an exact-area
@@ -1962,7 +1963,7 @@ if selected_section == "Area Expectation Settings":
                 render_section_label(_display_category, emphasis=True)
             with _areas_col:
                 st.selectbox(
-                    "Areas Involved",
+                    t("Areas Involved"),
                     _matched_areas,
                     index=None,
                     placeholder=(
@@ -1980,8 +1981,8 @@ if selected_section == "Area Expectation Settings":
                     )
                 else:
                     st.caption(
-                        "Custom category — matched by substring against an "
-                        "area's Language_Type or its own name."
+                        t("Custom category — matched by substring against an "
+                        "area's Language_Type or its own name.")
                     )
 
             # Weekly and Monthly are their own SECTIONS too (Carson,
@@ -2066,31 +2067,34 @@ if selected_section == "Area Expectation Settings":
                                         else [_row["metric"]] + _metric_keys
                                     )
                                     _row["metric"] = st.selectbox(
-                                        "Indicator", _opts,
+                                        t("Indicator"), _opts,
                                         index=_opts.index(_row["metric"]),
                                         format_func=lambda k: DROPDOWN_METRIC_LABELS.get(k, k),
                                         key=f"area_ind_metric_{_row['_id']}",
                                     )
                                 with _c2:
                                     _row["cadence"] = st.selectbox(
-                                        "Cadence", ["weekly", "monthly"],
+                                        # Options stay English - this value is
+                                        # written to GOALS_CONFIG. format_func
+                                        # translates the display only.
+                                        t("Cadence"), ["weekly", "monthly"],
                                         index=0 if _row["cadence"] == "weekly" else 1,
-                                        format_func=lambda c: c.capitalize(),
+                                        format_func=lambda c: t(c).capitalize(),
                                         key=f"area_ind_cadence_{_row['_id']}",
                                         on_change=_on_area_ind_cadence,
                                         args=(_row["_id"],),
                                     )
                                 with _c3:
                                     _row["value"] = float(st.number_input(
-                                        "Target", min_value=0, step=1,
+                                        t("Target"), min_value=0, step=1,
                                         value=int(round(_row["value"])),
                                         key=f"area_ind_value_{_row['_id']}",
                                     ))
                                 with _c4:
-                                    if st.button("Remove", key=f"area_ind_remove_{_row['_id']}"):
+                                    if st.button(t("Remove"), key=f"area_ind_remove_{_row['_id']}"):
                                         _remove_id = _row["_id"]
 
-            st.caption("Add another indicator to this category:")
+            st.caption(t("Add another indicator to this category:"))
             # _add_gen suffixes the three widget keys below and bumps by 1
             # every successful Add (Carson, 2026-07-22: after pressing Add,
             # the Indicator dropdown still showed the just-added metric's
@@ -2116,9 +2120,9 @@ if selected_section == "Area Expectation Settings":
                 # can never be mistaken for a configured indicator, and Add
                 # does nothing until one is actually picked.
                 _new_metric = st.selectbox(
-                    "Indicator", _metric_keys,
+                    t("Indicator"), _metric_keys,
                     index=None,
-                    placeholder="SELECT INDICATOR",
+                    placeholder=t("SELECT INDICATOR"),
                     format_func=lambda k: DROPDOWN_METRIC_LABELS.get(k, k),
                     key=f"area_ind_new_metric_{_category}_{_add_gen}",
                 )
@@ -2128,10 +2132,11 @@ if selected_section == "Area Expectation Settings":
                 # and the target") — index=None so an untouched add-row
                 # never silently defaults to Weekly.
                 _new_cadence = st.selectbox(
-                    "Cadence", ["weekly", "monthly"],
+                    # Options stay English - written to GOALS_CONFIG.
+                    t("Cadence"), ["weekly", "monthly"],
                     index=None,
-                    placeholder="SELECT CADENCE",
-                    format_func=lambda c: c.capitalize(),
+                    placeholder=t("SELECT CADENCE"),
+                    format_func=lambda c: t(c).capitalize(),
                     key=f"area_ind_new_cadence_{_category}_{_add_gen}",
                 )
             with _a3:
@@ -2142,15 +2147,15 @@ if selected_section == "Area Expectation Settings":
                 # theory. A real default keeps the steppers working and
                 # matches how Target already looks on existing rows.
                 _new_value = st.number_input(
-                    "Target", min_value=0, step=1, value=0,
+                    t("Target"), min_value=0, step=1, value=0,
                     key=f"area_ind_new_value_{_category}_{_add_gen}",
                 )
             with _a4:
-                if st.button("Add", key=f"area_ind_add_{_category}"):
+                if st.button(t("Add"), key=f"area_ind_add_{_category}"):
                     if _new_metric is None:
-                        st.warning("Pick an indicator first.")
+                        st.warning(t("Pick an indicator first."))
                     elif _new_cadence is None:
-                        st.warning("Pick a cadence first.")
+                        st.warning(t("Pick a cadence first."))
                     elif any(r["metric"] == _new_metric for r in _cat_rows):
                         st.warning(
                             f"{METRIC_LABELS.get(_new_metric, _new_metric)} "
@@ -2185,20 +2190,20 @@ if selected_section == "Area Expectation Settings":
         # rather than an empty, indicator-less category; an area override
         # starts seeded with the area's CURRENTLY-resolved expectations, so
         # Carson edits from its real baseline instead of a page of zeros.
-        with st.expander("➕ Add a custom expectation category"):
+        with st.expander(t("➕ Add a custom expectation category")):
             _existing = {r["category"].strip().lower() for r in _rows}
             st.caption(
-                "Type a language (e.g. \"Japanese\") or any keyword (e.g. "
+                t("Type a language (e.g. \"Japanese\") or any keyword (e.g. "
                 "\"BYU\") — it matches every area whose Language_Type OR "
                 "area name contains it, so \"BYU\" catches BYU East and "
                 "BYU North whatever their languages. Add its indicators in "
-                "its own section above once the category exists."
+                "its own section above once the category exists.")
             )
-            _new_cat = st.text_input("Language or keyword", key="area_type_exp_new_category")
-            if st.button("Add Category", key="area_type_exp_add_category_btn"):
+            _new_cat = st.text_input(t("Language or keyword"), key="area_type_exp_new_category")
+            if st.button(t("Add Category"), key="area_type_exp_add_category_btn"):
                 _label = _new_cat.strip()
                 if not _label:
-                    st.warning("Enter a language or keyword first.")
+                    st.warning(t("Enter a language or keyword first."))
                 elif _label.lower() in _existing:
                     st.warning(f'"{_label}" is already in the list.')
                 else:
@@ -2212,19 +2217,19 @@ if selected_section == "Area Expectation Settings":
                     st.rerun()
 
             st.caption(
-                "— or override ONE specific area: pick it here and it gets "
+                t("— or override ONE specific area: pick it here and it gets "
                 "its own section above, pre-filled with what it currently "
                 "resolves to. Its numbers then beat its language category "
-                "everywhere (fractions, Breakdowns lines, Effort score)."
+                "everywhere (fractions, Breakdowns lines, Effort score).")
             )
             _ovr_area = st.selectbox(
-                "Specific area", _roster_names, index=None,
-                placeholder="Pick an area…",
+                t("Specific area"), _roster_names, index=None,
+                placeholder=t("Pick an area…"),
                 key="area_type_exp_new_override",
             )
-            if st.button("Add Area Override", key="area_type_exp_add_override_btn"):
+            if st.button(t("Add Area Override"), key="area_type_exp_add_override_btn"):
                 if not _ovr_area:
-                    st.warning("Pick an area first.")
+                    st.warning(t("Pick an area first."))
                 elif _ovr_area.strip().lower() in _existing:
                     st.warning(f'"{_ovr_area}" already has its own section above.')
                 else:

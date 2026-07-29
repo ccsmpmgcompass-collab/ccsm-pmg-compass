@@ -86,6 +86,38 @@ def test_dynamic_option_lists_are_left_alone(tmp_path: Path):
     assert all("zone_opts_from_sheet" not in s for s in found)
 
 
+FORMAT_FUNC_FIXTURE = '''
+import streamlit as st
+from app.i18n import t
+form = st.selectbox(t("Form"), ["NIGHTLY", "WEEKLY"], format_func=t)
+cad = st.selectbox(t("Cadence"), ["weekly", "monthly"],
+                   format_func=lambda c: t(c).capitalize())
+bare = st.selectbox(t("Bare"), ["Alpha", "Beta"])
+'''
+
+
+def test_format_func_options_are_not_reported_unwrapped(tmp_path: Path):
+    """Options whose VALUE is written to the sheet must stay English, so they
+    cannot be wrapped in t() directly - format_func=t translates the label
+    instead. Reporting those as unwrapped would push a future editor into
+    exactly the change that corrupts the stored value."""
+    f = tmp_path / "ff.py"
+    f.write_text(FORMAT_FUNC_FIXTURE, encoding="utf-8")
+    todo = extract_unwrapped([str(f)])
+    for handled in ("NIGHTLY", "WEEKLY", "weekly", "monthly"):
+        assert handled not in todo, f"{handled} wrongly reported unwrapped"
+    assert "Alpha" in todo and "Beta" in todo, todo
+
+
+def test_format_func_options_still_need_translations(tmp_path: Path):
+    """They are translated at render time, so they still need ES entries."""
+    f = tmp_path / "ff.py"
+    f.write_text(FORMAT_FUNC_FIXTURE, encoding="utf-8")
+    found = extract([str(f)])
+    for s in ("NIGHTLY", "WEEKLY", "weekly", "monthly"):
+        assert s in found, f"{s} dropped from the denominator"
+
+
 CSS_FIXTURE = '''
 import streamlit as st
 st.markdown("<style>div[data-testid='x']{color:#fff !important}</style>",
