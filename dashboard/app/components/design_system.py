@@ -682,6 +682,40 @@ def render_companionship_card(area_row, zone: str = "", district: str = "") -> N
     )
 
 
+def render_language_switch(key: str) -> None:
+    """Language selector. Rendered at the top of Home and mirrored in the
+    sidebar so the choice can be changed from any page.
+
+    Home and the sidebar render this same control under two different keys,
+    so each has its own independently stored widget value. They stay in
+    agreement because `index` is recomputed from the active language on every
+    run and Streamlit treats a widget's parameters as part of its identity:
+    changing `index` re-creates the untouched mirror with the corrected
+    default instead of leaving it reporting the old language. Verified, not
+    assumed - test_mirrored_switches_agree_after_one_is_changed pins it, since
+    a Streamlit upgrade that changed that identity rule would otherwise leave
+    the two mirrors driving each other in an endless rerun.
+    """
+    from app.i18n import get_lang, set_lang
+
+    options = {"English": "en", "Español": "es"}
+    labels = list(options)
+    current = get_lang()
+    index = 1 if current == "es" else 0
+
+    chosen = st.radio(
+        "Language / Idioma",
+        labels,
+        index=index,
+        horizontal=True,
+        key=key,
+        label_visibility="collapsed",
+    )
+    if options[chosen] != current:
+        set_lang(options[chosen])
+        st.rerun()
+
+
 def render_sidebar(user: dict) -> None:
     """Render consistent sidebar: user name + email at top, Sign Out button
     below divider. Also renders the leadership Action Center bell (see
@@ -689,6 +723,7 @@ def render_sidebar(user: dict) -> None:
     already calls render_sidebar(user)."""
     _render_action_bell(user)
     with st.sidebar:
+        render_language_switch("ds_lang_sidebar")
         name = _html.escape(user.get("name", user.get("email", "")))
         email = _html.escape(user.get("email", ""))
         st.markdown(

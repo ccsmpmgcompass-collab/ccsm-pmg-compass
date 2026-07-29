@@ -90,6 +90,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── Header ────────────────────────────────────────────────────────────────────
+from app.components.design_system import render_language_switch
+render_language_switch("home_lang")
+
 render_page_header(
     "PMG Compass",
     f"{get_config_value('MISSION_NAME', 'Mission')} · Welcome back, {user.get('name', user.get('email', ''))}",
