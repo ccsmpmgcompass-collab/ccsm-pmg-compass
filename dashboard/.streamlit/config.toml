@@ -8,7 +8,10 @@ textColor = "#f4f4f8"
 
 [server]
 headless = true
-enableCORS = false
+# enableCORS is deliberately NOT set to false: Streamlit refuses that
+# combination with enableXsrfProtection = true, overrides CORS back to true and
+# prints a warning on every start. XSRF protection is the one worth keeping on a
+# deployed app, so the conflicting line was removed rather than the protection.
 enableXsrfProtection = true
 
 [browser]

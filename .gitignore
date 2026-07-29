@@ -17,6 +17,10 @@ dashboard/**/__pycache__/
 **/.env.*
 secrets.toml
 **/secrets.toml
+# Broadened from `secrets.toml`: the deploy template secrets.cloud.toml holds
+# the same private key and would NOT have matched the exact-name pattern.
+secrets*.toml
+**/secrets*.toml
 *.pem
 *.key
 service_account*.json

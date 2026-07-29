@@ -7,8 +7,16 @@ Two-layer authentication:
 
 Approved emails:
   - ALWAYS_ALLOWED hardcoded list (CCSM system account; Mission President once added — see TODO below)
-  - Any AP email from MISSION_ORG (Is_AP = TRUE)
+  - Every Companion1_Email / Companion2_Email in MISSION_ORG — i.e. all 97 area
+    mailboxes, NOT just APs. (An earlier version of this docstring said
+    "Is_AP = TRUE"; get_allowed_emails() has never filtered on that flag.
+    Verified against the live sheet: 97 addresses, all @missionary.org.)
   - STREAMLIT_DEV_EMAIL in secrets (LOCAL DEV ONLY — must be blank in production)
+
+Consequence worth knowing before go-live: MISSION_ORG holds no
+churchofjesuschrist.org addresses at all, so mission leadership cannot sign in
+on the strength of the sheet alone — the Mission President must be added to
+_ALWAYS_ALLOWED below or he is locked out of his own dashboard.
 """
 
 import time
@@ -23,8 +31,17 @@ _SESSION_TIMEOUT_SECONDS = 4 * 3600  # 4 hours
 # Add or remove emails here to control access tightly.
 _ALWAYS_ALLOWED = {
     "ccsm.pmg.compass@gmail.com",   # CCSM system account (from AGENT_CONFIG)
-    # TODO(CCSM): add the Mission President's churchofjesuschrist.org address.
-    # Deliberately left unset - do not guess an address for an auth allowlist.
+
+    # ── ACTION REQUIRED BEFORE GO-LIVE ────────────────────────────────────────
+    # Uncomment and fill in the Mission President's real address, then commit.
+    # Without it he CANNOT sign in: MISSION_ORG contains only @missionary.org
+    # area mailboxes, so the sheet grants him nothing (see module docstring).
+    # Left unset deliberately — an address is never guessed for an auth
+    # allowlist. Add the AP/office accounts the same way if they sign in with
+    # personal or church addresses rather than their area mailbox.
+    #
+    # "firstname.lastname@churchofjesuschrist.org",   # Mission President
+    # ──────────────────────────────────────────────────────────────────────────
 }
 
 # Mission-leadership roles, plus the always-allowed owner/admin accounts above.
@@ -41,6 +58,35 @@ def is_leadership(email: str) -> bool:
     if email in _ALWAYS_ALLOWED:
         return True
     return get_user_role(email) in _LEADERSHIP_ROLES
+
+
+def _resolve_viewer():
+    """
+    Return the object carrying the signed-in viewer's identity, or None.
+
+    Reads `st.experimental_user`, NOT `st.user`:
+      - `st.user` does not exist at all before Streamlit 1.42, and
+        requirements.txt pins 1.40.0 on purpose (see RUNNING.md) — so reading
+        `st.user` raises AttributeError and every production visitor gets an
+        error page. The dev bypass in require_auth() returns before this point,
+        so running the app locally can never surface that.
+      - From 1.42 on, `st.user` deliberately stops returning a Community Cloud
+        account email unless you run your own OIDC provider. On Community
+        Cloud, `st.experimental_user` is the one carrying the Google account.
+
+    The `st.user` fallback covers only a future Streamlit that removes
+    `experimental_user`. Both are probed with `is None`, never truthiness: an
+    empty UserInfoProxy is falsy, so `a or b` would discard a real (empty)
+    proxy and mask "signed in but no email" as "attribute missing".
+
+    Covered by tests/test_sso_viewer.py — it asserts against the installed
+    Streamlit, because this is exactly the class of bug a source-only check
+    reports as fine.
+    """
+    viewer = getattr(st, "experimental_user", None)
+    if viewer is None:
+        viewer = getattr(st, "user", None)
+    return viewer
 
 
 def require_auth() -> dict:
@@ -69,7 +115,7 @@ def require_auth() -> dict:
         return _build_session(dev_email.lower())
 
     # ── Streamlit Cloud SSO check ─────────────────────────────────────────────
-    viewer = st.user
+    viewer = _resolve_viewer()
     is_logged_in = getattr(viewer, "is_logged_in", None)
 
     if is_logged_in is False:

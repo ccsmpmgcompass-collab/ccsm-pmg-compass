@@ -4,6 +4,11 @@
 # searching. 1.40.0 is confirmed bug-free via direct browser testing. Don't
 # loosen this pin without re-testing selectbox click-and-type behavior.
 streamlit==1.40.0
+# numpy and requests are imported directly by app code but were arriving only
+# as transitive deps (via pandas and streamlit). Listed explicitly so a future
+# dependency change in either parent cannot silently break the deployed build.
+numpy>=1.24.0
+requests>=2.31.0
 gspread>=6.1.2
 google-auth>=2.40.2
 google-auth-oauthlib>=1.2.1
