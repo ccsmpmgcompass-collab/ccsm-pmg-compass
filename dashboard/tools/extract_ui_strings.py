@@ -16,6 +16,19 @@ UI_CALLS = {
 TEXT_KWARGS = {"label", "help", "placeholder", "title", "subtitle", "body"}
 
 
+def _is_stylesheet(s: str) -> bool:
+    """A `<style>` block reaches st.markdown as a string but is CSS, not UI
+    copy. Counting it would put a 2KB stylesheet in the translator's queue and
+    in the coverage denominator.
+
+    Deliberately matched on the `<style>` prefix alone rather than on "starts
+    with `<`": every one of the four blocks in this app is a pure stylesheet,
+    and a looser rule would silently swallow real markup-wrapped prose such as
+    "<b>Warning</b> - check this" instead of surfacing it for translation.
+    """
+    return s.strip().startswith("<style>")
+
+
 def _call_name(node: ast.Call) -> str:
     fn = node.func
     if isinstance(fn, ast.Attribute):
@@ -40,7 +53,7 @@ def extract(paths: list[str]) -> list[str]:
             for a in args:
                 if isinstance(a, ast.Constant) and isinstance(a.value, str):
                     s = a.value.strip()
-                    if len(s) > 1:
+                    if len(s) > 1 and not _is_stylesheet(s):
                         found.add(s)
     return sorted(found)
 
