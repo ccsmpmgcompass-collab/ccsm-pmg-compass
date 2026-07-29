@@ -25,6 +25,8 @@ GROUPS = {
     "task9":  ["Home.py", "pages/01_dashboard.py", "pages/04_Breakdowns.py"],
     "task10": ["pages/07_Finding_Funnel.py", "pages/10_Notes.py",
                "pages/15_Suggestions.py", "pages/17_Action_Center.py"],
+    "task11": ["pages/06_Scores.py", "app/components/design_system.py",
+               "app/components/scope_selector.py"],
 }
 
 

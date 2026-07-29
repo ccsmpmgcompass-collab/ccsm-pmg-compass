@@ -390,4 +390,170 @@ ES: dict[str, str] = {
         "Visible para (correos separados por comas, deje en blanco para todos)",
     "elder.smith@example.com, sister.jones@example.com":
         "elder.smith@example.com, sister.jones@example.com",
+
+    # ══ Task 11 ═════════════════════════════════════════════════════════════
+    # ── Chrome ───────────────────────────────────────────────────────────────
+    "Language / Idioma": "Idioma / Language",
+    "Sign Out": "Cerrar sesión",
+    "Find by missionary": "Buscar por misionero",
+    "Clear Zone/District/Area/missionary and show the mission-wide view":
+        "Limpiar Zona/Distrito/Área/misionero y mostrar la vista de toda la misión",
+
+    # ── Scores page ──────────────────────────────────────────────────────────
+    "Scores": "Puntajes",
+    "Area Scores": "Puntajes por Área",
+    "Mission Score": "Puntaje de la Misión",
+    "Mission Scores": "Puntajes de la Misión",
+    "Score Summary": "Resumen de Puntajes",
+    "Score Tier Key": "Leyenda de Niveles de Puntaje",
+    "Effectiveness Score by Area": "Puntaje de Efectividad por Área",
+    "Daily Activity": "Actividad Diaria",
+    "Analyze": "Analizar",
+    "Raw Data": "Datos sin Procesar",
+    "Raw Daily Records": "Registros Diarios sin Procesar",
+    "Time Range": "Rango de Tiempo",
+    "Days displayed": "Días mostrados",
+    "How many days of nightly-form data to show on this page.":
+        "Cuántos días de datos del formulario nocturno mostrar en esta página.",
+    "Metric": "Métrica",
+    "Activity by Category": "Actividad por Categoría",
+    "By-area totals": "Totales por área",
+    "No data for the selected filters.":
+        "No hay datos para los filtros seleccionados.",
+    "No data for this category.": "No hay datos para esta categoría.",
+    "No daily activity data yet. Re-run the data refresh to populate this page.":
+        "Aún no hay datos de actividad diaria. Vuelva a ejecutar la actualización "
+        "de datos para llenar esta página.",
+    "No scores have been computed yet. Scores are calculated automatically each "
+    "Sunday at 11 PM Mountain Time. Run computeAllAreaScores() in Apps Script to "
+    "compute scores immediately.":
+        "Aún no se han calculado puntajes. Los puntajes se calculan automáticamente "
+        "cada domingo a las 11 PM (hora de la montaña). Ejecute computeAllAreaScores() "
+        "en Apps Script para calcularlos de inmediato.",
+    "Scores are automatically recomputed each Sunday at 11 PM Mountain Time by "
+    "the AgentScores Apps Script engine. To trigger an immediate recalculation, "
+    "open the Google Apps Script editor for COMPASS_CCSM and run "
+    "computeAllAreaScores().":
+        "Los puntajes se recalculan automáticamente cada domingo a las 11 PM (hora "
+        "de la montaña) mediante el motor AgentScores de Apps Script. Para forzar un "
+        "recálculo inmediato, abra el editor de Google Apps Script de COMPASS_CCSM y "
+        "ejecute computeAllAreaScores().",
+
+    # ── Metric tabs and summaries ────────────────────────────────────────────
+    "Lessons": "Lecciones",
+    "Finding": "Búsqueda",
+    "Contacts": "Contactos",
+    "LSI & Attempts": "LSI e Intentos",
+    "Effort": "Esfuerzo",
+    "Lessons Summary": "Resumen de Lecciones",
+    "Finding Summary": "Resumen de Búsqueda",
+    "Contacts Summary": "Resumen de Contactos",
+    "Effort Reporting": "Reporte de Esfuerzo",
+    "Effort tracking coming soon.": "El seguimiento de esfuerzo estará disponible pronto.",
+    "No Effort data available for this area in the selected Time Range.":
+        "No hay datos de Esfuerzo para esta área en el Rango de Tiempo seleccionado.",
+    "NM Lessons": "Lecciones NM",
+    "NM Attempted": "NM Intentados",
+    "NM Contacted": "NM Contactados",
+    "NM Contacted — by area": "NM Contactados — por área",
+    "New People Found": "Nuevas Personas Encontradas",
+    "New People Found — by area": "Nuevas Personas Encontradas — por área",
+    "LSI Given": "LSI Impartidas",
+    "LSI Given & Follow-Ups": "LSI Impartidas y Seguimientos",
+    "LSI Given — by area": "LSI Impartidas — por área",
+    "Attempts by Type": "Intentos por Tipo",
+
+    # ── Weight editor ────────────────────────────────────────────────────────
+    "Edit Score Weights": "Editar los Pesos del Puntaje",
+    "Save Config": "Guardar Configuración",
+    "Apply weights to": "Aplicar pesos a",
+    "Whole Mission (all areas)": "Toda la Misión (todas las áreas)",
+    "Choose 'Whole Mission' to set one baseline for every area, or pick a single "
+    "area to override it. Area-specific weights win over the mission baseline.":
+        "Elija 'Toda la Misión' para fijar una base única para cada área, o elija un "
+        "área para reemplazarla. Los pesos por área tienen prioridad sobre la base "
+        "de la misión.",
+    "Editing the **mission-wide baseline**. These weights apply to every area "
+    "unless that area has its own override.":
+        "Está editando la **base de toda la misión**. Estos pesos se aplican a cada "
+        "área, salvo que esa área tenga su propia configuración.",
+    "**How the Effectiveness score is built.** Each area's Effectiveness score "
+    "is a blend of three components — **Effort**, **Skill**, and **Key "
+    "Indicators (KI)**. Set how much each component counts in *Component Mix* "
+    "below, then fine-tune every individual metric (lessons, contacts, "
+    "referrals, door attempts, weekly KIs, etc.) inside each component tab.":
+        "**Cómo se construye el puntaje de Efectividad.** El puntaje de Efectividad "
+        "de cada área combina tres componentes — **Esfuerzo**, **Habilidad** e "
+        "**Indicadores Clave (IC)**. Defina cuánto cuenta cada componente en "
+        "*Composición de Componentes* más abajo, y luego ajuste cada métrica "
+        "individual (lecciones, contactos, referencias, intentos de puerta, IC "
+        "semanales, etc.) dentro de la pestaña de cada componente.",
+    "##### Component Mix": "##### Composición de Componentes",
+    "##### Metric Weights": "##### Pesos de las Métricas",
+    "How much each component counts toward Effectiveness. Must sum to 1.0 "
+    "(e.g. Effort 0.30 + Skill 0.30 + KI 0.40).":
+        "Cuánto aporta cada componente a la Efectividad. Debe sumar 1.0 "
+        "(por ejemplo, Esfuerzo 0.30 + Habilidad 0.30 + IC 0.40).",
+    "Effort Weight": "Peso del Esfuerzo",
+    "Skill Weight": "Peso de la Habilidad",
+    "KI Weight": "Peso de los IC",
+    "Effort Metrics": "Métricas de Esfuerzo",
+    "Skill Metrics": "Métricas de Habilidad",
+    "Key Indicator Metrics": "Métricas de Indicadores Clave",
+    "Every metric from the nightly and weekly forms, with the weight it carries. "
+    "Each box label shows the recommended baseline (rec). A weight of 0 means the "
+    "metric doesn't count. The engine normalises by component total, so relative "
+    "proportions are what matter.":
+        "Cada métrica de los formularios nocturno y semanal, con el peso que tiene. "
+        "La etiqueta de cada casilla muestra la base recomendada (rec). Un peso de 0 "
+        "significa que la métrica no cuenta. El motor normaliza según el total del "
+        "componente, así que lo que importa son las proporciones relativas.",
+    "Legacy / unused — the Effort score is now computed from the mission "
+    "president's fixed weekly expectations per area type, not these per-metric "
+    "weights. Kept for reference only.":
+        "Obsoleto / sin uso — el puntaje de Esfuerzo ahora se calcula a partir de las "
+        "expectativas semanales fijas del presidente de misión por tipo de área, no de "
+        "estos pesos por métrica. Se mantiene solo como referencia.",
+    "Nightly-form quality signals — how effectively the area is working. "
+    "Metrics left at 0 don't count toward Skill.":
+        "Señales de calidad del formulario nocturno — con cuánta eficacia trabaja el "
+        "área. Las métricas dejadas en 0 no cuentan para la Habilidad.",
+    "Weekly-form Key Indicators — Pew, Date, Gate, Renew, RC.":
+        "Indicadores Clave del formulario semanal — Pew, Date, Gate, Renew, RC.",
+    "Effort uses its own tiers — meeting the mission president's weekly "
+    "expectations exactly scores 75, so its bar is green above 75, yellow 50–75, "
+    "red below 50 (Skill/KI/Effectiveness keep 70/50).":
+        "El Esfuerzo usa sus propios niveles — cumplir exactamente las expectativas "
+        "semanales del presidente de misión da 75, así que su barra es verde sobre 75, "
+        "amarilla entre 50 y 75, y roja bajo 50 (Habilidad/IC/Efectividad mantienen "
+        "70/50).",
+
+    # ── Analyze tab ──────────────────────────────────────────────────────────
+    "Trend Projection": "Proyección de Tendencia",
+    "Metric to project": "Métrica a proyectar",
+    "Pick any nightly-form or weekly-form metric to see its projection.":
+        "Elija cualquier métrica del formulario nocturno o semanal para ver su proyección.",
+    "Mission-wide totals from completed weeks (current in-progress week "
+    "excluded), with next week projected by linear regression and an 80% "
+    "confidence range.":
+        "Totales de toda la misión de las semanas completadas (se excluye la semana en "
+        "curso), con la próxima semana proyectada por regresión lineal y un rango de "
+        "confianza del 80%.",
+    "High confidence — the trend is statistically significant.":
+        "Confianza alta — la tendencia es estadísticamente significativa.",
+    "Low confidence — the recent weeks aren't a statistically significant trend. "
+    "Treat this as a rough estimate, not a forecast.":
+        "Confianza baja — las semanas recientes no constituyen una tendencia "
+        "estadísticamente significativa. Tómelo como una estimación aproximada, no "
+        "como un pronóstico.",
+    "No history available yet for this metric.":
+        "Aún no hay historial disponible para esta métrica.",
+    "Anomaly Threshold (%)": "Umbral de Anomalía (%)",
+    "Flag areas where this week's value is below this % of their 4-week average.":
+        "Marcar las áreas cuyo valor de esta semana esté bajo este % de su promedio "
+        "de 4 semanas.",
+
+    # A markdown horizontal rule, not prose - mapped to itself so the coverage
+    # gate stays strict without pretending a divider was translated.
+    "---": "---",
 }

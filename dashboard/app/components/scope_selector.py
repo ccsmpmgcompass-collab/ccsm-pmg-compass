@@ -26,6 +26,7 @@ import pandas as pd
 import streamlit as st
 
 from app.db.queries import get_submitting_areas
+from app.i18n import t
 
 ANY = "— any —"
 
@@ -225,7 +226,7 @@ def render_scope_selectors(
         st.session_state[f"{prefix}_zone_val"] = selected_zone = ANY
     with col_z:
         st.selectbox(
-            "Zone", [ANY] + zones, key=f"{prefix}_zone_pick", index=None,
+            t("Zone"), [ANY] + zones, key=f"{prefix}_zone_pick", index=None,
             placeholder=selected_zone, on_change=_on_zone_pick, args=(prefix,),
         )
 
@@ -243,7 +244,7 @@ def render_scope_selectors(
         st.session_state[f"{prefix}_district_val"] = selected_district = ANY
     with col_d:
         st.selectbox(
-            "District", [ANY] + districts, key=f"{prefix}_district_pick", index=None,
+            t("District"), [ANY] + districts, key=f"{prefix}_district_pick", index=None,
             placeholder=selected_district, on_change=_on_district_pick, args=(prefix,),
         )
 
@@ -270,7 +271,7 @@ def render_scope_selectors(
         st.session_state[f"{prefix}_area_val"] = selected_area = ANY
     with col_a:
         st.selectbox(
-            "Area", [ANY] + filtered, key=f"{prefix}_area_pick", index=None,
+            t("Area"), [ANY] + filtered, key=f"{prefix}_area_pick", index=None,
             placeholder=selected_area, on_change=_on_area_pick, args=(prefix,),
         )
 
@@ -286,7 +287,7 @@ def render_scope_selectors(
     )
     comp_options = [l for l in comp_labels if comp_to_area.get(l) in _pool_names]
     st.selectbox(
-        "Find by missionary", [ANY] + comp_options, key=f"{prefix}_comp_pick", index=None,
+        t("Find by missionary"), [ANY] + comp_options, key=f"{prefix}_comp_pick", index=None,
         placeholder=comp_placeholder, on_change=_on_companionship_pick,
         args=(prefix, comp_to_area),
     )

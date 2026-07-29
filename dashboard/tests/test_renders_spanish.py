@@ -112,6 +112,17 @@ def test_suggestion_status_filter_sends_english_to_the_sheet(monkeypatch):
     ), f"a translated status reached the sheet query: {seen.get('status')!r}"
 
 
+def test_scores_page_renders_spanish():
+    es = _text(_run("pages/06_Scores.py", "es"))
+    assert "Puntajes" in es
+
+
+def test_sign_out_is_translated_on_every_page():
+    """render_sidebar is shared, so a miss here would leave English chrome on
+    all ten pages at once."""
+    assert "Cerrar sesión" in _text(_run("Home.py", "es"))
+
+
 def test_placeholders_are_filled_not_left_raw():
     """A translation that dropped or renamed a {placeholder} would surface as
     literal brace text on the page."""

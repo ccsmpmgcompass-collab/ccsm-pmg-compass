@@ -47,6 +47,7 @@ from app.db.queries import (
     project_next_week,
 )
 from app.db.sheets_client import overwrite_tab, read_tab
+from app.i18n import t
 
 # ── Page config ───────────────────────────────────────────────────────────────
 
@@ -63,7 +64,9 @@ dark = True
 
 # Sentinel area code for a single config that applies to every area in the mission.
 MISSION_WIDE_CODE = "ALL"
-MISSION_WIDE_LABEL = "Whole Mission (all areas)"
+# Display label only - every comparison uses this same constant, and the value
+# persisted to the sheet is MISSION_WIDE_CODE, so translating it is safe.
+MISSION_WIDE_LABEL = t("Whole Mission (all areas)")
 
 # Friendly display names for every metric that feeds the Effectiveness score.
 METRIC_LABELS: dict[str, str] = {
@@ -823,7 +826,7 @@ def _load_effort() -> pd.DataFrame:
 # _render_scores_tab(), after render_scope_selectors() returns `_level`.
 _header_slot = st.empty()
 with _header_slot.container():
-    render_page_header("Area Scores", f"{get_config_value('MISSION_NAME', flavor.display_name)} — weekly computed performance scores per area", icon="")
+    render_page_header(t("Area Scores"), f"{get_config_value('MISSION_NAME', flavor.display_name)} — weekly computed performance scores per area", icon="")
 
 
 def _render_scores_tab():
@@ -849,11 +852,11 @@ def _render_scores_tab():
         # No scope is known yet (the selectors never render below), so the
         # title falls back to the mission-wide label.
         with _header_slot.container():
-            render_page_header("Mission Scores", f"{get_config_value('MISSION_NAME', flavor.display_name)} — weekly computed performance scores per area", icon="")
+            render_page_header(t("Mission Scores"), f"{get_config_value('MISSION_NAME', flavor.display_name)} — weekly computed performance scores per area", icon="")
         st.info(
-            "No scores have been computed yet. Scores are calculated automatically "
+            t("No scores have been computed yet. Scores are calculated automatically "
             "each Sunday at 11 PM Mountain Time. Run computeAllAreaScores() in "
-            "Apps Script to compute scores immediately."
+            "Apps Script to compute scores immediately.")
         )
         return
 
@@ -884,8 +887,8 @@ def _render_scores_tab():
     # all three cascading selectors at once, instead of resetting each one
     # individually. Sits above the dropdowns it clears.
     if st.button(
-        "Mission Score", key="sc_mission_reset",
-        help="Clear Zone/District/Area/missionary and show the mission-wide view",
+        t("Mission Score"), key="sc_mission_reset",
+        help=t("Clear Zone/District/Area/missionary and show the mission-wide view"),
     ):
         st.session_state["sc_zone_val"] = SCOPE_ANY
         st.session_state["sc_district_val"] = SCOPE_ANY
@@ -947,7 +950,7 @@ def _render_scores_tab():
     _tcol, _, _ = st.columns(3)
     with _tcol:
         time_range = st.selectbox(
-            "Time Range",
+            t("Time Range"),
             options=["Last 7 Days", "Transfer to Date", "All Time"],
             key="time_range",
         )
@@ -985,7 +988,7 @@ def _render_scores_tab():
     # Green cutoff is 75 here (Carson, 2026-07-18) — the Effectiveness bar chart's
     # OWN threshold, chosen independent of _color_score's 70/50 (still used by the
     # Skill/KI columns and the Score Summary table below).
-    render_section_label("Score Tier Key")
+    render_section_label(t("Score Tier Key"))
     render_status_pill("≥ 75  Strong", "green")
     render_status_pill("50–74  Developing", "amber")
     render_status_pill("< 50  Needs Attention", "red")
@@ -1019,7 +1022,7 @@ def _render_scores_tab():
         _breakdown = _avg_effort_breakdown(sel_area, _pie_weeks)
 
         if not _breakdown:
-            st.info("No Effort data available for this area in the selected Time Range.")
+            st.info(t("No Effort data available for this area in the selected Time Range."))
         else:
             _by_metric = {row["metric"]: row for row in _breakdown}
             _pie_metrics = [m for m in _pie_metric_order if m in _by_metric]
@@ -1051,7 +1054,7 @@ def _render_scores_tab():
                 "· mmm_sent 20% · pew 15% · gate 10%) — not raw activity volume."
             )
     else:
-        render_section_label("Effectiveness Score by Area")
+        render_section_label(t("Effectiveness Score by Area"))
 
         if display_df.empty:
             st.info("No data to chart." + _stale_range_hint(time_range))
@@ -1102,7 +1105,7 @@ def _render_scores_tab():
     # SCORE TABLE
     # ═══════════════════════════════════════════════════════════════════════════════
 
-    render_section_label("Score Summary")
+    render_section_label(t("Score Summary"))
 
     st.caption(
         f"{scope_label}  |  {time_range}  |  "
@@ -1110,9 +1113,9 @@ def _render_scores_tab():
     )
 
     st.caption(
-        "Effort uses its own tiers — meeting the mission president's weekly "
+        t("Effort uses its own tiers — meeting the mission president's weekly "
         "expectations exactly scores 75, so its bar is green above 75, "
-        "yellow 50–75, red below 50 (Skill/KI/Effectiveness keep 70/50)."
+        "yellow 50–75, red below 50 (Skill/KI/Effectiveness keep 70/50).")
     )
 
     if display_df.empty:
@@ -1205,9 +1208,9 @@ def _render_scores_tab():
     # ═══════════════════════════════════════════════════════════════════════════════
 
     st.info(
-        "Scores are automatically recomputed each Sunday at 11 PM Mountain Time by the "
+        t("Scores are automatically recomputed each Sunday at 11 PM Mountain Time by the "
         "AgentScores Apps Script engine. To trigger an immediate recalculation, open the "
-        "Google Apps Script editor for COMPASS_CCSM and run computeAllAreaScores()."
+        "Google Apps Script editor for COMPASS_CCSM and run computeAllAreaScores().")
     )
 
     st.divider()
@@ -1323,13 +1326,13 @@ def _render_scores_tab():
         return len(sec1_rows) + 1
 
 
-    with st.expander("Edit Score Weights", expanded=False):
+    with st.expander(t("Edit Score Weights"), expanded=False):
         st.markdown(
-            "**How the Effectiveness score is built.** Each area's Effectiveness score is a "
+            t("**How the Effectiveness score is built.** Each area's Effectiveness score is a "
             "blend of three components — **Effort**, **Skill**, and **Key Indicators (KI)**. "
             "Set how much each component counts in *Component Mix* below, then fine-tune every "
             "individual metric (lessons, contacts, referrals, door attempts, weekly KIs, etc.) "
-            "inside each component tab."
+            "inside each component tab.")
         )
 
         # ── Scope selector: whole mission or a single area ────────────────────────
@@ -1338,11 +1341,11 @@ def _render_scores_tab():
         ))
 
         cfg_area = st.selectbox(
-            "Apply weights to",
+            t("Apply weights to"),
             options=cfg_area_options,
             key="cfg_area",
-            help="Choose 'Whole Mission' to set one baseline for every area, or pick a single "
-                 "area to override it. Area-specific weights win over the mission baseline.",
+            help=t("Choose 'Whole Mission' to set one baseline for every area, or pick a single "
+                 "area to override it. Area-specific weights win over the mission baseline."),
         )
 
         is_mission_wide = (cfg_area == MISSION_WIDE_LABEL)
@@ -1350,8 +1353,8 @@ def _render_scores_tab():
         if is_mission_wide:
             cfg_area_code = MISSION_WIDE_CODE
             st.info(
-                "Editing the **mission-wide baseline**. These weights apply to every area "
-                "unless that area has its own override.",
+                t("Editing the **mission-wide baseline**. These weights apply to every area "
+                "unless that area has its own override."),
                 icon=None,
             )
         else:
@@ -1365,10 +1368,10 @@ def _render_scores_tab():
             st.markdown(f"**Area Code:** `{cfg_area_code}`")
 
         # ── Component mix (effectiveness sub-weights) ─────────────────────────────
-        st.markdown("##### Component Mix")
+        st.markdown(t("##### Component Mix"))
         st.caption(
-            "How much each component counts toward Effectiveness. Must sum to 1.0 "
-            "(e.g. Effort 0.30 + Skill 0.30 + KI 0.40)."
+            t("How much each component counts toward Effectiveness. Must sum to 1.0 "
+            "(e.g. Effort 0.30 + Skill 0.30 + KI 0.40).")
         )
 
         current_eff = _get_area_eff_weights(sec2, cfg_area_code)
@@ -1376,7 +1379,7 @@ def _render_scores_tab():
         eff_col1, eff_col2, eff_col3 = st.columns(3)
         with eff_col1:
             eff_effort = st.number_input(
-                "Effort Weight",
+                t("Effort Weight"),
                 min_value=0.0, max_value=1.0, step=0.05,
                 value=float(current_eff["effort"]),
                 format="%.2f",
@@ -1384,7 +1387,7 @@ def _render_scores_tab():
             )
         with eff_col2:
             eff_skill = st.number_input(
-                "Skill Weight",
+                t("Skill Weight"),
                 min_value=0.0, max_value=1.0, step=0.05,
                 value=float(current_eff["skill"]),
                 format="%.2f",
@@ -1392,7 +1395,7 @@ def _render_scores_tab():
             )
         with eff_col3:
             eff_ki = st.number_input(
-                "KI Weight",
+                t("KI Weight"),
                 min_value=0.0, max_value=1.0, step=0.05,
                 value=float(current_eff["ki"]),
                 format="%.2f",
@@ -1408,23 +1411,23 @@ def _render_scores_tab():
             eff_valid = True
 
         # ── Per-metric weights ────────────────────────────────────────────────────
-        st.markdown("##### Metric Weights")
+        st.markdown(t("##### Metric Weights"))
         st.caption(
-            "Every metric from the nightly and weekly forms, with the weight it carries. "
+            t("Every metric from the nightly and weekly forms, with the weight it carries. "
             "Each box label shows the recommended baseline (rec). A weight of 0 means the "
             "metric doesn't count. The engine normalises by component total, so relative "
-            "proportions are what matter."
+            "proportions are what matter.")
         )
 
         tab_effort, tab_skill, tab_ki = st.tabs(
-            ["Effort Metrics", "Skill Metrics", "Key Indicator Metrics"]
+            [t("Effort Metrics"), t("Skill Metrics"), t("Key Indicator Metrics")]
         )
 
         with tab_effort:
             st.caption(
-                "Legacy / unused — the Effort score is now computed from the "
+                t("Legacy / unused — the Effort score is now computed from the "
                 "mission president's fixed weekly expectations per area type, "
-                "not these per-metric weights. Kept for reference only."
+                "not these per-metric weights. Kept for reference only.")
             )
             edited_effort = _render_weight_inputs(
                 "effort",
@@ -1433,8 +1436,8 @@ def _render_scores_tab():
             )
 
         with tab_skill:
-            st.caption("Nightly-form quality signals — how effectively the area is working. "
-                       "Metrics left at 0 don't count toward Skill.")
+            st.caption(t("Nightly-form quality signals — how effectively the area is working. "
+                       "Metrics left at 0 don't count toward Skill."))
             edited_skill = _render_weight_inputs(
                 "skill",
                 _component_weights(cfg_area_code, "skill", DAILY_UNIVERSE, DEFAULT_SKILL_WEIGHTS),
@@ -1442,7 +1445,7 @@ def _render_scores_tab():
             )
 
         with tab_ki:
-            st.caption("Weekly-form Key Indicators — Pew, Date, Gate, Renew, RC.")
+            st.caption(t("Weekly-form Key Indicators — Pew, Date, Gate, Renew, RC."))
             edited_ki = _render_weight_inputs(
                 "ki",
                 _component_weights(cfg_area_code, "ki", KI_UNIVERSE, DEFAULT_KI_WEIGHTS),
@@ -1450,10 +1453,10 @@ def _render_scores_tab():
             )
 
         # ── Save button ───────────────────────────────────────────────────────────
-        st.markdown("---")
+        st.markdown(t("---"))
 
         if st.button(
-            "Save Config",
+            t("Save Config"),
             type="primary",
             disabled=not eff_valid,
             key="save_score_config",
@@ -1485,17 +1488,17 @@ def _render_daily_tab():
     ctrl_col, _spacer = st.columns([1, 3])
     with ctrl_col:
         days = st.number_input(
-            "Days displayed",
+            t("Days displayed"),
             min_value=1, max_value=120, value=14, step=1,
             key="da_days",
-            help="How many days of nightly-form data to show on this page.",
+            help=t("How many days of nightly-form data to show on this page."),
         )
     window_label = f"last {int(days)} days"
 
     df = _load_daily(int(days))
 
     if df.empty:
-        st.info("No daily activity data yet. Re-run the data refresh to populate this page.")
+        st.info(t("No daily activity data yet. Re-run the data refresh to populate this page."))
         return
 
     # Zone/District filter
@@ -1503,19 +1506,19 @@ def _render_daily_tab():
     zone_options = ["All"] + all_zones
     _da_f1, _da_f2 = st.columns(2)
     with _da_f1:
-        selected_zone = st.selectbox("Zone", zone_options, key="da_zone")
+        selected_zone = st.selectbox(t("Zone"), zone_options, key="da_zone")
 
     if selected_zone != "All":
         df = df[df["Zone"] == selected_zone].copy() if "Zone" in df.columns else df
 
         district_options = ["All"] + _load_districts(selected_zone)
         with _da_f2:
-            selected_district = st.selectbox("District", district_options, key="da_district")
+            selected_district = st.selectbox(t("District"), district_options, key="da_district")
         if selected_district != "All":
             df = df[df["District"] == selected_district].copy() if "District" in df.columns else df
 
     if df.empty:
-        st.info("No data for the selected filters.")
+        st.info(t("No data for the selected filters."))
         return
 
     # ── Present metric columns ─────────────────────────────────────────────────────
@@ -1537,19 +1540,19 @@ def _render_daily_tab():
     doors_total   = _col_sum("nm_doors")
 
     m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("NM Lessons",       nm_total)
-    m2.metric("New People Found", found_total)
-    m3.metric("NM Contacted",     contact_total)
-    m4.metric("LSI Given",        lsi_total)
-    m5.metric("NM Attempted",     doors_total)
+    m1.metric(t("NM Lessons"),       nm_total)
+    m2.metric(t("New People Found"), found_total)
+    m3.metric(t("NM Contacted"),     contact_total)
+    m4.metric(t("LSI Given"),        lsi_total)
+    m5.metric(t("NM Attempted"),     doors_total)
 
-    render_section_label("Activity by Category")
+    render_section_label(t("Activity by Category"))
 
     # ═══════════════════════════════════════════════════════════════════════════════
     # TABS
     # ═══════════════════════════════════════════════════════════════════════════════
     tab_lessons, tab_finding, tab_contacts, tab_lsi, tab_effort = st.tabs([
-        "Lessons", "Finding", "Contacts", "LSI & Attempts", "Effort"
+        t("Lessons"), t("Finding"), t("Contacts"), t("LSI & Attempts"), t("Effort")
     ])
 
 
@@ -1597,7 +1600,7 @@ def _render_daily_tab():
         """Render a row of st.metric for each present column."""
         present_cols = [c for c in cols if c in df_in.columns]
         if not present_cols:
-            st.info("No data for this category.")
+            st.info(t("No data for this category."))
             return
         metric_cols = st.columns(len(present_cols))
         for i, col in enumerate(present_cols):
@@ -1606,7 +1609,7 @@ def _render_daily_tab():
 
     # ── Lessons tab ────────────────────────────────────────────────────────────────
     with tab_lessons:
-        render_section_label("Lessons Summary")
+        render_section_label(t("Lessons Summary"))
         _summary_metrics(df, _LESSON_COLS)
 
         primary = "nm_lessons"
@@ -1647,13 +1650,13 @@ def _render_daily_tab():
 
         area_tbl = _area_breakdown(df, primary)
         if not area_tbl.empty:
-            st.caption("By-area totals")
+            st.caption(t("By-area totals"))
             render_table(area_tbl)
 
 
     # ── Finding tab ────────────────────────────────────────────────────────────────
     with tab_finding:
-        render_section_label("Finding Summary")
+        render_section_label(t("Finding Summary"))
         _summary_metrics(df, _FINDING_COLS)
 
         primary = "new_found"
@@ -1687,13 +1690,13 @@ def _render_daily_tab():
         if primary in df.columns:
             area_tbl = _area_breakdown(df, primary)
             if not area_tbl.empty:
-                st.caption("New People Found — by area")
+                st.caption(t("New People Found — by area"))
                 render_table(area_tbl)
 
 
     # ── Contacts tab ───────────────────────────────────────────────────────────────
     with tab_contacts:
-        render_section_label("Contacts Summary")
+        render_section_label(t("Contacts Summary"))
         _summary_metrics(df, _CONTACT_COLS)
 
         contact_present = [c for c in _CONTACT_COLS if c in df.columns]
@@ -1727,13 +1730,13 @@ def _render_daily_tab():
         if primary in df.columns:
             area_tbl = _area_breakdown(df, primary)
             if not area_tbl.empty:
-                st.caption("NM Contacted — by area")
+                st.caption(t("NM Contacted — by area"))
                 render_table(area_tbl)
 
 
     # ── LSI & Doors tab ────────────────────────────────────────────────────────────
     with tab_lsi:
-        render_section_label("LSI Given & Follow-Ups")
+        render_section_label(t("LSI Given & Follow-Ups"))
         _summary_metrics(df, _LSI_COLS)
 
         lsi_present = [c for c in _LSI_COLS if c in df.columns]
@@ -1763,7 +1766,7 @@ def _render_daily_tab():
             )
             st.plotly_chart(fig_lsi, use_container_width=True)
 
-        render_section_label("Attempts by Type")
+        render_section_label(t("Attempts by Type"))
         _summary_metrics(df, _DOOR_COLS)
 
         door_present = [c for c in _DOOR_COLS if c in df.columns]
@@ -1797,17 +1800,17 @@ def _render_daily_tab():
         if "lsi_given" in df.columns:
             area_tbl = _area_breakdown(df, "lsi_given")
             if not area_tbl.empty:
-                st.caption("LSI Given — by area")
+                st.caption(t("LSI Given — by area"))
                 render_table(area_tbl)
 
 
     # ── Effort tab ─────────────────────────────────────────────────────────────────
     with tab_effort:
-        render_section_label("Effort Reporting")
+        render_section_label(t("Effort Reporting"))
 
         effort_df = _load_effort()
         if effort_df.empty:
-            st.info("Effort tracking coming soon.")
+            st.info(t("Effort tracking coming soon."))
         else:
             effort_present = [c for c in ["all_count", "most_count", "some_count"] if c in effort_df.columns]
             if effort_present:
@@ -1836,14 +1839,14 @@ def _render_daily_tab():
                     )
                     st.plotly_chart(fig_effort, use_container_width=True)
             else:
-                st.info("Effort tracking coming soon.")
+                st.info(t("Effort tracking coming soon."))
 
-    render_section_label("Raw Data")
+    render_section_label(t("Raw Data"))
 
     # ═══════════════════════════════════════════════════════════════════════════════
     # RAW DATA EXPANDER
     # ═══════════════════════════════════════════════════════════════════════════════
-    with st.expander("Raw Daily Records", expanded=False):
+    with st.expander(t("Raw Daily Records"), expanded=False):
         base_cols = [c for c in ("Date", "Zone", "District", "Area") if c in df.columns]
         display_cols = base_cols + present
         rename_map = {m: _DA_METRIC_LABELS.get(m, m) for m in present}
@@ -1857,19 +1860,19 @@ def _render_analyze_tab():
     _an_c1, _an_c2 = st.columns(2)
     with _an_c1:
         metric_key = st.selectbox(
-            "Metric",
+            t("Metric"),
             options=list(_ANALYZE_METRIC_LABELS.keys()),
             format_func=lambda k: _ANALYZE_METRIC_LABELS[k],
             key="analyze_metric",
         )
     with _an_c2:
         threshold_pct = st.slider(
-            "Anomaly Threshold (%)",
+            t("Anomaly Threshold (%)"),
             min_value=50,
             max_value=95,
             value=70,
             step=5,
-            help="Flag areas where this week's value is below this % of their 4-week average.",
+            help=t("Flag areas where this week's value is below this % of their 4-week average."),
             key="analyze_threshold",
         )
 
@@ -1954,20 +1957,20 @@ def _render_analyze_tab():
         else:
             st.caption(f"{n} area{'s' if n != 1 else ''} flagged.")
 
-    render_section_label("Trend Projection")
+    render_section_label(t("Trend Projection"))
 
     proj_metric_key = st.selectbox(
-        "Metric to project",
+        t("Metric to project"),
         options=list(_ANALYZE_PROJECTION_METRIC_LABELS.keys()),
         format_func=lambda k: _ANALYZE_PROJECTION_METRIC_LABELS[k],
         key="analyze_proj_metric",
-        help="Pick any nightly-form or weekly-form metric to see its projection.",
+        help=t("Pick any nightly-form or weekly-form metric to see its projection."),
     )
     proj_label = _ANALYZE_PROJECTION_METRIC_LABELS[proj_metric_key]
 
     st.caption(
-        "Mission-wide totals from completed weeks (current in-progress week excluded), "
-        "with next week projected by linear regression and an 80% confidence range."
+        t("Mission-wide totals from completed weeks (current in-progress week excluded), "
+        "with next week projected by linear regression and an 80% confidence range.")
     )
 
     projection = project_next_week(metric_key=proj_metric_key)
@@ -1975,7 +1978,7 @@ def _render_analyze_tab():
     status = projection.get("status") if projection else None
 
     if not projection or not projection.get("weeks"):
-        st.info("No history available yet for this metric.")
+        st.info(t("No history available yet for this metric."))
     elif status == "insufficient":
         have = len(projection.get("weeks", []))
         st.info(
@@ -2091,15 +2094,15 @@ def _render_analyze_tab():
                 if lower is not None and upper is not None:
                     st.caption(f"**Likely range:** {lower:g} – {upper:g}")
                 if high_conf:
-                    st.success("High confidence — the trend is statistically significant.")
+                    st.success(t("High confidence — the trend is statistically significant."))
                 else:
                     st.warning(
-                        "Low confidence — the recent weeks aren't a statistically "
-                        "significant trend. Treat this as a rough estimate, not a forecast."
+                        t("Low confidence — the recent weeks aren't a statistically "
+                        "significant trend. Treat this as a rough estimate, not a forecast.")
                     )
 
 
-tab_scores, tab_daily, tab_analyze = st.tabs(["Scores", "Daily Activity", "Analyze"])
+tab_scores, tab_daily, tab_analyze = st.tabs([t("Scores"), t("Daily Activity"), t("Analyze")])
 with tab_scores:
     _render_scores_tab()
 with tab_daily:

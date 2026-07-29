@@ -5,6 +5,7 @@ import html as _html
 import streamlit as st
 import plotly.io as pio
 import plotly.graph_objects as go
+from app.i18n import t
 
 PALETTE = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"]
 
@@ -704,7 +705,7 @@ def render_language_switch(key: str) -> None:
     index = 1 if current == "es" else 0
 
     chosen = st.radio(
-        "Language / Idioma",
+        t("Language / Idioma"),
         labels,
         index=index,
         horizontal=True,
@@ -734,7 +735,7 @@ def render_sidebar(user: dict) -> None:
             unsafe_allow_html=True,
         )
         st.divider()
-        if st.button("Sign Out", use_container_width=True, key="ds_signout"):
+        if st.button(t("Sign Out"), use_container_width=True, key="ds_signout"):
             from app.auth.auth import clear_session
             clear_session()
             st.rerun()
