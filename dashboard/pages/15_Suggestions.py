@@ -115,7 +115,7 @@ else:
                     line += f" on {reviewed_at}"
                 body_col.caption(line)
             if reviewer_note and reviewer_note.lower() != "nan":
-                body_col.caption(f"Note: {reviewer_note}")
+                body_col.caption(t('Note: {reviewer_note}', reviewer_note=reviewer_note))
 
             def _apply(new_status, clear_note=False):
                 note = "" if clear_note else st.session_state.get(f"note_{rid}", "")

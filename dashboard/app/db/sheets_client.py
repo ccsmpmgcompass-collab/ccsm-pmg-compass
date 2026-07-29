@@ -16,6 +16,7 @@ import streamlit as st
 import gspread
 import pandas as pd
 from google.oauth2.service_account import Credentials
+from app.i18n import t
 
 _SCOPES = [
     "https://spreadsheets.google.com/feeds",
@@ -148,13 +149,13 @@ def read_tab(tab_name: str, header_marker: str = None) -> pd.DataFrame:
     """
     key = f"{tab_name}::{header_marker}"
     if _recently_failed(key):
-        st.warning(f"Could not read tab '{tab_name}': recent read failure, backing off before retrying.")
+        st.warning(t("Could not read tab '{tab_name}': recent read failure, backing off before retrying.", tab_name=tab_name))
         return pd.DataFrame()
     try:
         return _read_tab_cached(tab_name, header_marker)
     except Exception as e:
         _record_failure(key)
-        st.warning(f"Could not read tab '{tab_name}': {e}")
+        st.warning(t("Could not read tab '{tab_name}': {e}", tab_name=tab_name, e=e))
         return pd.DataFrame()
 
 
@@ -188,13 +189,13 @@ def read_values(tab_name: str) -> list:
     """
     key = f"values::{tab_name}"
     if _recently_failed(key):
-        st.warning(f"Could not read tab '{tab_name}': recent read failure, backing off before retrying.")
+        st.warning(t("Could not read tab '{tab_name}': recent read failure, backing off before retrying.", tab_name=tab_name))
         return []
     try:
         return _read_values_cached(tab_name)
     except Exception as e:
         _record_failure(key)
-        st.warning(f"Could not read tab '{tab_name}': {e}")
+        st.warning(t("Could not read tab '{tab_name}': {e}", tab_name=tab_name, e=e))
         return []
 
 
@@ -323,4 +324,4 @@ def save_dataframe(tab_name: str, df: pd.DataFrame, uploaded_by: str = "") -> No
         read_values.clear()
     except Exception as e:
         import streamlit as _st
-        _st.warning(f"Could not save to '{tab_name}': {e}")
+        _st.warning(t("Could not save to '{tab_name}': {e}", tab_name=tab_name, e=e))

@@ -81,7 +81,7 @@ show_resolved = st.sidebar.checkbox(
 
 # ── Page header ───────────────────────────────────────────────────────────────
 
-render_page_header(t("Notes"), f"{get_config_value('MISSION_NAME', flavor.display_name)} — Searchable Notes with Follow-up Reminders")
+render_page_header(t("Notes"), t('{mission_name} — Searchable Notes with Follow-up Reminders', mission_name=get_config_value('MISSION_NAME', flavor.display_name)))
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SECTION 1: Follow-ups Due
@@ -99,7 +99,7 @@ else:
 due_list = [n for n in due_list if str(n.get("resolved", "FALSE")).upper() != "TRUE"]
 
 if due_list:
-    with st.expander(f"Follow-ups Due — {len(due_list)} note(s)", expanded=True):
+    with st.expander(t('Follow-ups Due — {count} note(s)', count=len(due_list)), expanded=True):
         for note in due_list:
             note_id = note.get("note_id") or note.get("id", "")
             col_content, col_meta, col_btn = st.columns([5, 3, 1])
@@ -385,7 +385,7 @@ else:
                 # Visible-to info
                 visible_to = str(note.get("visible_to", "all") or "all")
                 if visible_to.lower() != "all":
-                    body_col.caption(f"Visible to: {visible_to}")
+                    body_col.caption(t('Visible to: {visible_to}', visible_to=visible_to))
 
                 if resolved:
                     body_col.caption(t("Resolved"))

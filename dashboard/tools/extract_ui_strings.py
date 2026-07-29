@@ -14,6 +14,8 @@ with an empty ES dict and report 100% translated while rendering English.
 """
 
 import ast
+import keyword
+import re
 import sys
 from pathlib import Path
 
@@ -69,6 +71,101 @@ def _literals(nodes) -> list[str]:
             if len(s) > 1 and not _is_stylesheet(s):
                 out.append(s)
     return out
+
+
+def _placeholder_name(expr: ast.AST, used: set) -> str:
+    """Derive a readable {placeholder} name from the interpolated expression.
+
+    The name becomes part of the translator-facing key, so it has to be stable
+    and meaningful: `{area}` tells a translator what will appear there,
+    `{v0}` does not.
+    """
+    if isinstance(expr, ast.Name):
+        base = expr.id
+    elif isinstance(expr, ast.Attribute):
+        base = expr.attr
+    elif isinstance(expr, ast.Subscript) and isinstance(expr.slice, ast.Constant) \
+            and isinstance(expr.slice.value, str):
+        base = expr.slice.value
+    elif isinstance(expr, ast.Call):
+        # A call's own name is usually the worst available label: nobody
+        # translating a string is helped by "{get_config_value}" or
+        # "{strftime}". Prefer what the call is ABOUT.
+        fn = expr.func
+        first_str = next((a.value for a in expr.args
+                          if isinstance(a, ast.Constant) and isinstance(a.value, str)), None)
+        if _call_name(expr) == "len":
+            base = "count"
+        elif isinstance(fn, ast.Attribute) and isinstance(fn.value, (ast.Name, ast.Attribute)):
+            # obj.method(...) -> name it after the object: _monday.strftime() -> monday
+            base = fn.value.id if isinstance(fn.value, ast.Name) else fn.value.attr
+        elif first_str:
+            # get_config_value("MISSION_NAME", ...) -> mission_name
+            base = first_str
+        else:
+            base = _call_name(expr) or "value"
+    else:
+        base = "value"
+    base = re.sub(r"\W+", "_", str(base)).strip("_").lower() or "value"
+    if base[0].isdigit():
+        base = f"v_{base}"
+    if keyword.iskeyword(base):
+        # `t("...", class=x)` is a SyntaxError, and the template and the kwarg
+        # must agree, so the rename has to happen here where both are derived.
+        base = f"{base}_"
+    name, i = base, 2
+    while name in used:
+        name, i = f"{base}{i}", i + 1
+    used.add(name)
+    return name
+
+
+def fstring_template(node: ast.JoinedStr) -> tuple[str, list]:
+    """Turn an f-string into a (template, [(name, expr_node), ...]) pair.
+
+    Shared with the codemod on purpose: if the extractor derived the key one
+    way and the rewriter another, the gate would demand a translation for a
+    key the app never looks up - green scan, English page.
+
+    Literal braces are re-escaped to {{ }} because ast has already decoded
+    them, and str.format() would otherwise read them back as placeholders.
+    """
+    used: set = set()
+    parts: list[str] = []
+    fields: list = []
+    for v in node.values:
+        if isinstance(v, ast.Constant) and isinstance(v.value, str):
+            parts.append(v.value.replace("{", "{{").replace("}", "}}"))
+        elif isinstance(v, ast.FormattedValue):
+            name = _placeholder_name(v.value, used)
+            conv = f"!{chr(v.conversion)}" if v.conversion and v.conversion != -1 else ""
+            spec = ""
+            if v.format_spec is not None:
+                spec_txt = "".join(
+                    c.value for c in v.format_spec.values
+                    if isinstance(c, ast.Constant) and isinstance(c.value, str)
+                )
+                spec = f":{spec_txt}"
+            parts.append(f"{{{name}{conv}{spec}}}")
+            fields.append((name, v.value))
+    return "".join(parts), fields
+
+
+_HTML_TAG = re.compile(r"<[A-Za-z/!]")
+
+
+def is_translatable_fstring(node: ast.JoinedStr) -> bool:
+    """True when an f-string carries real prose rather than markup or pure
+    interpolation.
+
+    Excludes inline HTML/CSS - this app builds a lot of its layout with
+    f-string <div> blocks, and those are structure, not copy.
+    """
+    literal = "".join(v.value for v in node.values
+                      if isinstance(v, ast.Constant) and isinstance(v.value, str))
+    if _HTML_TAG.search(literal) or "!important" in literal or "data-testid" in literal:
+        return False
+    return bool(re.search(r"[A-Za-z]{2,}", literal))
 
 
 def _translates_via_format_func(node: ast.Call) -> bool:
@@ -131,7 +228,14 @@ def extract(paths: list[str]) -> list[str]:
 
 def extract_unwrapped(paths: list[str]) -> list[str]:
     """Literals still handed straight to a UI call. These render English no
-    matter how complete ES is, so they are tracked separately from coverage."""
+    matter how complete ES is, so they are tracked separately from coverage.
+
+    Includes f-strings. An f-string is a JoinedStr rather than a Constant, so
+    for a long time it was invisible here AND absent from extract()'s
+    denominator - the gate could not report it missing because it never knew
+    it existed. Each is reported as the template it will become, so the entry
+    doubles as a preview of the ES key the conversion will need.
+    """
     found: set[str] = set()
     for _, tree in _walk(paths):
         for node in ast.walk(tree):
@@ -145,6 +249,9 @@ def extract_unwrapped(paths: list[str]) -> list[str]:
                     a is e for x in node.args if isinstance(x, ast.List)
                     for e in x.elts)]
             found.update(_literals(args))
+            for a in args:
+                if isinstance(a, ast.JoinedStr) and is_translatable_fstring(a):
+                    found.add(fstring_template(a)[0])
     return sorted(found)
 
 

@@ -29,6 +29,9 @@ GROUPS = {
                "app/components/scope_selector.py"],
     "task12": ["pages/02_Goals.py", "pages/18_Maintenance.py"],
     "leftovers": ["app/breakdowns_engine.py", "app/auth/auth.py"],
+    # Query modules render their own st.error/st.warning on failure, so their
+    # messages are user-facing even though they live in the data layer.
+    "queries": ["app/db/goals_queries.py", "app/db/sheets_client.py"],
 }
 
 

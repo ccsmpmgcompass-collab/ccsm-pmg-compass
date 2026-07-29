@@ -61,7 +61,7 @@ _any_items = False
 if summary["suggestions_ap_count"] > 0:
     _any_items = True
     with st.container(border=True):
-        st.markdown(f"**{summary['suggestions_ap_count']} suggestion(s) at AP Approval**")
+        st.markdown(t('**{suggestions_ap_count} suggestion(s) at AP Approval**', suggestions_ap_count=summary['suggestions_ap_count']))
         if st.button(t("Review in Suggestions"), key="ac_go_ap_approval"):
             st.session_state["sug_status"] = "AP Approval"
             st.switch_page("pages/15_Suggestions.py")
@@ -69,7 +69,7 @@ if summary["suggestions_ap_count"] > 0:
 if summary["suggestions_mp_count"] > 0:
     _any_items = True
     with st.container(border=True):
-        st.markdown(f"**{summary['suggestions_mp_count']} suggestion(s) at Mission President Approval**")
+        st.markdown(t('**{suggestions_mp_count} suggestion(s) at Mission President Approval**', suggestions_mp_count=summary['suggestions_mp_count']))
         if st.button(t("Review in Suggestions"), key="ac_go_mp_approval"):
             st.session_state["sug_status"] = "Mission President Approval"
             st.switch_page("pages/15_Suggestions.py")
@@ -77,7 +77,7 @@ if summary["suggestions_mp_count"] > 0:
 if summary["followups_count"] > 0:
     _any_items = True
     with st.container(border=True):
-        st.markdown(f"**{summary['followups_count']} note follow-up(s) due**")
+        st.markdown(t('**{followups_count} note follow-up(s) due**', followups_count=summary['followups_count']))
         if st.button(t("Review in Notes"), key="ac_go_notes"):
             st.switch_page("pages/10_Notes.py")
 
@@ -85,12 +85,12 @@ my_tasks = summary["my_tasks_df"]
 if not my_tasks.empty:
     _any_items = True
     with st.container(border=True):
-        st.markdown(f"**My Tasks — {len(my_tasks)} open**")
+        st.markdown(t('**My Tasks — {count} open**', count=len(my_tasks)))
         for _, row in my_tasks.iterrows():
             task_id = str(row["task_id"])
             t1, t2 = st.columns([5, 1])
             due = f" · due {row['due_date']}" if str(row.get("due_date", "")).strip() else ""
-            t1.markdown(f"{row['task_name']} — _assigned by {row['assigned_by']}{due}_")
+            t1.markdown(t('{task_name} — _assigned by {assigned_by}{due}_', task_name=row['task_name'], assigned_by=row['assigned_by'], due=due))
             if str(row.get("notes", "")).strip():
                 t1.caption(row["notes"])
             if t2.button(t("Done"), key=f"ac_task_done_{task_id}"):
@@ -139,7 +139,7 @@ else:
                     due_date=due_date_val.isoformat() if due_date_val else "",
                     notes=notes.strip(),
                 )
-                st.success(f"Task assigned to {roster[assignee_idx]['name']}.")
+                st.success(t('Task assigned to {name}.', name=roster[assignee_idx]['name']))
                 st.rerun()
 
 with st.expander(t("All open tasks")):
@@ -150,8 +150,7 @@ with st.expander(t("All open tasks")):
         for _, row in all_open.iterrows():
             due = f" · due {row['due_date']}" if str(row.get("due_date", "")).strip() else ""
             st.markdown(
-                f"- **{row['task_name']}** — assigned to {row['assigned_to']} "
-                f"by {row['assigned_by']}{due}"
+                t('- **{task_name}** — assigned to {assigned_to} by {assigned_by}{due}', task_name=row['task_name'], assigned_to=row['assigned_to'], assigned_by=row['assigned_by'], due=due)
             )
 
 # ══════════════════════════════════════════════════════════════════════════════

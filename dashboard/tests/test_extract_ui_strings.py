@@ -86,6 +86,77 @@ def test_dynamic_option_lists_are_left_alone(tmp_path: Path):
     assert all("zone_opts_from_sheet" not in s for s in found)
 
 
+FSTRING_FIXTURE = '''
+import streamlit as st
+from app.i18n import t
+st.success(f"Goals saved for {area}.")
+st.error(f"Could not write {tab}: {e}")
+st.caption(f"{pct:.1f}% of {row["name"]} complete")
+st.markdown(f"<div style=\\'color:red\\'>{x}</div>", unsafe_allow_html=True)
+st.write(f"{x}")
+st.info(t("Already converted {n}", n=3))
+'''
+
+
+def test_fstrings_are_reported_unwrapped(tmp_path: Path):
+    """An f-string is a JoinedStr, not a Constant, so it was invisible to BOTH
+    scans - the gate could not report it missing because it never knew it
+    existed. That is how 107 English strings survived a '100%' report."""
+    f = tmp_path / "fs.py"
+    f.write_text(FSTRING_FIXTURE, encoding="utf-8")
+    todo = extract_unwrapped([str(f)])
+    assert "Goals saved for {area}." in todo
+    assert "Could not write {tab}: {e}" in todo
+
+
+def test_fstring_placeholders_are_named_from_the_expression(tmp_path: Path):
+    """The name is part of the translator-facing key, so {name} must beat
+    {v0}. Format specs and subscript keys have to survive too."""
+    f = tmp_path / "fs.py"
+    f.write_text(FSTRING_FIXTURE, encoding="utf-8")
+    todo = extract_unwrapped([str(f)])
+    assert "{pct:.1f}% of {name} complete" in todo
+
+
+CALL_FIXTURE = '''
+import streamlit as st
+st.caption(f"{get_config_value("MISSION_NAME", d)} — PMG Compass")
+st.caption(f"week of {_monday.strftime("%b")}")
+st.caption(f"{len(rows)} areas shown")
+'''
+
+
+def test_placeholder_names_describe_the_value_not_the_call(tmp_path: Path):
+    """These names end up in the key a native proofreader reads. "{strftime}"
+    and "{get_config_value}" tell a translator nothing about what will appear
+    there; the call's subject does."""
+    f = tmp_path / "c.py"
+    f.write_text(CALL_FIXTURE, encoding="utf-8")
+    todo = extract_unwrapped([str(f)])
+    assert "{mission_name} — PMG Compass" in todo, todo
+    assert "week of {monday}" in todo, todo
+    assert "{count} areas shown" in todo, todo
+
+
+def test_html_and_pure_interpolation_fstrings_are_skipped(tmp_path: Path):
+    """This app builds layout with f-string <div> blocks - structure, not
+    copy - and f"{x}" carries no prose at all."""
+    f = tmp_path / "fs.py"
+    f.write_text(FSTRING_FIXTURE, encoding="utf-8")
+    todo = extract_unwrapped([str(f)])
+    assert not any("div" in s or "color:red" in s for s in todo), todo
+    assert "{x}" not in todo
+
+
+def test_converted_fstring_is_not_reported_again(tmp_path: Path):
+    """Once converted the template is a Constant inside t(), so it leaves the
+    to-do list and joins the denominator instead."""
+    f = tmp_path / "fs.py"
+    f.write_text(FSTRING_FIXTURE, encoding="utf-8")
+    assert "Already converted {n}" not in extract_unwrapped([str(f)])
+    assert "Already converted {n}" in extract([str(f)])
+
+
 FORMAT_FUNC_FIXTURE = '''
 import streamlit as st
 from app.i18n import t

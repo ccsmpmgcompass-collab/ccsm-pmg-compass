@@ -56,7 +56,7 @@ render_sidebar(user)
 
 render_page_header(
     t("Maintenance"),
-    f"{get_config_value('MISSION_NAME', flavor.display_name)} — PMG Compass",
+    t('{mission_name} — PMG Compass', mission_name=get_config_value('MISSION_NAME', flavor.display_name)),
 )
 
 _IS_LEAD = is_leadership(user.get("email", ""))
@@ -164,10 +164,7 @@ if _sec == _TAB_HEALTH:
     _monday = _today - timedelta(days=_today.weekday())
     _wk = _monday.strftime("%Y-%m-%d")
     st.caption(
-        f"The weekly maintenance routine — week of {_monday.strftime('%b')} "
-        f"{_monday.day}. Checkboxes reset each Monday and live in your browser "
-        "session only; everything they ask about is verifiable further down "
-        "this tab."
+        t('The weekly maintenance routine — week of {monday} {day}. Checkboxes reset each Monday and live in your browser session only; everything they ask about is verifiable further down this tab.', monday=_monday.strftime('%b'), day=_monday.day)
     )
     _TODOS = [
         "Every agent's last run is green (Agent Runs below)",
@@ -236,11 +233,11 @@ if _sec == _TAB_HEALTH:
     if _last_updated or _week_start:
         _ic1, _ic2 = st.columns(2)
         if _last_updated:
-            _ic1.markdown(f"**Last Updated:** {_last_updated}")
+            _ic1.markdown(t('**Last Updated:** {last_updated}', last_updated=_last_updated))
         if _week_start and _week_end:
-            _ic2.markdown(f"**Current Week:** {_week_start} — {_week_end}")
+            _ic2.markdown(t('**Current Week:** {week_start} — {week_end}', week_start=_week_start, week_end=_week_end))
         if _total_areas:
-            _ic1.markdown(f"**Total Areas:** {_total_areas}")
+            _ic1.markdown(t('**Total Areas:** {total_areas}', total_areas=_total_areas))
 
     _m1, _m2, _m3, _m4 = st.columns(4)
     _m1.metric(t("Areas Submitted Today"), _int_label(_submitted_today),
@@ -378,15 +375,12 @@ if _sec == _TAB_HEALTH:
     _dl_age = _age_days(_dl_date)
     if _dl_age is not None and _dl_age > 2:
         st.error(
-            f"DAILY_LOG hasn't been written in {_dl_age} days. The nightly "
-            "ingestion likely failed — check the agent runs below and the Apps "
-            "Script triggers."
+            t("DAILY_LOG hasn't been written in {dl_age} days. The nightly ingestion likely failed — check the agent runs below and the Apps Script triggers.", dl_age=_dl_age)
         )
     _wk_age = _age_days(_wk_date)
     if _wk_age is not None and _wk_age > 9:
         st.warning(
-            f"WEEKLY_KI's latest week ended {_wk_age} days ago — a weekly cycle "
-            "may have been missed."
+            t("WEEKLY_KI's latest week ended {wk_age} days ago — a weekly cycle may have been missed.", wk_age=_wk_age)
         )
 
     # ── Agent runs ────────────────────────────────────────────────────────────
@@ -450,7 +444,7 @@ if _sec == _TAB_HEALTH:
         if "_ts" in _fails.columns:
             _fails = _fails[_fails["_ts"] >= datetime.now() - timedelta(days=14)]
         if not _fails.empty:
-            st.error(f"{len(_fails)} non-success run(s) in the last 14 days:")
+            st.error(t('{count} non-success run(s) in the last 14 days:', count=len(_fails)))
             _show_cols = [
                 c for c in (_ts_col, "Agent", "Status", "Notes", "Error")
                 if c and c in _fails.columns
@@ -570,7 +564,7 @@ elif _sec == _TAB_KB:
                     _kb_cat = _fc2.selectbox(t("Category"), _cats,
                                              index=_cats.index("General"))
                     _kb_submit = st.form_submit_button(
-                        f"Add to Knowledge Base as {_next_id}", type="primary")
+                        t('Add to Knowledge Base as {next_id}', next_id=_next_id), type="primary")
 
                 if _kb_submit:
                     if not _kb_q.strip() or not _kb_a.strip():
@@ -592,7 +586,7 @@ elif _sec == _TAB_KB:
                         try:
                             append_row("KNOWLEDGE_BASE", _new)
                         except Exception as e:
-                            st.error(f"Could not write to KNOWLEDGE_BASE: {e}")
+                            st.error(t('Could not write to KNOWLEDGE_BASE: {e}', e=e))
                         else:
                             st.session_state["_maint_flash"] = (
                                 f"{_next_id} added to the knowledge base"
@@ -601,7 +595,7 @@ elif _sec == _TAB_KB:
                             st.rerun()
 
             # ── Existing entries ──────────────────────────────────────────────
-            render_section_label(f"Existing Entries ({len(_kb_rows)})")
+            render_section_label(t('Existing Entries ({count})', count=len(_kb_rows)))
             _kb_search = st.text_input(
                 t("Search the knowledge base"), key="kb_search",
                 placeholder=t("Filter by any word in the question, answer, or keywords"),
@@ -695,7 +689,7 @@ elif _sec == _TAB_AGENTS:
                                     [(f"{_val_a1}{_r + 1}", _new_val)],
                                 )
                             except Exception as e:
-                                st.error(f"Could not write AGENT_CONFIG: {e}")
+                                st.error(t('Could not write AGENT_CONFIG: {e}', e=e))
                             else:
                                 st.session_state.pop("_cfg_editing", None)
                                 st.session_state["_maint_flash"] = (
@@ -732,7 +726,7 @@ elif _sec == _TAB_AGENTS:
                         try:
                             _set_config_value(_nk.strip(), _nv.strip())
                         except Exception as e:
-                            st.error(f"Could not write AGENT_CONFIG: {e}")
+                            st.error(t('Could not write AGENT_CONFIG: {e}', e=e))
                         else:
                             st.session_state["_maint_flash"] = f"{_nk.strip()} saved."
                             st.rerun()
@@ -802,8 +796,7 @@ elif _sec == _TAB_QUESTIONS:
                 if not _group:
                     continue
                 st.markdown(
-                    f"**{_label}** — {sum(q['active'] for q in _group)} of "
-                    f"{len(_group)} active"
+                    t('**{label}** — {sum} of {count} active', label=_label, sum=sum(q['active'] for q in _group), count=len(_group))
                 )
                 for q in _group:
                     _t = st.toggle(
@@ -818,7 +811,7 @@ elif _sec == _TAB_QUESTIONS:
 
             _other = [q for q in _qrows if q["form"] not in ("NIGHTLY", "WEEKLY")]
             if _other:
-                st.markdown(f"**Other / both forms** — {len(_other)} question(s)")
+                st.markdown(t('**Other / both forms** — {count} question(s)', count=len(_other)))
                 for q in _other:
                     _t = st.toggle(
                         f"{q['header']}  ·  `{q['key']}`",
@@ -832,15 +825,13 @@ elif _sec == _TAB_QUESTIONS:
 
             if _changes and _IS_LEAD:
                 st.warning(
-                    f"{len(_changes)} unsaved change(s). Saving updates "
-                    "QUESTIONS_CONFIG (agents follow it on their next run) — "
-                    "push to the Google Forms separately below."
+                    t('{count} unsaved change(s). Saving updates QUESTIONS_CONFIG (agents follow it on their next run) — push to the Google Forms separately below.', count=len(_changes))
                 )
                 if st.button(t("Save question changes"), type="primary", key="q_save"):
                     try:
                         update_cells("QUESTIONS_CONFIG", _changes)
                     except Exception as e:
-                        st.error(f"Could not write QUESTIONS_CONFIG: {e}")
+                        st.error(t('Could not write QUESTIONS_CONFIG: {e}', e=e))
                     else:
                         st.session_state["_maint_flash"] = (
                             f"{len(_changes)} question change(s) saved to "
@@ -887,7 +878,7 @@ elif _sec == _TAB_QUESTIONS:
                         if not _aq_text.strip() or not _slug:
                             st.error(t("Question text and a metric key (or display name) are required."))
                         elif any(q["key"] == _slug for q in _qrows):
-                            st.error(f"Metric key `{_slug}` already exists — pick another.")
+                            st.error(t('Metric key `{slug}` already exists — pick another.', slug=_slug))
                         elif any(
                             q["header"].lower() == _aq_text.strip().lower()
                             and q["form"] == _aq_form for q in _qrows
@@ -931,7 +922,7 @@ elif _sec == _TAB_QUESTIONS:
                             try:
                                 append_row("QUESTIONS_CONFIG", _new_row)
                             except Exception as e:
-                                st.error(f"Could not write QUESTIONS_CONFIG: {e}")
+                                st.error(t('Could not write QUESTIONS_CONFIG: {e}', e=e))
                             else:
                                 st.session_state["_maint_flash"] = (
                                     f"{_new_qid} ({_slug}) added as Active — "
@@ -984,7 +975,7 @@ elif _sec == _TAB_QUESTIONS:
                             )
                             _data = _resp.json()
                         except Exception as e:
-                            st.error(f"Push failed: {e}")
+                            st.error(t('Push failed: {e}', e=e))
                         else:
                             if _data.get("ok"):
                                 for _f in ("nightly", "weekly"):
@@ -992,7 +983,7 @@ elif _sec == _TAB_QUESTIONS:
                                     if _fr:
                                         st.success(f"**{_f.title()}:** {_fr.get('msg', _fr)}")
                             else:
-                                st.error(f"Push failed: {_data.get('error', _data)}")
+                                st.error(t('Push failed: {data}', data=_data.get('error', _data)))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1010,7 +1001,7 @@ elif _sec == _TAB_SYSTEM:
         _l1.link_button(t("Open COMPASS_CCSM ↗"), _get_spreadsheet().url,
                         use_container_width=True)
     except Exception as e:
-        _l1.error(f"COMPASS_CCSM link unavailable — {e}")
+        _l1.error(t('COMPASS_CCSM link unavailable — {e}', e=e))
     _nf_link = get_config_value("NIGHTLY_FORM_LINK", "")
     if _nf_link:
         _l2.link_button(t("Nightly form ↗"), _nf_link, use_container_width=True)
@@ -1036,7 +1027,7 @@ elif _sec == _TAB_SYSTEM:
                 try:
                     _set_config_value("TEST_MODE", "FALSE")
                 except Exception as e:
-                    st.error(f"Could not update AGENT_CONFIG: {e}")
+                    st.error(t('Could not update AGENT_CONFIG: {e}', e=e))
                 else:
                     st.session_state["_maint_flash"] = (
                         "Test Mode disabled — the system is LIVE.")
@@ -1055,7 +1046,7 @@ elif _sec == _TAB_SYSTEM:
                 try:
                     _set_config_value("TEST_MODE", "TRUE")
                 except Exception as e:
-                    st.error(f"Could not update AGENT_CONFIG: {e}")
+                    st.error(t('Could not update AGENT_CONFIG: {e}', e=e))
                 else:
                     st.session_state["_maint_flash"] = (
                         "TEST MODE is ON — emails now go to the test inbox.")
@@ -1155,14 +1146,10 @@ elif _sec == _TAB_SYSTEM:
 
     _e1, _e2 = st.columns(2)
     _e1.markdown(
-        f"**Python:** {sys.version.split()[0]}  \n"
-        f"**Streamlit:** {_pkg_version('streamlit')}  \n"
-        f"**pandas:** {_pkg_version('pandas')} · **gspread:** {_pkg_version('gspread')}"
+        t('**Python:** {value}  \n**Streamlit:** {streamlit}  \n**pandas:** {pandas} · **gspread:** {gspread}', value=sys.version.split()[0], streamlit=_pkg_version('streamlit'), pandas=_pkg_version('pandas'), gspread=_pkg_version('gspread'))
     )
     _e2.markdown(
-        f"**Mission flavor:** {flavor.id} ({flavor.display_name})  \n"
-        f"**Test mode:** {'🟠 ON — emails redirected to test inbox' if _test_on else '🟢 off (live)'}  \n"
-        f"**Signed in as:** {user.get('email', '')} ({user.get('role', 'unknown')})"
+        t('**Mission flavor:** {id} ({display_name})  \n**Test mode:** {value}  \n**Signed in as:** {user} ({user2})', id=flavor.id, display_name=flavor.display_name, value='🟠 ON — emails redirected to test inbox' if _test_on else '🟢 off (live)', user=user.get('email', ''), user2=user.get('role', 'unknown'))
     )
 
     # ── Runbook ───────────────────────────────────────────────────────────────

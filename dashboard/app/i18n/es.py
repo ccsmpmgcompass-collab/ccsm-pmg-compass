@@ -1087,4 +1087,380 @@ ES: dict[str, str] = {
         "5. ⚠️ **Cambios de código**: editar `docs/*.gs` en el repositorio git NO cambia "
         "los agentes en vivo. El código en vivo es solo lo que se pega en el editor de "
         "Apps Script — cada corrección debe copiarse y pegarse ahí a mano.",
+
+    # ══ f-string templates ══════════════════════════════════════════════════
+    # Converted from f-strings, which are JoinedStr rather than Constant and so
+    # were invisible to the extractor until it learned to read them. Keep every
+    # {placeholder} spelled exactly as it appears in the key - t() formats after
+    # lookup, and a renamed field falls back to English silently.
+
+    # ── Page headers and section titles ──────────────────────────────────────
+    "{mission_name} — PMG Compass": "{mission_name} — PMG Compass",
+    "{mission_name} — Goals vs Actuals": "{mission_name} — Metas vs Reales",
+    "{mission_name} — Searchable Notes with Follow-up Reminders":
+        "{mission_name} — Notas con Búsqueda y Recordatorios de Seguimiento",
+    "{mission_name} — weekly computed performance scores per area":
+        "{mission_name} — puntajes de desempeño semanales calculados por área",
+    "Teaching Pipeline — {scope_value}": "Proceso de Enseñanza — {scope_value}",
+    "Form Submission Compliance — {scope_value}":
+        "Cumplimiento de Envío de Formularios — {scope_value}",
+    "Weekly Report Submission — {scope_value}":
+        "Envío del Reporte Semanal — {scope_value}",
+    "Key Indicators — {scope_value}": "Indicadores Clave — {scope_value}",
+    "All Metrics — {scope_value}": "Todas las Métricas — {scope_value}",
+    "{m_label} Trend — {scope_value}": "Tendencia de {m_label} — {scope_value}",
+    "{m_label} by Area — {scope_value}": "{m_label} por Área — {scope_value}",
+    "Mission Totals — {window_label}": "Totales de la Misión — {window_label}",
+    "Mission Score — Average Across All Areas ({ms_range})":
+        "Puntaje de la Misión — Promedio de Todas las Áreas ({ms_range})",
+    "Effort Score Breakdown — {sel_area}":
+        "Desglose del Puntaje de Esfuerzo — {sel_area}",
+    "Areas of Concern — {metric_label}": "Áreas de Preocupación — {metric_label}",
+    "Follow-ups Due — {count} note(s)":
+        "Seguimientos Pendientes — {count} nota(s)",
+    "Projected {proj_label} — Week ending {proj_date}":
+        "{proj_label} Proyectado — Semana que termina el {proj_date}",
+    "**Likely range:** {lower:g} – {upper:g}":
+        "**Rango probable:** {lower:g} – {upper:g}",
+
+    # ── Empty and info states ────────────────────────────────────────────────
+    "No pipeline activity recorded for {scope_value} in {kpi_period}.":
+        "No se registró actividad del proceso para {scope_value} en {kpi_period}.",
+    "No snapshot metrics found for {scope_value}.":
+        "No se encontraron métricas de instantánea para {scope_value}.",
+    "No {scope_value} activity recorded for {kpi_period} — the sections below "
+    "cover this period only.":
+        "No se registró actividad de {scope_value} en {kpi_period} — las secciones "
+        "de abajo cubren solo este período.",
+    "No anomalies detected this week for **{metric_label}**.":
+        "No se detectaron anomalías esta semana para **{metric_label}**.",
+    "Not enough history yet for a trustworthy projection — need at least 4 "
+    "completed weeks, have {have}.":
+        "Aún no hay suficiente historial para una proyección confiable — se "
+        "necesitan al menos 4 semanas completadas, hay {have}.",
+    "Showing the {n} biggest drops of {total_flagged} areas flagged.":
+        "Mostrando las {n} mayores caídas de {total_flagged} áreas marcadas.",
+    "{n} area{value} flagged.": "{n} área{value} marcada(s).",
+    "Areas where this week is below {threshold_pct}% of their 4-week average.":
+        "Áreas cuyo valor de esta semana está bajo el {threshold_pct}% de su "
+        "promedio de 4 semanas.",
+    "Existing Entries ({count})": "Entradas Existentes ({count})",
+    "{count} non-success run(s) in the last 14 days:":
+        "{count} ejecución(es) sin éxito en los últimos 14 días:",
+
+    # ── Maintenance snapshot ─────────────────────────────────────────────────
+    "**Last Updated:** {last_updated}": "**Última Actualización:** {last_updated}",
+    "**Current Week:** {week_start} — {week_end}":
+        "**Semana Actual:** {week_start} — {week_end}",
+    "**Total Areas:** {total_areas}": "**Total de Áreas:** {total_areas}",
+    "**Python:** {value}  \n**Streamlit:** {streamlit}  \n**pandas:** {pandas} · "
+    "**gspread:** {gspread}":
+        "**Python:** {value}  \n**Streamlit:** {streamlit}  \n**pandas:** {pandas} · "
+        "**gspread:** {gspread}",
+    "**Mission flavor:** {id} ({display_name})  \n**Test mode:** {value}  \n"
+    "**Signed in as:** {user} ({user2})":
+        "**Variante de misión:** {id} ({display_name})  \n**Modo de prueba:** {value}  \n"
+        "**Sesión iniciada como:** {user} ({user2})",
+    "DAILY_LOG hasn't been written in {dl_age} days. The nightly ingestion "
+    "likely failed — check the agent runs below and the Apps Script triggers.":
+        "No se ha escrito en DAILY_LOG desde hace {dl_age} días. Probablemente falló "
+        "la carga nocturna — revise las ejecuciones de agentes más abajo y los "
+        "activadores de Apps Script.",
+    "WEEKLY_KI's latest week ended {wk_age} days ago — a weekly cycle may have "
+    "been missed.":
+        "La última semana de WEEKLY_KI terminó hace {wk_age} días — puede que se "
+        "haya omitido un ciclo semanal.",
+    "COMPASS_CCSM link unavailable — {e}":
+        "Enlace a COMPASS_CCSM no disponible — {e}",
+    "Add to Knowledge Base as {next_id}":
+        "Agregar a la Base de Conocimiento como {next_id}",
+    "**Other / both forms** — {count} question(s)":
+        "**Otros / ambos formularios** — {count} pregunta(s)",
+    "{count} unsaved change(s). Saving updates QUESTIONS_CONFIG (agents follow "
+    "it on their next run) — push to the Google Forms separately below.":
+        "{count} cambio(s) sin guardar. Al guardar se actualiza QUESTIONS_CONFIG "
+        "(los agentes lo siguen en su próxima ejecución) — envíe los cambios a "
+        "Google Forms por separado más abajo.",
+    "Metric key `{slug}` already exists — pick another.":
+        "La clave de métrica `{slug}` ya existe — elija otra.",
+    "The weekly maintenance routine — week of {monday} {day}. Checkboxes reset "
+    "each Monday and live in your browser session only; everything they ask "
+    "about is verifiable further down this tab.":
+        "La rutina de mantenimiento semanal — semana del {day} de {monday}. Las "
+        "casillas se reinician cada lunes y viven solo en la sesión de su navegador; "
+        "todo lo que preguntan se puede verificar más abajo en esta pestaña.",
+
+    # ── Goals page ───────────────────────────────────────────────────────────
+    "Goals saved for **{selected_area}**.":
+        "Metas guardadas para **{selected_area}**.",
+    "Custom goals removed for **{selected_area}**.":
+        "Metas personalizadas eliminadas para **{selected_area}**.",
+    "Monthly goals saved for **{selected_area}** — {monthly_label}.":
+        "Metas mensuales guardadas para **{selected_area}** — {monthly_label}.",
+    "This will remove the custom goals row for **{selected_area}** and revert to "
+    "mission-wide defaults. Are you sure?":
+        "Esto eliminará la fila de metas personalizadas de **{selected_area}** y "
+        "volverá a los valores predeterminados de la misión. ¿Está seguro?",
+    "Mission goals saved. Last set by **{set_by}** · month of {month_label}":
+        "Metas de la misión guardadas. Definidas por última vez por **{set_by}** · "
+        "mes de {month_label}",
+    "Last set by {set_by} · month of {ws_label}":
+        "Definidas por última vez por {set_by} · mes de {ws_label}",
+    "Preview — weekly goals ({count} areas)":
+        "Vista previa — metas semanales ({count} áreas)",
+    "Preview — monthly goals for {bulk_month_label}":
+        "Vista previa — metas mensuales para {bulk_month_label}",
+    "Recommended goals saved for **{count} areas** — weekly + "
+    "{bulk_month_label} monthly.":
+        "Metas recomendadas guardadas para **{count} áreas** — semanales + "
+        "mensuales de {bulk_month_label}.",
+    "Weekly goals saved for {count} areas, but monthly goals failed: {m_err}":
+        "Metas semanales guardadas para {count} áreas, pero las metas mensuales "
+        "fallaron: {m_err}",
+    "Current nudge: **{current_nudge_pct}%**. Only the Mission President or "
+    "Assistants can change it.":
+        "Ajuste actual: **{current_nudge_pct}%**. Solo el Presidente de Misión o los "
+        "Asistentes pueden cambiarlo.",
+    "Active nudge: **{current_nudge_pct}%** — changes apply immediately; REC "
+    "badges on the other tabs update the next time they render.":
+        "Ajuste activo: **{current_nudge_pct}%** — los cambios se aplican de "
+        "inmediato; los distintivos REC de las otras pestañas se actualizan la "
+        "próxima vez que se muestran.",
+    "Area override — applies only to {category}, ahead of any language category.":
+        "Excepción de área — se aplica solo a {category}, con prioridad sobre "
+        "cualquier categoría de idioma.",
+    "\"{label}\" is already in the list.": "\"{label}\" ya está en la lista.",
+    "\"{ovr_area}\" already has its own section above.":
+        "\"{ovr_area}\" ya tiene su propia sección más arriba.",
+    "{metric_labels} is already in this category.":
+        "{metric_labels} ya está en esta categoría.",
+    "{metric_labels}  ·  rec {rec:g}": "{metric_labels}  ·  rec {rec:g}",
+    "REC {rec_value}": "REC {rec_value}",
+
+    # ── Scores page ──────────────────────────────────────────────────────────
+    "**Area Code:** `{cfg_area_code}`": "**Código de Área:** `{cfg_area_code}`",
+    "Component mix must sum to 1.0 (currently {eff_sum:.4f}).":
+        "La composición de componentes debe sumar 1.0 (actualmente {eff_sum:.4f}).",
+    "Component mix sums to {eff_sum:.2f}":
+        "La composición de componentes suma {eff_sum:.2f}",
+    "Saved {saved} weight rows for {scope_txt}. The new weights take effect on "
+    "the next scoring run (Sunday 11 PM MT, or run computeAllAreaScores() now).":
+        "Se guardaron {saved} filas de pesos para {scope_txt}. Los nuevos pesos "
+        "surten efecto en la próxima ejecución de puntajes (domingo 11 PM MT, o "
+        "ejecute computeAllAreaScores() ahora).",
+    "{scope_label}  |  {time_range}  |  {count} area(s) shown  |  Scores "
+    "averaged across each area's weeks in this range":
+        "{scope_label}  |  {time_range}  |  {count} área(s) mostradas  |  Puntajes "
+        "promediados entre las semanas de cada área en este rango",
+
+    # ── Action Center ────────────────────────────────────────────────────────
+    "**{suggestions_ap_count} suggestion(s) at AP Approval**":
+        "**{suggestions_ap_count} sugerencia(s) en Aprobación de los AP**",
+    "**{suggestions_mp_count} suggestion(s) at Mission President Approval**":
+        "**{suggestions_mp_count} sugerencia(s) en Aprobación del Presidente de Misión**",
+    "**{followups_count} note follow-up(s) due**":
+        "**{followups_count} seguimiento(s) de notas pendientes**",
+    "**My Tasks — {count} open**": "**Mis Tareas — {count} abiertas**",
+    "- **{task_name}** — assigned to {assigned_to} by {assigned_by}{due}":
+        "- **{task_name}** — asignada a {assigned_to} por {assigned_by}{due}",
+    "{task_name} — _assigned by {assigned_by}{due}_":
+        "{task_name} — _asignada por {assigned_by}{due}_",
+    "Task assigned to {name}.": "Tarea asignada a {name}.",
+    "Visible to: {visible_to}": "Visible para: {visible_to}",
+    "View {new_area}": "Ver {new_area}",
+    "Note: {reviewer_note}": "Nota: {reviewer_note}",
+    "**{label}** — {sum} of {count} active":
+        "**{label}** — {sum} de {count} activas",
+
+    # ── Finding Funnel ───────────────────────────────────────────────────────
+    "{name} · {value:.1f} KB": "{name} · {value:.1f} KB",
+
+    # ── Errors surfaced to the user ──────────────────────────────────────────
+    "Could not read tab '{tab_name}': recent read failure, backing off before "
+    "retrying.":
+        "No se pudo leer la pestaña '{tab_name}': hubo una falla de lectura "
+        "reciente, esperando antes de reintentar.",
+    "Could not read tab '{tab_name}': {e}":
+        "No se pudo leer la pestaña '{tab_name}': {e}",
+    "Could not save to '{tab_name}': {e}":
+        "No se pudo guardar en '{tab_name}': {e}",
+    "Could not write AGENT_CONFIG: {e}": "No se pudo escribir AGENT_CONFIG: {e}",
+    "Could not update AGENT_CONFIG: {e}": "No se pudo actualizar AGENT_CONFIG: {e}",
+    "Could not write QUESTIONS_CONFIG: {e}":
+        "No se pudo escribir QUESTIONS_CONFIG: {e}",
+    "Could not write to KNOWLEDGE_BASE: {e}":
+        "No se pudo escribir en KNOWLEDGE_BASE: {e}",
+    "Failed to fetch goal: {e}": "No se pudo obtener la meta: {e}",
+    "Failed to fetch goal history: {e}":
+        "No se pudo obtener el historial de metas: {e}",
+    "Failed to upsert goal: {e}": "No se pudo guardar la meta: {e}",
+    "Failed to fetch area monthly goal: {e}":
+        "No se pudo obtener la meta mensual del área: {e}",
+    "Failed to upsert area monthly goal: {e}":
+        "No se pudo guardar la meta mensual del área: {e}",
+    "Failed to bulk upsert area monthly goals: {e}":
+        "No se pudieron guardar en bloque las metas mensuales de las áreas: {e}",
+    "Failed to read app setting {key!r}: {e}":
+        "No se pudo leer la configuración {key!r}: {e}",
+    "Failed to set app setting {key!r}: {e}":
+        "No se pudo establecer la configuración {key!r}: {e}",
+    "Failed to save: {err}": "No se pudo guardar: {err}",
+    "Failed to save goals: {e}": "No se pudieron guardar las metas: {e}",
+    "Failed to reset goals: {e}": "No se pudieron restablecer las metas: {e}",
+    "Failed to save weekly goals: {e}":
+        "No se pudieron guardar las metas semanales: {e}",
+    "Failed to save monthly goals: {e}":
+        "No se pudieron guardar las metas mensuales: {e}",
+    "Failed to save monthly goals: {err}":
+        "No se pudieron guardar las metas mensuales: {err}",
+    "Failed to save nudge percentage: {nudge_save_error}":
+        "No se pudo guardar el porcentaje de ajuste: {nudge_save_error}",
+    "Failed to save config: {save_err}":
+        "No se pudo guardar la configuración: {save_err}",
+    "Push failed: {e}": "El envío falló: {e}",
+    "Push failed: {data}": "El envío falló: {data}",
+
+    # ── Long help texts (metric names and code identifiers left as-is) ───────
+    "Each slice is that metric's average share of this area's weekly Effort "
+    "score across {count} week(s) in {time_range} (actual vs. expectation, "
+    "weighted nm_lessons 30% · new_found 25% · mmm_sent 20% · pew 15% · "
+    "gate 10%) — not raw activity volume.":
+        "Cada porción es la participación promedio de esa métrica en el puntaje "
+        "semanal de Esfuerzo de esta área a lo largo de {count} semana(s) en "
+        "{time_range} (real vs. expectativa, ponderado nm_lessons 30% · "
+        "new_found 25% · mmm_sent 20% · pew 15% · gate 10%) — no el volumen bruto "
+        "de actividad.",
+
+    "Mission average: **{avg:.1f}/week** · projected goal at **{proj_pct}%** "
+    "nudge: **{proj_goal}/week**. The green line is what the mission-wide REC "
+    "badge recommends at the current slider position; per-area REC badges use "
+    "the same math on each area's own history.":
+        "Promedio de la misión: **{avg:.1f}/semana** · meta proyectada con un ajuste "
+        "de **{proj_pct}%**: **{proj_goal}/semana**. La línea verde es lo que "
+        "recomienda el distintivo REC de toda la misión en la posición actual del "
+        "control; los distintivos REC por área usan el mismo cálculo sobre el "
+        "historial de cada área.",
+
+    "Recommended goals computed for **{count} areas** — each area's own REC "
+    "values, exactly what the per-metric REC pills show. Review below, then "
+    "**Save All Recommended** to write every area's weekly goals and its "
+    "{bulk_month_label} monthly goals. This overwrites any custom goals already "
+    "saved.":
+        "Metas recomendadas calculadas para **{count} áreas** — los valores REC "
+        "propios de cada área, exactamente los que muestran las píldoras REC de cada "
+        "métrica. Revíselas abajo y luego use **Guardar Todo lo Recomendado** para "
+        "escribir las metas semanales de cada área y sus metas mensuales de "
+        "{bulk_month_label}. Esto sobrescribe cualquier meta personalizada ya "
+        "guardada.",
+
+    "REC is a light stretch goal — about {get_rec_stretch_pct}% above this "
+    "area's all-time weekly average — to nudge the area to do slightly better. "
+    "Any metric with an expectation saved in Area Expectation Settings shows "
+    "goal / this area's weekly expectation — add or change one there and the "
+    "fraction follows the moment it's saved. Fellowshipped Lessons (formerly "
+    "Member Lessons) shows goal / this area's own NM Lessons goal, live as you "
+    "type it above (unless it's given its own expectation, which then wins). "
+    "LSI Follow-Ups shows goal / this area's own LSI Given goal the same way, "
+    "so you can see how many of the LSIs given are actually being followed up on.":
+        "REC es una meta de superación leve — alrededor de {get_rec_stretch_pct}% por "
+        "encima del promedio semanal histórico de esta área — para animarla a mejorar "
+        "un poco. Cualquier métrica con una expectativa guardada en Configuración de "
+        "Expectativas por Área muestra meta / la expectativa semanal de esta área — "
+        "agregue o cambie una ahí y la fracción se actualiza apenas se guarde. "
+        "Lecciones con Acompañamiento (antes Lecciones con Miembro) muestra meta / la "
+        "propia meta de Lecciones NM de esta área, en vivo mientras la escribe arriba "
+        "(salvo que tenga su propia expectativa, que entonces prevalece). Seguimientos "
+        "de LSI muestra meta / la propia meta de LSI Impartidas de esta área del mismo "
+        "modo, para que vea a cuántas de las LSI impartidas se les está dando "
+        "seguimiento.",
+
+    "Key indicators for **{monthly_label}**, in order: Gate, Date, New, Pew, "
+    "Renew, Mate. REC is a light stretch goal — about {get_rec_stretch_pct}% "
+    "above this area's own real average monthly performance (every completed "
+    "calendar month in this area's history, not a weekly number scaled up). Any "
+    "indicator with an expectation saved in Area Expectation Settings shows "
+    "goal / that expectation sized to this month — a monthly figure as-is, a "
+    "weekly one times this month's exact weeks (Renew, a Sunday-only event, "
+    "times its actual Sunday count). Two fallbacks when no expectation is set: "
+    "Renew shows goal / the MAX possible Recent-Convert attendances this month "
+    "— every recent convert, every Sunday they were eligible for (a convert "
+    "baptized mid-month only counts for the Sundays after their baptism, not "
+    "the ones before) — and Mate shows goal / this area's own hypothetical "
+    "monthly Non-Member Lesson target (its NM Lessons expectation scaled to "
+    "this month), not based on actual data. New and Mate also appear above "
+    "under Nightly Form Goals as a separate WEEKLY number — the two boxes are "
+    "independent, not kept in sync.":
+        "Indicadores clave de **{monthly_label}**, en orden: Gate, Date, New, Pew, "
+        "Renew, Mate. REC es una meta de superación leve — alrededor de "
+        "{get_rec_stretch_pct}% por encima del propio promedio mensual real de esta "
+        "área (cada mes calendario completado en el historial de esta área, no una "
+        "cifra semanal escalada). Cualquier indicador con una expectativa guardada en "
+        "Configuración de Expectativas por Área muestra meta / esa expectativa "
+        "ajustada a este mes — una cifra mensual tal cual, una semanal multiplicada "
+        "por las semanas exactas de este mes (Renew, un evento solo dominical, por su "
+        "cantidad real de domingos). Dos alternativas cuando no hay expectativa: Renew "
+        "muestra meta / el MÁXIMO posible de asistencias de conversos recientes este "
+        "mes — cada converso reciente, cada domingo en que era elegible (un converso "
+        "bautizado a mitad de mes solo cuenta para los domingos posteriores a su "
+        "bautismo, no los anteriores) — y Mate muestra meta / el objetivo mensual "
+        "hipotético de Lecciones a No Miembros de esta área (su expectativa de "
+        "Lecciones NM ajustada a este mes), no basado en datos reales. New y Mate "
+        "también aparecen arriba en Metas del Formulario Nocturno como una cifra "
+        "SEMANAL aparte — las dos casillas son independientes y no se sincronizan.",
+
+    "REC is a light stretch goal — about {get_rec_stretch_pct}% above the whole "
+    "mission's typical MONTHLY performance across every area, for a month this "
+    "length — to nudge the mission to do slightly better. Recent Convert "
+    "Attendance's REC scales by the number of Sundays this month (church "
+    "attendance is a once-a-week event), not the general weeks-in-month figure "
+    "used for other metrics. Any goal whose indicator has expectations saved in "
+    "Area Expectation Settings shows goal / a hypothetical mission-wide target "
+    "for this month — every area at its own expectation, summed and sized to "
+    "this month's exact length (weekly figures × its weeks, Renew × its Sunday "
+    "count, monthly figures as-is) — not based on actual data. Where no "
+    "expectation is saved, Recent Convert Attendance falls back to goal / the "
+    "mission's MAX possible Recent-Convert attendances this month — every "
+    "area's own recent-convert count as of each Sunday, summed across every "
+    "Sunday and every area, so this also scales with the month's Sunday count "
+    "— and Members at Non-Member Lessons to the hypothetical NM Lessons target. "
+    "LSI Follow-Ups (in Other Metrics) shows goal / the mission's own LSI Given "
+    "goal instead, live as you type it — so you can see how many of the LSIs "
+    "given are actually being followed up on.":
+        "REC es una meta de superación leve — alrededor de {get_rec_stretch_pct}% por "
+        "encima del desempeño MENSUAL típico de toda la misión en todas las áreas, "
+        "para un mes de esta duración — para animar a la misión a mejorar un poco. El "
+        "REC de Asistencia de Conversos Recientes se ajusta según la cantidad de "
+        "domingos de este mes (la asistencia a la Iglesia es un evento semanal), no "
+        "según la cifra general de semanas del mes que se usa para otras métricas. "
+        "Cualquier meta cuyo indicador tenga expectativas guardadas en Configuración "
+        "de Expectativas por Área muestra meta / un objetivo hipotético de toda la "
+        "misión para este mes — cada área con su propia expectativa, sumadas y "
+        "ajustadas a la duración exacta de este mes (cifras semanales × sus semanas, "
+        "Renew × su cantidad de domingos, cifras mensuales tal cual) — no basado en "
+        "datos reales. Cuando no hay expectativa guardada, Asistencia de Conversos "
+        "Recientes recurre a meta / el MÁXIMO posible de asistencias de conversos "
+        "recientes de la misión este mes — la cantidad de conversos recientes de cada "
+        "área en cada domingo, sumada entre todos los domingos y todas las áreas, así "
+        "que también escala con la cantidad de domingos del mes — y Miembros en "
+        "Lecciones a No Miembros al objetivo hipotético de Lecciones NM. Seguimientos "
+        "de LSI (en Otras Métricas) muestra meta / la propia meta de LSI Impartidas de "
+        "la misión, en vivo mientras la escribe — para que vea a cuántas de las LSI "
+        "impartidas se les está dando seguimiento.",
+
+    "{span}  |  {kpi_period}  |  every question this area has ever reported, "
+    "totalled for this period (daily + weekly Sunday form; rates excluded — see "
+    "the Metric picker below for a single metric's trend)":
+        "{span}  |  {kpi_period}  |  cada pregunta que esta área haya reportado "
+        "alguna vez, totalizada para este período (formulario diario + semanal "
+        "dominical; se excluyen las tasas — vea el selector de Métrica más abajo para "
+        "la tendencia de una métrica individual)",
+
+    "{span}  |  {kpi_period} — counts what happened in this period. Found from "
+    "nightly reports, At Sacrament and Baptized from the weekly Sunday form, "
+    "Taught from the Tableau export; the bars come from different reports and "
+    "aren't subsets of each other.":
+        "{span}  |  {kpi_period} — cuenta lo que ocurrió en este período. Encontradas "
+        "proviene de los reportes nocturnos, En Sacramental y Bautizadas del "
+        "formulario semanal dominical, y Enseñadas de la exportación de Tableau; las "
+        "barras provienen de reportes distintos y no son subconjuntos entre sí.",
 }

@@ -500,7 +500,7 @@ with st.expander(t("Finding Summary PDF"), expanded=False):
         st.caption(t("Upload the Finding Summary PDF in Manual upload below to view it here."))
     else:
         pdf_bytes = summary_file.read()
-        st.caption(f"{summary_file.name} · {len(pdf_bytes) / 1024:.1f} KB")
+        st.caption(t('{name} · {value:.1f} KB', name=summary_file.name, value=len(pdf_bytes) / 1024))
         st.download_button(t("Download Summary PDF"), data=pdf_bytes,
                            file_name=summary_file.name, mime="application/pdf")
         b64 = base64.b64encode(pdf_bytes).decode("utf-8")

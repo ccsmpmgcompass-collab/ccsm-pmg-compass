@@ -826,7 +826,7 @@ def _load_effort() -> pd.DataFrame:
 # _render_scores_tab(), after render_scope_selectors() returns `_level`.
 _header_slot = st.empty()
 with _header_slot.container():
-    render_page_header(t("Area Scores"), f"{get_config_value('MISSION_NAME', flavor.display_name)} — weekly computed performance scores per area", icon="")
+    render_page_header(t("Area Scores"), t('{mission_name} — weekly computed performance scores per area', mission_name=get_config_value('MISSION_NAME', flavor.display_name)), icon="")
 
 
 def _render_scores_tab():
@@ -852,7 +852,7 @@ def _render_scores_tab():
         # No scope is known yet (the selectors never render below), so the
         # title falls back to the mission-wide label.
         with _header_slot.container():
-            render_page_header(t("Mission Scores"), f"{get_config_value('MISSION_NAME', flavor.display_name)} — weekly computed performance scores per area", icon="")
+            render_page_header(t("Mission Scores"), t('{mission_name} — weekly computed performance scores per area', mission_name=get_config_value('MISSION_NAME', flavor.display_name)), icon="")
         st.info(
             t("No scores have been computed yet. Scores are calculated automatically "
             "each Sunday at 11 PM Mountain Time. Run computeAllAreaScores() in "
@@ -914,7 +914,7 @@ def _render_scores_tab():
         else "Mission Scores"
     )
     with _header_slot.container():
-        render_page_header(_page_title, f"{get_config_value('MISSION_NAME', flavor.display_name)} — weekly computed performance scores per area", icon="")
+        render_page_header(_page_title, t('{mission_name} — weekly computed performance scores per area', mission_name=get_config_value('MISSION_NAME', flavor.display_name)), icon="")
 
     # ═══════════════════════════════════════════════════════════════════════════════
     # MISSION SCORE — mission-wide composite, most recent week per area. Shows
@@ -936,7 +936,7 @@ def _render_scores_tab():
                     return "—"
                 return f"{pd.to_numeric(_ms_latest[col], errors='coerce').fillna(0).mean():.1f}"
 
-            render_section_label(f"Mission Score — Average Across All Areas ({_ms_range})")
+            render_section_label(t('Mission Score — Average Across All Areas ({ms_range})', ms_range=_ms_range))
             render_kpi_row([
                 {"label": "Mission Effectiveness", "value": _ms_avg("Effectiveness_Score")},
                 {"label": "Effort",               "value": _ms_avg("Effort_Score")},
@@ -944,7 +944,7 @@ def _render_scores_tab():
                 {"label": "KI",                   "value": _ms_avg("KI_Score")},
             ])
         else:
-            render_section_label(f"Mission Score — Average Across All Areas ({_ms_range})")
+            render_section_label(t('Mission Score — Average Across All Areas ({ms_range})', ms_range=_ms_range))
             st.info(f"No scores fall inside {_ms_range}." + _stale_range_hint(_ms_range))
 
     _tcol, _, _ = st.columns(3)
@@ -1001,7 +1001,7 @@ def _render_scores_tab():
     # ═══════════════════════════════════════════════════════════════════════════════
 
     if _level == "area":
-        render_section_label(f"Effort Score Breakdown — {sel_area}")
+        render_section_label(t('Effort Score Breakdown — {sel_area}', sel_area=sel_area))
 
         # Same weeks _avg_over_window averaged Effort_Score across for this area
         # (filtered_df is time+scope filtered, one row per week, ahead of that
@@ -1048,10 +1048,7 @@ def _render_scores_tab():
             # container would throw every line off-slice.
             st.plotly_chart(fig, use_container_width=False)
             st.caption(
-                f"Each slice is that metric's average share of this area's weekly "
-                f"Effort score across {len(_pie_weeks)} week(s) in {time_range} "
-                "(actual vs. expectation, weighted nm_lessons 30% · new_found 25% "
-                "· mmm_sent 20% · pew 15% · gate 10%) — not raw activity volume."
+                t("Each slice is that metric's average share of this area's weekly Effort score across {count} week(s) in {time_range} (actual vs. expectation, weighted nm_lessons 30% · new_found 25% · mmm_sent 20% · pew 15% · gate 10%) — not raw activity volume.", count=len(_pie_weeks), time_range=time_range)
             )
     else:
         render_section_label(t("Effectiveness Score by Area"))
@@ -1108,8 +1105,7 @@ def _render_scores_tab():
     render_section_label(t("Score Summary"))
 
     st.caption(
-        f"{scope_label}  |  {time_range}  |  "
-        f"{len(display_df)} area(s) shown  |  Scores averaged across each area's weeks in this range"
+        t("{scope_label}  |  {time_range}  |  {count} area(s) shown  |  Scores averaged across each area's weeks in this range", scope_label=scope_label, time_range=time_range, count=len(display_df))
     )
 
     st.caption(
@@ -1253,7 +1249,7 @@ def _render_scores_tab():
             rec = default_map.get(k, weights[k])
             with cols[i % ncols]:
                 result[k] = st.number_input(
-                    f"{METRIC_LABELS.get(k, k)}  ·  rec {rec:g}",
+                    t('{metric_labels}  ·  rec {rec:g}', metric_labels=METRIC_LABELS.get(k, k), rec=rec),
                     min_value=0.0, max_value=100.0, step=0.5,
                     value=float(weights[k]),
                     format="%.1f",
@@ -1365,7 +1361,7 @@ def _render_scores_tab():
                 if not match.empty:
                     code_col = "Area_ID" if "Area_ID" in match.columns else "Area_Name"
                     cfg_area_code = str(match.iloc[0][code_col]).strip()
-            st.markdown(f"**Area Code:** `{cfg_area_code}`")
+            st.markdown(t('**Area Code:** `{cfg_area_code}`', cfg_area_code=cfg_area_code))
 
         # ── Component mix (effectiveness sub-weights) ─────────────────────────────
         st.markdown(t("##### Component Mix"))
@@ -1404,10 +1400,10 @@ def _render_scores_tab():
 
         eff_sum = round(eff_effort + eff_skill + eff_ki, 4)
         if abs(eff_sum - 1.0) > 0.001:
-            st.warning(f"Component mix must sum to 1.0 (currently {eff_sum:.4f}).")
+            st.warning(t('Component mix must sum to 1.0 (currently {eff_sum:.4f}).', eff_sum=eff_sum))
             eff_valid = False
         else:
-            st.success(f"Component mix sums to {eff_sum:.2f}")
+            st.success(t('Component mix sums to {eff_sum:.2f}', eff_sum=eff_sum))
             eff_valid = True
 
         # ── Per-metric weights ────────────────────────────────────────────────────
@@ -1475,12 +1471,10 @@ def _render_scores_tab():
                     else f"**{cfg_area}** (`{cfg_area_code}`)"
                 )
                 st.success(
-                    f"Saved {saved} weight rows for {scope_txt}. "
-                    "The new weights take effect on the next scoring run "
-                    "(Sunday 11 PM MT, or run computeAllAreaScores() now)."
+                    t('Saved {saved} weight rows for {scope_txt}. The new weights take effect on the next scoring run (Sunday 11 PM MT, or run computeAllAreaScores() now).', saved=saved, scope_txt=scope_txt)
                 )
             except Exception as save_err:
-                st.error(f"Failed to save config: {save_err}")
+                st.error(t('Failed to save config: {save_err}', save_err=save_err))
 
 
 def _render_daily_tab():
@@ -1531,7 +1525,7 @@ def _render_daily_tab():
     # ═══════════════════════════════════════════════════════════════════════════════
     # MISSION TOTALS ROW
     # ═══════════════════════════════════════════════════════════════════════════════
-    render_section_label(f"Mission Totals — {window_label}")
+    render_section_label(t('Mission Totals — {window_label}', window_label=window_label))
 
     nm_total      = _col_sum("nm_lessons")
     found_total   = sum(_col_sum(c) for c in _FINDING_COLS)
@@ -1884,9 +1878,9 @@ def _render_analyze_tab():
     # SECTION 1: Areas of Concern
     # ══════════════════════════════════════════════════════════════════════════════
 
-    render_section_label(f"Areas of Concern — {metric_label}")
+    render_section_label(t('Areas of Concern — {metric_label}', metric_label=metric_label))
     st.caption(
-        f"Areas where this week is below {threshold_pct}% of their 4-week average."
+        t('Areas where this week is below {threshold_pct}% of their 4-week average.', threshold_pct=threshold_pct)
     )
 
     anomalies_df = detect_anomalies(metric_key=metric_key, threshold=threshold)
@@ -1910,7 +1904,7 @@ def _render_analyze_tab():
         anomalies_df = anomalies_df.head(_MAX_SHOWN).drop(columns=["_drop"])
 
     if anomalies_df is None or (isinstance(anomalies_df, pd.DataFrame) and anomalies_df.empty):
-        st.success(f"No anomalies detected this week for **{metric_label}**.")
+        st.success(t('No anomalies detected this week for **{metric_label}**.', metric_label=metric_label))
     else:
         # Build display table
         display_cols = {
@@ -1953,9 +1947,9 @@ def _render_analyze_tab():
 
         n = len(anomalies_df)
         if _total_flagged > n:
-            st.caption(f"Showing the {n} biggest drops of {_total_flagged} areas flagged.")
+            st.caption(t('Showing the {n} biggest drops of {total_flagged} areas flagged.', n=n, total_flagged=_total_flagged))
         else:
-            st.caption(f"{n} area{'s' if n != 1 else ''} flagged.")
+            st.caption(t('{n} area{value} flagged.', n=n, value='s' if n != 1 else ''))
 
     render_section_label(t("Trend Projection"))
 
@@ -1982,8 +1976,7 @@ def _render_analyze_tab():
     elif status == "insufficient":
         have = len(projection.get("weeks", []))
         st.info(
-            f"Not enough history yet for a trustworthy projection — "
-            f"need at least 4 completed weeks, have {have}."
+            t('Not enough history yet for a trustworthy projection — need at least 4 completed weeks, have {have}.', have=have)
         )
     else:
         weeks = projection["weeks"]
@@ -2085,14 +2078,14 @@ def _render_analyze_tab():
             col_metric, col_conf = st.columns([1, 1])
             with col_metric:
                 st.metric(
-                    label=f"Projected {proj_label} — Week ending {proj_date}",
+                    label=t('Projected {proj_label} — Week ending {proj_date}', proj_label=proj_label, proj_date=proj_date),
                     value=int(round(proj_val)),
                     delta=delta_val,
                     delta_color="normal",
                 )
             with col_conf:
                 if lower is not None and upper is not None:
-                    st.caption(f"**Likely range:** {lower:g} – {upper:g}")
+                    st.caption(t('**Likely range:** {lower:g} – {upper:g}', lower=lower, upper=upper))
                 if high_conf:
                     st.success(t("High confidence — the trend is statistically significant."))
                 else:

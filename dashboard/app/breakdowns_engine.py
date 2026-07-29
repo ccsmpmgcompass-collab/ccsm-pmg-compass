@@ -637,7 +637,7 @@ def _render_teaching_pipeline(
     elif _coverage_warning:
         st.warning(_coverage_warning)
 
-    render_section_label(f"Teaching Pipeline — {scope_value}")
+    render_section_label(t('Teaching Pipeline — {scope_value}', scope_value=scope_value))
 
     # All four stages always, in this fixed order — a stage is never dropped for
     # being 0. On a short period (and on "This Week" until Sunday's form lands)
@@ -670,10 +670,7 @@ def _render_teaching_pipeline(
         )
         st.plotly_chart(fig_funnel, use_container_width=True)
         st.caption(
-            f"{span}  |  {kpi_period} — counts what happened in this period. "
-            "Found from nightly reports, At Sacrament and Baptized from the "
-            "weekly Sunday form, Taught from the Tableau export; the bars come "
-            "from different reports and aren't subsets of each other."
+            t("{span}  |  {kpi_period} — counts what happened in this period. Found from nightly reports, At Sacrament and Baptized from the weekly Sunday form, Taught from the Tableau export; the bars come from different reports and aren't subsets of each other.", span=span, kpi_period=kpi_period)
         )
         # At Sacrament (pew) is a raw weekly headcount the missionaries type into
         # the Sunday form, not a roster of named people — over a period spanning
@@ -691,8 +688,7 @@ def _render_teaching_pipeline(
             st.caption(_coverage_note)
     else:
         st.info(
-            f"No pipeline activity recorded for {scope_value} in "
-            f"{kpi_period.lower()}."
+            t('No pipeline activity recorded for {scope_value} in {kpi_period}.', scope_value=scope_value, kpi_period=kpi_period.lower())
         )
 
 
@@ -749,7 +745,7 @@ def _render_compliance(
     transfer). A single-area scope draws the per-day status calendar; a
     zone/district draws the per-day % calendar.
     """
-    render_section_label(f"Form Submission Compliance — {scope_value}")
+    render_section_label(t('Form Submission Compliance — {scope_value}', scope_value=scope_value))
 
     _sys_start = get_config_value("SYSTEM_START_DATE", "")
     _anchor    = compliance_anchor_date()
@@ -872,7 +868,7 @@ def _render_compliance(
         )
 
     # ── Weekly report submission — one Mon–Sun box per due week ────────────────
-    render_section_label(f"Weekly Report Submission — {scope_value}")
+    render_section_label(t('Weekly Report Submission — {scope_value}', scope_value=scope_value))
     _wk_all    = get_weekly_submission_data()
     _wk_anchor = latest_due_sunday()
     _due_weeks = weekly_due_weeks(_sys_start, anchor_sunday=_wk_anchor, n_weeks=8)
@@ -974,7 +970,7 @@ def render_lineage_marker(area: str, area_val_key: str) -> bool:
         + (f" on {html.escape(applied_at)}." if applied_at else ".")
         + " View its continuous history there."
     )
-    if st.button(f"View {new_area}", key=f"lineage_redirect_{area}"):
+    if st.button(t('View {new_area}', new_area=new_area), key=f"lineage_redirect_{area}"):
         st.session_state[area_val_key] = new_area
         # Plain st.rerun() defaults to a full-app rerun even when called from
         # inside the caller's st.fragment — that would tear down and resend the
@@ -1060,8 +1056,7 @@ def render_group_breakdown(
 
     if not has_rows:
         st.info(
-            f"No {scope_value} activity recorded for {kpi_period.lower()} "
-            f"— the sections below cover this period only."
+            t('No {scope_value} activity recorded for {kpi_period} — the sections below cover this period only.', scope_value=scope_value, kpi_period=kpi_period.lower())
         )
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -1075,7 +1070,7 @@ def render_group_breakdown(
     # area has its own directly (Carson, 2026-07-24: district wanted the same
     # goal bars zone/area already had).
     if snap_scope is not None and not snap_scope.empty and has_rows:
-        render_section_label(f"Key Indicators — {scope_value}")
+        render_section_label(t('Key Indicators — {scope_value}', scope_value=scope_value))
 
         # Rates can't be summed across areas or days (and render_kpi_row int()s
         # its value, so a 0.42 rate would read as 0). LIVE_SNAPSHOT is built from
@@ -1125,7 +1120,7 @@ def render_group_breakdown(
             for _i in range(0, len(_kpi_cards), 4):
                 render_kpi_row(_kpi_cards[_i:_i + 4])
         else:
-            st.info(f"No snapshot metrics found for {scope_value}.")
+            st.info(t('No snapshot metrics found for {scope_value}.', scope_value=scope_value))
 
     # ══════════════════════════════════════════════════════════════════════════
     # 2. METRIC PICKER + PER-AREA BAR — the selected indicator, this period
@@ -1239,11 +1234,8 @@ def render_group_breakdown(
         # not just whichever ONE is currently selected. Rendered here, ahead of
         # the weekly-empty early-return below, so a stale-Sunday gap on the
         # PICKED metric can't hide this — it doesn't read the picker at all.
-        render_section_label(f"All Metrics — {scope_value}")
-        st.caption(f"{span}  |  {kpi_period}  |  every question this area has "
-                   "ever reported, totalled for this period (daily + weekly "
-                   "Sunday form; rates excluded — see the Metric picker below "
-                   "for a single metric's trend)")
+        render_section_label(t('All Metrics — {scope_value}', scope_value=scope_value))
+        st.caption(t("{span}  |  {kpi_period}  |  every question this area has ever reported, totalled for this period (daily + weekly Sunday form; rates excluded — see the Metric picker below for a single metric's trend)", span=span, kpi_period=kpi_period))
 
         _area_color = series_style(0)[0]   # one area = the trend's own hue
         _all_vals = []
@@ -1321,7 +1313,7 @@ def render_group_breakdown(
         )
         st.plotly_chart(fig_all, use_container_width=True)
     else:
-        render_section_label(f"{m_label} by Area — {scope_value}")
+        render_section_label(t('{m_label} by Area — {scope_value}', m_label=m_label, scope_value=scope_value))
         st.caption(f"{span}  |  {kpi_period}"
                    + ("  |  from the weekly Sunday form — one point per week, not per day"
                       if metric in _WEEKLY_FORM_METRICS
@@ -1437,7 +1429,7 @@ def render_group_breakdown(
     # ══════════════════════════════════════════════════════════════════════════
     # 3. TREND — the same metric over the same period, one line per area
     # ══════════════════════════════════════════════════════════════════════════
-    render_section_label(f"{m_label} Trend — {scope_value}")
+    render_section_label(t('{m_label} Trend — {scope_value}', m_label=m_label, scope_value=scope_value))
 
     # A plain Streamlit button, not a chart control: a click just reruns the
     # script, and the trend below is rebuilt fresh every rerun anyway (fixed

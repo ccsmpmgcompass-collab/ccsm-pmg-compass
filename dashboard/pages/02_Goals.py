@@ -70,7 +70,7 @@ render_sidebar(user)
 from app.db.queries import get_config_value as _gcv
 from app.i18n import t
 _mission_name = _gcv("MISSION_NAME", flavor.display_name)
-render_page_header(t("Goals"), f"{_mission_name} — Goals vs Actuals")
+render_page_header(t("Goals"), t('{mission_name} — Goals vs Actuals', mission_name=_mission_name))
 
 # ── Sidebar: Zone filter ──────────────────────────────────────────────────────
 
@@ -497,7 +497,7 @@ def _render_rec_pill(prefix: str, key: str, widget_key: str, rec_value: int) -> 
     identically."""
     with st.container(key=f"recbtn_{prefix}_{key}"):
         st.button(
-            f"REC {rec_value}",
+            t('REC {rec_value}', rec_value=rec_value),
             key=f"recval_{prefix}_{key}",
             on_click=_apply_rec,
             args=(widget_key, rec_value),
@@ -704,27 +704,7 @@ if selected_section == "Mission Goals":
                 ))
             return None
         st.caption(
-            f"REC is a light stretch goal — about {get_rec_stretch_pct()}% above the whole mission's "
-            "typical MONTHLY performance across every area, for a month this "
-            "length — to nudge the mission to do slightly better. Recent Convert "
-            "Attendance's REC scales by the number of Sundays this month "
-            "(church attendance is a once-a-week event), not the general "
-            "weeks-in-month figure used for other metrics. Any goal whose "
-            "indicator has expectations saved in Area Expectation Settings "
-            "shows goal / a hypothetical mission-wide target for this month "
-            "— every area at its own expectation, summed and sized to this "
-            "month's exact length (weekly figures × its weeks, Renew × its "
-            "Sunday count, monthly figures as-is) — not based on actual "
-            "data. Where no expectation is saved, Recent Convert Attendance "
-            "falls back to goal / the mission's MAX possible Recent-Convert "
-            "attendances this month — every area's own recent-convert count "
-            "as of each Sunday, summed across every Sunday and every area, "
-            "so this also scales with the month's Sunday count — and "
-            "Members at Non-Member Lessons to the hypothetical NM Lessons "
-            "target. LSI Follow-Ups (in Other Metrics) shows goal / the "
-            "mission's own LSI Given goal instead, live as you type it — "
-            "so you can see how many of the LSIs given are actually being "
-            "followed up on."
+            t("REC is a light stretch goal — about {get_rec_stretch_pct}% above the whole mission's typical MONTHLY performance across every area, for a month this length — to nudge the mission to do slightly better. Recent Convert Attendance's REC scales by the number of Sundays this month (church attendance is a once-a-week event), not the general weeks-in-month figure used for other metrics. Any goal whose indicator has expectations saved in Area Expectation Settings shows goal / a hypothetical mission-wide target for this month — every area at its own expectation, summed and sized to this month's exact length (weekly figures × its weeks, Renew × its Sunday count, monthly figures as-is) — not based on actual data. Where no expectation is saved, Recent Convert Attendance falls back to goal / the mission's MAX possible Recent-Convert attendances this month — every area's own recent-convert count as of each Sunday, summed across every Sunday and every area, so this also scales with the month's Sunday count — and Members at Non-Member Lessons to the hypothetical NM Lessons target. LSI Follow-Ups (in Other Metrics) shows goal / the mission's own LSI Given goal instead, live as you type it — so you can see how many of the LSIs given are actually being followed up on.", get_rec_stretch_pct=get_rec_stretch_pct())
         )
 
         def _apply_all_mission_rec(recommended: dict) -> None:
@@ -852,10 +832,10 @@ if selected_section == "Mission Goals":
                 set_by=user.get("email", ""),
             )
             if err:
-                st.error(f"Failed to save: {err}")
+                st.error(t('Failed to save: {err}', err=err))
             else:
                 set_by = row.get("set_by", "") if row else user.get("email", "")
-                st.success(f"Mission goals saved. Last set by **{set_by}** · month of {_month_label}")
+                st.success(t('Mission goals saved. Last set by **{set_by}** · month of {month_label}', set_by=set_by, month_label=_month_label))
                 st.rerun()
 
         if current_goal_row:
@@ -866,7 +846,7 @@ if selected_section == "Mission Goals":
                     ws_label = date.fromisoformat(ws).strftime("%B %Y")
                 except ValueError:
                     ws_label = ws
-                st.caption(f"Last set by {set_by} · month of {ws_label}")
+                st.caption(t('Last set by {set_by} · month of {ws_label}', set_by=set_by, ws_label=ws_label))
 
         st.divider()
 
@@ -1022,15 +1002,10 @@ if selected_section == "Area Goal Customization":
     if "bulk_rec_preview" in st.session_state:
         _preview = st.session_state["bulk_rec_preview"]
         st.caption(
-            f"Recommended goals computed for **{len(_preview['weekly'])} areas** — "
-            "each area's own REC values, exactly what the per-metric REC pills "
-            "show. Review below, then **Save All Recommended** to write every "
-            "area's weekly goals and its "
-            f"{_bulk_month_label} monthly goals. This overwrites any custom "
-            "goals already saved."
+            t("Recommended goals computed for **{count} areas** — each area's own REC values, exactly what the per-metric REC pills show. Review below, then **Save All Recommended** to write every area's weekly goals and its {bulk_month_label} monthly goals. This overwrites any custom goals already saved.", count=len(_preview['weekly']), bulk_month_label=_bulk_month_label)
         )
         _wk_labels = {k: _LABEL_OVERRIDES.get(k, lbl) for k, lbl, _f in metric_defs}
-        with st.expander(f"Preview — weekly goals ({len(_preview['weekly'])} areas)"):
+        with st.expander(t('Preview — weekly goals ({count} areas)', count=len(_preview['weekly']))):
             _wk_df = pd.DataFrame.from_dict(_preview["weekly"], orient="index")
             _wk_df.index.name = "Area"
             st.dataframe(_wk_df.rename(columns=_wk_labels), height=420)
@@ -1038,7 +1013,7 @@ if selected_section == "Area Goal Customization":
             "gate": "Gate", "date_metric": "Date", "new_found": "New",
             "pew": "Pew", "renew": "Renew", "member_lessons": "Mate",
         }
-        with st.expander(f"Preview — monthly goals for {_bulk_month_label}"):
+        with st.expander(t('Preview — monthly goals for {bulk_month_label}', bulk_month_label=_bulk_month_label)):
             _mo_df = pd.DataFrame.from_dict(_preview["monthly"], orient="index")
             _mo_df.index.name = "Area"
             st.dataframe(
@@ -1051,7 +1026,7 @@ if selected_section == "Area Goal Customization":
                 try:
                     save_all_area_goals(_preview["weekly"])
                 except Exception as e:
-                    st.error(f"Failed to save weekly goals: {e}")
+                    st.error(t('Failed to save weekly goals: {e}', e=e))
                 else:
                     _n_month, _m_err = bulk_upsert_area_monthly_goals(
                         _BULK_MONTH_START,
@@ -1068,13 +1043,11 @@ if selected_section == "Area Goal Customization":
                     del st.session_state["bulk_rec_preview"]
                     if _m_err:
                         st.error(
-                            f"Weekly goals saved for {len(_preview['weekly'])} areas, "
-                            f"but monthly goals failed: {_m_err}"
+                            t('Weekly goals saved for {count} areas, but monthly goals failed: {m_err}', count=len(_preview['weekly']), m_err=_m_err)
                         )
                     else:
                         st.success(
-                            f"Recommended goals saved for **{len(_preview['weekly'])} areas** — "
-                            f"weekly + {_bulk_month_label} monthly."
+                            t('Recommended goals saved for **{count} areas** — weekly + {bulk_month_label} monthly.', count=len(_preview['weekly']), bulk_month_label=_bulk_month_label)
                         )
         with _col_bulk_cancel:
             if st.button(t("Cancel"), key="bulk_rec_cancel"):
@@ -1219,17 +1192,7 @@ if selected_section == "Area Goal Customization":
 
     render_section_label(t("Nightly Form Goals (weekly totals)"))
     st.caption(
-        f"REC is a light stretch goal — about {get_rec_stretch_pct()}% above this area's all-time "
-        "weekly average — to nudge the area to do slightly better. Any "
-        "metric with an expectation saved in Area Expectation Settings "
-        "shows goal / this area's weekly expectation — add or change one "
-        "there and the fraction follows the moment it's saved. "
-        "Fellowshipped Lessons (formerly Member Lessons) shows goal / this "
-        "area's own NM Lessons goal, live as you type it above (unless "
-        "it's given its own expectation, which then wins). LSI Follow-Ups "
-        "shows goal / this area's own LSI Given goal the same way, so you "
-        "can see how many of the LSIs given are actually being followed up "
-        "on."
+        t("REC is a light stretch goal — about {get_rec_stretch_pct}% above this area's all-time weekly average — to nudge the area to do slightly better. Any metric with an expectation saved in Area Expectation Settings shows goal / this area's weekly expectation — add or change one there and the fraction follows the moment it's saved. Fellowshipped Lessons (formerly Member Lessons) shows goal / this area's own NM Lessons goal, live as you type it above (unless it's given its own expectation, which then wins). LSI Follow-Ups shows goal / this area's own LSI Given goal the same way, so you can see how many of the LSIs given are actually being followed up on.", get_rec_stretch_pct=get_rec_stretch_pct())
     )
 
     # Denominators are DYNAMIC, not a fixed metric list (Carson, 2026-07-19:
@@ -1279,27 +1242,26 @@ if selected_section == "Area Goal Customization":
         if st.button(t("Save Goals"), type="primary", key="area_goal_save"):
             try:
                 save_area_goals(selected_area, new_goals)
-                st.success(f"Goals saved for **{selected_area}**.")
+                st.success(t('Goals saved for **{selected_area}**.', selected_area=selected_area))
             except Exception as e:
-                st.error(f"Failed to save goals: {e}")
+                st.error(t('Failed to save goals: {e}', e=e))
 
     with col_reset:
         if area_has_custom:
             reset_key = f"area_goal_confirm_reset_{selected_area}"
             if st.session_state.get(reset_key, False):
                 st.warning(
-                    f"This will remove the custom goals row for **{selected_area}** "
-                    "and revert to mission-wide defaults. Are you sure?"
+                    t('This will remove the custom goals row for **{selected_area}** and revert to mission-wide defaults. Are you sure?', selected_area=selected_area)
                 )
                 col_yes, col_no = st.columns(2)
                 with col_yes:
                     if st.button(t("Yes, reset"), key="area_goal_reset_yes"):
                         try:
                             delete_area_goals(selected_area)
-                            st.success(f"Custom goals removed for **{selected_area}**.")
+                            st.success(t('Custom goals removed for **{selected_area}**.', selected_area=selected_area))
                             st.session_state[reset_key] = False
                         except Exception as e:
-                            st.error(f"Failed to reset goals: {e}")
+                            st.error(t('Failed to reset goals: {e}', e=e))
                 with col_no:
                     if st.button(t("Cancel"), key="area_goal_reset_no"):
                         st.session_state[reset_key] = False
@@ -1380,23 +1342,7 @@ if selected_section == "Area Goal Customization":
     }
 
     st.caption(
-        f"Key indicators for **{_monthly_label}**, in order: Gate, Date, New, "
-        f"Pew, Renew, Mate. REC is a light stretch goal — about {get_rec_stretch_pct()}% above "
-        "this area's own real average monthly performance (every completed "
-        "calendar month in this area's history, not a weekly number scaled "
-        "up). Any indicator with an expectation saved in Area Expectation "
-        "Settings shows goal / that expectation sized to this month — a "
-        "monthly figure as-is, a weekly one times this month's exact weeks "
-        "(Renew, a Sunday-only event, times its actual Sunday count). Two "
-        "fallbacks when no expectation is set: Renew shows goal / the MAX "
-        "possible Recent-Convert attendances this month — every recent "
-        "convert, every Sunday they were eligible for (a convert baptized "
-        "mid-month only counts for the Sundays after their baptism, not the "
-        "ones before) — and Mate shows goal / this area's own hypothetical "
-        "monthly Non-Member Lesson target (its NM Lessons expectation "
-        "scaled to this month), not based on actual data. New and Mate "
-        "also appear above under Nightly Form Goals as a separate WEEKLY "
-        "number — the two boxes are independent, not kept in sync."
+        t("Key indicators for **{monthly_label}**, in order: Gate, Date, New, Pew, Renew, Mate. REC is a light stretch goal — about {get_rec_stretch_pct}% above this area's own real average monthly performance (every completed calendar month in this area's history, not a weekly number scaled up). Any indicator with an expectation saved in Area Expectation Settings shows goal / that expectation sized to this month — a monthly figure as-is, a weekly one times this month's exact weeks (Renew, a Sunday-only event, times its actual Sunday count). Two fallbacks when no expectation is set: Renew shows goal / the MAX possible Recent-Convert attendances this month — every recent convert, every Sunday they were eligible for (a convert baptized mid-month only counts for the Sundays after their baptism, not the ones before) — and Mate shows goal / this area's own hypothetical monthly Non-Member Lesson target (its NM Lessons expectation scaled to this month), not based on actual data. New and Mate also appear above under Nightly Form Goals as a separate WEEKLY number — the two boxes are independent, not kept in sync.", monthly_label=_monthly_label, get_rec_stretch_pct=get_rec_stretch_pct())
     )
 
     def _apply_all_monthly_rec(area: str, recommended: dict, defs: list) -> None:
@@ -1513,11 +1459,11 @@ if selected_section == "Area Goal Customization":
                 set_by=user.get("email", ""),
             )
             if _err:
-                st.error(f"Failed to save monthly goals: {_err}")
+                st.error(t('Failed to save monthly goals: {err}', err=_err))
             else:
-                st.success(f"Monthly goals saved for **{selected_area}** — {_monthly_label}.")
+                st.success(t('Monthly goals saved for **{selected_area}** — {monthly_label}.', selected_area=selected_area, monthly_label=_monthly_label))
         except Exception as e:
-            st.error(f"Failed to save monthly goals: {e}")
+            st.error(t('Failed to save monthly goals: {e}', e=e))
 
     st.divider()
 
@@ -1636,7 +1582,7 @@ if selected_section == "Goal Settings":
         _nudge_options = sorted(set(_nudge_options + [_current_nudge_pct]))
 
     if not _can_edit_goals(user):
-        st.caption(f"Current nudge: **{_current_nudge_pct}%**. Only the Mission President or Assistants can change it.")
+        st.caption(t('Current nudge: **{current_nudge_pct}%**. Only the Mission President or Assistants can change it.', current_nudge_pct=_current_nudge_pct))
     else:
         def _apply_nudge_change() -> None:
             """on_change: persist the new percentage and clear the three REC
@@ -1667,12 +1613,10 @@ if selected_section == "Goal Settings":
             on_change=_apply_nudge_change,
         )
         if st.session_state.get("_nudge_save_error"):
-            st.error(f"Failed to save nudge percentage: {st.session_state['_nudge_save_error']}")
+            st.error(t('Failed to save nudge percentage: {nudge_save_error}', nudge_save_error=st.session_state['_nudge_save_error']))
         else:
             st.caption(
-                f"Active nudge: **{_current_nudge_pct}%** — changes apply "
-                "immediately; REC badges on the other tabs update the next "
-                "time they render."
+                t('Active nudge: **{current_nudge_pct}%** — changes apply immediately; REC badges on the other tabs update the next time they render.', current_nudge_pct=_current_nudge_pct)
             )
 
     # ── Projection preview chart ───────────────────────────────────────────────
@@ -1751,11 +1695,7 @@ if selected_section == "Goal Settings":
                 )
                 st.plotly_chart(fig, use_container_width=True)
                 st.caption(
-                    f"Mission average: **{_avg:.1f}/week** · projected goal at "
-                    f"**{_proj_pct}%** nudge: **{_proj_goal}/week**. The green "
-                    "line is what the mission-wide REC badge recommends at the "
-                    "current slider position; per-area REC badges use the same "
-                    "math on each area's own history."
+                    t("Mission average: **{avg:.1f}/week** · projected goal at **{proj_pct}%** nudge: **{proj_goal}/week**. The green line is what the mission-wide REC badge recommends at the current slider position; per-area REC badges use the same math on each area's own history.", avg=_avg, proj_pct=_proj_pct, proj_goal=_proj_goal)
                 )
 
 
@@ -1864,7 +1804,7 @@ if selected_section == "Area Expectation Settings":
             _to_save = [{k: v for k, v in r.items() if k != "_id"} for r in _rows]
             _err = save_area_type_expectations(_to_save)
             if _err:
-                st.error(f"Failed to save: {_err}")
+                st.error(t('Failed to save: {err}', err=_err))
             else:
                 st.session_state.pop("area_exp_rows", None)
                 st.session_state.pop("area_exp_next_id", None)
@@ -1976,8 +1916,7 @@ if selected_section == "Area Expectation Settings":
             if not _is_builtin:
                 if _category.strip().lower() in _roster_names_l:
                     st.caption(
-                        f"Area override — applies only to {_category}, "
-                        "ahead of any language category."
+                        t('Area override — applies only to {category}, ahead of any language category.', category=_category)
                     )
                 else:
                     st.caption(
@@ -2158,8 +2097,7 @@ if selected_section == "Area Expectation Settings":
                         st.warning(t("Pick a cadence first."))
                     elif any(r["metric"] == _new_metric for r in _cat_rows):
                         st.warning(
-                            f"{METRIC_LABELS.get(_new_metric, _new_metric)} "
-                            "is already in this category."
+                            t('{metric_labels} is already in this category.', metric_labels=METRIC_LABELS.get(_new_metric, _new_metric))
                         )
                     else:
                         _new_id = st.session_state["area_exp_next_id"]
@@ -2205,7 +2143,7 @@ if selected_section == "Area Expectation Settings":
                 if not _label:
                     st.warning(t("Enter a language or keyword first."))
                 elif _label.lower() in _existing:
-                    st.warning(f'"{_label}" is already in the list.')
+                    st.warning(t('"{label}" is already in the list.', label=_label))
                 else:
                     _new_id = st.session_state["area_exp_next_id"]
                     st.session_state["area_exp_next_id"] += 1
@@ -2231,7 +2169,7 @@ if selected_section == "Area Expectation Settings":
                 if not _ovr_area:
                     st.warning(t("Pick an area first."))
                 elif _ovr_area.strip().lower() in _existing:
-                    st.warning(f'"{_ovr_area}" already has its own section above.')
+                    st.warning(t('"{ovr_area}" already has its own section above.', ovr_area=_ovr_area))
                 else:
                     _seed = resolve_area_expectations(_ovr_area) or {
                         "nm_lessons": {"cadence": "weekly", "value": 0.0}

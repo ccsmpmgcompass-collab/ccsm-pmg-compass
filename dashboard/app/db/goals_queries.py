@@ -7,6 +7,7 @@ import pandas as pd
 
 from app.db.sheets_client import overwrite_tab, read_tab
 from app.utils.logger import get_logger
+from app.i18n import t
 
 _logger = get_logger("db.goals_queries")
 
@@ -62,7 +63,7 @@ def get_current_goal(month_start: str | None = None) -> dict | None:
             return None
         return _row_to_dict(match.iloc[0])
     except Exception as e:
-        _logger.error(f"Failed to fetch goal: {e}")
+        _logger.error(t('Failed to fetch goal: {e}', e=e))
         return None
 
 
@@ -75,7 +76,7 @@ def get_goal_history(limit: int = 12) -> list[dict]:
         df = df.sort_values("month_start", ascending=False).head(limit)
         return [_row_to_dict(row) for _, row in df.iterrows()]
     except Exception as e:
-        _logger.error(f"Failed to fetch goal history: {e}")
+        _logger.error(t('Failed to fetch goal history: {e}', e=e))
         return []
 
 
@@ -130,7 +131,7 @@ def upsert_goal(
         result["extra_goals"] = clean_extra
         return result, None
     except Exception as e:
-        _logger.error(f"Failed to upsert goal: {e}")
+        _logger.error(t('Failed to upsert goal: {e}', e=e))
         return None, str(e)
 
 
@@ -210,7 +211,7 @@ def get_current_area_monthly_goal(area: str, month_start: str | None = None) -> 
             return None
         return _area_row_to_dict(match.iloc[0])
     except Exception as e:
-        _logger.error(f"Failed to fetch area monthly goal: {e}")
+        _logger.error(t('Failed to fetch area monthly goal: {e}', e=e))
         return None
 
 
@@ -265,7 +266,7 @@ def upsert_area_monthly_goal(
 
         return dict(new_row), None
     except Exception as e:
-        _logger.error(f"Failed to upsert area monthly goal: {e}")
+        _logger.error(t('Failed to upsert area monthly goal: {e}', e=e))
         return None, str(e)
 
 
@@ -317,7 +318,7 @@ def bulk_upsert_area_monthly_goals(
         overwrite_tab(_AREA_TAB, rows)
         return len(goals_by_area), None
     except Exception as e:
-        _logger.error(f"Failed to bulk upsert area monthly goals: {e}")
+        _logger.error(t('Failed to bulk upsert area monthly goals: {e}', e=e))
         return 0, str(e)
 
 
@@ -345,7 +346,7 @@ def get_app_setting(key: str, default: str = "") -> str:
             return default
         return str(match.iloc[0].get("value", default) or default)
     except Exception as e:
-        _logger.error(f"Failed to read app setting {key!r}: {e}")
+        _logger.error(t('Failed to read app setting {key!r}: {e}', key=key, e=e))
         return default
 
 
@@ -380,5 +381,5 @@ def set_app_setting(key: str, value: str, updated_by: str) -> str | None:
         overwrite_tab(_SETTINGS_TAB, rows)
         return None
     except Exception as e:
-        _logger.error(f"Failed to set app setting {key!r}: {e}")
+        _logger.error(t('Failed to set app setting {key!r}: {e}', key=key, e=e))
         return str(e)

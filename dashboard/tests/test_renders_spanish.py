@@ -131,13 +131,24 @@ def test_sign_out_is_translated_on_every_page():
 
 @pytest.mark.parametrize("page", ALL_PAGES)
 def test_placeholders_are_filled_not_left_raw(page):
-    """A translation that dropped or renamed a {placeholder} would surface as
-    literal brace text on the page."""
+    """A translation that dropped or renamed a {placeholder} surfaces as
+    literal brace text on the page.
+
+    Matched by pattern rather than against a fixed list of field names: the
+    f-string conversion introduced ~109 new ones, and a hardcoded list is
+    exactly the kind of check that silently stops covering what it names.
+    """
+    import re
     for lang in ("en", "es"):
         body = _text(_run(page, lang))
-        for raw in ("{mission}", "{name}", "{week}", "{scope}", "{n}",
-                    "{err}", "{by}", "{at}", "{source}", "{shown}", "{total}"):
-            assert raw not in body, f"{page} [{lang}] leaked {raw}"
+        # Drop <style> blocks first: a CSS rule body is also brace-delimited,
+        # and it is markup rather than copy - the same reason the extractor
+        # refuses to treat a stylesheet as a translatable string.
+        body = re.sub(r"<style>.*?</style>", "", body, flags=re.S)
+        # A real placeholder is a bare identifier with at most a short format
+        # spec; anything with a semicolon or whitespace is CSS or prose.
+        leaked = sorted(set(re.findall(r"\{[a-z_][a-z0-9_]*(?:[!:][^};\s]{0,12})?\}", body)))
+        assert leaked == [], f"{page} [{lang}] leaked {leaked}"
 
 
 def test_every_translation_keeps_its_placeholders():
