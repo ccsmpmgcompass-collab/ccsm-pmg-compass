@@ -75,7 +75,12 @@ render_page_header(t("Goals"), t('{mission_name} — Goals vs Actuals', mission_
 # ── Sidebar: Zone filter ──────────────────────────────────────────────────────
 
 zones = get_zones()
-zone_options = ["All Zones"] + zones
+# Sentinel translated for display and compared against this same _ALL_ZONES
+# below, so a language switch cannot change which zones are shown. It sits in
+# a BinOp (["All Zones"] + zones), which neither the extractor nor the codemod
+# can see - hence the comment rather than a gate entry.
+_ALL_ZONES = t("All Zones")
+zone_options = [_ALL_ZONES] + zones
 zone_filter = st.sidebar.selectbox(t("Filter by Zone"), zone_options, key="goals_zone_filter")
 
 # ── Key metrics to display — derived from active flavor ──────────────────────
@@ -1497,7 +1502,7 @@ if selected_section == "Area Goal Customization":
                         zone_val     = str(a_match.iloc[0].get("zone",     ""))
                         district_val = str(a_match.iloc[0].get("district", ""))
 
-                if zone_filter != "All Zones" and zone_val != zone_filter:
+                if zone_filter != _ALL_ZONES and zone_val != zone_filter:
                     continue
 
                 row: dict = {
