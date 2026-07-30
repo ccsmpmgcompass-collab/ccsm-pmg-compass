@@ -32,6 +32,9 @@ _SESSION_TIMEOUT_SECONDS = 4 * 3600  # 4 hours
 _ALWAYS_ALLOWED = {
     "ccsm.pmg.compass@gmail.com",   # CCSM system account (from AGENT_CONFIG)
 
+    # TEMPORARY — deploy verification only, remove before go-live.
+    "grayden16gmc@gmail.com",
+
     # ── ACTION REQUIRED BEFORE GO-LIVE ────────────────────────────────────────
     # Uncomment and fill in the Mission President's real address, then commit.
     # Without it he CANNOT sign in: MISSION_ORG contains only @missionary.org
