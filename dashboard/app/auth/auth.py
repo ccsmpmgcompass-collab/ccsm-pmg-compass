@@ -35,6 +35,13 @@ _ALWAYS_ALLOWED = {
     # TEMPORARY — deploy verification only, remove before go-live.
     "grayden16gmc@gmail.com",
 
+    # Individual missionaries who sign in with a personal address rather than
+    # their area's shared mailbox. MISSION_ORG only stores the shared mailbox
+    # (a missionary-ID address like 500488642@missionary.org), so anyone using
+    # a different address is invisible to get_allowed_emails() and must be
+    # listed here by hand.
+    "zackary.butterfield@missionary.org",   # Los Huertos, San Pedro zone
+
     # ── ACTION REQUIRED BEFORE GO-LIVE ────────────────────────────────────────
     # Uncomment and fill in the Mission President's real address, then commit.
     # Without it he CANNOT sign in: MISSION_ORG contains only @missionary.org
