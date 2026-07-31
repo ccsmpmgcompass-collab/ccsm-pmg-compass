@@ -41,17 +41,13 @@ _ALWAYS_ALLOWED = {
     # a different address is invisible to get_allowed_emails() and must be
     # listed here by hand.
     "zackary.butterfield@missionary.org",   # Los Huertos, San Pedro zone
+    "hyrum.turner@missionary.org",          # AP1 — TODO: remove ~mid-Sept 2026, goes home in 6 weeks (as of 2026-07-31)
+    "anderson.phillips@missionary.org",     # AP2
 
-    # ── ACTION REQUIRED BEFORE GO-LIVE ────────────────────────────────────────
-    # Uncomment and fill in the Mission President's real address, then commit.
-    # Without it he CANNOT sign in: MISSION_ORG contains only @missionary.org
-    # area mailboxes, so the sheet grants him nothing (see module docstring).
-    # Left unset deliberately — an address is never guessed for an auth
-    # allowlist. Add the AP/office accounts the same way if they sign in with
-    # personal or church addresses rather than their area mailbox.
-    #
-    # "firstname.lastname@churchofjesuschrist.org",   # Mission President
-    # ──────────────────────────────────────────────────────────────────────────
+    # Mission President — MISSION_ORG has no churchofjesuschrist.org
+    # addresses at all, so the sheet grants him nothing on its own (see
+    # module docstring); he can only sign in via this hardcoded entry.
+    "gutierrezsaucedom@churchofjesuschrist.org",   # Presidente Gutierrez
 }
 
 # Mission-leadership roles, plus the always-allowed owner/admin accounts above.
