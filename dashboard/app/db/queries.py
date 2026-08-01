@@ -677,6 +677,38 @@ def get_nightly_weekly_trends(n_weeks: int = 52) -> pd.DataFrame:
     return grouped.sort_values("week_end_date").tail(n_weeks)
 
 
+def get_nightly_weekly_trends_by_area(n_weeks: int = 52) -> pd.DataFrame:
+    """Per-AREA weekly totals for the nightly metrics, from DAILY_LOG.
+
+    The per-area counterpart to get_nightly_weekly_trends(); returns
+    area | week_end_date | <one column per nightly metric>. Used by the Effort
+    score, whose metrics are all nightly and therefore have no per-area weekly
+    source in CCSM's WEEKLY_KI.
+    """
+    df = get_daily_log(days=n_weeks * 7 + 14)
+    if df.empty or "Date" not in df.columns or "Area" not in df.columns:
+        return pd.DataFrame()
+
+    d = pd.to_datetime(df["Date"], errors="coerce")
+    keep = d.notna()
+    if not keep.any():
+        return pd.DataFrame()
+    df = df[keep].copy()
+    d = d[keep]
+    df["week_end_date"] = (
+        d + pd.to_timedelta(6 - d.dt.weekday, unit="D")
+    ).dt.strftime("%Y-%m-%d")
+    df["area"] = df["Area"].astype(str).str.strip()
+
+    meta = {"Date", "Area", "Zone", "District", "week_end_date", "area"}
+    metric_cols = [c for c in df.columns if c not in meta]
+    if not metric_cols:
+        return pd.DataFrame()
+    numeric = _num(df, metric_cols)
+    return (numeric.groupby(["area", "week_end_date"])[metric_cols]
+            .sum(numeric_only=True).reset_index())
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # DAILY_LOG
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1888,13 +1920,68 @@ def save_area_type_expectations(indicators: list[dict]) -> str | None:
     return None
 
 
-_EFFORT_METRIC_WEIGHTS: dict[str, float] = {
-    "nm_lessons": 30.0,
-    "new_found":  25.0,
-    "mmm_sent":   20.0,
-    "pew":        15.0,
-    "gate":       10.0,
-}
+@st.cache_data(ttl=300)
+def get_score_component_weights(component: str, area_code: str = "ALL") -> dict[str, float]:
+    """{metric_key: weight} for one SCORE_CONFIG component ('effort', 'skill',
+    'ki'), for `area_code` falling back to the mission-wide 'ALL' rows.
+
+    SCORE_CONFIG is the tab CCSM_AgentScores.gs reads to compute the scores it
+    writes to SCORES, so reading it here is what keeps the dashboard's
+    explanation of a score and the agent's calculation of it in agreement. A
+    per-area row overrides the 'ALL' row for the same metric — the same
+    precedence applySection1() uses in that agent.
+
+    Section 1 of the tab is Area_Code | Metric_Key | Score_Component | Weight |
+    Active, and a blank row separates it from section 2. Rows past that
+    separator have a different meaning, so parsing stops there.
+    """
+    raw = read_tab("SCORE_CONFIG")
+    if raw.empty:
+        return {}
+
+    want = str(component).strip().lower()
+    rows = [[str(v).strip() for v in r] for r in raw.values.tolist()]
+
+    weights: dict[str, float] = {}
+    overrides: dict[str, float] = {}
+    for row in rows:
+        if not any(row):
+            break                       # blank separator -> section 2 begins
+        if len(row) < 5 or row[0] == "Area_Code":
+            continue
+        code, key, comp, weight, active = row[0], row[1], row[2], row[3], row[4]
+        if comp.strip().lower() != want or not key:
+            continue
+        if active.strip().upper() == "FALSE":
+            continue
+        try:
+            w = float(weight)
+        except (TypeError, ValueError):
+            continue
+        if code.strip().upper() == "ALL":
+            weights[key] = w
+        elif code.strip().casefold() == str(area_code).strip().casefold():
+            overrides[key] = w
+
+    weights.update(overrides)
+    return weights
+
+
+def _effort_metric_weights(area_code: str = "ALL") -> dict[str, float]:
+    """Weights behind the Effort score.
+
+    Was a hardcoded {nm_lessons: 30, new_found: 25, mmm_sent: 20, pew: 15,
+    gate: 10} — Utah Provo's metrics, none of which CCSM collects. Every actual
+    therefore resolved to None/NaN and this whole score computed as NaN for all
+    98 areas: the Scores page's Effort breakdown rendered nothing at all, which
+    reads as "no data yet" rather than as a broken calculation.
+
+    CCSM's Effort component is defined in SCORE_CONFIG (contacts_attempted,
+    roleplays, member_contacts, effort) and is what CCSM_AgentScores.gs actually
+    uses. Reading the same source means the breakdown EXPLAINS the score the
+    agent produced instead of computing a rival one.
+    """
+    return get_score_component_weights("effort", area_code)
 
 
 def _scale_effort_metric(actual: float, expectation: float) -> float:
@@ -1915,27 +2002,32 @@ def compute_effort_score(
     actuals: dict[str, float | None], expectations: dict[str, float]
 ) -> float | None:
     """
-    Weighted-average Effort score (0-100) from up to 5 metrics: nm_lessons,
-    new_found, mmm_sent, pew (Potential Member at Church), gate (Baptized &
-    Confirmed — expectations['gate'] must already be the WEEKLY-prorated
-    figure, see get_area_effort_expectations_weekly). Weights:
-    _EFFORT_METRIC_WEIGHTS.
+    Weighted-average Effort score (0-100) over the metrics SCORE_CONFIG assigns
+    to the 'effort' component — the same set and weights CCSM_AgentScores.gs
+    uses, so this explains the agent's score rather than computing a rival one.
 
-    actuals: metric_key -> actual value, or None if that metric's data
-    source had no submission this week (pew/gate come from the weekly form,
-    which isn't always filled in) — that metric is excluded and the
-    remaining weights renormalized to sum 100.
+    actuals: metric_key -> actual value, or None if that metric's data source
+    had no submission this week — that metric is excluded and the remaining
+    weights renormalized.
 
-    Returns None only when every metric is excluded (nothing to score).
+    A metric with no weight in SCORE_CONFIG is skipped rather than raising: the
+    tab is editable from the Scores page, so a metric can legitimately be
+    dropped from scoring between one read and the next.
+
+    Returns None when nothing is left to score, which callers must render as
+    "no score" — never as zero. Zero is a real score meaning the area did
+    nothing; None means we could not tell.
     """
-    present = {k: v for k, v in actuals.items() if v is not None}
+    weights = _effort_metric_weights()
+    present = {k: v for k, v in actuals.items()
+               if v is not None and weights.get(k, 0) > 0}
     if not present:
         return None
-    total_weight = sum(_EFFORT_METRIC_WEIGHTS[k] for k in present)
+    total_weight = sum(weights[k] for k in present)
     if total_weight <= 0:
         return None
     weighted_sum = sum(
-        _scale_effort_metric(present[k], expectations[k]) * _EFFORT_METRIC_WEIGHTS[k]
+        _scale_effort_metric(present[k], expectations.get(k, 0.0)) * weights[k]
         for k in present
     )
     return weighted_sum / total_weight
@@ -1950,17 +2042,23 @@ def compute_effort_score_breakdown(
     and weighted contribution toward the final score (these contributions
     sum to compute_effort_score's weighted_sum, before the total_weight
     normalization). Powers the Scores page's per-area Effort pie chart —
-    "which of the 5 things they're doing is actually moving the score."
+    "which of the things they're doing is actually moving the score."
+
+    Weights come from SCORE_CONFIG, so this stays in step with
+    compute_effort_score and with the agent that wrote the score.
     """
-    present = {k: v for k, v in actuals.items() if v is not None}
+    weights = _effort_metric_weights()
+    present = {k: v for k, v in actuals.items()
+               if v is not None and weights.get(k, 0) > 0}
     rows = []
     for k, v in present.items():
-        weight = _EFFORT_METRIC_WEIGHTS[k]
-        scaled = _scale_effort_metric(v, expectations[k])
+        weight = weights[k]
+        expectation = expectations.get(k, 0.0)
+        scaled = _scale_effort_metric(v, expectation)
         rows.append({
             "metric":       k,
             "actual":       v,
-            "expectation":  expectations[k],
+            "expectation":  expectation,
             "weight":       weight,
             "scaled_score": scaled,
             "contribution": scaled * weight,
@@ -1970,58 +2068,62 @@ def compute_effort_score_breakdown(
 
 def get_area_effort_actuals_weekly(area: str, week_end_date: str) -> dict[str, float | None] | None:
     """
-    Raw actuals for the 5 metrics behind the mission-president Effort score
-    (nm_lessons/new_found/mmm_sent from WEEKLY_KI, pew/gate from the weekly
-    form) for one area + week — the single-row counterpart to
-    compute_mission_president_effort_scores' batch merge, used by the Scores
-    page's per-area contribution pie chart. Returns None if WEEKLY_KI has no
-    nm_lessons for this area/week (mirrors the NaN-skip in the batch
-    version: nothing to score).
+    Raw actuals for the metrics SCORE_CONFIG assigns to the Effort component,
+    for one area + week. Single-row counterpart to
+    compute_mission_president_effort_scores' batch merge; powers the Scores
+    page's per-area Effort contribution chart.
+
+    Effort metrics are NIGHTLY (contacts_attempted, roleplays, member_contacts,
+    effort), so they are summed out of DAILY_LOG for that Mon-Sun week. They are
+    deliberately NOT read from WEEKLY_KI: CCSM's WEEKLY_KI holds only the weekly
+    form's ki_* pairs (see get_nightly_weekly_trends), so the previous version —
+    which looked for nm_lessons/new_found/mmm_sent there and returned None when
+    nm_lessons was absent — returned None for every area, every week.
+
+    `effort` is a CHOICE metric (Todo / La mayor parte / Algo) rather than a
+    count. It is scored by the agent through ccsmEffortScore() and has no
+    numeric column to sum here, so it is reported as None (excluded, weights
+    renormalized) instead of being coerced to a meaningless 0.
+
+    Returns None when the area has no submissions at all that week — nothing to
+    score, which the caller must render as "no score" rather than zero.
     """
     area = str(area).strip()
     week_end_date = str(week_end_date).strip()[:10]
 
-    wki = get_weekly_ki()
-    nm_lessons = None
-    new_found = mmm_sent = 0.0
-    if not wki.empty:
-        row = wki[
-            (wki["area"].astype(str).str.strip() == area)
-            & (wki["week_end_date"] == week_end_date)
-        ]
-        if not row.empty:
-            r = row.iloc[0]
-            if "nm_lessons" in row.columns and pd.notna(r.get("nm_lessons")):
-                nm_lessons = float(r["nm_lessons"])
-            if "new_found" in row.columns and pd.notna(r.get("new_found")):
-                new_found = float(r["new_found"])
-            if "mmm_sent" in row.columns and pd.notna(r.get("mmm_sent")):
-                mmm_sent = float(r["mmm_sent"])
-
-    if nm_lessons is None:
+    weights = _effort_metric_weights()
+    if not weights:
         return None
 
-    wform = get_weekly_form_data()
-    pew = gate = None
-    if not wform.empty:
-        row = wform[
-            (wform["area"].astype(str).str.strip() == area)
-            & (wform["week_end_date"] == week_end_date)
-        ]
-        if not row.empty:
-            r = row.iloc[0]
-            if "pew" in row.columns and pd.notna(r.get("pew")):
-                pew = float(r["pew"])
-            if "gate" in row.columns and pd.notna(r.get("gate")):
-                gate = float(r["gate"])
+    daily = get_daily_log(days=3650)
+    if daily.empty or "Date" not in daily.columns or "Area" not in daily.columns:
+        return None
 
-    return {
-        "nm_lessons": nm_lessons,
-        "new_found":  new_found,
-        "mmm_sent":   mmm_sent,
-        "pew":        pew,
-        "gate":       gate,
-    }
+    d = pd.to_datetime(daily["Date"], errors="coerce")
+    week = (d + pd.to_timedelta(6 - d.dt.weekday, unit="D")).dt.strftime("%Y-%m-%d")
+    rows = daily[(daily["Area"].astype(str).str.strip() == area)
+                 & (week == week_end_date)]
+    if rows.empty:
+        return None
+
+    from app.config.metric_catalog import non_numeric_metrics
+    non_numeric = non_numeric_metrics()
+
+    actuals: dict[str, float | None] = {}
+    for key in weights:
+        # Consult QUESTIONS_CONFIG's Data_Type rather than inspecting values:
+        # get_daily_log() runs every metric column through _num(), which
+        # coerces "Todo" to NaN and then fills it with 0, so a CHOICE metric is
+        # indistinguishable from a real zero by the time it reaches here.
+        if key in non_numeric or key not in rows.columns:
+            actuals[key] = None
+            continue
+        vals = pd.to_numeric(rows[key], errors="coerce")
+        actuals[key] = float(vals.fillna(0).sum())
+
+    if all(v is None for v in actuals.values()):
+        return None
+    return actuals
 
 
 def _mp_weeks_in_month(day: date) -> float:
@@ -2053,7 +2155,11 @@ def get_area_effort_expectations_weekly(area: str, week_end_date: str) -> dict[s
     day = datetime.strptime(str(week_end_date)[:10], "%Y-%m-%d").date()
     weeks = _mp_weeks_in_month(day)
     result = {}
-    for key in ("nm_lessons", "new_found", "mmm_sent", "pew", "gate"):
+    # Keys come from SCORE_CONFIG's effort component, not a fixed tuple of
+    # Provo's five. A metric with no expectation defined defaults to 0, which
+    # _scale_effort_metric treats as "nothing was expected, so nothing was
+    # fallen short of" — a full score rather than a divide-by-zero.
+    for key in _effort_metric_weights():
         entry = exp.get(key)
         if not entry:
             result[key] = 0.0
@@ -2076,45 +2182,45 @@ def compute_mission_president_effort_scores(scores_df: pd.DataFrame) -> pd.Serie
     if scores_df.empty:
         return pd.Series(dtype=float)
 
+    weights = _effort_metric_weights()
+    if not weights:
+        return pd.Series([float("nan")] * len(scores_df), index=scores_df.index, dtype=float)
+
     base = scores_df[["Area_Name", "Week_Ending_Date"]].copy()
     base["Area_Name"] = base["Area_Name"].astype(str).str.strip()
     base["Week_Ending_Date"] = base["Week_Ending_Date"].astype(str).str.strip().str[:10]
 
-    wki = get_weekly_ki()
-    if not wki.empty:
-        wki = wki.rename(columns={"area": "Area_Name", "week_end_date": "Week_Ending_Date"})
-        wki["Area_Name"] = wki["Area_Name"].astype(str).str.strip()
-        wki = wki.drop_duplicates(subset=["Area_Name", "Week_Ending_Date"], keep="last")
-        keep = [c for c in ("Area_Name", "Week_Ending_Date", "nm_lessons", "new_found", "mmm_sent") if c in wki.columns]
-        base = base.merge(wki[keep], on=["Area_Name", "Week_Ending_Date"], how="left")
-    for col in ("nm_lessons", "new_found", "mmm_sent"):
-        if col not in base.columns:
-            base[col] = float("nan")
-
-    wform = get_weekly_form_data()
-    if not wform.empty:
-        wform = wform.rename(columns={"area": "Area_Name", "week_end_date": "Week_Ending_Date"})
-        wform["Area_Name"] = wform["Area_Name"].astype(str).str.strip()
-        keep = [c for c in ("Area_Name", "Week_Ending_Date", "pew", "gate") if c in wform.columns]
-        base = base.merge(wform[keep], on=["Area_Name", "Week_Ending_Date"], how="left")
-    for col in ("pew", "gate"):
+    # Effort metrics are NIGHTLY, so they roll up from DAILY_LOG by week. The
+    # previous version merged nm_lessons/new_found/mmm_sent from WEEKLY_KI and
+    # pew/gate from the weekly form — Provo's five. CCSM's WEEKLY_KI holds only
+    # the weekly form's ki_* pairs, so the merge contributed nothing, the
+    # `if pd.isna(r["nm_lessons"])` guard fired on every row, and this returned
+    # NaN for all 98 areas: the Effort column and its breakdown showed nothing,
+    # which reads as "no data yet" rather than as a broken calculation.
+    weekly = get_nightly_weekly_trends_by_area(n_weeks=520)
+    metric_keys = list(weights)
+    if not weekly.empty:
+        weekly = weekly.rename(
+            columns={"area": "Area_Name", "week_end_date": "Week_Ending_Date"})
+        weekly["Area_Name"] = weekly["Area_Name"].astype(str).str.strip()
+        keep = ["Area_Name", "Week_Ending_Date"] + [
+            k for k in metric_keys if k in weekly.columns]
+        base = base.merge(weekly[keep], on=["Area_Name", "Week_Ending_Date"], how="left")
+    for col in metric_keys:
         if col not in base.columns:
             base[col] = float("nan")
 
     base.index = scores_df.index
     scores = []
-    for idx, r in base.iterrows():
-        if pd.isna(r["nm_lessons"]):
-            scores.append(float("nan"))
-            continue
+    for _idx, r in base.iterrows():
         actuals = {
-            "nm_lessons": float(r["nm_lessons"]),
-            "new_found":  float(r["new_found"]) if pd.notna(r["new_found"]) else 0.0,
-            "mmm_sent":   float(r["mmm_sent"]) if pd.notna(r["mmm_sent"]) else 0.0,
-            "pew":        float(r["pew"]) if pd.notna(r["pew"]) else None,
-            "gate":       float(r["gate"]) if pd.notna(r["gate"]) else None,
+            k: (float(r[k]) if pd.notna(r[k]) else None) for k in metric_keys
         }
-        expectations = get_area_effort_expectations_weekly(r["Area_Name"], r["Week_Ending_Date"])
+        if all(v is None for v in actuals.values()):
+            scores.append(float("nan"))       # no submissions that week
+            continue
+        expectations = get_area_effort_expectations_weekly(
+            r["Area_Name"], r["Week_Ending_Date"])
         score = compute_effort_score(actuals, expectations)
         scores.append(score if score is not None else float("nan"))
 

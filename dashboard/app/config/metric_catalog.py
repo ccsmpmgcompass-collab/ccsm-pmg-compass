@@ -224,6 +224,35 @@ def is_rate_metric(key: str) -> bool:
     return key in RATE_METRICS
 
 
+def metric_data_type(key: str) -> str:
+    """QUESTIONS_CONFIG's Data_Type for a metric: NUMBER, YESNO, CHOICE, DATE.
+    Empty string for a key the sheet does not define (the derived rates)."""
+    for row in _load_question_rows():
+        if row["key"] == key:
+            return row["data_type"]
+    return ""
+
+
+def non_numeric_metrics() -> frozenset[str]:
+    """Metrics that carry no summable number.
+
+    `effort` is CHOICE — the missionary picks Todo / La mayor parte / Algo, and
+    the agents convert it through ccsmEffortScore(). `exchanges` is YESNO.
+    DAILY_LOG stores the raw word, and get_daily_log() runs every metric column
+    through _num(), which coerces an unparseable value to NaN and then FILLS IT
+    WITH 0. So a CHOICE metric silently reads as a hard zero downstream, and
+    nothing about the value itself reveals that it was never a number.
+
+    Anything summing or scoring metrics must consult this rather than inspect
+    values: an area that answered "Todo" every single day would otherwise be
+    scored as having given no effort at all.
+    """
+    return frozenset(
+        row["key"] for row in _load_question_rows()
+        if row["data_type"] in ("CHOICE", "YESNO", "DATE")
+    )
+
+
 def format_metric_label(key: str, lang: str = "es") -> str:
     """Display label for a metric key.
 
