@@ -97,7 +97,7 @@ var _headerCache = {};
 // =============================================================================
 
 /**
- * Returns the active COMPASS_Main Google Spreadsheet.
+ * Returns the active COMPASS_CCSM Google Spreadsheet.
  */
 function getSpreadsheet() {
   return SpreadsheetApp.getActiveSpreadsheet();
@@ -109,9 +109,16 @@ function getSpreadsheet() {
 function getTab(tabName) {
   var sheet = getSpreadsheet().getSheetByName(tabName);
   if (!sheet) {
+    // Names the actual spreadsheet rather than a hardcoded one: this error is
+    // read by whoever is on call, and it used to say "COMPASS_Main" — Utah
+    // Provo's sheet, which CCSM's operators have no access to and would waste
+    // real time looking for. Falls back to the CCSM name if the spreadsheet
+    // handle is somehow unavailable, since this path is already an error path.
+    var ssName = 'COMPASS_CCSM';
+    try { ssName = getSpreadsheet().getName() || ssName; } catch (e) {}
     throw new Error(
       'Tab not found: "' + tabName + '". ' +
-      'Verify the tab exists in COMPASS_Main and matches the name in AGENT_CONFIG.'
+      'Verify the tab exists in ' + ssName + ' and matches the name in AGENT_CONFIG.'
     );
   }
   return sheet;
