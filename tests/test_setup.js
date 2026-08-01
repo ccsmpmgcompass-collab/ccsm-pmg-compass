@@ -64,7 +64,7 @@ const EXPECTED_TRIGGERS = [
   { fn: 'runAgent3',          everyDays: 1,        atHour: 6 },
   { fn: 'runAgent3Evening',   everyDays: 1,        atHour: 21 },
   { fn: 'runAgent5A',         onWeekDay: 'SUNDAY', atHour: 22 },
-  { fn: 'runAgent1A',         onWeekDay: 'SUNDAY', atHour: 21 },
+  { fn: 'runAgent1A',         onWeekDay: 'MONDAY', atHour: 21, nearMinute: 30 },
   { fn: 'runAgent5B',         onWeekDay: 'FRIDAY', atHour: 12 },
   { fn: 'runAgentReminder',   onWeekDay: 'SUNDAY', atHour: 18 },
   { fn: 'runAgentDuplicate',  everyDays: 1,        atHour: 21, nearMinute: 30 },
@@ -205,9 +205,17 @@ console.log('setup converge-to-table OK');
 
 // ===========================================================================
 // (h) The legacy per-agent installers can no longer create a competing
-//     schedule — each one now delegates to setupAllCcsmTriggers().
+//     schedule — each one now delegates to setupAllCcsmTriggers(). Three
+//     used to install off-table handler names; three more (found 2026-08-01
+//     while retiming Agent1A for Phase 5) installed the RIGHT handler on a
+//     schedule that had drifted from the table — Agent1A on Sunday (table:
+//     Monday), Agent4 on Tue+Sat (table: Monday only), Agent5A daily
+//     (table: weekly Sunday) — which is worse, since deleteTriggerByName()
+//     means running one doesn't add a duplicate, it REPLACES the canonical
+//     trigger with the stale schedule.
 // ===========================================================================
-['setupReminderTrigger', 'setupEscalationTriggers', 'setupSuggestionNotifyTrigger']
+['setupReminderTrigger', 'setupEscalationTriggers', 'setupSuggestionNotifyTrigger',
+ 'setupAgent1ATrigger', 'setupAgent4Trigger', 'setupAgent5ATrigger']
   .forEach((name) => {
     assert.strictEqual(typeof scope[name], 'function', name + ' must still exist');
     assert.strictEqual(scope[name].length, 0, name + ' must be zero-argument');

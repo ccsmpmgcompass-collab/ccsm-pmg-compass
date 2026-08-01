@@ -126,18 +126,16 @@ function runAgent5A() {
 // ─── TRIGGER SETUP ───────────────────────────────────────────────────────────
 
 /**
- * Creates the daily noon trigger for Agent5A.
- * Run ONCE: Apps Script editor -> Run -> setupAgent5ATrigger
- * Safe to re-run — deletes any existing Agent5A trigger first.
+ * DEPRECATED — see CCSM_Setup.gs "LEGACY PER-AGENT INSTALLERS". This used to
+ * install a DAILY noon trigger from an old schedule. CCSM_TRIGGER_SCHEDULE
+ * (the canonical table) has since moved runAgent5A to weekly, Sunday 10 PM;
+ * running this by mistake would delete that and fire the dashboard
+ * summary + WEEKLY_KI rebuild every day instead of once a week. Now a
+ * delegating shim.
  */
 function setupAgent5ATrigger() {
-  deleteTriggerByName('runAgent5A');
-  ScriptApp.newTrigger('runAgent5A')
-    .timeBased()
-    .everyDays(1)
-    .atHour(12)
-    .create();
-  Logger.log('Agent5A trigger created: runAgent5A daily at noon');
+  Logger.log('Agent5A: setupAgent5ATrigger() is DEPRECATED — delegating to setupAllCcsmTriggers().');
+  setupAllCcsmTriggers();
 }
 
 // ─── SHEET DATA HELPER ───────────────────────────────────────────────────────

@@ -29,7 +29,7 @@
  *   runAgent3            Daily     6:00 AM   nightly refresh + missed-day alerts
  *   runAgent3Evening     Daily     9:00 PM   second daily refresh
  *   runAgent5A           Sunday   10:00 PM   dashboard summary + WEEKLY_KI
- *   runAgent1A           Sunday    9:00 PM   Sunday coaching (chains 1B -> 1C)
+ *   runAgent1A           Monday    9:00 PM   Monday coaching (chains 1B -> 1C)
  *   runAgent5B           Friday   12:00 PM   Friday encouragement (chains Agent6)
  *   runAgentReminder     Sunday    6:00 PM   NOTES reminders (+ weekly compliance, see below)
  *   runAgentDuplicate    Daily     9:30 PM   duplicate nightly-submission sweep
@@ -120,13 +120,19 @@
  *   previewOneCoachingEmail()  one sample coaching email to the test inbox
  *
  * The editor's function dropdown also still lists the older per-agent
- * installers. They fall into two groups:
+ * installers. They fall into three groups:
  *
  *   setupReminderTrigger(), setupEscalationTriggers(),
- *   setupSuggestionNotifyTrigger() — these three used to install OFF-TABLE
- *   handler names, so each is now a delegating shim: running one by mistake
- *   converges the project rather than adding a second, competing schedule on
- *   top of it. See "LEGACY PER-AGENT INSTALLERS" below.
+ *   setupSuggestionNotifyTrigger(), setupAgent1ATrigger(),
+ *   setupAgent4Trigger(), setupAgent5ATrigger() — each of these disagreed
+ *   with CCSM_TRIGGER_SCHEDULE (the first three installed OFF-TABLE handler
+ *   names entirely; the latter three installed the right handler on a
+ *   SCHEDULE that had drifted from the table — Agent1A on Sunday vs the
+ *   table's Monday, Agent4 on Tue+Sat vs the table's Monday-only, Agent5A
+ *   daily vs the table's weekly Sunday). Each is now a delegating shim:
+ *   running one by mistake converges the project rather than silently
+ *   replacing the canonical schedule with a stale one. See "LEGACY
+ *   PER-AGENT INSTALLERS" below.
  *
  *   setupAgentDuplicateTrigger(), setupQAFormTrigger() — these two still
  *   install directly, and must: they create the form-submit triggers in
@@ -134,12 +140,20 @@
  *   calling them. Delegating would recurse. They are already idempotent
  *   (each deletes its own handler first), so running one by hand is safe.
  *
+ *   setupAgent3Trigger(), setupAgent3EveningTrigger(), setupAgent5BTrigger(),
+ *   setupAgentScoresTrigger(), setupAgent2OnceTrigger() — these install
+ *   directly too, but their schedules already MATCH the table (or, for
+ *   Agent2, are the documented manual/one-shot path — Agent2 is
+ *   deliberately not on the table at all). deleteTriggerByName() clears the
+ *   canonical trigger first, so running one by hand just recreates the same
+ *   schedule under a new trigger ID — harmless, left as direct installers.
+ *
  * ─────────────────────────────────────────────────────────────────────────
  * LEGACY PER-AGENT INSTALLERS
  * ─────────────────────────────────────────────────────────────────────────
  * Before this file existed, each agent shipped its own setup*Trigger()
- * function, and four of them installed handler names and hours that are NOT
- * in CCSM_TRIGGER_SCHEDULE:
+ * function. Three of them installed handler names that are NOT in
+ * CCSM_TRIGGER_SCHEDULE at all:
  *
  *   setupReminderTrigger()          runReminderAgent, HOURLY
  *   setupEscalationTriggers()       runNightlyEscalation 10:00, runWeeklyEscalation 20:45
@@ -148,8 +162,20 @@
  * Left as they were, an operator picking one out of the dropdown would get
  * escalation firing at 07:00 AND 10:00 AND 20:45 and the reminder agent
  * firing hourly — the exact duplicate-nagging failure WEEKLY_REMINDER_OWNER
- * exists to prevent, through a different door. They are therefore now
- * delegating shims (they log what they used to do, then converge).
+ * exists to prevent, through a different door.
+ *
+ * A second audit (2026-08-01, while retiming Agent1A for Phase 5) found
+ * three MORE that install the correct handler name but on a schedule that
+ * had drifted from the table — worse, because deleteTriggerByName() means
+ * running one doesn't just add a duplicate, it DELETES the canonical
+ * trigger and replaces it with the stale one:
+ *
+ *   setupAgent1ATrigger()  installed Monday (table said Sunday until this fix)
+ *   setupAgent4Trigger()   installs Tuesday + Saturday 7 AM (table: Monday only)
+ *   setupAgent5ATrigger()  installs DAILY at noon (table: weekly, Sunday 10 PM)
+ *
+ * All six are therefore now delegating shims (they log what they used to
+ * do, then converge).
  *
  * >>> ONE CONSEQUENCE THE MISSION MUST CONFIRM: notifyAcceptedSuggestions()
  * >>> (AgentQA's "email COMPASS when a suggestion is finally approved" poll)
@@ -175,7 +201,7 @@ var CCSM_TRIGGER_SCHEDULE = [
   { fn: 'runAgent3',          everyDays: 1,          hour: 6,                describe: 'Daily 6:00 AM' },
   { fn: 'runAgent3Evening',   everyDays: 1,          hour: 21,               describe: 'Daily 9:00 PM' },
   { fn: 'runAgent5A',         weekDay: 'SUNDAY',     hour: 22,               describe: 'Sunday 10:00 PM' },
-  { fn: 'runAgent1A',         weekDay: 'SUNDAY',     hour: 21,               describe: 'Sunday 9:00 PM (chains 1B -> 1C)' },
+  { fn: 'runAgent1A',         weekDay: 'MONDAY',     hour: 21, minute: 30,   describe: 'Monday ~9:15-9:30 PM (chains 1B -> 1C)' },
   { fn: 'runAgent5B',         weekDay: 'FRIDAY',     hour: 12,               describe: 'Friday 12:00 PM (chains Agent6)' },
   { fn: 'runAgentReminder',   weekDay: 'SUNDAY',     hour: 18,               describe: 'Sunday 6:00 PM' },
   { fn: 'runAgentDuplicate',  everyDays: 1,          hour: 21, minute: 30,   describe: 'Daily 9:30 PM' },

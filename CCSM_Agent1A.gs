@@ -165,16 +165,16 @@ function runAgent1A() {
 
 // --- TRIGGER SETUP ----------------------------------------------------------
 
+/**
+ * DEPRECATED — see CCSM_Setup.gs "LEGACY PER-AGENT INSTALLERS". This used to
+ * install runAgent1A directly on Monday ~9:15-9:45 PM while
+ * CCSM_TRIGGER_SCHEDULE (the canonical table) still said Sunday — running
+ * this by mistake would have silently overridden the canonical schedule
+ * with a day nobody else's docs agreed with. Now a delegating shim.
+ */
 function setupAgent1ATrigger() {
-  deleteTriggerByName('runAgent1A');
-  ScriptApp.newTrigger('runAgent1A')
-    .timeBased()
-    .onWeekDay(ScriptApp.WeekDay.MONDAY)
-    .atHour(21)
-    .nearMinute(30)  // aim past 9:15 so the wait-until-9:15 sleep (capped at
-                     // 4 min; execution limit is 6 min) rarely engages
-    .create();
-  Logger.log('Agent1A trigger created: runAgent1A every Monday ~9:15-9:45 PM');
+  Logger.log('Agent1A: setupAgent1ATrigger() is DEPRECATED — delegating to setupAllCcsmTriggers().');
+  setupAllCcsmTriggers();
 }
 
 // --- DATA LOADERS -----------------------------------------------------------
