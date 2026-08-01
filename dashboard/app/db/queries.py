@@ -319,8 +319,8 @@ def get_zone_weekly_actuals() -> pd.DataFrame:
     """
     One row per zone for the most recent shared week: nightly-derived metrics
     (get_weekly_ki_by_zone()'s latest week_end_date) combined with the
-    weekly-form KI metrics (pew/date_metric/gate/renew/rc_total, summed per
-    zone from get_weekly_form_data()'s latest week). The two sources' latest
+    weekly-form Key Indicators (summed per zone from get_weekly_form_data()'s
+    latest week — whatever QUESTIONS_CONFIG says that form asks). The two sources' latest
     weeks aren't guaranteed to be the same calendar week (nightly rolls up
     continuously; the weekly form is Sunday-gated), so each is taken
     independently at its own latest COMPLETE week before merging (the
@@ -341,7 +341,13 @@ def get_zone_weekly_actuals() -> pd.DataFrame:
     if not weekly_form.empty:
         latest_wf_week = weekly_form["week_end_date"].max()
         wf_cur = weekly_form[weekly_form["week_end_date"] == latest_wf_week]
-        wf_latest = wf_cur.groupby("zone")[["pew", "date_metric", "gate", "renew", "rc_total"]].sum().reset_index()
+        # Sum whichever metric columns the weekly form actually produced, not a
+        # hardcoded list. The old ["pew","date_metric","gate","renew","rc_total"]
+        # named Provo's KIs — none present in CCSM's frame — so this raised a
+        # KeyError the moment the parser above started returning real rows.
+        _wf_metrics = [c for c in wf_cur.columns
+                       if c not in ("week_end_date", "area", "zone")]
+        wf_latest = wf_cur.groupby("zone")[_wf_metrics].sum().reset_index()
 
     if nightly_latest.empty and wf_latest.empty:
         return pd.DataFrame()
@@ -384,13 +390,96 @@ def get_latest_weekly_ki() -> pd.DataFrame:
 # WEEKLY_FORM_RAW — weekly KI form (pew / date / gate / renew / rc_total)
 # ══════════════════════════════════════════════════════════════════════════════
 
-_WEEKLY_KI_PATTERNS = [
-    ("(Pew)",   "pew"),
-    ("(Date)",  "date_metric"),
-    ("(Gate)",  "gate"),
-    ("(Renew)", "renew"),
-    ("(Total)", "rc_total"),
-]
+# ── Weekly form structure ─────────────────────────────────────────────────────
+# The weekly Google Form has one SECTION PER ZONE, so its response sheet repeats
+# the whole question block ten times: 182 columns, with "¿En qué área sirve?" at
+# ten different positions. A missionary fills only their own zone's section and
+# every other section's columns are blank on that row.
+#
+# These two constants mirror A3_FORM_AREA_COL / A3_FORM_ZONE_COL in
+# CCSM_Agent3.gs. They are structural questions, so unlike the metric columns
+# they have no QUESTIONS_CONFIG row to read them from.
+# tests/test_weekly_form_parser.py asserts both still match the live header.
+#
+# This parser previously looked for "What is your Area?", "What is your Zone?",
+# "What week" and (Pew)/(Date)/(Gate)/(Renew)/(Total) — Utah Provo's English
+# form, inherited with the fork. Against CCSM's Spanish header EVERY ONE of
+# those patterns matches ZERO columns, so section detection found nothing,
+# get_weekly_form_data() returned an empty frame on every call, and the whole
+# Key Indicator pipeline — dashboard KI cards, KI trends, zone KI comparisons,
+# projections, Goals actuals — was blank by construction rather than for want
+# of data.
+_FORM_AREA_COL = "¿En qué área sirve?"
+_FORM_ZONE_COL = "¿En qué zona sirve?"
+
+# Fallback only; the real header is read from QUESTIONS_CONFIG's WEEKLY
+# report_date row, so a reworded form question follows automatically.
+_FORM_WEEK_DATE_COL = "¿Qué fecha está ingresando?"
+
+
+def _weekly_form_layout(cols: list) -> dict:
+    """Locate the repeated per-zone sections in a *_FORM_RAW header.
+
+    read_tab() renames duplicate headers to `name`, `name_1`, `name_2`… so that
+    the DataFrame builds, which is why every match here is a `startswith` on the
+    base question text rather than an equality test.
+
+    Returns {"sections": [(start, end), …], "zone_col": name|None,
+             "ts_col": name|None} with `end` exclusive.
+    """
+    starts = [i for i, c in enumerate(cols) if str(c).startswith(_FORM_AREA_COL)]
+    sections = [
+        (s, starts[i + 1] if i + 1 < len(starts) else len(cols))
+        for i, s in enumerate(starts)
+    ]
+    return {
+        "sections": sections,
+        "zone_col": next((c for c in cols if str(c).startswith(_FORM_ZONE_COL)), None),
+        # Google names column 1 in the FORM's locale; the live sheet says
+        # "Timestamp" but a re-created form could say "Marca temporal".
+        "ts_col": next(
+            (c for c in cols
+             if str(c).startswith("Timestamp") or str(c).startswith("Marca temporal")),
+            None,
+        ),
+    }
+
+
+def _weekly_metric_columns() -> list[tuple[str, str]]:
+    """[(Form_Column_Header, metric_key), …] for every active WEEKLY metric,
+    straight from QUESTIONS_CONFIG — so a question added to the weekly form is
+    picked up without a code change, and a reworded one keeps working.
+
+    Excludes report_date: that column IS the week the row is about, handled
+    separately below, not a value to sum.
+    """
+    df = read_tab("QUESTIONS_CONFIG")
+    if df.empty or "Metric_Key" not in df.columns:
+        return []
+    out: list[tuple[str, str]] = []
+    for _, r in df.iterrows():
+        key = str(r.get("Metric_Key", "")).strip()
+        header = str(r.get("Form_Column_Header", "")).strip()
+        form = str(r.get("Form_Type", "")).strip().upper()
+        active = str(r.get("Active", "TRUE")).strip().upper()
+        if not key or not header or form != "WEEKLY":
+            continue
+        if key == "report_date" or active not in ("TRUE", "YES", "1", ""):
+            continue
+        out.append((header, key))
+    return out
+
+
+def _weekly_date_column() -> str:
+    df = read_tab("QUESTIONS_CONFIG")
+    if not df.empty and {"Metric_Key", "Form_Type", "Form_Column_Header"} <= set(df.columns):
+        rows = df[(df["Metric_Key"].astype(str).str.strip() == "report_date")
+                  & (df["Form_Type"].astype(str).str.strip().str.upper() == "WEEKLY")]
+        if not rows.empty:
+            header = str(rows.iloc[0]["Form_Column_Header"]).strip()
+            if header:
+                return header
+    return _FORM_WEEK_DATE_COL
 
 
 def _norm_week_date(raw: str) -> str:
@@ -407,38 +496,48 @@ def _norm_week_date(raw: str) -> str:
 @st.cache_data(ttl=300)
 def get_weekly_form_data() -> pd.DataFrame:
     """
-    Parse WEEKLY_FORM_RAW (multi-section weekly form, one section per zone)
-    into tidy rows: week_end_date | area | zone | pew | date_metric | gate
-    | renew | rc_total.
+    Parse WEEKLY_FORM_RAW (one form section per zone) into tidy rows:
+    week_end_date | area | zone | <one column per active WEEKLY metric>.
 
-    This is the only aggregation of the weekly KI metrics available to the
-    app — WEEKLY_KI carries nightly-form rollups only.
+    The metric columns are whatever QUESTIONS_CONFIG says the weekly form asks —
+    for CCSM the seven Key Indicators as `_real` (achieved) and `_meta` (that
+    companionship's goal for the week) pairs, plus leader_call and
+    correlation_meeting. Callers must not sum a `_real` and a `_meta` together:
+    one is an outcome and the other a target.
+
+    This is the only aggregation of the weekly metrics available to the app —
+    WEEKLY_KI carries nightly-form rollups.
     """
     df = read_tab("WEEKLY_FORM_RAW")
     if df.empty:
         return pd.DataFrame()
 
     cols = list(df.columns)
-    sec_starts = [i for i, c in enumerate(cols) if c.startswith("What is your Area?")]
-    if not sec_starts:
+    layout = _weekly_form_layout(cols)
+    if not layout["sections"]:
         return pd.DataFrame()
-    zone_col = next((c for c in cols if c.startswith("What is your Zone?")), None)
-    ts_col   = next((c for c in cols if c.startswith("Timestamp")), None)
+
+    metric_cols = _weekly_metric_columns()
+    if not metric_cols:
+        return pd.DataFrame()
+    date_header = _weekly_date_column()
+    zone_col, ts_col = layout["zone_col"], layout["ts_col"]
 
     out = []
     for _, row in df.iterrows():
         zone = str(row[zone_col]).strip() if zone_col else ""
-        for si, start in enumerate(sec_starts):
-            end = sec_starts[si + 1] if si + 1 < len(sec_starts) else len(cols)
+        for start, end in layout["sections"]:
             area = str(row.iloc[start]).strip()
             if not area:
                 continue
 
             rec = {"area": area, "zone": zone}
-            for pat, key in _WEEKLY_KI_PATTERNS:
+            for header, key in metric_cols:
                 val = 0.0
                 for j in range(start, end):
-                    if pat in cols[j]:
+                    # startswith, not equality: read_tab suffixes duplicate
+                    # headers (_1, _2, …) and every question repeats per zone.
+                    if str(cols[j]).startswith(header):
                         v = pd.to_numeric(row.iloc[j], errors="coerce")
                         val = 0.0 if pd.isna(v) else float(v)
                         break
@@ -446,7 +545,7 @@ def get_weekly_form_data() -> pd.DataFrame:
 
             week = ""
             for j in range(start, end):
-                if cols[j].startswith("What week"):
+                if str(cols[j]).startswith(date_header):
                     raw_week = _norm_week_date(row.iloc[j])
                     if raw_week:
                         # Snap to the Sunday that ends the week (previous or same).
@@ -469,8 +568,7 @@ def get_weekly_form_data() -> pd.DataFrame:
     tidy = pd.DataFrame(out)
     # One row per area per week — keep the latest submission if duplicated
     tidy = tidy.drop_duplicates(subset=["week_end_date", "area"], keep="last")
-    return tidy[["week_end_date", "area", "zone",
-                 "pew", "date_metric", "gate", "renew", "rc_total"]]
+    return tidy[["week_end_date", "area", "zone"] + [k for _, k in metric_cols]]
 
 
 @st.cache_data(ttl=300)
@@ -493,11 +591,10 @@ def get_weekly_submission_data() -> pd.DataFrame:
         return pd.DataFrame()
 
     cols = list(df.columns)
-    sec_starts = [i for i, c in enumerate(cols) if c.startswith("What is your Area?")]
-    if not sec_starts:
+    layout = _weekly_form_layout(cols)
+    if not layout["sections"]:
         return pd.DataFrame()
-    zone_col = next((c for c in cols if c.startswith("What is your Zone?")), None)
-    ts_col   = next((c for c in cols if c.startswith("Timestamp")), None)
+    zone_col, ts_col = layout["zone_col"], layout["ts_col"]
     if ts_col is None:
         return pd.DataFrame()
 
@@ -509,7 +606,7 @@ def get_weekly_submission_data() -> pd.DataFrame:
         d = datetime.strptime(sub, "%Y-%m-%d")
         sunday = (d - timedelta(days=(d.weekday() + 1) % 7)).strftime("%Y-%m-%d")
         zone = str(row[zone_col]).strip() if zone_col else ""
-        for start in sec_starts:
+        for start, _end in layout["sections"]:
             area = str(row.iloc[start]).strip()
             if not area:
                 continue
@@ -522,11 +619,18 @@ def get_weekly_submission_data() -> pd.DataFrame:
 
 
 def get_weekly_ki_totals(n_weeks: int = 52) -> pd.DataFrame:
-    """Mission-wide weekly KI totals (pew/date/gate/renew/rc_total) per week."""
+    """Mission-wide weekly-form totals per week — every metric that form asks.
+
+    Columns are taken from the parsed frame rather than a hardcoded list; the
+    old ["pew","date_metric","gate","renew","rc_total"] was Provo's and would
+    KeyError against CCSM's columns.
+    """
     df = get_weekly_form_data()
     if df.empty:
         return pd.DataFrame()
-    keys = ["pew", "date_metric", "gate", "renew", "rc_total"]
+    keys = [c for c in df.columns if c not in ("week_end_date", "area", "zone")]
+    if not keys:
+        return pd.DataFrame()
     grouped = df.groupby("week_end_date")[keys].sum().reset_index()
     return grouped.sort_values("week_end_date").tail(n_weeks)
 
@@ -2690,9 +2794,17 @@ def detect_anomalies(metric_key: str, threshold: float = 0.70) -> pd.DataFrame:
     return pd.DataFrame(results)
 
 
-# Weekly-form KI metrics live in WEEKLY_FORM_RAW (get_weekly_ki_totals), not in
+# Weekly-form metrics live in WEEKLY_FORM_RAW (get_weekly_ki_totals), not in
 # the nightly-form rollups (get_weekly_ki_trends). Route projections accordingly.
-_WEEKLY_FORM_METRICS = {"pew", "date_metric", "gate", "renew", "rc_total"}
+#
+# Read from QUESTIONS_CONFIG rather than hardcoded: the old
+# {"pew","date_metric","gate","renew","rc_total"} was Provo's set, so for CCSM
+# every weekly metric fell through to the NIGHTLY branch and projected off a
+# series that has no such column — yielding a confident-looking projection of
+# nothing. Routing a projection to the wrong source is worse than refusing one.
+def _weekly_form_metric_keys() -> set:
+    from app.config.metric_catalog import weekly_metric_keys
+    return set(weekly_metric_keys())
 
 
 def project_next_week(metric_key: str, n_weeks: int = 12) -> dict:
@@ -2713,7 +2825,7 @@ def project_next_week(metric_key: str, n_weeks: int = 12) -> dict:
     """
     from app.analytics.trends import compute_projection
 
-    if metric_key in _WEEKLY_FORM_METRICS:
+    if metric_key in _weekly_form_metric_keys():
         trends = get_weekly_ki_totals(n_weeks * 2)
     else:
         trends = get_weekly_ki_trends(n_weeks * 2)
