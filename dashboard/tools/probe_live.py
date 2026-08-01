@@ -210,6 +210,32 @@ def cmd_headers(sh: gspread.Spreadsheet, out: Report, args) -> None:
         out(f"  x{len(cols):<3} cols {cols} : {label}")
 
 
+def cmd_json(sh: gspread.Spreadsheet, out: Report, args) -> None:
+    """Dump whole tabs as raw JSON grids, for test fixtures that must be built
+    from what the sheet ACTUALLY holds rather than from the same CcsmData.gs
+    the code under test reads. The node suite's fixtures.js generates the
+    *_FORM_RAW headers from CcsmData.gs, so it can only ever prove the agents
+    are self-consistent with that file — never that they match the live Google
+    Form. This is the other side of that comparison."""
+    import json
+
+    payload = {}
+    for tab in args.tabs:
+        try:
+            payload[tab] = sh.worksheet(tab).get_all_values()
+        except gspread.exceptions.WorksheetNotFound:
+            payload[tab] = None
+            out(f"WARNING: tab {tab} does not exist")
+    dest = Path(args.dest)
+    dest.write_text(json.dumps(payload, ensure_ascii=False, indent=1),
+                    encoding="utf-8")
+    for tab, grid in payload.items():
+        n = "MISSING" if grid is None else f"{len(grid)} rows x " \
+                                           f"{max((len(r) for r in grid), default=0)} cols"
+        out(f"  {tab:<24} {n}")
+    out(f"\n[wrote {dest}]")
+
+
 def main() -> None:
     # --out lives on a shared parent so it works AFTER the subcommand too
     # (`probe_live.py tabs --out x.txt`), which is the order it gets typed in.
@@ -246,13 +272,18 @@ def main() -> None:
                        help="header row of a tab + duplicate-label report")
     p.add_argument("tab")
 
+    p = sub.add_parser("json", parents=[common],
+                       help="dump whole tabs to a JSON file (test fixtures)")
+    p.add_argument("dest", help="output .json path")
+    p.add_argument("tabs", nargs="+", help="tab names to dump")
+
     args = ap.parse_args()
     out = Report()
     sh = _open_sheet()
     {
         "tabs": cmd_tabs, "config": cmd_config, "questions": cmd_questions,
         "org": cmd_org, "health": cmd_health, "dump": cmd_dump,
-        "headers": cmd_headers,
+        "headers": cmd_headers, "json": cmd_json,
     }[args.cmd](sh, out, args)
     out.save(args.out)
 
