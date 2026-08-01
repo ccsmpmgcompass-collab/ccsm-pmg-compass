@@ -140,6 +140,7 @@ function runAgent1A() {
         name1:     areaObj['Companion1_Name']  || '',
         name2:     areaObj['Companion2_Name']  || '',
         stats:     stats,
+        ranked:    ranked, // full ranked metric list -- a1c_buildGoalGrid_ needs every goaled metric, not just the 3 picks below
         strength1: ranked[0] || null,
         strength2: ranked[1] || null,
         growth:    growth,
