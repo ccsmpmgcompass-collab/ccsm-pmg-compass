@@ -1409,43 +1409,48 @@ def get_mission_rc_attendance_potential(month_start: str) -> int:
 # held to the full English 70-MMM standard (Carson, 2026-07-18).
 
 
-def _language_group(language_type, area_name="") -> str:
-    """Map a raw MISSION_ORG Language_Type string (and area name) onto one of
-    the area-type expectation groups. Substring-based on purpose — the roster
-    is hand-typed, so "Spanish/English", "Bilingual (Spanish)", "Haitian
-    Creole", "Chinese - Mandarin" etc. all land in the right bucket.
+#: The expectation group every area belongs to when the roster defines no
+#: language split. CCSM is a single-language mission and its MISSION_ORG has no
+#: Language_Type column at all.
+DEFAULT_AREA_TYPE_GROUP = "all"
 
-    Haitian/Creole/French, ASL, and Chinese are three SEPARATE groups (split
-    2026-07-18 — previously one shared "english_low_mmm" bucket that couldn't
-    be edited independently). Haitian/Creole/French is ALSO matched off the
-    AREA NAME: any area whose title contains "Haitian", "Creole" or "French"
-    lands there even when its roster Language_Type is blank or just says
-    English (Carson, 2026-07-18 — those areas don't have the members for the
-    70-MMM English bar). An explicit Spanish/Bilingual Language_Type still
-    wins over the name. English-speaking "Asian" YSA areas stay on the full
-    English 70-MMM standard."""
+
+def _language_group(language_type, area_name="") -> str:
+    """Map a raw MISSION_ORG Language_Type string onto an expectation group.
+
+    Utah Provo splits its roster six ways (English, Spanish, Bilingual,
+    Haitian/Creole/French, ASL, Chinese) because it serves all of them, and the
+    inherited version of this function hardcoded that split plus area-NAME
+    matching on "Haitian"/"Creole"/"French".
+
+    CCSM serves one language and its MISSION_ORG has no Language_Type column,
+    so every lookup returned blank and every area fell through to Provo's
+    "english" bucket — which is not merely the wrong label, it is the strictest
+    of Provo's six expectation sets (70 MMMs/week), applied to 98 Chilean areas
+    for metrics they do not collect.
+
+    A roster that DOES carry a language is still honoured, so this stays correct
+    if CCSM ever adds one (a Mapuche- or English-speaking area, say). Matching
+    is substring-based because the column is hand-typed.
+    """
     lang = str(language_type or "").strip().lower()
+    if not lang:
+        return DEFAULT_AREA_TYPE_GROUP
     if "bilingual" in lang or ("spanish" in lang and "english" in lang):
         return "bilingual"
-    if "spanish" in lang:
+    if "spanish" in lang or "español" in lang or "espanol" in lang:
         return "spanish"
-    if any(t in lang for t in ("haitian", "creole", "french")):
-        return "haitian_creole"
-    if any(t in lang for t in ("asl", "sign")):
-        return "asl"
-    if any(t in lang for t in ("chinese", "mandarin", "cantonese")):
-        return "chinese"
-    if any(t in str(area_name or "").lower() for t in ("haitian", "creole", "french")):
-        return "haitian_creole"
-    return "english"
+    if "english" in lang or "inglés" in lang or "ingles" in lang:
+        return "english"
+    return DEFAULT_AREA_TYPE_GROUP
 
 
 @st.cache_data(ttl=300)
 def get_area_language_group(area: str) -> str:
-    """
-    One area's area-type expectation group ("english", "spanish",
-    "bilingual", "haitian_creole", "asl", or "chinese"), from its MISSION_ORG
-    Language_Type. Unknown/missing areas are "english".
+    """One area's expectation group, from its MISSION_ORG Language_Type.
+
+    Returns DEFAULT_AREA_TYPE_GROUP when the roster carries no language column,
+    which is CCSM's case — see _language_group.
     """
     areas = get_submitting_areas()
     if (
@@ -1457,7 +1462,7 @@ def get_area_language_group(area: str) -> str:
         match = areas[names == str(area).strip().lower()]
         if not match.empty:
             return _language_group(match.iloc[0].get("Language_Type", ""), area)
-    return _language_group("", area)
+    return DEFAULT_AREA_TYPE_GROUP
 
 
 def get_area_weekly_expectation(area: str, metric: str) -> int:
@@ -1592,64 +1597,71 @@ AREA_TYPE_EXPECTATIONS_TAB = "AREA_TYPE_EXPECTATIONS"
 # used in preference to this constant whenever possible.
 _AVG_WEEKS_PER_MONTH = 30.4368 / 7
 
-# group key -> [(metric, cadence, value), ...], in display order.
-_AREA_TYPE_INDICATOR_DEFAULTS: dict[str, list[tuple[str, str, float]]] = {
-    "english": [
-        ("nm_lessons", "weekly", 15.0), ("new_found", "weekly", 2.0),
-        ("mmm_sent", "weekly", 70.0), ("pew", "weekly", 1.0),
-        ("gate", "monthly", 1.0),
-    ],
-    "spanish": [
-        ("nm_lessons", "weekly", 30.0), ("new_found", "weekly", 4.0),
-        ("mmm_sent", "weekly", 10.0), ("pew", "weekly", 1.0),
-        ("gate", "monthly", 2.0),
-    ],
-    "bilingual": [
-        ("nm_lessons", "weekly", 23.0), ("new_found", "weekly", 3.0),
-        ("mmm_sent", "weekly", 40.0), ("pew", "weekly", 1.0),
-        ("gate", "monthly", 2.0),
-    ],
-    # Haitian/Creole/French, ASL, and Chinese start IDENTICAL (same numbers
-    # the old shared "english_low_mmm" bucket used) but are three separate
-    # categories, independently editable (Carson, 2026-07-18) — see the
-    # comment above _language_group.
-    "haitian_creole": [
-        ("nm_lessons", "weekly", 15.0), ("new_found", "weekly", 2.0),
-        ("mmm_sent", "weekly", 10.0), ("pew", "weekly", 1.0),
-        ("gate", "monthly", 1.0),
-    ],
-    "asl": [
-        ("nm_lessons", "weekly", 15.0), ("new_found", "weekly", 2.0),
-        ("mmm_sent", "weekly", 10.0), ("pew", "weekly", 1.0),
-        ("gate", "monthly", 1.0),
-    ],
-    "chinese": [
-        ("nm_lessons", "weekly", 15.0), ("new_found", "weekly", 2.0),
-        ("mmm_sent", "weekly", 10.0), ("pew", "weekly", 1.0),
-        ("gate", "monthly", 1.0),
-    ],
-}
+def _area_type_indicator_defaults() -> dict[str, list[tuple[str, str, float]]]:
+    """group key -> [(metric, cadence, value), …], the fallback used when
+    AREA_TYPE_EXPECTATIONS is empty or a category is missing from it.
+
+    Built from AGENT_CONFIG's GOAL_* keys — the weekly per-area targets the
+    mission itself set, and the same numbers CCSM_Agent1A.gs coaches against —
+    rather than a written-down table. There is one group because CCSM is a
+    single-language mission (see _language_group).
+
+    This replaced six hardcoded Utah Provo groups over Provo metrics
+    (nm_lessons 15/30/23, new_found, mmm_sent 70/10/40, pew, gate). Since
+    CCSM's roster has no Language_Type column, every one of its 98 areas landed
+    in the strictest of those six and was measured against metrics it does not
+    collect — so every expectation on the Goals page read as unmet, forever.
+
+    A GOAL_* value of 0 is skipped: an expectation of zero is not a bar, and
+    _scale_effort_metric() treats it as "nothing expected, full marks", which
+    would quietly award a perfect score for a metric nobody set a target on.
+    """
+    config = get_agent_config()
+    rows: list[tuple[str, str, float]] = []
+    for key, raw in config.items():
+        if not str(key).startswith("GOAL_"):
+            continue
+        metric = str(key)[len("GOAL_"):].strip()
+        if not metric:
+            continue
+        try:
+            value = float(str(raw).strip())
+        except (TypeError, ValueError):
+            continue
+        if value <= 0:
+            continue
+        # Every GOAL_* in AGENT_CONFIG is a WEEKLY per-area target (see
+        # CCSM_AGENT_CONFIG_ROWS in CcsmData.gs). Provo's table mixed in a
+        # monthly cadence for `gate`; CCSM has no monthly goal key.
+        rows.append((metric, "weekly", value))
+
+    rows.sort(key=lambda r: r[0])
+    return {DEFAULT_AREA_TYPE_GROUP: rows}
 
 # group key -> the label AREA_TYPE_EXPECTATIONS' Area_Type column carries.
+#
+# One built-in group, because CCSM is a single-language mission whose roster
+# carries no Language_Type column (see _language_group). Provo's six —
+# English / Spanish / Bilingual / Haitian-Creole-French / ASL / Chinese — named
+# languages CCSM does not serve, and offered the mission six editable
+# expectation sets where five could never apply to any area.
+#
+# The label is the Spanish the rest of this app uses, since it appears on the
+# Goals page's Area Expectation Settings tab. Adding a group later (a Mapuche-
+# or English-speaking area, say) means adding a key here and a matching branch
+# in _language_group.
 _AREA_TYPE_LABELS: dict[str, str] = {
-    "english":         "English",
-    "spanish":         "Spanish",
-    "bilingual":       "Bilingual",
-    "haitian_creole":  "Haitian/Creole/French",
-    "asl":             "ASL",
-    "chinese":         "Chinese",
+    DEFAULT_AREA_TYPE_GROUP: "Todas las Áreas",
 }
 
 _AREA_TYPE_EXPECTATIONS_HEADER = ["Area_Type", "Metric", "Cadence", "Value"]
 
 
 def is_builtin_area_type_label(label: str) -> bool:
-    """True for one of the 6 fixed language-group labels (see
-    _AREA_TYPE_LABELS: English/Spanish/Bilingual/Haitian-Creole-French/ASL/
-    Chinese — the last three used to be ONE shared bucket, split 2026-07-18
-    so Carson can edit them independently). Anything else is a CUSTOM
-    category a user added from Goals > Area Expectation Settings > "Add a
-    custom expectation" (Carson, 2026-07-18)."""
+    """True for a built-in group label (see _AREA_TYPE_LABELS). Anything else
+    is a CUSTOM category a user added from Goals > Area Expectation Settings >
+    "Add a custom expectation" — those stay fully supported, and are how a
+    mission expresses a distinction this table does not model."""
     return label in _AREA_TYPE_LABELS.values()
 
 
@@ -1680,7 +1692,7 @@ def get_all_area_type_indicators() -> list[dict]:
     if df.empty or not {"Area_Type", "Metric", "Cadence", "Value"} <= set(df.columns):
         return [
             {"category": _AREA_TYPE_LABELS[g], "metric": m, "cadence": c, "value": v}
-            for g, indicators in _AREA_TYPE_INDICATOR_DEFAULTS.items()
+            for g, indicators in _area_type_indicator_defaults().items()
             for m, c, v in indicators
         ]
     rows = []
@@ -1782,9 +1794,13 @@ def _resolve_area_category(area: str) -> tuple[str, list[dict]]:
             return label, indicators
 
     group = get_area_language_group(area)
-    builtin_label = _AREA_TYPE_LABELS[group]
+    # .get, not [ ]: a roster that names a language with no built-in group
+    # (see _language_group) must fall back to the default group rather than
+    # raising KeyError from a data value.
+    builtin_label = _AREA_TYPE_LABELS.get(
+        group, _AREA_TYPE_LABELS[DEFAULT_AREA_TYPE_GROUP])
     # No "or [defaults]" fallback here: get_all_area_type_indicators() already
-    # bootstraps ALL 6 built-in groups' defaults together the one time the
+    # bootstraps every built-in group's defaults together the one time the
     # whole tab is empty, so by this point a missing built-in label means the
     # Area Expectation Settings editor deliberately removed every one of that
     # category's rows — that must mean zero expectations for it, not a silent
