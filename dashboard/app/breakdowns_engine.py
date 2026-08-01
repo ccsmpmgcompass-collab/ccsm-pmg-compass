@@ -66,6 +66,7 @@ from app.i18n import t
 # These are FUNCTIONS, not module-level dicts, deliberately: a dict would be
 # built at import time, when there is no session and no sheet to read.
 
+from app.config.flavor_loader import GOAL_TO_ACTUAL
 from app.config.metric_catalog import (
     is_rate_metric,
     key_indicator_metrics,
@@ -494,9 +495,21 @@ def _render_teaching_pipeline(
             return 0
         return int(pd.to_numeric(frame[col], errors="coerce").fillna(0).sum())
 
-    _found = _period_total(rows, "new_found")
-    _pew   = _period_total(weekly_wk, "pew")
-    _gate  = _period_total(weekly_wk, "gate")
+    # Which metric backs each stage comes from GOAL_TO_ACTUAL — the mission's
+    # own map from an outcome ("people found", "at sacrament", "baptized") to
+    # the Key Indicator that carries its real value. The three keys used to be
+    # spelled out as new_found / pew / gate: Utah Provo's. _period_total returns
+    # 0 for a column that isn't there, so all three bars read 0 for CCSM and the
+    # funnel showed a mission that found nobody, and baptized nobody, every
+    # period since launch.
+    #
+    # All three now come from `weekly_wk`. Found was previously taken from the
+    # nightly log, but CCSM states its finding outcome as a weekly Key
+    # Indicator, and a funnel whose first bar is counted over a different
+    # reporting cadence than the rest is not comparable stage to stage.
+    _found = _period_total(weekly_wk, GOAL_TO_ACTUAL.get("new_people_to_teach", ""))
+    _pew   = _period_total(weekly_wk, GOAL_TO_ACTUAL.get("at_sacrament", ""))
+    _gate  = _period_total(weekly_wk, GOAL_TO_ACTUAL.get("baptisms", ""))
 
     # ── Taught, from the Tableau detail export ────────────────────────────────
     _det = _load_tableau_detail()
@@ -642,7 +655,7 @@ def _render_teaching_pipeline(
         )
         st.plotly_chart(fig_funnel, use_container_width=True)
         st.caption(
-            t("{span}  |  {kpi_period} — counts what happened in this period. Found from nightly reports, At Sacrament and Baptized from the weekly Sunday form, Taught from the Tableau export; the bars come from different reports and aren't subsets of each other.", span=span, kpi_period=kpi_period)
+            t("{span}  |  {kpi_period} — counts what happened in this period. Found, At Sacrament and Baptized from the weekly Key Indicators, Taught from the Tableau export; the bars come from different reports and aren't subsets of each other.", span=span, kpi_period=kpi_period)
         )
         # At Sacrament (pew) is a raw weekly headcount the missionaries type into
         # the Sunday form, not a roster of named people — over a period spanning

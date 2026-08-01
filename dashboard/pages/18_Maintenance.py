@@ -858,18 +858,26 @@ elif _sec == _TAB_QUESTIONS:
                     _aq_text = st.text_input(
                         t("Question text — exactly as it should appear on the form"),
                         key="q_add_text",
-                        placeholder=t("e.g. Non-member Lessons"),
+                        placeholder=t("e.g. Contactos con amigos"),
                     )
                     _aq_name = st.text_input(
                         t("Short display name (charts and reports)"),
-                        key="q_add_name", placeholder=t("e.g. NM Lessons"),
+                        key="q_add_name", placeholder=t("e.g. Contactos"),
                     )
                     _aq_key = st.text_input(
                         t("Metric key — leave blank to derive from the display name"),
-                        key="q_add_key", placeholder=t("e.g. nm_lessons"),
+                        key="q_add_key", placeholder=t("e.g. contacts_made"),
                     )
+                    # These four are the Data_Type values QUESTIONS_CONFIG
+                    # actually holds and the rest of the app branches on
+                    # (metric_catalog.non_numeric_metrics / metric_data_type,
+                    # CCSM_Agent1A's parsing). The picker used to offer
+                    # INTEGER / TEXT / DATE, none of which except DATE is one of
+                    # them: a question added as TEXT would be classified numeric
+                    # everywhere downstream and its written answers coerced to 0,
+                    # which is indistinguishable from an area reporting zero.
                     _aq_dtype = st.selectbox(
-                        t("Data type"), ["INTEGER", "TEXT", "DATE"],
+                        t("Data type"), ["NUMBER", "YESNO", "CHOICE", "DATE"],
                         format_func=t, key="q_add_dtype")
 
                     if st.button(t("Add question"), key="q_add_btn", type="primary"):

@@ -1462,12 +1462,25 @@ def get_mission_monthly_expectation_total(metric: str, month_start: str) -> int:
         if entry["cadence"] == "monthly":
             total += v
         else:
+            # A weekly expectation scales to a month differently depending on
+            # where the number comes from. A NIGHTLY metric accumulates every
+            # day, so a month holds days/7 = 4.4286 weeks of it. A WEEKLY-FORM
+            # metric is reported once per week, so a month holds however many
+            # of those reports actually occur — 4 or 5, never 4.4286.
+            #
             # Carson, 2026-07-21: Pew ("People at Sacrament Meeting") is a
-            # once-a-week church-attendance event exactly like Renew, but
-            # was only scaled by the generic weeks-in-month figure — a
-            # 31-day month's 4.4286 "weeks" vs the real 4 Sundays inflated
-            # 60 areas x 1/wk to 266 instead of the correct 240.
-            total += v * (sundays if metric in ("pew", "renew") else weeks)
+            # once-a-week church-attendance event exactly like Renew, but was
+            # only scaled by the generic weeks-in-month figure — a 31-day
+            # month's 4.4286 "weeks" vs the real 4 Sundays inflated 60 areas x
+            # 1/wk to 266 instead of the correct 240.
+            #
+            # That was fixed by naming Provo's two once-a-week keys. Naming
+            # keys does not travel: CCSM's weekly form carries all SEVEN of its
+            # Key Indicators, so every one of them was being inflated by ~11%
+            # here, and a mission whose form changes would silently regain the
+            # bug. The rule is the metric's FORM, which the catalogue knows.
+            once_weekly = metric in _weekly_form_metric_keys()
+            total += v * (sundays if once_weekly else weeks)
     return int(math.ceil(total)) if total > 0 else 0
 
 
@@ -1888,6 +1901,69 @@ def get_score_component_weights(component: str, area_code: str = "ALL") -> dict[
     return weights
 
 
+#: An even split across the three components. Used only when SCORE_CONFIG has
+#: no section-2 row at all — with nothing configured, the only defensible
+#: statement is that Effort, Skill and KI count the same. Deliberately NOT any
+#: particular mission's numbers: the previous default was Utah Provo's
+#: 0.30/0.40/0.30, which silently reweighted every Effectiveness score this app
+#: recomputed for CCSM (whose real row is 0.33/0.33/0.34).
+_EVEN_COMPOSITION: dict[str, float] = {"effort": 1 / 3, "skill": 1 / 3, "ki": 1 / 3}
+
+
+@st.cache_data(ttl=300)
+def get_effectiveness_composition_weights(area_code: str = "ALL") -> dict[str, float]:
+    """{effort, skill, ki} — how the three components combine into
+    Effectiveness, from SCORE_CONFIG's SECOND section.
+
+    That section sits below a blank separator row and is headed
+    Area_Code | Effort_Weight | Skill_Weight | KI_Weight. It is the same row
+    CCSM_AgentScores.gs reads, so honouring it is what keeps a recomputed
+    Effectiveness score equal to the one the agent wrote to SCORES.
+
+    A per-area row wins over the mission-wide 'ALL' row. Falls back to an even
+    split when the section is missing or unparseable — never to a mission's
+    hardcoded numbers.
+    """
+    raw = read_tab("SCORE_CONFIG")
+    if raw.empty:
+        return dict(_EVEN_COMPOSITION)
+
+    rows = [[str(v).strip() for v in r] for r in raw.values.tolist()]
+
+    # Skip section 1 entirely: stop at the first blank separator row.
+    section2: list[list[str]] = []
+    seen_blank = False
+    for row in rows:
+        if not any(row):
+            seen_blank = True
+            continue
+        if seen_blank:
+            section2.append(row)
+
+    found: dict[str, dict[str, float]] = {}
+    for row in section2:
+        if len(row) < 4 or row[0] == "Area_Code":
+            continue
+        try:
+            trio = {
+                "effort": float(row[1]),
+                "skill":  float(row[2]),
+                "ki":     float(row[3]),
+            }
+        except (TypeError, ValueError):
+            continue
+        # A row of all zeroes cannot combine anything — treat it as absent
+        # rather than dividing by zero downstream.
+        if sum(trio.values()) <= 0:
+            continue
+        found[row[0].strip().casefold()] = trio
+
+    for code in (str(area_code).strip().casefold(), "all"):
+        if code in found:
+            return found[code]
+    return dict(_EVEN_COMPOSITION)
+
+
 def _effort_metric_weights(area_code: str = "ALL") -> dict[str, float]:
     """Weights behind the Effort score.
 
@@ -2221,6 +2297,31 @@ def _stretch_recommendation(df: pd.DataFrame, keys: list, area: str | None) -> d
     return out
 
 
+def _goalable_weekly_keys(metric_defs: list) -> list:
+    """Weekly-form metrics a goal can sensibly be recommended for.
+
+    Was `f == "WEEKLY" and k != "rc_total"` in three places — rc_total is
+    Provo's running recent-convert headcount, a number no goal applies to.
+    CCSM has no such key, so all three exclusions excluded nothing, and the two
+    kinds of weekly key CCSM DOES have that no goal applies to were let
+    straight through:
+
+      * `_meta` keys are the companionship's own weekly goal, captured on the
+        form beside each `_real` achievement. Recommending a goal for one means
+        recommending a goal for a goal, and the recommendation is computed from
+        the history of that field — i.e. from what areas have previously aimed
+        at, not from what they achieved.
+      * CHOICE metrics carry no summable number to average.
+    """
+    from app.config.metric_catalog import metric_data_type
+
+    return [
+        k for k, _, f in metric_defs
+        if f == "WEEKLY" and not k.endswith("_meta")
+        and metric_data_type(k) != "CHOICE"
+    ]
+
+
 @st.cache_data(ttl=300)
 def get_recommended_goals(area: str) -> dict:
     """
@@ -2231,8 +2332,8 @@ def get_recommended_goals(area: str) -> dict:
     - WEEKLY / transfer metrics — source WEEKLY_FORM_RAW. The stored goal stays
       weekly; the Goals page projects it over the 6-week transfer for display.
 
-    rc_total (Recent Convert Total) is excluded here entirely — it has no goal
-    input on the Goals page. See get_latest_rc_total().
+    Weekly keys that no goal applies to are excluded — see
+    _goalable_weekly_keys().
 
     Using full history rather than a recent window trades away the recent-weeks
     seasonality self-correction (e.g. a BYU/YSA summer dip no longer pulls the rec
@@ -2244,7 +2345,7 @@ def get_recommended_goals(area: str) -> dict:
     """
     metric_defs = get_question_metrics()
     nightly_keys = [k for k, _, f in metric_defs if f == "NIGHTLY"]
-    weekly_keys = [k for k, _, f in metric_defs if f == "WEEKLY" and k != "rc_total"]
+    weekly_keys = _goalable_weekly_keys(metric_defs)
 
     recommended = {}
     recommended.update(_stretch_recommendation(get_weekly_ki(), nightly_keys, area))
@@ -2325,7 +2426,7 @@ def get_recommended_monthly_goals(area: str) -> dict:
     """
     metric_defs = get_question_metrics()
     nightly_keys = [k for k, _, f in metric_defs if f == "NIGHTLY"]
-    weekly_keys = [k for k, _, f in metric_defs if f == "WEEKLY" and k != "rc_total"]
+    weekly_keys = _goalable_weekly_keys(metric_defs)
 
     recommended = {}
     recommended.update(_stretch_recommendation_monthly(get_weekly_ki(), nightly_keys, area))
@@ -2366,7 +2467,7 @@ def get_mission_recommended_goals() -> dict:
     """
     metric_defs = get_question_metrics()
     nightly_keys = [k for k, _, f in metric_defs if f == "NIGHTLY"]
-    weekly_keys = [k for k, _, f in metric_defs if f == "WEEKLY" and k != "rc_total"]
+    weekly_keys = _goalable_weekly_keys(metric_defs)
 
     recommended = {}
     recommended.update(_stretch_recommendation(get_weekly_ki(), nightly_keys, None))

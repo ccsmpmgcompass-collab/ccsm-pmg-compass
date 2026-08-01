@@ -2,6 +2,12 @@
 flavor_loader.py
 Loads the active mission flavor from MISSION_FLAVOR env var.
 Exposes a module-level `flavor` singleton used by all pages.
+
+The flavor file supplies PRESENTATION only — display name, colours, coaching
+tone. It does NOT supply the metric vocabulary: those properties read the live
+QUESTIONS_CONFIG / SCORE_CONFIG instead (see FlavorConfig below for why). With
+MISSION_FLAVOR unset the loader picks member_referral.json, which is Utah
+Provo's flavor, so anything sourced from this file reaches CCSM as Provo's.
 """
 from __future__ import annotations
 
@@ -109,37 +115,128 @@ class FlavorConfig:
     def display_name(self) -> str:
         return self._d.get("display_name", self.id)
 
+    # ── Metric vocabulary — the SHEET decides, never this JSON ────────────────
+    #
+    # These four properties used to read the flavor file, falling back to Utah
+    # Provo's keys. Both halves of that were wrong for a live mission:
+    #
+    #   * MISSION_FLAVOR is unset here, so load_flavor() picks
+    #     member_referral.json — Provo's own flavor. It DECLARES
+    #     weekly_metrics/kpi_highlights/metric_groups as nm_lessons, lsi_given,
+    #     pew, gate, locos_Attempt … so the fallbacks never even ran. Every
+    #     consumer (the Dashboard KI row, Goals' KEY_METRICS, Scores' Daily
+    #     Activity groups) was handed Provo's vocabulary against CCSM's data,
+    #     and because every call site is `.get(key, key)` or `[c for c in cols
+    #     if c in df.columns]`, that renders as zeroes and raw keys — never an
+    #     error.
+    #   * The fallbacks were a fifth hardcoded copy of the same dead catalogue.
+    #
+    # A flavor file describes a mission being SET UP (coaching tone, colours,
+    # which questions to seed onto the forms). Once QUESTIONS_CONFIG exists it
+    # is the only honest answer to "what does this mission measure", and it is
+    # what the Apps Script agents read. So these read the catalogue and ignore
+    # the JSON entirely — which also means dropping a differently-wrong flavor
+    # file in place cannot resurrect this bug.
+    #
+    # Empty is a legitimate answer (unreadable tab, mission mid-setup) and must
+    # stay empty: consumers render "no metrics configured". A baked-in default
+    # here is exactly how the app came to display a mission's worth of metrics
+    # nobody collects.
+
     @property
     def nightly_metrics(self) -> list[str]:
-        return self._d.get("nightly_metrics", [])
+        from app.config.metric_catalog import nightly_metrics
+        return list(nightly_metrics())
 
     @property
     def weekly_metrics(self) -> list[str]:
-        return self._d.get("weekly_metrics", ["pew", "date_metric", "gate", "renew", "rc_total"])
+        from app.config.metric_catalog import weekly_metrics
+        return list(weekly_metrics())
 
     @property
     def kpi_highlights(self) -> list[str]:
-        return self._d.get("kpi_highlights", ["nm_lessons", "new_found"])
+        """The headline metrics for the Dashboard's KPI row and Goals' key
+        metrics: CCSM's seven weekly Key Indicators.
+
+        `_real` only. The matching `_meta` keys are the companionship's own
+        goal for the week — a target, not an achievement, and never a headline
+        number. See [[feedback-projection-never-beside-a-goal]].
+        """
+        from app.config.metric_catalog import key_indicator_metrics
+        return list(key_indicator_metrics())
+
+    @property
+    def nightly_highlights(self) -> list[str]:
+        """Headline metrics for the NIGHTLY-form sections — the mission-total
+        KPI row and the zone leaderboard, both of which read 7-day figures out
+        of DASHBOARD_SUMMARY.
+
+        Distinct from kpi_highlights: those are weekly Key Indicators and have
+        no 7-day nightly figure at all, so pointing a nightly section at them
+        would swap one empty row for another.
+
+        Sourced from SCORE_CONFIG's `effort` component — the one place the
+        mission states which nightly numbers it holds areas to, and the same
+        metrics AGENT_CONFIG carries GOAL_* targets for, so each tile can show
+        a goal beside its value. Non-numeric metrics are dropped: CCSM weights
+        `effort` (a CHOICE question) at 0.3, and a headline tile reading "0" for
+        a metric answered in words is worse than no tile.
+
+        Falls back to the first few numeric nightly metrics if SCORE_CONFIG is
+        unreadable — still the mission's own vocabulary, never another's.
+        """
+        from app.config.metric_catalog import nightly_metrics, non_numeric_metrics
+        nightly = nightly_metrics()
+        skip = non_numeric_metrics()
+
+        try:
+            from app.db.queries import get_score_component_weights
+            scored = [
+                k for k, w in get_score_component_weights("effort", "ALL").items()
+                if w and k in nightly and k not in skip
+            ]
+        except Exception:
+            scored = []
+
+        if scored:
+            return scored
+        return [k for k in nightly if k not in skip][:5]
 
     @property
     def featured_goals(self) -> list[str]:
-        return self._d.get("featured_goals", list(GOAL_LABELS.keys()))
+        return list(GOAL_LABELS.keys())
 
     @property
     def metric_groups(self) -> dict[str, list[str]]:
-        return self._d.get("metric_groups", {})
+        """Named groupings of nightly metrics.
+
+        QUESTIONS_CONFIG has no category column, so a mission has no way to
+        declare these — and Provo's five (Teaching / Member Work / Finding /
+        Contacting / Support Attempts) name nothing CCSM collects. Empty is the
+        truthful answer; consumers group by the catalogue's own Display_Order
+        instead of inventing categories the mission never asked for.
+        """
+        return {}
 
     @property
     def scoring_weights(self) -> dict[str, float]:
-        """Effectiveness composition weights: {effort, skill, ki}."""
-        return self._d.get("scoring_weights", {"effort": 0.30, "skill": 0.30, "ki": 0.40})
+        """Effectiveness composition weights: {effort, skill, ki}.
 
-    @property
-    def weekly_ki_patterns(self) -> dict[str, str]:
-        return self._d.get("weekly_ki_patterns", {
-            "(Pew)": "pew", "(Date)": "date_metric", "(Gate)": "gate",
-            "(Renew)": "renew", "(Total)": "rc_total",
-        })
+        Read from SCORE_CONFIG's second section, which is the same row
+        CCSM_AgentScores.gs uses to combine the three components — so the
+        dashboard explains the score the agent actually computed. CCSM's row is
+        0.33/0.33/0.34; the old flavor default was Provo's 0.30/0.40/0.30 and
+        silently reweighted every Effectiveness figure the app recomputed.
+
+        Falls back to an even split, not to any mission's numbers: with no
+        configuration the only defensible statement is that the three
+        components count the same.
+        """
+        from app.db.queries import get_effectiveness_composition_weights
+        try:
+            return get_effectiveness_composition_weights()
+        except Exception:
+            return {"effort": 1 / 3, "skill": 1 / 3, "ki": 1 / 3}
 
     def label(self, key: str) -> str:
         return METRIC_LABELS.get(key, GOAL_LABELS.get(key, key))

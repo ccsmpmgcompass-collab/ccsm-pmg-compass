@@ -920,7 +920,7 @@ ES: dict[str, str] = {
         "Clave de la métrica — déjela en blanco para derivarla del nombre para mostrar",
     "e.g. Non-member Lessons": "por ejemplo, Lecciones a no miembros",
     "e.g. NM Lessons": "por ejemplo, Lecciones NM",
-    "e.g. nm_lessons": "por ejemplo, nm_lessons",
+    "e.g. contacts_made": "por ejemplo, contacts_made",
     "Question text and a metric key (or display name) are required.":
         "Se requiere el texto de la pregunta y una clave de métrica (o nombre para mostrar).",
     "That exact question is already on this form.":
@@ -1327,16 +1327,78 @@ ES: dict[str, str] = {
     "Push failed: {e}": "El envío falló: {e}",
     "Push failed: {data}": "El envío falló: {data}",
 
+    # ── Phase 2 de-contamination: Dashboard + Scores rebuilt sections ────────
+    # New strings from replacing Provo-keyed sections with catalogue-driven
+    # ones (Dashboard KPI/KI rows and trend charts, Scores' Daily Activity).
+    "Count": "Cantidad",
+    "Date": "Fecha",
+    "Week Ending": "Semana que termina",
+    "Nightly Activity": "Actividad diaria",
+    "Nightly Activity — Last 7 Days": "Actividad diaria — últimos 7 días",
+    "Daily Trend": "Tendencia diaria",
+    "Daily Trend — Last 7 Days": "Tendencia diaria — últimos 7 días",
+    "Daily {metric} — Last 7 Days": "{metric} por día — últimos 7 días",
+    "{metric} per day (mission total)": "{metric} por día (total de la misión)",
+    "By Area": "Por área",
+    "Metrics to chart": "Métricas para graficar",
+    "Pick at least one metric to chart.": "Elija al menos una métrica para graficar.",
+    "Nightly reporting — {window_label}": "Informes diarios — {window_label}",
+    "DAILY_LOG has no Date column, so there is no trend to draw.":
+        "DAILY_LOG no tiene columna Date, por lo que no hay tendencia que graficar.",
+    "DAILY_LOG has no Area column, so it cannot be broken down by area.":
+        "DAILY_LOG no tiene columna Area, por lo que no se puede desglosar por área.",
+    "None of this mission's nightly metrics appear in DAILY_LOG. Check the "
+    "QUESTIONS_CONFIG tab of COMPASS_CCSM, then re-run the nightly refresh.":
+        "Ninguna de las métricas diarias de esta misión aparece en DAILY_LOG. "
+        "Revise la pestaña QUESTIONS_CONFIG de COMPASS_CCSM y vuelva a ejecutar "
+        "la actualización diaria.",
+    "No metrics are configured for this mission, so there is nothing to "
+    "weight. Check the QUESTIONS_CONFIG and SCORE_CONFIG tabs of "
+    "COMPASS_CCSM before editing score weights.":
+        "Esta misión no tiene métricas configuradas, así que no hay nada que "
+        "ponderar. Revise las pestañas QUESTIONS_CONFIG y SCORE_CONFIG de "
+        "COMPASS_CCSM antes de editar los pesos del puntaje.",
+    "Weekly-form Key Indicators. Metrics left at 0 don't count toward KI.":
+        "Indicadores Clave del formulario semanal. Las métricas en 0 no cuentan "
+        "para el puntaje de Indicadores Clave.",
+    "Full Effort": "Todo el esfuerzo",
+    "Effort reported per day": "Esfuerzo informado por día",
+    "No effort responses recorded for this window yet.":
+        "Aún no hay respuestas de esfuerzo registradas para este período.",
+
+    # QUESTIONS_CONFIG Data_Type values. Display only — format_func translates
+    # what is shown while the raw English value is what gets written to the
+    # sheet and read by the agents.
+    "NUMBER": "NÚMERO",
+    "YESNO": "SÍ/NO",
+    "CHOICE": "OPCIÓN",
+    "e.g. Contactos": "p. ej. Contactos",
+    "e.g. Contactos con amigos": "p. ej. Contactos con amigos",
+
+    "REC is a light stretch goal — about {get_rec_stretch_pct}% above this "
+    "area's all-time weekly average — to nudge the area to do slightly better. "
+    "Any metric with an expectation saved in Area Expectation Settings shows "
+    "goal / this area's weekly expectation — add or change one there and the "
+    "fraction follows the moment it's saved.":
+        "REC es una meta de estiramiento leve — alrededor de un "
+        "{get_rec_stretch_pct}% por encima del promedio semanal histórico de "
+        "esta área — para motivarla a mejorar un poco. Toda métrica con una "
+        "expectativa guardada en Configuración de Expectativas por Área muestra "
+        "meta / la expectativa semanal de esta área; agregue o cambie una allí "
+        "y la fracción se actualiza apenas se guarda.",
+
     # ── Long help texts (metric names and code identifiers left as-is) ───────
+    # The weight list is now a {weights} placeholder built from SCORE_CONFIG at
+    # render time — it used to be spelled out here as Provo's "nm_lessons 30% ·
+    # new_found 25% · mmm_sent 20% · pew 15% · gate 10%", in BOTH languages, so
+    # the Spanish page stated Provo's weights as fact about a CCSM area.
     "Each slice is that metric's average share of this area's weekly Effort "
     "score across {count} week(s) in {time_range} (actual vs. expectation, "
-    "weighted nm_lessons 30% · new_found 25% · mmm_sent 20% · pew 15% · "
-    "gate 10%) — not raw activity volume.":
+    "weighted {weights}) — not raw activity volume.":
         "Cada porción es la participación promedio de esa métrica en el puntaje "
         "semanal de Esfuerzo de esta área a lo largo de {count} semana(s) en "
-        "{time_range} (real vs. expectativa, ponderado nm_lessons 30% · "
-        "new_found 25% · mmm_sent 20% · pew 15% · gate 10%) — no el volumen bruto "
-        "de actividad.",
+        "{time_range} (real vs. expectativa, ponderado {weights}) — no el "
+        "volumen bruto de actividad.",
 
     "Mission average: **{avg:.1f}/week** · projected goal at **{proj_pct}%** "
     "nudge: **{proj_goal}/week**. The green line is what the mission-wide REC "
@@ -1445,12 +1507,14 @@ ES: dict[str, str] = {
         "dominical; se excluyen las tasas — vea el selector de Métrica más abajo para "
         "la tendencia de una métrica individual)",
 
-    "{span}  |  {kpi_period} — counts what happened in this period. Found from "
-    "nightly reports, At Sacrament and Baptized from the weekly Sunday form, "
-    "Taught from the Tableau export; the bars come from different reports and "
-    "aren't subsets of each other.":
-        "{span}  |  {kpi_period} — cuenta lo que ocurrió en este período. Encontradas "
-        "proviene de los reportes nocturnos, En Sacramental y Bautizadas del "
-        "formulario semanal dominical, y Enseñadas de la exportación de Tableau; las "
-        "barras provienen de reportes distintos y no son subconjuntos entre sí.",
+    # Found moved from the nightly log to the weekly Key Indicators along with
+    # the other two — see the funnel's source note in app/breakdowns_engine.py.
+    "{span}  |  {kpi_period} — counts what happened in this period. Found, "
+    "At Sacrament and Baptized from the weekly Key Indicators, Taught from the "
+    "Tableau export; the bars come from different reports and aren't subsets "
+    "of each other.":
+        "{span}  |  {kpi_period} — cuenta lo que ocurrió en este período. "
+        "Encontradas, En Sacramental y Bautizadas provienen de los Indicadores "
+        "Clave semanales, y Enseñadas de la exportación de Tableau; las barras "
+        "provienen de reportes distintos y no son subconjuntos entre sí.",
 }

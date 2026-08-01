@@ -29,7 +29,13 @@ from app.components.design_system import (
 from app.components.scope_selector import ANY as SCOPE_ANY
 from app.components.scope_selector import render_scope_selectors
 from app.config.flavor_loader import flavor, METRIC_LABELS as _FLAVOR_METRIC_LABELS
-from app.config.metric_catalog import nightly_metrics as _nightly_metrics, weekly_metrics as _weekly_metrics
+from app.config.metric_catalog import (
+    key_indicator_metrics as _key_indicator_metrics,
+    metric_data_type as _metric_data_type,
+    nightly_metrics as _nightly_metrics,
+    non_numeric_metrics as _non_numeric_metrics,
+    weekly_metrics as _weekly_metrics,
+)
 from app.config.theme import series_style, CHART_COLORS
 from app.db.queries import (
     compute_effort_score_breakdown,
@@ -43,6 +49,7 @@ from app.db.queries import (
     get_daily_log,
     get_districts,
     get_effort_data,
+    get_score_component_weights,
     get_submitting_areas,
     get_zones,
     project_next_week,
@@ -112,46 +119,55 @@ _GREEN  = "#14532d"   # >= 70
 _YELLOW = "#713f12"   # 50–69
 _RED    = "#7f1d1d"   # < 50
 
-# Effort metric weights shown in config editor (same defaults as AgentScores.gs)
-DEFAULT_EFFORT_WEIGHTS: dict[str, float] = {
-    "new_found":             20.0,
-    "nm_meaningful":         12.0,
-    "lsi_followups":         10.0,
-    "nm_lessons":            10.0,
-    "referrals_today":        8.0,
-    "mmm_sent":               7.0,
-    "online_referrals":       7.0,
-    "lsi_given":              6.0,
-    "nm_contacted":           5.0,
-    "member_lessons":         4.0,
-    "la_lessons":             3.0,
-    "rc_lessons":             3.0,
-    "nm_texts":               2.0,
-    "fellowshipper_knocked":  1.0,
-    "la_knocked":             1.0,
-    "nm_doors":               1.0,
-    "aux_knocked":            0.5,
-    "info_knocked":           0.5,
-    "locos_knocked":          0.5,
-}
+# Baseline weights shown in the config editor, and the metric universe it
+# offers. Both come from SCORE_CONFIG — the tab CCSM_AgentScores.gs itself
+# reads — so the editor shows the mission its own configuration.
+#
+# These were three hardcoded dicts of Utah Provo's metrics (new_found,
+# nm_lessons, lsi_given, locos_knocked / gate, date_metric, pew, renew,
+# rc_total). Nothing warned, because the editor's job is to DISPLAY a weight
+# per metric and it did that perfectly for metrics CCSM has never collected.
+#
+# That was not merely cosmetic. The editor's Save does a full clear-and-rewrite
+# of SCORE_CONFIG over exactly this universe (_rewrite_score_config below), so
+# one Save from the Score Weight Editor would have replaced CCSM's real
+# configuration — contacts_attempted / roleplays / member_contacts / effort,
+# the four rates, and the seven ki_*_real — with Provo's keys, and the next
+# scoring run would have scored all 98 areas against metrics that do not exist.
+#
+# Functions, not dicts: a module-level dict is built at import time, when there
+# is no Streamlit session and no sheet to read.
 
-DEFAULT_SKILL_WEIGHTS: dict[str, float] = {
-    "nm_lessons":     30.0,
-    "nm_meaningful":  25.0,
-    "member_lessons": 20.0,
-    "new_found":      15.0,
-    "lsi_followups":  10.0,
-}
+def _default_component_weights(component: str) -> dict[str, float]:
+    """Mission-wide ('ALL') SCORE_CONFIG weights for one score component."""
+    return get_score_component_weights(component, MISSION_WIDE_CODE)
 
-DEFAULT_KI_WEIGHTS: dict[str, float] = {
-    "gate":        40.0,
-    "date_metric": 25.0,
-    "pew":         20.0,
-    "renew":       10.0,
-    "rc_total":     5.0,
-}
 
-DEFAULT_EFF_WEIGHTS = flavor.scoring_weights
+def _component_universe(component: str) -> list[str]:
+    """Every metric the editor may assign a weight to for `component`.
+
+    Effort and Skill both draw on the nightly form; KI is the weekly form's
+    Key Indicators. The universe is the catalogue plus anything SCORE_CONFIG
+    already weights — so a metric the agents score but the catalogue has since
+    dropped stays visible and editable instead of silently vanishing from the
+    editor while still counting toward the score.
+
+    Rates (contact_rate, mc_rate, lesson_rate, close_rate) are computed, not
+    asked, so they are not in QUESTIONS_CONFIG — they arrive via the
+    SCORE_CONFIG half of this union, which is exactly where CCSM weights them
+    for Skill.
+    """
+    if component == "ki":
+        catalog = list(_key_indicator_metrics())
+    else:
+        catalog = list(_nightly_metrics())
+    configured = list(_default_component_weights(component))
+    return catalog + [k for k in configured if k not in catalog]
+
+
+def _default_eff_weights() -> dict[str, float]:
+    """Effectiveness composition {effort, skill, ki} from SCORE_CONFIG."""
+    return flavor.scoring_weights
 
 
 # ── Data loading ──────────────────────────────────────────────────────────────
@@ -613,11 +629,7 @@ def _get_area_field_weights(
     sec1: pd.DataFrame, area_code: str, component: str
 ) -> dict[str, float]:
     """Extract field weights for a given area + component from SCORE_CONFIG sec1."""
-    defaults = {
-        "effort": DEFAULT_EFFORT_WEIGHTS,
-        "skill":  DEFAULT_SKILL_WEIGHTS,
-        "ki":     DEFAULT_KI_WEIGHTS,
-    }.get(component, {})
+    defaults = _default_component_weights(component)
 
     if sec1.empty or "Area_Code" not in sec1.columns:
         return dict(defaults)
@@ -643,19 +655,20 @@ def _get_area_field_weights(
 
 def _get_area_eff_weights(sec2: pd.DataFrame, area_code: str) -> dict[str, float]:
     """Extract effectiveness sub-weights for a given area from SCORE_CONFIG sec2."""
+    fallback = _default_eff_weights()
     if sec2.empty or "Area_Code" not in sec2.columns:
-        return dict(DEFAULT_EFF_WEIGHTS)
+        return dict(fallback)
 
     mask = sec2["Area_Code"].str.strip().str.lower() == area_code.lower()
     rows = sec2[mask]
     if rows.empty:
-        return dict(DEFAULT_EFF_WEIGHTS)
+        return dict(fallback)
 
     r = rows.iloc[0]
     return {
-        "effort": float(r.get("Effort_Weight", DEFAULT_EFF_WEIGHTS["effort"]) or DEFAULT_EFF_WEIGHTS["effort"]),
-        "skill":  float(r.get("Skill_Weight",  DEFAULT_EFF_WEIGHTS["skill"])  or DEFAULT_EFF_WEIGHTS["skill"]),
-        "ki":     float(r.get("KI_Weight",     DEFAULT_EFF_WEIGHTS["ki"])     or DEFAULT_EFF_WEIGHTS["ki"]),
+        "effort": float(r.get("Effort_Weight", fallback["effort"]) or fallback["effort"]),
+        "skill":  float(r.get("Skill_Weight",  fallback["skill"])  or fallback["skill"]),
+        "ki":     float(r.get("KI_Weight",     fallback["ki"])     or fallback["ki"]),
     }
 
 
@@ -752,17 +765,32 @@ def _ANALYZE_PROJECTION_METRIC_LABELS() -> dict:
         labels[key] = t('{metric} — Weekly Form', metric=name)
     return labels
 
-# ── Daily Activity's metric groups + cached loaders ────────────────────────────
-# ── Metric groups derived from active flavor ───────────────────────────────────
-_DA_METRIC_LABELS = _FLAVOR_METRIC_LABELS  # global lookup for all 19 metrics
+# ── Daily Activity's metric universe + cached loaders ──────────────────────────
+_DA_METRIC_LABELS = _FLAVOR_METRIC_LABELS  # live QUESTIONS_CONFIG label lookup
 
-_groups = flavor.metric_groups
-_LESSON_COLS  = _groups.get("Teaching",         ["nm_lessons", "member_lessons", "rc_lessons", "la_lessons"])
-_FINDING_COLS = _groups.get("Finding",          ["new_found", "online_referrals", "referrals_today"])
-_CONTACT_COLS = _groups.get("Contacting",       ["nm_doors", "nm_contacted", "nm_meaningful"])
-_LSI_COLS     = _groups.get("Member Work",      ["lsi_given", "lsi_followups"])
-_DOOR_COLS    = _groups.get("Support Attempts", ["la_Attempt", "fellowshipper_Attempt", "aux_Attempt", "info_Attempt", "locos_Attempt"])
-_EFFORT_COLS  = []  # populated from get_effort_data if present
+
+def _daily_activity_metrics() -> dict[str, str]:
+    """{key: label} for every nightly metric this mission can chart and total.
+
+    Replaces five hardcoded column groups — Teaching, Finding, Contacting,
+    Member Work, Support Attempts — holding Utah Provo's keys (nm_lessons,
+    lsi_given, nm_doors, locos_Attempt …). Every section below filters those
+    lists with `[c for c in cols if c in df.columns]`, so against CCSM's
+    DAILY_LOG every group matched nothing: the whole Daily Activity tab
+    rendered "No data for this category" five times over, which reads as a
+    quiet mission rather than as a page wired to another mission's schema.
+
+    CCSM's QUESTIONS_CONFIG has no category column, so there is no honest way
+    to reproduce those groupings — and inventing new ones would be the same
+    mistake with different words. Every nightly metric is offered instead, in
+    the sheet's own Display_Order, per [[feedback-show-all-metrics]].
+
+    Non-numeric metrics are excluded: `effort` is CHOICE and `exchanges` is
+    YESNO, and summing either produces a number with no meaning. `effort` has
+    its own section further down, which reads the agent-computed counts.
+    """
+    skip = _non_numeric_metrics()
+    return {k: v for k, v in _nightly_metrics().items() if k not in skip}
 
 # ── Cached loaders ─────────────────────────────────────────────────────────────
 @st.cache_data(ttl=300)
@@ -984,9 +1012,22 @@ def _render_scores_tab():
             )
 
         # Fixed metric order + color, same every area/week — color follows the
-        # metric, never its share of that week's pie, so nm_lessons is always the
-        # same hue whether it's the biggest slice or the smallest.
-        _pie_metric_order = ["nm_lessons", "new_found", "mmm_sent", "pew", "gate"]
+        # metric, never its share of that week's pie, so a metric keeps the same
+        # hue whether it's the biggest slice or the smallest.
+        #
+        # Was Provo's ["nm_lessons", "new_found", "mmm_sent", "pew", "gate"].
+        # _pie_metrics filters that order down to metrics present in the
+        # breakdown, so against CCSM's Effort component (contacts_attempted,
+        # roleplays, member_contacts, effort) NOTHING matched and the pie
+        # rendered empty — indistinguishable from an area with no Effort data.
+        #
+        # Sourced from SCORE_CONFIG's effort rows so the slices are exactly the
+        # metrics the score is made of, heaviest first — the order stays stable
+        # across areas and weeks because the weights do.
+        _effort_weights = _default_component_weights("effort")
+        _pie_metric_order = sorted(
+            _effort_weights, key=lambda m: (-_effort_weights[m], m)
+        )
 
         _breakdown = _avg_effort_breakdown(sel_area, _pie_weeks)
 
@@ -1016,8 +1057,18 @@ def _render_scores_tab():
             # width/height, so letting Streamlit stretch the figure to the
             # container would throw every line off-slice.
             st.plotly_chart(fig, use_container_width=False)
+            # The weight list is BUILT from SCORE_CONFIG, not spelled out. It
+            # used to read "weighted nm_lessons 30% · new_found 25% · mmm_sent
+            # 20% · pew 15% · gate 10%" — Provo's metrics and Provo's weights,
+            # printed as a factual description of a CCSM area's score.
+            _wsum = sum(_effort_weights.values())
+            _weight_txt = " · ".join(
+                f"{METRIC_LABELS.get(m, m)} {_effort_weights[m] / _wsum:.0%}"
+                for m in _pie_metric_order
+            ) if _wsum > 0 else ""
             st.caption(
-                t("Each slice is that metric's average share of this area's weekly Effort score across {count} week(s) in {time_range} (actual vs. expectation, weighted nm_lessons 30% · new_found 25% · mmm_sent 20% · pew 15% · gate 10%) — not raw activity volume.", count=len(_pie_weeks), time_range=time_range)
+                t("Each slice is that metric's average share of this area's weekly Effort score across {count} week(s) in {time_range} (actual vs. expectation, weighted {weights}) — not raw activity volume.",
+                  count=len(_pie_weeks), time_range=time_range, weights=_weight_txt)
             )
     else:
         render_section_label(t("Effectiveness Score by Area"))
@@ -1184,11 +1235,34 @@ def _render_scores_tab():
     # SCORE WEIGHT EDITOR
     # ═══════════════════════════════════════════════════════════════════════════════
 
-    # Full metric universe per component. Effort and Skill both draw from the nightly
-    # (daily) form, so either component can weight any of those metrics. KI draws from
-    # the weekly form. A weight of 0 means the metric simply doesn't count.
-    DAILY_UNIVERSE = list(DEFAULT_EFFORT_WEIGHTS.keys())   # all 19 nightly-form metrics
-    KI_UNIVERSE    = list(DEFAULT_KI_WEIGHTS.keys())        # all weekly KI metrics
+    # Full metric universe per component, from QUESTIONS_CONFIG + SCORE_CONFIG.
+    # Effort and Skill both draw from the nightly (daily) form, so either
+    # component can weight any of those metrics. KI draws from the weekly form.
+    # A weight of 0 means the metric simply doesn't count.
+    # Effort and Skill are asked separately rather than sharing one nightly
+    # list: CCSM scores Skill on the four DERIVED rates (contact_rate, mc_rate,
+    # lesson_rate, close_rate), which are computed by CCSM_Agent1A.gs and so
+    # have no QUESTIONS_CONFIG row. They reach the editor only through the
+    # SCORE_CONFIG half of _component_universe's union, and only when asked for
+    # by their own component.
+    EFFORT_UNIVERSE = _component_universe("effort")
+    SKILL_UNIVERSE  = _component_universe("skill")
+    KI_UNIVERSE     = _component_universe("ki")
+    DEFAULT_EFFORT_WEIGHTS = _default_component_weights("effort")
+    DEFAULT_SKILL_WEIGHTS  = _default_component_weights("skill")
+    DEFAULT_KI_WEIGHTS     = _default_component_weights("ki")
+
+    # An empty catalogue must not become an empty SCORE_CONFIG. Save below
+    # clear-and-rewrites the tab over exactly this universe, so rendering the
+    # editor with nothing in it offers a Save that wipes the mission's scoring
+    # configuration — and reports success.
+    if not EFFORT_UNIVERSE and not SKILL_UNIVERSE and not KI_UNIVERSE:
+        st.warning(
+            t("No metrics are configured for this mission, so there is nothing to "
+              "weight. Check the QUESTIONS_CONFIG and SCORE_CONFIG tabs of "
+              "COMPASS_CCSM before editing score weights.")
+        )
+        return
 
 
     def _component_weights(area_code: str, component: str,
@@ -1396,7 +1470,7 @@ def _render_scores_tab():
             )
             edited_effort = _render_weight_inputs(
                 "effort",
-                _component_weights(cfg_area_code, "effort", DAILY_UNIVERSE, DEFAULT_EFFORT_WEIGHTS),
+                _component_weights(cfg_area_code, "effort", EFFORT_UNIVERSE, DEFAULT_EFFORT_WEIGHTS),
                 DEFAULT_EFFORT_WEIGHTS, cfg_area_code,
             )
 
@@ -1405,12 +1479,12 @@ def _render_scores_tab():
                        "Metrics left at 0 don't count toward Skill."))
             edited_skill = _render_weight_inputs(
                 "skill",
-                _component_weights(cfg_area_code, "skill", DAILY_UNIVERSE, DEFAULT_SKILL_WEIGHTS),
+                _component_weights(cfg_area_code, "skill", SKILL_UNIVERSE, DEFAULT_SKILL_WEIGHTS),
                 DEFAULT_SKILL_WEIGHTS, cfg_area_code,
             )
 
         with tab_ki:
-            st.caption(t("Weekly-form Key Indicators — Pew, Date, Gate, Renew, RC."))
+            st.caption(t("Weekly-form Key Indicators. Metrics left at 0 don't count toward KI."))
             edited_ki = _render_weight_inputs(
                 "ki",
                 _component_weights(cfg_area_code, "ki", KI_UNIVERSE, DEFAULT_KI_WEIGHTS),
@@ -1485,324 +1559,159 @@ def _render_daily_tab():
         return
 
     # ── Present metric columns ─────────────────────────────────────────────────────
-    _ALL_METRIC_GROUPS = _LESSON_COLS + _FINDING_COLS + _CONTACT_COLS + _LSI_COLS + _DOOR_COLS
-    present = [c for c in _ALL_METRIC_GROUPS if c in df.columns]
+    _da_metrics = _daily_activity_metrics()
+    present = [c for c in _da_metrics if c in df.columns]
+
+    if not present:
+        st.info(t(
+            "None of this mission's nightly metrics appear in DAILY_LOG. Check the "
+            "QUESTIONS_CONFIG tab of COMPASS_CCSM, then re-run the nightly refresh."
+        ))
+        return
 
     def _col_sum(col: str) -> int:
         return int(df[col].sum()) if col in df.columns else 0
 
     # ═══════════════════════════════════════════════════════════════════════════════
-    # MISSION TOTALS ROW
+    # MISSION TOTALS
     # ═══════════════════════════════════════════════════════════════════════════════
+    # Every nightly metric, in QUESTIONS_CONFIG's own Display_Order. This was a
+    # fixed five — NM Lessons, New People Found, NM Contacted, LSI Given, NM
+    # Attempted — hardcoded to Provo columns, so all five read 0 for CCSM.
     render_section_label(t('Mission Totals — {window_label}', window_label=window_label))
 
-    nm_total      = _col_sum("nm_lessons")
-    found_total   = sum(_col_sum(c) for c in _FINDING_COLS)
-    contact_total = _col_sum("nm_contacted")
-    lsi_total     = _col_sum("lsi_given")
-    doors_total   = _col_sum("nm_doors")
-
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric(t("NM Lessons"),       nm_total)
-    m2.metric(t("New People Found"), found_total)
-    m3.metric(t("NM Contacted"),     contact_total)
-    m4.metric(t("LSI Given"),        lsi_total)
-    m5.metric(t("NM Attempted"),     doors_total)
-
-    render_section_label(t("Activity by Category"))
+    _TILES_PER_ROW = 5
+    for _start in range(0, len(present), _TILES_PER_ROW):
+        _row_keys = present[_start:_start + _TILES_PER_ROW]
+        _tiles = st.columns(_TILES_PER_ROW)
+        for _i, _key in enumerate(_row_keys):
+            _tiles[_i].metric(_da_metrics[_key], _col_sum(_key))
 
     # ═══════════════════════════════════════════════════════════════════════════════
-    # TABS
+    # DAILY TREND
     # ═══════════════════════════════════════════════════════════════════════════════
-    tab_lessons, tab_finding, tab_contacts, tab_lsi, tab_effort = st.tabs([
-        t("Lessons"), t("Finding"), t("Contacts"), t("LSI & Attempts"), t("Effort")
-    ])
+    render_section_label(t("Daily Trend"))
 
+    # Default selection is the mission's own Effort metrics — SCORE_CONFIG is
+    # the one place CCSM states which nightly numbers it cares about, so the
+    # chart opens on those rather than on whichever metrics happen to sort
+    # first. Falls back to the first few only when SCORE_CONFIG is unreadable.
+    _effort_keys = [k for k in _default_component_weights("effort") if k in present]
+    _default_trend = _effort_keys or present[:3]
 
-    def _daily_bar(df_in: pd.DataFrame, col: str, title: str) -> go.Figure:
-        """Return a simple daily bar chart for a single metric column."""
-        if "Date" not in df_in.columns or col not in df_in.columns:
-            return go.Figure()
-        daily = (
-            df_in.groupby("Date")[col]
+    _trend_keys = st.multiselect(
+        t("Metrics to chart"),
+        options=present,
+        default=_default_trend,
+        format_func=lambda k: _da_metrics.get(k, k),
+        key="da_trend_metrics",
+    )
+
+    if not _trend_keys:
+        st.info(t("Pick at least one metric to chart."))
+    elif "Date" not in df.columns:
+        st.info(t("DAILY_LOG has no Date column, so there is no trend to draw."))
+    else:
+        _trend = (
+            df.groupby("Date")[_trend_keys]
             .sum()
             .reset_index()
             .sort_values("Date")
         )
-        fig = go.Figure(go.Bar(
-            x=daily["Date"],
-            y=daily[col],
-            marker_color=CHART_COLORS[0],
-            name=_DA_METRIC_LABELS.get(col, col),
-        ))
-        fig.update_layout(
-            title=title,
-            xaxis_title="Date",
+        _fig_trend = go.Figure()
+        for _i, _key in enumerate(_trend_keys):
+            _fig_trend.add_trace(go.Bar(
+                x=_trend["Date"],
+                y=_trend[_key],
+                name=_da_metrics.get(_key, _key),
+                marker_color=CHART_COLORS[_i % len(CHART_COLORS)],
+            ))
+        _fig_trend.update_layout(
+            title=t('Nightly reporting — {window_label}', window_label=window_label),
+            xaxis_title=t("Date"),
             xaxis_type="category",
-            yaxis_title=_DA_METRIC_LABELS.get(col, col),
+            yaxis_title=t("Count"),
+            barmode="group",
             hovermode="x unified",
-            margin=dict(t=50, b=50, l=50, r=20),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            margin=dict(t=60, b=50, l=50, r=20),
         )
-        return fig
+        st.plotly_chart(_fig_trend, use_container_width=True)
 
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # BY AREA
+    # ═══════════════════════════════════════════════════════════════════════════════
+    render_section_label(t("By Area"))
 
-    def _area_breakdown(df_in: pd.DataFrame, col: str) -> pd.DataFrame:
-        """Summarise a metric by area, sorted descending."""
-        if "Area" not in df_in.columns or col not in df_in.columns:
-            return pd.DataFrame()
-        return (
-            df_in.groupby("Area")[col]
+    _area_metric = st.selectbox(
+        t("Metric"),
+        options=present,
+        index=present.index(_default_trend[0]) if _default_trend else 0,
+        format_func=lambda k: _da_metrics.get(k, k),
+        key="da_area_metric",
+    )
+
+    if "Area" not in df.columns:
+        st.info(t("DAILY_LOG has no Area column, so it cannot be broken down by area."))
+    else:
+        _label = _da_metrics.get(_area_metric, _area_metric)
+        _area_tbl = (
+            df.groupby("Area")[_area_metric]
             .sum()
             .reset_index()
-            .rename(columns={"Area": "Area", col: _DA_METRIC_LABELS.get(col, col)})
-            .sort_values(_DA_METRIC_LABELS.get(col, col), ascending=False)
+            .rename(columns={_area_metric: _label})
+            .sort_values(_label, ascending=False)
         )
-
-
-    def _summary_metrics(df_in: pd.DataFrame, cols: list) -> None:
-        """Render a row of st.metric for each present column."""
-        present_cols = [c for c in cols if c in df_in.columns]
-        if not present_cols:
-            st.info(t("No data for this category."))
-            return
-        metric_cols = st.columns(len(present_cols))
-        for i, col in enumerate(present_cols):
-            metric_cols[i].metric(_DA_METRIC_LABELS.get(col, col), int(df_in[col].sum()))
-
-
-    # ── Lessons tab ────────────────────────────────────────────────────────────────
-    with tab_lessons:
-        render_section_label(t("Lessons Summary"))
-        _summary_metrics(df, _LESSON_COLS)
-
-        primary = "nm_lessons"
-        if primary in df.columns:
-            st.plotly_chart(
-                _daily_bar(df, primary, f"NM Lessons per Day — {window_label}"),
-                use_container_width=True,
-            )
-
-            # Multi-line all lesson types
-            lesson_present = [c for c in _LESSON_COLS if c in df.columns]
-            if lesson_present and "Date" in df.columns:
-                lesson_daily = (
-                    df.groupby("Date")[lesson_present]
-                    .sum()
-                    .reset_index()
-                    .sort_values("Date")
-                )
-                fig_multi = go.Figure()
-                for i, col in enumerate(lesson_present):
-                    fig_multi.add_trace(go.Scatter(
-                        x=lesson_daily["Date"],
-                        y=lesson_daily[col],
-                        mode="lines+markers",
-                        name=_DA_METRIC_LABELS.get(col, col),
-                        line=dict(color=CHART_COLORS[i % len(CHART_COLORS)], width=2),
-                        marker=dict(size=5),
-                    ))
-                fig_multi.update_layout(
-                    title=f"All Lesson Types — Daily — {window_label}",
-                    xaxis_title="Date",
-                    yaxis_title="Count",
-                    hovermode="x unified",
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                    margin=dict(t=60, b=50, l=50, r=20),
-                )
-                st.plotly_chart(fig_multi, use_container_width=True)
-
-        area_tbl = _area_breakdown(df, primary)
-        if not area_tbl.empty:
-            st.caption(t("By-area totals"))
-            render_table(area_tbl)
-
-
-    # ── Finding tab ────────────────────────────────────────────────────────────────
-    with tab_finding:
-        render_section_label(t("Finding Summary"))
-        _summary_metrics(df, _FINDING_COLS)
-
-        primary = "new_found"
-        finding_present = [c for c in _FINDING_COLS if c in df.columns]
-        if finding_present and "Date" in df.columns:
-            find_daily = (
-                df.groupby("Date")[finding_present]
-                .sum()
-                .reset_index()
-                .sort_values("Date")
-            )
-            fig_find = go.Figure()
-            for i, col in enumerate(finding_present):
-                fig_find.add_trace(go.Bar(
-                    x=find_daily["Date"],
-                    y=find_daily[col],
-                    name=_DA_METRIC_LABELS.get(col, col),
-                    marker_color=CHART_COLORS[i % len(CHART_COLORS)],
-                ))
-            fig_find.update_layout(
-                title=f"Finding Metrics — Daily — {window_label}",
-                xaxis_title="Date",
-                yaxis_title="Count",
-                barmode="stack",
-                hovermode="x unified",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                margin=dict(t=60, b=50, l=50, r=20),
-            )
-            st.plotly_chart(fig_find, use_container_width=True)
-
-        if primary in df.columns:
-            area_tbl = _area_breakdown(df, primary)
-            if not area_tbl.empty:
-                st.caption(t("New People Found — by area"))
-                render_table(area_tbl)
-
-
-    # ── Contacts tab ───────────────────────────────────────────────────────────────
-    with tab_contacts:
-        render_section_label(t("Contacts Summary"))
-        _summary_metrics(df, _CONTACT_COLS)
-
-        contact_present = [c for c in _CONTACT_COLS if c in df.columns]
-        if contact_present and "Date" in df.columns:
-            cont_daily = (
-                df.groupby("Date")[contact_present]
-                .sum()
-                .reset_index()
-                .sort_values("Date")
-            )
-            fig_cont = go.Figure()
-            for i, col in enumerate(contact_present):
-                fig_cont.add_trace(go.Bar(
-                    x=cont_daily["Date"],
-                    y=cont_daily[col],
-                    name=_DA_METRIC_LABELS.get(col, col),
-                    marker_color=CHART_COLORS[i % len(CHART_COLORS)],
-                ))
-            fig_cont.update_layout(
-                title=f"Contact Metrics — Daily — {window_label}",
-                xaxis_title="Date",
-                yaxis_title="Count",
-                barmode="group",
-                hovermode="x unified",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                margin=dict(t=60, b=50, l=50, r=20),
-            )
-            st.plotly_chart(fig_cont, use_container_width=True)
-
-        primary = "nm_contacted"
-        if primary in df.columns:
-            area_tbl = _area_breakdown(df, primary)
-            if not area_tbl.empty:
-                st.caption(t("NM Contacted — by area"))
-                render_table(area_tbl)
-
-
-    # ── LSI & Doors tab ────────────────────────────────────────────────────────────
-    with tab_lsi:
-        render_section_label(t("LSI Given & Follow-Ups"))
-        _summary_metrics(df, _LSI_COLS)
-
-        lsi_present = [c for c in _LSI_COLS if c in df.columns]
-        if lsi_present and "Date" in df.columns:
-            lsi_daily = (
-                df.groupby("Date")[lsi_present]
-                .sum()
-                .reset_index()
-                .sort_values("Date")
-            )
-            fig_lsi = go.Figure()
-            for i, col in enumerate(lsi_present):
-                fig_lsi.add_trace(go.Bar(
-                    x=lsi_daily["Date"],
-                    y=lsi_daily[col],
-                    name=_DA_METRIC_LABELS.get(col, col),
-                    marker_color=CHART_COLORS[i % len(CHART_COLORS)],
-                ))
-            fig_lsi.update_layout(
-                title=f"LSI — Daily — {window_label}",
-                xaxis_title="Date",
-                yaxis_title="Count",
-                barmode="group",
-                hovermode="x unified",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                margin=dict(t=60, b=50, l=50, r=20),
-            )
-            st.plotly_chart(fig_lsi, use_container_width=True)
-
-        render_section_label(t("Attempts by Type"))
-        _summary_metrics(df, _DOOR_COLS)
-
-        door_present = [c for c in _DOOR_COLS if c in df.columns]
-        if door_present and "Date" in df.columns:
-            door_daily = (
-                df.groupby("Date")[door_present]
-                .sum()
-                .reset_index()
-                .sort_values("Date")
-            )
-            fig_door = go.Figure()
-            for i, col in enumerate(door_present):
-                fig_door.add_trace(go.Bar(
-                    x=door_daily["Date"],
-                    y=door_daily[col],
-                    name=_DA_METRIC_LABELS.get(col, col),
-                    marker_color=CHART_COLORS[i % len(CHART_COLORS)],
-                ))
-            fig_door.update_layout(
-                title=f"Attempts by Type — Daily — {window_label}",
-                xaxis_title="Date",
-                yaxis_title="Count",
-                barmode="stack",
-                hovermode="x unified",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                margin=dict(t=60, b=50, l=50, r=20),
-            )
-            st.plotly_chart(fig_door, use_container_width=True)
-
-        # By-area breakdown for LSI Given
-        if "lsi_given" in df.columns:
-            area_tbl = _area_breakdown(df, "lsi_given")
-            if not area_tbl.empty:
-                st.caption(t("LSI Given — by area"))
-                render_table(area_tbl)
-
-
-    # ── Effort tab ─────────────────────────────────────────────────────────────────
-    with tab_effort:
-        render_section_label(t("Effort Reporting"))
-
-        effort_df = _load_effort()
-        if effort_df.empty:
-            st.info(t("Effort tracking coming soon."))
+        if _area_tbl.empty:
+            st.info(t("No data for the selected filters."))
         else:
-            effort_present = [c for c in ["all_count", "most_count", "some_count"] if c in effort_df.columns]
-            if effort_present:
-                totals = effort_df[effort_present].sum()
-                ecols = st.columns(len(effort_present))
-                label_map = {"all_count": "Full Effort", "most_count": "Most Effort", "some_count": "Some Effort"}
-                for i, col in enumerate(effort_present):
-                    ecols[i].metric(label_map.get(col, col), int(totals[col]))
+            render_table(_area_tbl)
 
-                if "date" in effort_df.columns:
-                    fig_effort = go.Figure()
-                    for i, col in enumerate(effort_present):
-                        fig_effort.add_trace(go.Bar(
-                            x=effort_df["date"],
-                            y=effort_df[col],
-                            name=label_map.get(col, col),
-                            marker_color=CHART_COLORS[i % len(CHART_COLORS)],
-                        ))
-                    fig_effort.update_layout(
-                        title="Effort Reported — Daily",
-                        xaxis_title="Date",
-                        yaxis_title="Count",
-                        barmode="stack",
-                        hovermode="x unified",
-                        margin=dict(t=50, b=50, l=50, r=20),
-                    )
-                    st.plotly_chart(fig_effort, use_container_width=True)
-            else:
-                st.info(t("Effort tracking coming soon."))
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # EFFORT REPORTING
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # `effort` is a CHOICE question (Todo / La mayor parte / Algo), so it is
+    # excluded from the totals and charts above — summing it would produce a
+    # number with no meaning. The agents bucket it into counts instead, which is
+    # what this section reads.
+    render_section_label(t("Effort Reporting"))
+
+    effort_df = _load_effort()
+    _effort_cols = (
+        [c for c in ("all_count", "most_count", "some_count") if c in effort_df.columns]
+        if not effort_df.empty else []
+    )
+    if not _effort_cols:
+        st.info(t("No effort responses recorded for this window yet."))
+    else:
+        _effort_labels = {
+            "all_count":  t("Full Effort"),
+            "most_count": t("Most Effort"),
+            "some_count": t("Some Effort"),
+        }
+        totals = effort_df[_effort_cols].sum()
+        ecols = st.columns(len(_effort_cols))
+        for i, col in enumerate(_effort_cols):
+            ecols[i].metric(_effort_labels.get(col, col), int(totals[col]))
+
+        if "date" in effort_df.columns:
+            fig_effort = go.Figure()
+            for i, col in enumerate(_effort_cols):
+                fig_effort.add_trace(go.Bar(
+                    x=effort_df["date"],
+                    y=effort_df[col],
+                    name=_effort_labels.get(col, col),
+                    marker_color=CHART_COLORS[i % len(CHART_COLORS)],
+                ))
+            fig_effort.update_layout(
+                title=t("Effort reported per day"),
+                xaxis_title=t("Date"),
+                yaxis_title=t("Count"),
+                barmode="stack",
+                hovermode="x unified",
+                margin=dict(t=50, b=50, l=50, r=20),
+            )
+            st.plotly_chart(fig_effort, use_container_width=True)
 
     render_section_label(t("Raw Data"))
 
