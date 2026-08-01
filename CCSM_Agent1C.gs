@@ -677,9 +677,11 @@ function a1c_buildAreaSection(areaName, area, weekEnd, C) {
   if (g)  html += a1c_buildMessageBlock('📈 Área de Crecimiento — ' + a1c_esc(g.display), area.msg_growth, C, C.blue,
                                          a1c_statLine_(g, der, true) + a1c_buildGoalBar_(g, C));
 
+  html += a1c_buildYouVsYou_(g, der, C);
   html += a1c_buildTrendChart_(der && der.trend, C);
   html += a1c_buildScoreboard_(area.stats, der, C, weekEnd);
   html += a1c_buildGoalGrid_(area.ranked, C, weekEnd);
+  html += a1c_buildFunnelStrip_(der && der.funnel, C, weekEnd);
 
   html += '</div>';
   html += '<hr style="border:none;border-top:1px solid #e5e7eb;margin:8px 0;">';
@@ -797,6 +799,88 @@ function a1c_buildGoalGrid_(ranked, C, weekEnd) {
             ';background:#dbeafe;padding:4px 8px;border-radius:4px;margin:8px 0;">' + a1c_esc(gr.title) + '</div>';
     present.forEach(function(k) { html += chart(byKey[k]); });
   });
+  html += '</div>';
+  return html;
+}
+
+/**
+ * "Tu contra Ti" — horizontal comparison bars for the growth metric: Esta
+ * Semana / Semana Pasada / Prom. Transfer / Tu Mejor on a shared baseline.
+ * Comparing a missionary against their OWN history is the motivator (never
+ * area-vs-area). Null values render '—' with no bar; all-null/zero history
+ * renders nothing.
+ */
+function a1c_buildYouVsYou_(pick, derived, C) {
+  if (!pick) return '';
+  var key = pick.key;
+  function pull(map) {
+    if (!derived || !map) return null;
+    var v = map[key];
+    return (v === null || v === undefined) ? null : v;
+  }
+  var rows = [
+    { label: 'Esta Semana',    value: (pick.actual === null || pick.actual === undefined) ? null : pick.actual, color: C.header },
+    { label: 'Semana Pasada',  value: pull(derived && derived.lastWeek), color: '#93b4d8' },
+    { label: 'Prom. Transfer', value: pull(derived && derived.xferAvg),  color: '#93b4d8' },
+    { label: 'Tu Mejor',       value: pull(derived && derived.best),     color: '#2563eb' }
+  ];
+  var max = 0;
+  rows.forEach(function(r) { if (r.value !== null && r.value > max) max = r.value; });
+  if (max <= 0) return '';
+
+  var html = '<div style="margin:14px 0 6px;">';
+  html += '<div style="font-size:12px;font-weight:700;color:' + C.header +
+          ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">🆚 Tú contra Ti — ' +
+          a1c_esc(pick.display) + '</div>';
+  html += '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:11px;">';
+  rows.forEach(function(r) {
+    html += '<tr><td style="padding:3px 8px 3px 0;color:#374151;white-space:nowrap;width:90px;">' +
+            a1c_esc(r.label) + '</td>';
+    if (r.value === null) {
+      html += '<td style="padding:3px 0;color:' + C.muted + ';">—</td>';
+    } else {
+      var w = Math.max(2, Math.round(r.value / max * 100));
+      html += '<td style="padding:3px 0;">' +
+              '<div style="width:' + w + '%;background:' + r.color + ';height:12px;border-radius:3px;display:inline-block;vertical-align:middle;"></div>' +
+              '<span style="padding-left:6px;font-weight:700;color:#374151;">' +
+              a1c_esc(a1c_fmtMetricVal_(key, r.value)) + '</span></td>';
+    }
+    html += '</tr>';
+  });
+  html += '</table></div>';
+  return html;
+}
+
+/**
+ * "Tu Embudo Esta Semana" — CCSM's real nightly funnel (attempted -> made ->
+ * meaningful -> lessons -> new friends found), from area.derived.funnel (see
+ * a1a_buildDerived's funnel remap). No LSI tile/note at all — CCSM's form
+ * has no LSI metric, unlike Provo's version this was ported from.
+ */
+function a1c_buildFunnelStrip_(f, C, weekEnd) {
+  if (!f) return '';
+  function tile(val, label, hl) {
+    return '<td style="background:' + (hl ? '#eafaf0' : '#f0f4f8') + ';border-radius:6px;padding:8px 6px;text-align:center;' + (hl ? 'border:1px solid #16a34a;' : '') + '">' +
+      '<div style="font-size:16px;font-weight:700;color:' + (hl ? '#15803d' : C.header) + ';">' + a1c_esc(String(val)) + '</div>' +
+      '<div style="font-size:9px;color:' + (hl ? '#15803d' : C.muted) + ';text-transform:uppercase;">' + a1c_esc(label) + '</div></td>';
+  }
+  function arrow(p) {
+    return '<td style="width:34px;text-align:center;font-size:9px;color:#16a34a;font-weight:700;">→<br>' + (p === null ? '—' : p + '%') + '</td>';
+  }
+  var html = '<div style="margin:18px 0;">';
+  html += '<div style="font-size:12px;font-weight:700;color:' + C.header +
+          ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">🔄 ' + a1c_esc(a1c_saltTitle_('Tu Embudo Esta Semana', weekEnd)) + '</div>';
+  html += '<table width="100%" cellpadding="0" cellspacing="0"><tr>' +
+    tile(f.attempted, 'Intentados') + arrow(f.contactedPct) +
+    tile(f.contacted, 'Contactos') + arrow(f.meaningfulPct) +
+    tile(f.meaningful, 'Significativas') + arrow(f.lessonPct) +
+    tile(f.lessons, 'Lecciones') + arrow(f.newFoundPct) +
+    tile(f.newFound, 'Nuevas Amistades', true) +
+    '</tr></table>';
+  if (f.lessonsPerNewFriend !== null) {
+    html += '<div style="font-size:10px;color:' + C.muted + ';margin-top:6px;">' +
+            f.lessonsPerNewFriend + ' lecciones por cada nueva amistad encontrada</div>';
+  }
   html += '</div>';
   return html;
 }
