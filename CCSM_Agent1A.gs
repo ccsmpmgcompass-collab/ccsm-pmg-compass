@@ -1,6 +1,6 @@
 /**
  * ============================================================
- * CCSM_Agent1A.gs — Sunday Coaching: Data Collection & Analysis
+ * CCSM_Agent1A.gs — Monday Coaching: Data Collection & Analysis
  * PMG Compass | Chile Concepción South Mission (CCSM) — Spanish fork
  * ============================================================
  *
@@ -21,8 +21,9 @@
  * gate/renew) has no CCSM equivalent metric key and is dropped entirely
  * (see a1a_buildStats).
  *
- * SCHEDULE: Every Sunday at 9:00 PM
- *           Run setupAgent1ATrigger() ONCE to create the trigger.
+ * SCHEDULE: Every Monday ~9:15-9:30 PM (see CCSM_Setup.gs CCSM_TRIGGER_SCHEDULE)
+ *           Run setupAllCcsmTriggers() to install it — setupAgent1ATrigger()
+ *           below is a deprecated shim kept only for the editor's dropdown.
  *
  * WHAT IT DOES:
  *   1. Reads current week (Mon-Sun) from DAILY_LOG
@@ -93,7 +94,7 @@ function runAgent1A() {
   var notes  = [];
 
   try {
-    Logger.log('Agent1A: Starting Sunday coaching analysis -- ' + new Date().toISOString());
+    Logger.log('Agent1A: Starting Monday coaching analysis -- ' + new Date().toISOString());
 
     A1A_METRICS = A1A_RATE_METRICS.concat(a1a_loadCountMetrics());
     Logger.log('Agent1A: Loaded ' + A1A_METRICS.length + ' coaching metrics (' +
@@ -118,11 +119,30 @@ function runAgent1A() {
     var dailyTotals = a1a_aggregateDailyLog(weekStart, weekEnd);
     var effortMap   = a1a_readEffortScores(weekStart, weekEnd);
 
+    // Multi-week data for the trend chart / scoreboard / goal grid /
+    // You-vs-You / funnel strip / consistency block (see a1a_buildDerived).
+    var derivedWeeks  = a1a_lastNWeekEnds_(weekEnd, 8);
+    var history       = a1a_loadMultiWeekHistory(derivedWeeks);
+    var transferStart = getConfig('TRANSFER_START_DATE') || '';
+
+    // effort_score has no num/den, so a1a_loadMultiWeekHistory can't derive
+    // it from DAILY_LOG sums the way the 4 fraction rates are derived --
+    // read it separately from NIGHTLY_FORM_RAW and merge into the same
+    // per-area/per-week buckets a1a_buildDerived reads.
+    var multiWeekEffort = a1a_loadMultiWeekEffort(derivedWeeks);
+    Object.keys(multiWeekEffort).forEach(function(area) {
+      if (!history.byArea[area]) return; // no DAILY_LOG activity that area/week; nothing to attach effort_score to
+      Object.keys(multiWeekEffort[area]).forEach(function(we) {
+        if (history.byArea[area][we]) history.byArea[area][we].effort_score = multiWeekEffort[area][we];
+      });
+    });
+
     var areaData = {};
     missionOrg.forEach(function(areaObj) {
       var name   = areaObj['Area_Name'];
       var stats  = a1a_buildStats(dailyTotals[name] || {}, effortMap[name] || {});
       var ranked = a1a_rankMetrics(stats, goals[name] || goalDefaults, rateTargets, (feedback[name] || {}).lastGrowthMetric);
+      var growth = ranked[ranked.length - 1] || null;
 
       areaData[name] = {
         code:      areaObj['Area_Code']        || '',
@@ -133,9 +153,11 @@ function runAgent1A() {
         name1:     areaObj['Companion1_Name']  || '',
         name2:     areaObj['Companion2_Name']  || '',
         stats:     stats,
-        strength1: ranked[0]                 || null,
-        strength2: ranked[1]                 || null,
-        growth:    ranked[ranked.length - 1] || null
+        ranked:    ranked, // full ranked metric list -- a1c_buildGoalGrid_ needs every goaled metric, not just the 3 picks below
+        strength1: ranked[0] || null,
+        strength2: ranked[1] || null,
+        growth:    growth,
+        derived:   a1a_buildDerived(name, stats, growth, history, derivedWeeks, weekEnd, transferStart)
       };
     });
 
@@ -165,16 +187,16 @@ function runAgent1A() {
 
 // --- TRIGGER SETUP ----------------------------------------------------------
 
+/**
+ * DEPRECATED — see CCSM_Setup.gs "LEGACY PER-AGENT INSTALLERS". This used to
+ * install runAgent1A directly on Monday ~9:15-9:45 PM while
+ * CCSM_TRIGGER_SCHEDULE (the canonical table) still said Sunday — running
+ * this by mistake would have silently overridden the canonical schedule
+ * with a day nobody else's docs agreed with. Now a delegating shim.
+ */
 function setupAgent1ATrigger() {
-  deleteTriggerByName('runAgent1A');
-  ScriptApp.newTrigger('runAgent1A')
-    .timeBased()
-    .onWeekDay(ScriptApp.WeekDay.MONDAY)
-    .atHour(21)
-    .nearMinute(30)  // aim past 9:15 so the wait-until-9:15 sleep (capped at
-                     // 4 min; execution limit is 6 min) rarely engages
-    .create();
-  Logger.log('Agent1A trigger created: runAgent1A every Monday ~9:15-9:45 PM');
+  Logger.log('Agent1A: setupAgent1ATrigger() is DEPRECATED — delegating to setupAllCcsmTriggers().');
+  setupAllCcsmTriggers();
 }
 
 // --- DATA LOADERS -----------------------------------------------------------
@@ -328,6 +350,366 @@ function a1a_aggregateDailyLog(weekStart, weekEnd) {
     });
   }
   return agg;
+}
+
+/**
+ * Maps every date inside any of `weekEnds` (an array of week-ending Sunday
+ * date strings) to that week-ending Sunday, so a per-row scan is a single
+ * O(1) lookup instead of an N-way range check. Shared by
+ * a1a_loadMultiWeekHistory and a1a_loadMultiWeekEffort so both loaders
+ * bucket the exact same calendar boundaries -- if they disagreed near a
+ * week edge, a nightly report and that same night's effort answer could
+ * silently land in different weeks.
+ */
+function a1a_buildWeekEndForDate_(weekEnds) {
+  var map = {};
+  weekEnds.forEach(function(we) {
+    var start = a1a_getWeekStart(we);
+    var startD = a1a_parseLocalDate(start);
+    for (var i = 0; i < 7; i++) {
+      var d = a1a_toDateString(new Date(startD.getFullYear(), startD.getMonth(), startD.getDate() + i));
+      map[d] = we;
+    }
+  });
+  return map;
+}
+
+// The 4 rate metrics that are a true 0-1 fraction (num/den). effort_score
+// has type:'rate' too but no num/den -- it's a direct 1-3 weighted average,
+// not derivable from two DAILY_LOG columns, so it's deliberately excluded
+// here and computed instead by a1a_loadMultiWeekEffort from NIGHTLY_FORM_RAW.
+var A1A_FRACTION_RATE_KEYS = {};
+A1A_RATE_METRICS.forEach(function(m) { if (m.num && m.den) A1A_FRACTION_RATE_KEYS[m.key] = m; });
+
+/**
+ * Multi-week analogue of a1a_aggregateDailyLog above, for a1a_buildDerived's
+ * trend/scoreboard/goal-grid/You-vs-You/funnel/consistency data. Reads
+ * DAILY_LOG ONCE and buckets every row into whichever of `weekEnds` it
+ * falls inside, rather than re-scanning the sheet once per week.
+ *
+ * CRITICAL: after summing the raw per-week columns, this ALSO computes the
+ * 4 fraction rate metrics (contact_rate/mc_rate/lesson_rate/close_rate) for
+ * every week from those raw sums, via the same num/den formula
+ * a1a_buildStats uses for the current week. Skipping this step was a real,
+ * shipped bug (found in code review, 2026-08-01): a1a_buildDerived looks up
+ * every metric in `stats` -- including these 4 -- as a direct key on each
+ * week's bucket. Without this computation, that key never exists for ANY
+ * week (current or historical), so a1a_pastWeekValue_ returns undefined
+ * for every week, xferVals/allVals only ever contain the CURRENT week's own
+ * value, and "Prom. Transfer"/"Tu Mejor" silently render as a copy of THIS
+ * WEEK'S number relabeled as historical -- exactly the "silently wrong,
+ * presented as normal" failure shape this codebase has been burned by
+ * before. tests/test_agent1a_derived.js asserts this explicitly for
+ * contact_rate now, not just a count metric.
+ *
+ * Returns { byArea, datesByArea }:
+ *   byArea[area][weekEndStr]      -- raw DAILY_LOG metric sums for that
+ *                                     week, PLUS the 4 computed fraction
+ *                                     rate keys. effort_score is NOT here --
+ *                                     see a1a_loadMultiWeekEffort, merged in
+ *                                     by the caller (runAgent1A).
+ *   datesByArea[area][dateStr]    -- true for every date the area has a
+ *                                     DAILY_LOG row, used by the consistency
+ *                                     block's dayFlags/streak.
+ */
+function a1a_loadMultiWeekHistory(weekEnds) {
+  var byArea = {}, datesByArea = {};
+  var data = a1a_getSheetData('DAILY_LOG');
+  if (!data || data.length < 2) return { byArea: byArea, datesByArea: datesByArea };
+
+  var headers = data[0].map(function(h) { return String(h).trim(); });
+  var areaIdx = headers.indexOf('Area');
+  var dateIdx = headers.indexOf('Date');
+  if (areaIdx < 0 || dateIdx < 0) return { byArea: byArea, datesByArea: datesByArea };
+
+  var weekEndForDate = a1a_buildWeekEndForDate_(weekEnds);
+
+  for (var i = 1; i < data.length; i++) {
+    var dateStr = a1a_toDateString(data[i][dateIdx]);
+    if (!dateStr) continue;
+    var area = String(data[i][areaIdx] || '').trim();
+    if (!area) continue;
+
+    if (!datesByArea[area]) datesByArea[area] = {};
+    datesByArea[area][dateStr] = true;
+
+    var we = weekEndForDate[dateStr];
+    if (!we) continue; // outside the 8-week window this run cares about
+
+    if (!byArea[area]) byArea[area] = {};
+    if (!byArea[area][we]) byArea[area][we] = { submissions: 0 };
+    byArea[area][we].submissions++;
+    headers.forEach(function(h, idx) {
+      if (idx < 4) return;
+      byArea[area][we][h] = (byArea[area][we][h] || 0) + (parseFloat(data[i][idx]) || 0);
+    });
+  }
+
+  // Derive the 4 fraction rate metrics per area per week from the raw sums
+  // just accumulated, same num/den formula as a1a_buildStats.
+  Object.keys(byArea).forEach(function(area) {
+    Object.keys(byArea[area]).forEach(function(we) {
+      var wk = byArea[area][we];
+      Object.keys(A1A_FRACTION_RATE_KEYS).forEach(function(key) {
+        var m = A1A_FRACTION_RATE_KEYS[key];
+        wk[key] = wk[m.den] > 0 ? (wk[m.num] / wk[m.den]) : 0;
+      });
+    });
+  });
+
+  return { byArea: byArea, datesByArea: datesByArea };
+}
+
+/**
+ * Multi-week analogue of a1a_readEffortScores above, for the same reason
+ * a1a_loadMultiWeekHistory exists: effort_score has no num/den (it's a
+ * direct 1-3 weighted average of Todo/La mayor parte/Algo answers), so it
+ * cannot be derived from DAILY_LOG sums the way the 4 fraction rates can --
+ * it has to be read from NIGHTLY_FORM_RAW per week. Reads the sheet ONCE
+ * and buckets by the same weekEndForDate map a1a_loadMultiWeekHistory uses.
+ *
+ * Returns { area: { weekEndStr: score } }.
+ */
+function a1a_loadMultiWeekEffort(weekEnds) {
+  var byArea = {};
+  var data = a1a_getSheetData('NIGHTLY_FORM_RAW');
+  if (!data || data.length < 2) return byArea;
+
+  var headers      = data[0].map(function(h) { return String(h).trim(); });
+  var areaTarget   = A1A_FORM_AREA_COL.toLowerCase();
+  var dateTarget   = A1A_FORM_DATE_COL.toLowerCase();
+  var effortTarget = A1A_EFFORT_COL.toLowerCase();
+
+  var areaCols = [];
+  headers.forEach(function(h, idx) {
+    if (h.toLowerCase() === areaTarget) areaCols.push(idx);
+  });
+  if (areaCols.length === 0) return byArea;
+
+  var secStart  = areaCols[0];
+  var secEnd    = areaCols.length > 1 ? areaCols[1] : headers.length;
+  var offsetMap = {};
+  for (var j = secStart; j < secEnd; j++) {
+    var lh = headers[j].toLowerCase();
+    if (!(lh in offsetMap)) offsetMap[lh] = j - secStart;
+  }
+
+  var dateOffset   = offsetMap[dateTarget];
+  var effortOffset = offsetMap[effortTarget];
+  if (dateOffset === undefined || effortOffset === undefined) return byArea;
+
+  var weekEndForDate = a1a_buildWeekEndForDate_(weekEnds);
+  var tally = {}; // area -> weekEnd -> {all,most,some,total}
+
+  for (var i = 1; i < data.length; i++) {
+    var row  = data[i];
+    var sIdx = -1;
+    for (var s = 0; s < areaCols.length; s++) {
+      if (String(row[areaCols[s]] || '').trim()) { sIdx = areaCols[s]; break; }
+    }
+    if (sIdx < 0) continue;
+    var area    = String(row[sIdx] || '').trim();
+    var dateStr = a1a_toDateString(row[sIdx + dateOffset]);
+    if (!area || !dateStr) continue;
+    var we = weekEndForDate[dateStr];
+    if (!we) continue;
+
+    if (!tally[area]) tally[area] = {};
+    if (!tally[area][we]) tally[area][we] = { all: 0, most: 0, some: 0, total: 0 };
+    var t = tally[area][we];
+    t.total++;
+    var score = ccsmEffortScore(String(row[sIdx + effortOffset] || '').trim());
+    if      (score === 3) t.all++;
+    else if (score === 2) t.most++;
+    else if (score === 1) t.some++;
+  }
+
+  Object.keys(tally).forEach(function(area) {
+    byArea[area] = {};
+    Object.keys(tally[area]).forEach(function(we) {
+      var t = tally[area][we];
+      byArea[area][we] = t.total > 0 ? (t.all * 3 + t.most * 2 + t.some * 1) / t.total : 0;
+    });
+  });
+  return byArea;
+}
+
+/** N week-ending Sundays, ascending, ending at weekEnd (inclusive). */
+function a1a_lastNWeekEnds_(weekEnd, n) {
+  var endD = a1a_parseLocalDate(weekEnd);
+  var out = [];
+  for (var w = n - 1; w >= 0; w--) {
+    out.push(a1a_toDateString(new Date(endD.getFullYear(), endD.getMonth(), endD.getDate() - 7 * w)));
+  }
+  return out;
+}
+
+function a1a_pastWeekValue_(metricKey, dailyWeeks, weekEnd) {
+  var wk = dailyWeeks[weekEnd];
+  return wk ? wk[metricKey] : undefined;
+}
+
+// Deliberately returns the UNROUNDED mean -- rounding belongs at the call
+// site via a1a_roundForMetric_, which needs to know the metric's key to
+// pick the right precision (a 0-1 fraction rate metric needs far finer
+// rounding than a plain count/effort_score, see a1a_roundForMetric_'s own
+// comment for the bug this fixes).
+function a1a_mean_(arr) {
+  if (arr.length === 0) return null;
+  var s = 0; arr.forEach(function(v) { s += v; });
+  return s / arr.length;
+}
+
+function a1a_round1(n) {
+  return Math.round(n * 10) / 10;
+}
+
+/**
+ * Rounds a per-metric value to the precision that metric's display format
+ * actually needs. CRITICAL: a1a_round1's 0.1 absolute step is correct for
+ * count metrics and effort_score (1-3 scale), but applying it to a 0-1
+ * fraction rate metric (contact_rate etc.) rounds to the nearest 10
+ * PERCENTAGE POINTS -- found in code review, 2026-08-01: a real value of
+ * 0.05 (5%) rounded to 0.1 (10%), a 100% relative error, before this fix.
+ * Fraction rates instead round to 3 decimals (0.1 percentage-point
+ * precision), which a1c_fmtMetricVal_'s own Math.round(val*100) then
+ * displays cleanly.
+ */
+function a1a_roundForMetric_(key, n) {
+  if (n === null || n === undefined) return n;
+  return A1A_FRACTION_RATE_KEYS[key] ? (Math.round(n * 1000) / 1000) : a1a_round1(n);
+}
+
+/**
+ * Builds the multi-week comparison data (trend chart / scoreboard / goal
+ * grid / You-vs-You / funnel strip / consistency block) for one area's
+ * coaching letter. CCSM analogue of Provo's docs/Agent1A.gs
+ * a1a_buildDerived, adapted:
+ *
+ *   - No WEEKLY_BREAKDOWNS input. CCSM's WEEKLY_KI holds only the 7 ki_*
+ *     real/meta pairs, not nightly rollups (see this file's own header), so
+ *     every multi-week number here comes from DAILY_LOG (via
+ *     a1a_loadMultiWeekHistory) alone.
+ *   - The funnel is CCSM's real nightly chain — contacts_attempted ->
+ *     contacts_made -> meaningful_conversations -> friend_lessons ->
+ *     new_people_found — not Provo's doors/LSI shape. CCSM's form has no
+ *     LSI metric, so there is no lsiGiven/lsiFollowups field at all (do not
+ *     add one — see tests/test_agent1a_derived.js).
+ *
+ * @param {string}  areaName
+ * @param {Object}  stats        this week's a1a_buildStats() output
+ * @param {Object}  growth       the ranked growth pick ({key, display, ...})
+ *                               or null
+ * @param {Object}  history      { byArea, datesByArea } from
+ *                               a1a_loadMultiWeekHistory(weeks)
+ * @param {Array}   weeks        8 week-ending Sundays, ascending, from
+ *                               a1a_lastNWeekEnds_(weekEnd, 8) — MUST be the
+ *                               same array passed to a1a_loadMultiWeekHistory
+ * @param {string}  weekEnd      this week's ending Sunday (last of `weeks`)
+ * @param {string}  transferStart AGENT_CONFIG TRANSFER_START_DATE, or ''
+ */
+function a1a_buildDerived(areaName, stats, growth, history, weeks, weekEnd, transferStart) {
+  var dailyWeeks = history.byArea[areaName] || {};
+  var dateSet    = history.datesByArea[areaName] || {};
+
+  // 'effort' is the raw CHOICE-type NIGHTLY_FORM_RAW column ('Todo'/'Algo'/
+  // etc) that a1a_buildStats copies through parseFloat()||0 like every
+  // other DAILY_LOG column -- it's always 0 and means nothing as a number.
+  // effort_score (the real weighted metric) is unaffected; this only skips
+  // the raw junk key from ever becoming a tracked "metric."
+  var SKIP = { submissions: 1, effort: 1, effort_all: 1, effort_most: 1, effort_some: 1, effort_total: 1 };
+  var seen = {};
+  var metricKeys = [];
+  Object.keys(stats).forEach(function(k) {
+    if (SKIP[k] || seen[k]) return;
+    if (typeof stats[k] === 'number') { seen[k] = 1; metricKeys.push(k); }
+  });
+
+  var lastWk = weeks[weeks.length - 2];
+  var histWeekList = Object.keys(dailyWeeks).filter(function(k) { return k !== weekEnd; });
+
+  var prevXferStart = '';
+  if (transferStart) {
+    var ts = a1a_parseLocalDate(transferStart);
+    prevXferStart = a1a_toDateString(new Date(ts.getFullYear(), ts.getMonth(), ts.getDate() - 42));
+  }
+
+  var lastWeek = {}, delta = {}, xferAvg = {}, lastXferAvg = {}, best = {}, isBest = {};
+  metricKeys.forEach(function(m) {
+    var cur = (typeof stats[m] === 'number') ? stats[m] : 0;
+    var lv = a1a_pastWeekValue_(m, dailyWeeks, lastWk);
+    lastWeek[m] = (lv === undefined) ? null : lv;
+    delta[m] = (lv === null || lv === undefined) ? null : a1a_roundForMetric_(m, cur - lv);
+
+    var xferVals = [cur], lastXferVals = [], allVals = [cur];
+    histWeekList.forEach(function(wk) {
+      var v = a1a_pastWeekValue_(m, dailyWeeks, wk);
+      if (v === null || v === undefined) return;
+      allVals.push(v);
+      if (transferStart && wk >= transferStart) xferVals.push(v);
+      else if (prevXferStart && wk >= prevXferStart && wk < transferStart) lastXferVals.push(v);
+    });
+    xferAvg[m]     = transferStart ? a1a_roundForMetric_(m, a1a_mean_(xferVals)) : null;
+    lastXferAvg[m] = a1a_roundForMetric_(m, a1a_mean_(lastXferVals));
+    var mx = null;
+    allVals.forEach(function(v) { if (mx === null || v > mx) mx = v; });
+    best[m] = mx;
+    if (allVals.length >= 2 && cur > 0 && cur >= mx) isBest[m] = true;
+  });
+
+  var trend = null;
+  if (growth) {
+    var series = weeks.map(function(wk) {
+      var v = (wk === weekEnd) ? ((typeof stats[growth.key] === 'number') ? stats[growth.key] : null)
+            : a1a_pastWeekValue_(growth.key, dailyWeeks, wk);
+      return { week: wk, value: (v === undefined ? null : v) };
+    });
+    trend = { key: growth.key, display: growth.display, series: series };
+  }
+
+  function pct(num, den) { return den > 0 ? Math.round(num / den * 100) : null; }
+  var funnel = {
+    attempted:     stats.contacts_attempted || 0,
+    contacted:     stats.contacts_made || 0,
+    contactedPct:  pct(stats.contacts_made || 0, stats.contacts_attempted || 0),
+    meaningful:    stats.meaningful_conversations || 0,
+    meaningfulPct: pct(stats.meaningful_conversations || 0, stats.contacts_made || 0),
+    lessons:       stats.friend_lessons || 0,
+    lessonPct:     pct(stats.friend_lessons || 0, stats.meaningful_conversations || 0),
+    newFound:      stats.new_people_found || 0,
+    newFoundPct:   pct(stats.new_people_found || 0, stats.friend_lessons || 0),
+    lessonsPerNewFriend: (stats.new_people_found || 0) > 0
+      ? a1a_round1((stats.friend_lessons || 0) / stats.new_people_found) : null
+  };
+
+  // Spanish single-letter weekday initials: Lun Mar Miercoles Jue Vie Sab Dom.
+  // 'X' for Miercoles (not 'M') and 'D' for Domingo (not 'S') are the
+  // standard Spanish abbreviations that avoid the Mon/Tue and Sat/Sun clash.
+  var labels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+  var dayFlags = [];
+  var startD = a1a_parseLocalDate(weekEnd);
+  for (var i = 6; i >= 0; i--) {
+    var dayStr = a1a_toDateString(new Date(startD.getFullYear(), startD.getMonth(), startD.getDate() - i));
+    dayFlags.push({ label: labels[6 - i], reported: dateSet[dayStr] === true });
+  }
+  var streak = 0;
+  var cursor = a1a_parseLocalDate(weekEnd);
+  while (dateSet[a1a_toDateString(cursor)] === true) {
+    streak++;
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() - 1);
+  }
+  var consistency = {
+    daysReported: stats.submissions || 0,
+    dayFlags: dayFlags,
+    streak: streak,
+    effortAll:  stats.effort_all  || 0,
+    effortMost: stats.effort_most || 0,
+    effortSome: stats.effort_some || 0
+  };
+
+  return { weeks: weeks, lastWeek: lastWeek, delta: delta, xferAvg: xferAvg,
+           lastXferAvg: lastXferAvg, best: best, isBest: isBest,
+           trend: trend, funnel: funnel, consistency: consistency };
 }
 
 /**

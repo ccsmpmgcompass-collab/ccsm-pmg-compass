@@ -180,7 +180,7 @@ See Gotcha 2. This is the step people skip.
 
 - [ ] Project timezone reads `America/Santiago`
 
-### 3.3 Paste all 20 files
+### 3.3 Paste all 21 files
 
 For each file below, in this order:
 
@@ -202,9 +202,9 @@ The very first one replaces the starter `Code.gs`: paste `CcsmData.gs` into it a
 | 6 | `CCSM_Agent5A.gs` | `CCSM_Agent5A` | Weekly dashboard + `WEEKLY_KI` |
 | 7 | `CCSM_Agent5B.gs` | `CCSM_Agent5B` | Friday encouragement qualifier |
 | 8 | `CCSM_Agent6.gs` | `CCSM_Agent6` | Friday encouragement emails |
-| 9 | `CCSM_Agent1A.gs` | `CCSM_Agent1A` | Sunday coaching — metrics |
-| 10 | `CCSM_Agent1B.gs` | `CCSM_Agent1B` | Sunday coaching — message selection |
-| 11 | `CCSM_Agent1C.gs` | `CCSM_Agent1C` | Sunday coaching — sends the emails |
+| 9 | `CCSM_Agent1A.gs` | `CCSM_Agent1A` | Monday coaching — metrics |
+| 10 | `CCSM_Agent1B.gs` | `CCSM_Agent1B` | Monday coaching — message selection |
+| 11 | `CCSM_Agent1C.gs` | `CCSM_Agent1C` | Monday coaching — sends the emails |
 | 12 | `CCSM_Agent2.gs` | `CCSM_Agent2` | Per-transfer goal recalibration (manual) |
 | 13 | `CCSM_Agent4.gs` | `CCSM_Agent4` | Weekly system health check + self-heal |
 | 14 | `CCSM_AgentScores.gs` | `CCSM_AgentScores` | Weekly area scores + `SCORE_CONFIG` setup |
@@ -214,10 +214,11 @@ The very first one replaces the starter `Code.gs`: paste `CcsmData.gs` into it a
 | 18 | `CCSM_AgentQA.gs` | `CCSM_AgentQA` | Gemini Q&A + suggestions |
 | 19 | `CCSM_SeedContent.gs` | `CCSM_SeedContent` | The 193 Spanish messages + 10 knowledge-base rows |
 | 20 | `CCSM_Setup.gs` | `CCSM_Setup` | Triggers, smoke test, email preview |
+| 21 | `CCSM_AgentMissionReport.gs` | `CCSM_AgentMissionReport` | Monday mission-wide numbers email for AP/MP |
 
 **Do NOT paste into this project:** `BuildCcsmSheet.gs` (already used, standalone only), or any of the four form builders (`DailyReportForm.gs`, `DailyReportForm_ES.gs`, `WeeklyReportForm.gs`, `WeeklyReportForm_ES.gs`).
 
-- [ ] All 20 files pasted and saved
+- [ ] All 21 files pasted and saved
 - [ ] No red error markers in the editor
 
 If the editor reports something like `X is not defined` when you later run a function, the usual cause is a file that was missed or pasted only partially. Compare the function list in the Run dropdown against this table.
