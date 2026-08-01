@@ -783,11 +783,32 @@ if selected_section == "Mission Goals":
         # they already have their own box up in Featured Metrics above; see
         # _FEATURED_METRIC_KEYS' comment for why _FEATURED_KEYS (goal keys)
         # couldn't do this exclusion on its own.
+        # report_date is excluded too: it's asked on BOTH the Nightly and
+        # Weekly forms and shares that same Metric_Key in QUESTIONS_CONFIG
+        # (CcsmData.gs' CCSM_NIGHTLY_QUESTIONS/CCSM_WEEKLY_QUESTIONS each
+        # define a 'report_date' question). get_question_metrics() here is
+        # called with no form_type filter (unlike Area Goals' nightly_defs/
+        # weekly_defs split), so both rows came through as two entries with
+        # the same key, producing two `mission_extra_report_date` boxes and
+        # crashing with StreamlitDuplicateElementKey. It's also a DATE field
+        # (which date the report covers), not a countable production number
+        # a "goal" makes sense for.
         all_metrics = get_question_metrics()
-        other_metrics = [
-            (k, lbl, ft) for k, lbl, ft in all_metrics
-            if k not in _FEATURED_METRIC_KEYS and k != "rc_total"
-        ]
+        _seen_other_keys: set[str] = set()
+        other_metrics = []
+        for k, lbl, ft in all_metrics:
+            if k in _FEATURED_METRIC_KEYS or k in ("rc_total", "report_date"):
+                continue
+            # Belt-and-suspenders: any other Metric_Key that ends up defined
+            # on both forms (a future CcsmData.gs edit repeating the
+            # report_date mistake above) would otherwise reach st.number_input
+            # twice with the identical widget key and crash the whole page
+            # with StreamlitDuplicateElementKey — silently drop the repeat
+            # instead, keeping the first (Nightly-ordered) definition.
+            if k in _seen_other_keys:
+                continue
+            _seen_other_keys.add(k)
+            other_metrics.append((k, lbl, ft))
         extra_values: dict[str, int] = {}
         if other_metrics:
             with st.expander(t("Other Metrics")):
