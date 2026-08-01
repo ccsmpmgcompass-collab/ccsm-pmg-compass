@@ -233,11 +233,42 @@ function runAgent1C() {
 
     var emailsSent  = 0;
     var emailErrors = 0;
+    var quotaSkipped = 0;
+
+    // ── Quota guard ────────────────────────────────────────────────────────
+    // This loop is the single largest mail burst in the whole system: one
+    // email per unique address in MISSION_ORG, measured at 97 on the live
+    // roster (45 with leaders only). A consumer @gmail.com account gets 100
+    // MailApp recipients/day, shared with Agent3's missed-day alerts, Agent6
+    // and AgentEscalation.
+    //
+    // Without a guard the failure is silent and expensive: MailApp throws
+    // "Service invoked too many times for one day: email" partway through,
+    // every remaining missionary is skipped, the per-email catch below just
+    // increments emailErrors, and the run is still logged SUCCESS. That
+    // already happened on the live sheet -- Agent3 sent 97 alerts on
+    // 2026-07-29 and its every run since has logged the same quota error
+    // under a SUCCESS status.
+    //
+    // ac1_relayConfigured() mirrors sendEmail()'s own routing check: when
+    // RELAY_2_URL is set, Agent1C's mail leaves through the relay account's
+    // UrlFetchApp quota and never touches this account's MailApp allowance,
+    // so the guard must not fire. Same pattern as
+    // CCSM_AgentEscalation.ae_relayConfigured().
+    var usingRelay = a1c_relayConfigured();
 
     Object.keys(peopleMap).forEach(function(email) {
       if (!email || email.indexOf('@') < 0) return;
       if (email.toLowerCase().indexOf('notreadyyet') >= 0) return;
       if (email.toLowerCase().indexOf('tbd@') >= 0) return;
+
+      // Checked per-iteration, not once up front: the quota is consumed BY
+      // this loop, so a single check before it would pass and then blow
+      // through the limit anyway.
+      if (!usingRelay && MailApp.getRemainingDailyQuota() < 1) {
+        quotaSkipped++;
+        return;
+      }
 
       var person = peopleMap[email];
       try {
@@ -252,6 +283,18 @@ function runAgent1C() {
     });
 
     notes.push('Emails sent: ' + emailsSent + ', errors: ' + emailErrors);
+
+    // A coaching letter that never arrived is a failure of this agent's whole
+    // purpose, so it must not hide inside a SUCCESS row. Anyone reading
+    // AGENT_RUN_LOG has to see that N missionaries got nothing this week.
+    if (quotaSkipped > 0) {
+      status = 'ERROR';
+      notes.push('QUOTA EXHAUSTED: ' + quotaSkipped + ' missionary/ies received NO ' +
+                 'coaching letter. The main account is capped at 100 emails/day and ' +
+                 'this roster needs ' + (emailsSent + quotaSkipped) + '. Configure ' +
+                 'RELAY_2_URL in AGENT_CONFIG to move this agent off that quota.');
+      Logger.log('Agent1C: QUOTA EXHAUSTED — ' + quotaSkipped + ' recipient(s) skipped.');
+    }
 
     a1c_writeWeeklyBreakdowns(areas, weekEnd);
     notes.push('WEEKLY_BREAKDOWNS updated');
@@ -277,6 +320,22 @@ function runAgent1C() {
  * Loads ALL active MISSION_ORG rows. Returns array of objects keyed by
  * header. Used to build the people map.
  */
+/**
+ * True if the relay is configured, meaning sendEmail(..., 'Agent1C') will send
+ * through the relay account's UrlFetchApp quota instead of this account's
+ * MailApp quota — in which case the guard in runAgent1C must not fire.
+ *
+ * Mirrors CCSM_AgentEscalation.ae_relayConfigured() and, more importantly,
+ * sendEmail()'s own routing condition in CCSM_Helpers.gs: BOTH a URL and a
+ * secret are required there, and a URL without a secret falls back to MailApp
+ * with only a log line. Checking just the URL here would disable the guard for
+ * a configuration that still spends the main account's quota.
+ */
+function a1c_relayConfigured() {
+  return !!(String(getConfig('RELAY_2_URL') || '').trim() &&
+            String(getConfig('RELAY_SECRET') || '').trim());
+}
+
 function a1c_loadFullMissionOrg() {
   var data = a1c_getSheetData('MISSION_ORG');
   if (!data || data.length < 2) throw new Error('MISSION_ORG empty');

@@ -75,7 +75,7 @@ def filter_by_range(det_df: pd.DataFrame, start, end) -> pd.DataFrame:
 
 
 # (label, Detail date column marking that milestone) — matches the Finding
-# Funnel page's own FUNNEL list (pages/07_Finding_Funnel.py) so the mission
+# Funnel page's own FUNNEL list (pages/07_Embudo_de_Búsqueda.py) so the mission
 # slideshow's numbers always agree with what's on that page.
 FUNNEL_STAGES = [
     ("Found",                  None),

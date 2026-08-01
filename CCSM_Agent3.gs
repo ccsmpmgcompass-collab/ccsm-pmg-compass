@@ -101,14 +101,31 @@ function runAgent3() {
 
     // Step 4: Missed-days check and alerts
     // Wrapped separately so an email quota error doesn't abort DAILY_LOG / LIVE_SNAPSHOT
-    var alertsSent = 0;
+    var alertsSent   = 0;
+    var quotaSkipped = 0;
     try {
-      alertsSent = a3_checkMissedDays(missionOrg, nightlyRaw, areaLookup, lookbackDays, formLink, escalateThreshold, transferStart);
+      var missedResult = a3_checkMissedDays(missionOrg, nightlyRaw, areaLookup, lookbackDays, formLink, escalateThreshold, transferStart);
+      alertsSent   = missedResult.sent;
+      quotaSkipped = missedResult.quotaSkipped;
     } catch (emailErr) {
+      status = 'ERROR';
       notes.push('MISSED_DAYS ERROR: ' + emailErr.message);
       Logger.log('Agent3: missed-days step failed — ' + emailErr.message);
     }
     notes.push('MISSED_DAYS: ' + alertsSent + ' alert(s) sent');
+
+    // Escalate the run's own status when alerts were dropped for quota. This
+    // step used to report SUCCESS while sending nothing at all: from
+    // 2026-07-30 to 2026-08-01 every run logged
+    // "MISSED_DAYS ERROR: Service invoked too many times for one day: email"
+    // inside a SUCCESS row, so nothing watching AGENT_RUN_LOG's Status column
+    // could tell that the compliance nag had been dead for days.
+    if (quotaSkipped > 0) {
+      status = 'ERROR';
+      notes.push('QUOTA EXHAUSTED: ' + quotaSkipped + ' alert(s) NOT sent. The main ' +
+                 'account is capped at 100 emails/day. Configure RELAY_2_URL in ' +
+                 'AGENT_CONFIG to move Agent3 off that quota.');
+    }
 
     Logger.log('Agent3: Complete — ' + notes.join(' | '));
 
@@ -631,7 +648,36 @@ function a3_checkMissedDays(missionOrg, nightlyRaw, areaLookup, lookbackDays, fo
   }
 
   var alertsSent = 0;
+  var quotaSkipped = 0;
   var nowStr = Utilities.formatDate(new Date(), getMissionTimezone(), 'yyyy-MM-dd HH:mm');
+
+  // ── Quota guard ──────────────────────────────────────────────────────────
+  // This step fans out across every non-leadership area and can send two
+  // emails per area (companionship reminder + District Leader escalation). On
+  // 2026-07-29 it sent 97 in one run and exhausted the account; every run from
+  // 2026-07-30 onward logged "Service invoked too many times for one day:
+  // email" and sent NOTHING -- while still recording status SUCCESS, because
+  // runAgent3 wraps this call in a try/catch that only appends the message to
+  // its notes.
+  //
+  // Two things are wrong with that and both are fixed here. First, a thrown
+  // quota error aborts the whole remaining loop, so the areas that would have
+  // been alerted are lost AND the MISSING_LOG dedup rows for them are never
+  // written -- meaning the next run re-tries the same gap from scratch and
+  // burns the quota in the same order, so the same areas are always the ones
+  // that get through. Checking before each send degrades in place instead:
+  // whatever fits is sent and logged, the rest are counted.
+  //
+  // Second, the count is returned so runAgent3 can surface it. Silent partial
+  // delivery of a compliance nag is worse than none: leadership reads "0
+  // alerts" as "everyone reported".
+  //
+  // a3_relayConfigured() mirrors sendEmail()'s routing so the guard does not
+  // fire when Agent3's mail leaves via the relay account instead.
+  var usingRelay = a3_relayConfigured();
+  function a3_quotaAvailable() {
+    return usingRelay || MailApp.getRemainingDailyQuota() >= 1;
+  }
 
   missionOrg.forEach(function(areaObj) {
     var areaName = areaObj['Area_Name'];
@@ -658,6 +704,8 @@ function a3_checkMissedDays(missionOrg, nightlyRaw, areaLookup, lookbackDays, fo
       gaps.forEach(function(gap) {
         var gapKey = areaName + '|' + gap.join(',');
         if (alreadyNotified.companionship[gapKey]) return;  // already alerted this exact gap
+
+        if (!a3_quotaAvailable()) { quotaSkipped++; return; }
 
         var msg = missedMsgs[Math.floor(Math.random() * missedMsgs.length)];
         var parts = gap.map(function(d) { return a3_formatReadableDate(d); });
@@ -697,7 +745,9 @@ function a3_checkMissedDays(missionOrg, nightlyRaw, areaLookup, lookbackDays, fo
       if (!alreadyNotified.escalation[escKey]) {
         var district = String(areaObj['District'] || '').trim().toLowerCase();
         var dlEmail  = dlLookup[district];
-        if (dlEmail) {
+        if (dlEmail && !a3_quotaAvailable()) {
+          quotaSkipped++;
+        } else if (dlEmail) {
           var escSubject = 'Alerta de Informes Faltantes — ' + areaName;
           var escBody    = a3_buildEscalationHtml(areaName, missingDates, missingDates.length, formLink);
 
@@ -725,7 +775,26 @@ function a3_checkMissedDays(missionOrg, nightlyRaw, areaLookup, lookbackDays, fo
     }
   });
 
-  return alertsSent;
+  if (quotaSkipped > 0) {
+    Logger.log('Agent3: QUOTA EXHAUSTED — ' + quotaSkipped + ' missed-day alert(s) not sent.');
+  }
+  // Returned as an object rather than a bare count so runAgent3 can report the
+  // shortfall. Callers that only want the number read .sent.
+  return { sent: alertsSent, quotaSkipped: quotaSkipped };
+}
+
+/**
+ * True if the alerts relay is configured, meaning sendEmail(..., 'Agent3')
+ * sends through the relay account's UrlFetchApp quota rather than this
+ * account's MailApp quota.
+ *
+ * Requires BOTH the URL and the secret, matching sendEmail()'s own condition
+ * in CCSM_Helpers.gs — a URL with no secret logs a warning there and falls
+ * back to MailApp, so it still spends the quota this guard protects.
+ */
+function a3_relayConfigured() {
+  return !!(String(getConfig('RELAY_2_URL') || '').trim() &&
+            String(getConfig('RELAY_SECRET') || '').trim());
 }
 
 /**

@@ -1,5 +1,5 @@
 """
-18_Maintenance.py
+18_Mantenimiento.py
 PMG Compass | Maintenance
 The mission's back office in one tabbed page — COMPASS_CCSM is meant to be
 backend-only, so anything that used to require opening the Sheet should be
@@ -43,6 +43,8 @@ from app.db.sheets_client import (
     update_cells,
 )
 from app.i18n import t
+from app.i18n.formats import fmt_date, fmt_day_month, fmt_int
+from app.utils.area_helpers import mission_today
 
 st.set_page_config(
     page_title="CCSM · Maintenance — PMG Compass",
@@ -160,11 +162,15 @@ if _flash_msg:
 
 if _sec == _TAB_HEALTH:
     render_section_label(t("Weekly To-Do"))
-    _today = date.today()
+    # mission_today(), not date.today(): this app runs on Streamlit Cloud in
+    # UTC, which is already tomorrow through the Chilean evening — so "this
+    # week" would roll over on a Sunday night while the mission is still in
+    # Saturday, and the checkboxes would reset a day early.
+    _today = mission_today()
     _monday = _today - timedelta(days=_today.weekday())
-    _wk = _monday.strftime("%Y-%m-%d")
+    _wk = _monday.strftime("%Y-%m-%d")   # session-state key — stays ISO
     st.caption(
-        t('The weekly maintenance routine — week of {monday} {day}. Checkboxes reset each Monday and live in your browser session only; everything they ask about is verifiable further down this tab.', monday=_monday.strftime('%b'), day=_monday.day)
+        t('The weekly maintenance routine — week of {week_of}. Checkboxes reset each Monday and live in your browser session only; everything they ask about is verifiable further down this tab.', week_of=fmt_day_month(_monday))
     )
     _TODOS = [
         "Every agent's last run is green (Agent Runs below)",
@@ -858,18 +864,26 @@ elif _sec == _TAB_QUESTIONS:
                     _aq_text = st.text_input(
                         t("Question text — exactly as it should appear on the form"),
                         key="q_add_text",
-                        placeholder=t("e.g. Non-member Lessons"),
+                        placeholder=t("e.g. Contactos con amigos"),
                     )
                     _aq_name = st.text_input(
                         t("Short display name (charts and reports)"),
-                        key="q_add_name", placeholder=t("e.g. NM Lessons"),
+                        key="q_add_name", placeholder=t("e.g. Contactos"),
                     )
                     _aq_key = st.text_input(
                         t("Metric key — leave blank to derive from the display name"),
-                        key="q_add_key", placeholder=t("e.g. nm_lessons"),
+                        key="q_add_key", placeholder=t("e.g. contacts_made"),
                     )
+                    # These four are the Data_Type values QUESTIONS_CONFIG
+                    # actually holds and the rest of the app branches on
+                    # (metric_catalog.non_numeric_metrics / metric_data_type,
+                    # CCSM_Agent1A's parsing). The picker used to offer
+                    # INTEGER / TEXT / DATE, none of which except DATE is one of
+                    # them: a question added as TEXT would be classified numeric
+                    # everywhere downstream and its written answers coerced to 0,
+                    # which is indistinguishable from an area reporting zero.
                     _aq_dtype = st.selectbox(
-                        t("Data type"), ["INTEGER", "TEXT", "DATE"],
+                        t("Data type"), ["NUMBER", "YESNO", "CHOICE", "DATE"],
                         format_func=t, key="q_add_dtype")
 
                     if st.button(t("Add question"), key="q_add_btn", type="primary"):
@@ -1009,7 +1023,7 @@ elif _sec == _TAB_SYSTEM:
     if _wf_link:
         _l3.link_button(t("Weekly form ↗"), _wf_link, use_container_width=True)
     st.page_link(
-        "pages/06_Scores.py",
+        "pages/06_Puntajes.py",
         label="Effectiveness score weights are edited on the **Scores** page →",
     )
 

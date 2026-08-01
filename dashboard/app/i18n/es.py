@@ -920,7 +920,7 @@ ES: dict[str, str] = {
         "Clave de la métrica — déjela en blanco para derivarla del nombre para mostrar",
     "e.g. Non-member Lessons": "por ejemplo, Lecciones a no miembros",
     "e.g. NM Lessons": "por ejemplo, Lecciones NM",
-    "e.g. nm_lessons": "por ejemplo, nm_lessons",
+    "e.g. contacts_made": "por ejemplo, contacts_made",
     "Question text and a metric key (or display name) are required.":
         "Se requiere el texto de la pregunta y una clave de métrica (o nombre para mostrar).",
     "That exact question is already on this form.":
@@ -928,6 +928,13 @@ ES: dict[str, str] = {
     "QUESTIONS_CONFIG is missing or empty.": "QUESTIONS_CONFIG falta o está vacía.",
     "QUESTIONS_CONFIG has no metrics defined.":
         "QUESTIONS_CONFIG no tiene métricas definidas.",
+    "No metrics are configured yet — check QUESTIONS_CONFIG on the Maintenance page.":
+        "Aún no hay métricas configuradas — revise QUESTIONS_CONFIG en la página de "
+        "Mantenimiento.",
+    # Names the source form, so it keeps the mission's own capitalization of it
+    # (Formulario Semanal), matching how the nightly/weekly forms are referred
+    # to elsewhere in the app.
+    "{metric} — Weekly Form": "{metric} — Formulario Semanal",
     "The questions on the nightly and weekly report forms. Active drives what "
     "the agents process and what most pages show. Toggling here (or adding a "
     "question) does **not** touch the Google Forms until you push below — the "
@@ -1183,10 +1190,14 @@ ES: dict[str, str] = {
         "Google Forms por separado más abajo.",
     "Metric key `{slug}` already exists — pick another.":
         "La clave de métrica `{slug}` ya existe — elija otra.",
-    "The weekly maintenance routine — week of {monday} {day}. Checkboxes reset "
+    # One {week_of} placeholder, not {monday} {day}: the date is built by
+    # app.i18n.formats.fmt_day_month now, so this string no longer has to
+    # reassemble an English month abbreviation into Spanish word order — and
+    # the month name itself is finally Spanish.
+    "The weekly maintenance routine — week of {week_of}. Checkboxes reset "
     "each Monday and live in your browser session only; everything they ask "
     "about is verifiable further down this tab.":
-        "La rutina de mantenimiento semanal — semana del {day} de {monday}. Las "
+        "La rutina de mantenimiento semanal — semana del {week_of}. Las "
         "casillas se reinician cada lunes y viven solo en la sesión de su navegador; "
         "todo lo que preguntan se puede verificar más abajo en esta pestaña.",
 
@@ -1320,16 +1331,302 @@ ES: dict[str, str] = {
     "Push failed: {e}": "El envío falló: {e}",
     "Push failed: {data}": "El envío falló: {data}",
 
+    # ── Informes (weekly mission report) ─────────────────────────────────────
+    "Reports": "Informes",
+    "{mission} — weekly mission report": "{mission} — informe semanal de la misión",
+    "Scope": "Alcance",
+    "Whole mission": "Toda la misión",
+    "Week ending {week} · {scope} · {areas} area(s)":
+        "Semana que termina el {week} · {scope} · {areas} área(s)",
+    "No reported week yet. This page fills in once the weekly form has been "
+    "submitted and the agents have written WEEKLY_KI.":
+        "Aún no hay ninguna semana informada. Esta página se completa cuando "
+        "se haya enviado el formulario semanal y los agentes hayan escrito "
+        "WEEKLY_KI.",
+    "Key Indicator": "Indicador Clave",
+    "Achieved": "Logrado",
+    "Goal set": "Meta fijada",
+    "% of goal": "% de la meta",
+    "No weekly Key Indicator data for this week and scope.":
+        "No hay datos de Indicadores Clave para esta semana y alcance.",
+    "No nightly data for this week.":
+        "No hay datos diarios para esta semana.",
+    "{start} to {end}": "{start} al {end}",
+    "Week total": "Total de la semana",
+    "Per area / day": "Por área / día",
+    "No scores for this week yet. CCSM_AgentScores writes them on its weekly "
+    "run.":
+        "Aún no hay puntajes para esta semana. CCSM_AgentScores los escribe "
+        "en su ejecución semanal.",
+    "Skill": "Habilidad",
+    "Effectiveness": "Efectividad",
+    "Weekly Form Compliance": "Cumplimiento del Formulario Semanal",
+    "Areas reporting": "Áreas que informaron",
+    "Not reported": "Sin informar",
+    "No areas in scope.": "No hay áreas en este alcance.",
+    "{pct} of areas in scope submitted the weekly form.":
+        "El {pct} de las áreas del alcance envió el formulario semanal.",
+    "Areas with no weekly report ({count})":
+        "Áreas sin informe semanal ({count})",
+    "Export": "Exportar",
+    "Download scores for this week (CSV)":
+        "Descargar los puntajes de esta semana (CSV)",
+    "Download Key Indicators for this week (CSV)":
+        "Descargar los Indicadores Clave de esta semana (CSV)",
+    "CSVs are written UTF-8 with a BOM so Excel opens the accents correctly.":
+        "Los CSV se escriben en UTF-8 con BOM para que Excel abra bien los "
+        "acentos.",
+
+    # ── Traslados (transfer cycle) ───────────────────────────────────────────
+    "Transfers": "Traslados",
+    "Transfer": "Traslado",
+    "Transfer {number}": "Traslado {number}",
+    "Current transfer": "Traslado actual",
+    "{mission} — the current transfer cycle":
+        "{mission} — el ciclo de traslado actual",
+    "No transfer has been scheduled yet. Fill in TRANSFER_SCHEDULE "
+    "(Transfer_Number, Start_Date, Weeks, Status), or set "
+    "TRANSFER_START_DATE in AGENT_CONFIG.":
+        "Aún no se ha programado ningún traslado. Complete TRANSFER_SCHEDULE "
+        "(Transfer_Number, Start_Date, Weeks, Status), o defina "
+        "TRANSFER_START_DATE en AGENT_CONFIG.",
+    "TRANSFER_SCHEDULE is empty, so this uses TRANSFER_START_DATE from "
+    "AGENT_CONFIG and assumes a {weeks}-week cycle.":
+        "TRANSFER_SCHEDULE está vacía, así que esto usa TRANSFER_START_DATE "
+        "de AGENT_CONFIG y supone un ciclo de {weeks} semanas.",
+    "Days elapsed": "Días transcurridos",
+    "Days remaining": "Días restantes",
+    "Weeks": "Semanas",
+    "{start} to {end} · {weeks} weeks{status}":
+        "{start} al {end} · {weeks} semanas{status}",
+    "This transfer ended on {end} and no later one is scheduled. Add the next "
+    "row to TRANSFER_SCHEDULE so the transfer-to-date figures below start "
+    "counting from the right day.":
+        "Este traslado terminó el {end} y no hay uno posterior programado. "
+        "Agregue la siguiente fila a TRANSFER_SCHEDULE para que las cifras "
+        "acumuladas del traslado empiecen a contar desde el día correcto.",
+    "Full transfer schedule ({count})":
+        "Calendario completo de traslados ({count})",
+    "Starts": "Comienza",
+    "Ends": "Termina",
+    "Current": "Actual",
+    "Area Performance This Transfer": "Desempeño por Área en Este Traslado",
+    "Totals from the start of the transfer through today, as CCSM_Agent3 "
+    "computes them into LIVE_SNAPSHOT. Non-numeric questions are left out — a "
+    "running sum of a Sí/No or Todo/Algo answer means nothing.":
+        "Totales desde el inicio del traslado hasta hoy, tal como "
+        "CCSM_Agent3 los calcula en LIVE_SNAPSHOT. Se excluyen las preguntas "
+        "no numéricas — sumar respuestas Sí/No o Todo/Algo no significa nada.",
+    "LIVE_SNAPSHOT is empty. CCSM_Agent3 rebuilds it on each run from "
+    "DAILY_LOG — check Agent Runs on the Mantenimiento page.":
+        "LIVE_SNAPSHOT está vacía. CCSM_Agent3 la reconstruye en cada "
+        "ejecución a partir de DAILY_LOG — revise Ejecuciones de Agentes en "
+        "la página Mantenimiento.",
+    "LIVE_SNAPSHOT has no transfer-to-date columns yet. They appear once the "
+    "nightly agent has run against a populated DAILY_LOG.":
+        "LIVE_SNAPSHOT aún no tiene columnas acumuladas del traslado. "
+        "Aparecen cuando el agente diario se ejecuta sobre una DAILY_LOG con "
+        "datos.",
+    "Metrics": "Métricas",
+    "Pick at least one metric.": "Elija al menos una métrica.",
+    "Roster": "Nómina",
+    "MISSION_ORG has no active areas.": "MISSION_ORG no tiene áreas activas.",
+    "Areas": "Áreas",
+    "Zones": "Zonas",
+    "Districts": "Distritos",
+    "Companion 1": "Compañero 1",
+    "Companion 2": "Compañero 2",
+    "Every area ({count})": "Todas las áreas ({count})",
+    "All zones": "Todas las zonas",
+
+    # ── Referencias (member referrals) ───────────────────────────────────────
+    "Referrals": "Referencias",
+    "{mission} — member referrals asked for and received":
+        "{mission} — referencias de miembros solicitadas y recibidas",
+    "This mission's nightly form does not ask about referrals, so there is "
+    "nothing to report here. The questions this page needs are "
+    "`references_asked` and `member_referrals_received` in QUESTIONS_CONFIG.":
+        "El formulario diario de esta misión no pregunta por referencias, así "
+        "que no hay nada que informar aquí. Las preguntas que necesita esta "
+        "página son `references_asked` y `member_referrals_received` en "
+        "QUESTIONS_CONFIG.",
+    "No nightly data in this window yet. Referral figures appear once "
+    "companionships submit the nightly form and the agents write DAILY_LOG.":
+        "Aún no hay datos diarios en este período. Las cifras de referencias "
+        "aparecen cuando las compañías envían el formulario diario y los "
+        "agentes escriben DAILY_LOG.",
+    "DAILY_LOG has no column for: {cols}. Those figures are left out rather "
+    "than shown as zero.":
+        "DAILY_LOG no tiene columna para: {cols}. Esas cifras se omiten en "
+        "lugar de mostrarse como cero.",
+    "Last {days} days": "Últimos {days} días",
+    "{rate} of referrals asked for came back as a member referral ({received} "
+    "from {asked} asks).":
+        "El {rate} de las referencias solicitadas se convirtió en una "
+        "referencia de un miembro ({received} de {asked} solicitudes).",
+    "No referrals were asked for in this window, so there is no "
+    "ask-to-referral rate to report ({received} referral(s) received).":
+        "No se solicitaron referencias en este período, así que no hay una "
+        "tasa de solicitud a referencia que informar ({received} "
+        "referencia(s) recibida(s)).",
+    "Referrals per day": "Referencias por día",
+    "Rate": "Tasa",
+    "Ranked by referrals received. An area that asked for none has no rate "
+    "rather than a 0% one — it has not tried and failed, it has not tried.":
+        "Ordenado por referencias recibidas. Un área que no solicitó ninguna "
+        "no tiene tasa, en lugar de tener un 0% — no lo intentó y falló, "
+        "simplemente no lo intentó.",
+    "What this page counts": "Qué cuenta esta página",
+    "- **{asked}** — how many times companionships asked a member for someone "
+    "to teach, from the nightly form.\n- **{received}** — how many referrals "
+    "members actually gave them, also from the nightly form.\n\nBoth are "
+    "self-reported nightly counts, so they measure the conversation, not a "
+    "record in another system. There is no referral feed to reconcile "
+    "against.":
+        "- **{asked}** — cuántas veces las compañías pidieron a un miembro "
+        "alguien a quien enseñar, según el formulario diario.\n"
+        "- **{received}** — cuántas referencias les dieron realmente los "
+        "miembros, también del formulario diario.\n\nAmbas son cuentas "
+        "diarias autoinformadas, así que miden la conversación, no un "
+        "registro en otro sistema. No hay un flujo de referencias con el cual "
+        "conciliarlas.",
+
+    # ── Editar Envíos (corrections to DAILY_LOG / WEEKLY_KI) ─────────────────
+    "Edit Submissions": "Editar Envíos",
+    "Correct a report a companionship already submitted":
+        "Corrija un informe que una compañía ya envió",
+    "Corrections are written to DAILY_LOG and WEEKLY_KI — the tabs the "
+    "dashboard and the agents both read — not to the Google Forms response "
+    "sheets, which the agents do not re-read. Every change is recorded in "
+    "AUDIT_LOG with your address.":
+        "Las correcciones se escriben en DAILY_LOG y WEEKLY_KI — las pestañas "
+        "que leen tanto el panel como los agentes — y no en las hojas de "
+        "respuestas de Google Forms, que los agentes no vuelven a leer. Cada "
+        "cambio queda registrado en AUDIT_LOG con su dirección.",
+    "Which report": "Qué informe",
+    "Nightly report": "Informe diario",
+    "Weekly report (Key Indicators)": "Informe semanal (Indicadores Clave)",
+    "Week ending": "Semana que termina",
+    "No active areas found in MISSION_ORG.":
+        "No se encontraron áreas activas en MISSION_ORG.",
+    "{tab} has no columns yet, so there is nothing to correct. The agents "
+    "create it on their first successful run — check Agent Runs on the "
+    "Mantenimiento page.":
+        "{tab} aún no tiene columnas, así que no hay nada que corregir. Los "
+        "agentes la crean en su primera ejecución exitosa — revise "
+        "Ejecuciones de Agentes en la página Mantenimiento.",
+    "— a date not reported (backfill) —":
+        "— una fecha no informada (completar) —",
+    "Backfilling creates a row that was never submitted. The nightly agent "
+    "skips any date already present, so once this is saved the companionship's "
+    "own late submission for that date will NOT replace it. Only use this when "
+    "the report will never arrive.":
+        "Completar crea un registro que nunca fue enviado. El agente diario "
+        "omite toda fecha que ya exista, así que una vez guardado esto, el "
+        "envío tardío de la propia compañía para esa fecha NO lo reemplazará. "
+        "Úselo solo cuando el informe nunca vaya a llegar.",
+    "Date to create": "Fecha que se creará",
+    "Pick a date to continue.": "Elija una fecha para continuar.",
+    "No report found for {area} on {date}.":
+        "No se encontró un informe de {area} para el {date}.",
+    "Currently recorded — {area}, {date}":
+        "Registrado actualmente — {area}, {date}",
+    "New values": "Valores nuevos",
+    "Only the fields you change are written. Everything left alone keeps the "
+    "value the companionship reported.":
+        "Solo se escriben los campos que usted cambie. Todo lo demás conserva "
+        "el valor que informó la compañía.",
+    "No changes yet.": "Aún no hay cambios.",
+    "{count} field(s) changed: {fields}":
+        "{count} campo(s) modificado(s): {fields}",
+    "Save correction": "Guardar corrección",
+    "Create this report": "Crear este informe",
+    "Saved {count} field(s) for {area} on {date}. The change reaches the rest "
+    "of the dashboard on the agents' next run.":
+        "Se guardaron {count} campo(s) de {area} para el {date}. El cambio "
+        "llega al resto del panel en la próxima ejecución de los agentes.",
+    "Full record as stored": "Registro completo tal como está guardado",
+    "Field": "Campo",
+
+    # KPI card captions. These live inside an f-string HTML block in
+    # design_system.render_kpi_row, so the string extractor cannot see them —
+    # they were plain English on every page, in both languages, until routed
+    # through t() by hand.
+    "{pct}% of {goal} goal": "{pct}% de la meta de {goal}",
+    "{pct}% of {expectation} expectation": "{pct}% de la expectativa de {expectation}",
+
+    # ── Phase 2 de-contamination: Dashboard + Scores rebuilt sections ────────
+    # New strings from replacing Provo-keyed sections with catalogue-driven
+    # ones (Dashboard KPI/KI rows and trend charts, Scores' Daily Activity).
+    "Count": "Cantidad",
+    "Date": "Fecha",
+    "Week Ending": "Semana que termina",
+    "Nightly Activity": "Actividad diaria",
+    "Nightly Activity — Last 7 Days": "Actividad diaria — últimos 7 días",
+    "Daily Trend": "Tendencia diaria",
+    "Daily Trend — Last 7 Days": "Tendencia diaria — últimos 7 días",
+    "Daily {metric} — Last 7 Days": "{metric} por día — últimos 7 días",
+    "{metric} per day (mission total)": "{metric} por día (total de la misión)",
+    "By Area": "Por área",
+    "Metrics to chart": "Métricas para graficar",
+    "Pick at least one metric to chart.": "Elija al menos una métrica para graficar.",
+    "Nightly reporting — {window_label}": "Informes diarios — {window_label}",
+    "DAILY_LOG has no Date column, so there is no trend to draw.":
+        "DAILY_LOG no tiene columna Date, por lo que no hay tendencia que graficar.",
+    "DAILY_LOG has no Area column, so it cannot be broken down by area.":
+        "DAILY_LOG no tiene columna Area, por lo que no se puede desglosar por área.",
+    "None of this mission's nightly metrics appear in DAILY_LOG. Check the "
+    "QUESTIONS_CONFIG tab of COMPASS_CCSM, then re-run the nightly refresh.":
+        "Ninguna de las métricas diarias de esta misión aparece en DAILY_LOG. "
+        "Revise la pestaña QUESTIONS_CONFIG de COMPASS_CCSM y vuelva a ejecutar "
+        "la actualización diaria.",
+    "No metrics are configured for this mission, so there is nothing to "
+    "weight. Check the QUESTIONS_CONFIG and SCORE_CONFIG tabs of "
+    "COMPASS_CCSM before editing score weights.":
+        "Esta misión no tiene métricas configuradas, así que no hay nada que "
+        "ponderar. Revise las pestañas QUESTIONS_CONFIG y SCORE_CONFIG de "
+        "COMPASS_CCSM antes de editar los pesos del puntaje.",
+    "Weekly-form Key Indicators. Metrics left at 0 don't count toward KI.":
+        "Indicadores Clave del formulario semanal. Las métricas en 0 no cuentan "
+        "para el puntaje de Indicadores Clave.",
+    "Full Effort": "Todo el esfuerzo",
+    "Effort reported per day": "Esfuerzo informado por día",
+    "No effort responses recorded for this window yet.":
+        "Aún no hay respuestas de esfuerzo registradas para este período.",
+
+    # QUESTIONS_CONFIG Data_Type values. Display only — format_func translates
+    # what is shown while the raw English value is what gets written to the
+    # sheet and read by the agents.
+    "NUMBER": "NÚMERO",
+    "YESNO": "SÍ/NO",
+    "CHOICE": "OPCIÓN",
+    "e.g. Contactos": "p. ej. Contactos",
+    "e.g. Contactos con amigos": "p. ej. Contactos con amigos",
+
+    "REC is a light stretch goal — about {get_rec_stretch_pct}% above this "
+    "area's all-time weekly average — to nudge the area to do slightly better. "
+    "Any metric with an expectation saved in Area Expectation Settings shows "
+    "goal / this area's weekly expectation — add or change one there and the "
+    "fraction follows the moment it's saved.":
+        "REC es una meta de estiramiento leve — alrededor de un "
+        "{get_rec_stretch_pct}% por encima del promedio semanal histórico de "
+        "esta área — para motivarla a mejorar un poco. Toda métrica con una "
+        "expectativa guardada en Configuración de Expectativas por Área muestra "
+        "meta / la expectativa semanal de esta área; agregue o cambie una allí "
+        "y la fracción se actualiza apenas se guarda.",
+
     # ── Long help texts (metric names and code identifiers left as-is) ───────
+    # The weight list is now a {weights} placeholder built from SCORE_CONFIG at
+    # render time — it used to be spelled out here as Provo's "nm_lessons 30% ·
+    # new_found 25% · mmm_sent 20% · pew 15% · gate 10%", in BOTH languages, so
+    # the Spanish page stated Provo's weights as fact about a CCSM area.
     "Each slice is that metric's average share of this area's weekly Effort "
     "score across {count} week(s) in {time_range} (actual vs. expectation, "
-    "weighted nm_lessons 30% · new_found 25% · mmm_sent 20% · pew 15% · "
-    "gate 10%) — not raw activity volume.":
+    "weighted {weights}) — not raw activity volume.":
         "Cada porción es la participación promedio de esa métrica en el puntaje "
         "semanal de Esfuerzo de esta área a lo largo de {count} semana(s) en "
-        "{time_range} (real vs. expectativa, ponderado nm_lessons 30% · "
-        "new_found 25% · mmm_sent 20% · pew 15% · gate 10%) — no el volumen bruto "
-        "de actividad.",
+        "{time_range} (real vs. expectativa, ponderado {weights}) — no el "
+        "volumen bruto de actividad.",
 
     "Mission average: **{avg:.1f}/week** · projected goal at **{proj_pct}%** "
     "nudge: **{proj_goal}/week**. The green line is what the mission-wide REC "
@@ -1410,42 +1707,25 @@ ES: dict[str, str] = {
 
     "REC is a light stretch goal — about {get_rec_stretch_pct}% above the whole "
     "mission's typical MONTHLY performance across every area, for a month this "
-    "length — to nudge the mission to do slightly better. Recent Convert "
-    "Attendance's REC scales by the number of Sundays this month (church "
-    "attendance is a once-a-week event), not the general weeks-in-month figure "
-    "used for other metrics. Any goal whose indicator has expectations saved in "
-    "Area Expectation Settings shows goal / a hypothetical mission-wide target "
-    "for this month — every area at its own expectation, summed and sized to "
-    "this month's exact length (weekly figures × its weeks, Renew × its Sunday "
-    "count, monthly figures as-is) — not based on actual data. Where no "
-    "expectation is saved, Recent Convert Attendance falls back to goal / the "
-    "mission's MAX possible Recent-Convert attendances this month — every "
-    "area's own recent-convert count as of each Sunday, summed across every "
-    "Sunday and every area, so this also scales with the month's Sunday count "
-    "— and Members at Non-Member Lessons to the hypothetical NM Lessons target. "
-    "LSI Follow-Ups (in Other Metrics) shows goal / the mission's own LSI Given "
-    "goal instead, live as you type it — so you can see how many of the LSIs "
-    "given are actually being followed up on.":
+    "length — to nudge the mission to do slightly better. Church-attendance "
+    "indicators scale by the number of Sundays this month, since attendance is "
+    "a once-a-week event, rather than the general weeks-in-month figure used "
+    "for other metrics. Any goal whose indicator has expectations saved in Area "
+    "Expectation Settings shows goal / a hypothetical mission-wide target for "
+    "this month — every area at its own expectation, summed and sized to this "
+    "month's exact length — not based on actual data. A goal with no "
+    "expectation saved shows no fraction at all.":
         "REC es una meta de superación leve — alrededor de {get_rec_stretch_pct}% por "
         "encima del desempeño MENSUAL típico de toda la misión en todas las áreas, "
-        "para un mes de esta duración — para animar a la misión a mejorar un poco. El "
-        "REC de Asistencia de Conversos Recientes se ajusta según la cantidad de "
-        "domingos de este mes (la asistencia a la Iglesia es un evento semanal), no "
-        "según la cifra general de semanas del mes que se usa para otras métricas. "
-        "Cualquier meta cuyo indicador tenga expectativas guardadas en Configuración "
-        "de Expectativas por Área muestra meta / un objetivo hipotético de toda la "
-        "misión para este mes — cada área con su propia expectativa, sumadas y "
-        "ajustadas a la duración exacta de este mes (cifras semanales × sus semanas, "
-        "Renew × su cantidad de domingos, cifras mensuales tal cual) — no basado en "
-        "datos reales. Cuando no hay expectativa guardada, Asistencia de Conversos "
-        "Recientes recurre a meta / el MÁXIMO posible de asistencias de conversos "
-        "recientes de la misión este mes — la cantidad de conversos recientes de cada "
-        "área en cada domingo, sumada entre todos los domingos y todas las áreas, así "
-        "que también escala con la cantidad de domingos del mes — y Miembros en "
-        "Lecciones a No Miembros al objetivo hipotético de Lecciones NM. Seguimientos "
-        "de LSI (en Otras Métricas) muestra meta / la propia meta de LSI Impartidas de "
-        "la misión, en vivo mientras la escribe — para que vea a cuántas de las LSI "
-        "impartidas se les está dando seguimiento.",
+        "para un mes de esta duración — para animar a la misión a mejorar un poco. Los "
+        "indicadores de asistencia a la Iglesia se ajustan según la cantidad de "
+        "domingos de este mes, ya que la asistencia es un evento semanal, en lugar de "
+        "la cifra general de semanas del mes que se usa para otras métricas. Cualquier "
+        "meta cuyo indicador tenga expectativas guardadas en Configuración de "
+        "Expectativas por Área muestra meta / un objetivo hipotético de toda la misión "
+        "para este mes — cada área con su propia expectativa, sumadas y ajustadas a la "
+        "duración exacta de este mes — no basado en datos reales. Una meta sin "
+        "expectativa guardada no muestra ninguna fracción.",
 
     "{span}  |  {kpi_period}  |  every question this area has ever reported, "
     "totalled for this period (daily + weekly Sunday form; rates excluded — see "
@@ -1455,12 +1735,14 @@ ES: dict[str, str] = {
         "dominical; se excluyen las tasas — vea el selector de Métrica más abajo para "
         "la tendencia de una métrica individual)",
 
-    "{span}  |  {kpi_period} — counts what happened in this period. Found from "
-    "nightly reports, At Sacrament and Baptized from the weekly Sunday form, "
-    "Taught from the Tableau export; the bars come from different reports and "
-    "aren't subsets of each other.":
-        "{span}  |  {kpi_period} — cuenta lo que ocurrió en este período. Encontradas "
-        "proviene de los reportes nocturnos, En Sacramental y Bautizadas del "
-        "formulario semanal dominical, y Enseñadas de la exportación de Tableau; las "
-        "barras provienen de reportes distintos y no son subconjuntos entre sí.",
+    # Found moved from the nightly log to the weekly Key Indicators along with
+    # the other two — see the funnel's source note in app/breakdowns_engine.py.
+    "{span}  |  {kpi_period} — counts what happened in this period. Found, "
+    "At Sacrament and Baptized from the weekly Key Indicators, Taught from the "
+    "Tableau export; the bars come from different reports and aren't subsets "
+    "of each other.":
+        "{span}  |  {kpi_period} — cuenta lo que ocurrió en este período. "
+        "Encontradas, En Sacramental y Bautizadas provienen de los Indicadores "
+        "Clave semanales, y Enseñadas de la exportación de Tableau; las barras "
+        "provienen de reportes distintos y no son subconjuntos entre sí.",
 }

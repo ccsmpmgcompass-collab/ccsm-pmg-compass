@@ -1,7 +1,7 @@
 """
 breakdowns_engine.py
 ────────────────────────────────────────────────────────────────────────────────
-Rendering engine for pages/04_Breakdowns.py: the metric catalogue, cached data
+Rendering engine for pages/04_Desgloses.py: the metric catalogue, cached data
 loaders, chart helpers, and the shared group-breakdown / teaching-pipeline /
 compliance-calendar renderers. Extracted from the page 2026-07-18 so the page
 file is just scope-selector dispatch + notes.
@@ -56,77 +56,52 @@ from app.i18n import t
 # ══════════════════════════════════════════════════════════════════════════════
 # METRIC CATALOGUE (group views)
 # ══════════════════════════════════════════════════════════════════════════════
-# Count metrics — can be summed per area for comparison tables and bar charts.
-# Keys must match column names in WEEKLY_KI / WEEKLY_BREAKDOWNS exactly.
-METRIC_OPTIONS = {
-    # Pinned first, deliberately out of its "Weekly KI" group below — the most
-    # important outcome in the mission gets top billing in the picker regardless
-    # of category.
-    "gate":                   "Baptized & Confirmed (GATE)",
-    # Finding
-    "new_found":              "New People Being Taught (NEW)",
-    "nm_contacted":           "NM Contacted",
-    "nm_meaningful":          "Meaningful Contacts",
-    "nm_doors":               "NM Attempted",
-    "nm_texts":               "NM Texts Sent",
-    "online_referrals":       "Online Referrals",
-    "referrals_today":        "Member Referrals",
-    "lsi_given":              "LSI Given",
-    "lsi_followups":          "LSI Follow-Ups",
-    # Teaching
-    "nm_lessons":             "NM Lessons",
-    "member_lessons":         "Lessons With a Member Participating (MATE)",
-    "rc_lessons":             "RC Lessons",
-    "la_lessons":             "Less Active Lessons",
-    # Weekly KI (from Sunday form) — gate lives at the top of this dict, not here
-    "pew":                    "People at Sacrament Meeting (PEW)",
-    "date_metric":            "Baptismal Date (DATE)",
-    "renew":                  "New Members at Sacrament Meeting (RENEW)",
-    "rc_total":               "RC Could Attend",
-    # Weekly KI from WEEKLY_KI (agent-computed), not the Sunday form — added
-    # 2026-07-18 (Carson): MMMs was the one core expectation with no chart in
-    # this tab at all, so a new/edited MMM expectation had no line to pop up on.
-    "mmm_sent":               "MMMs Sent",
-    # Attempt breakdown
-    "la_Attempt":             "Less Active Attempted",
-    "fellowshipper_Attempt":  "Fellowshipper Attempted",
-    "aux_Attempt":            "Aux/Coord Attempted",
-    "info_Attempt":           "Informational Attempted",
-    "locos_Attempt":          "LOCOS Attempted",
-    # Rates (display only — not summed in comparison table)
-    "contact_rate":           "Contact to Friend",
-    "mc_rate":                "Member-Present Rate",
-    "door_lesson_rate":       "Door-to-Lesson Rate",
-    "close_rate":             "Close Rate",
-    "nm_knocked_rate":        "NM Attempt Rate",
-    "effort_score":           "Effort Score",
-}
+# The catalogue is GENERATED from the live QUESTIONS_CONFIG tab — see
+# app/config/metric_catalog.py. This module used to carry its own copy of Utah
+# Provo's vocabulary (gate, pew, renew, date_metric, nm_doors, lsi_given,
+# locos_Attempt, mmm_sent …), none of which is a question on a CCSM form, and
+# the same list existed in app/config/metrics.py and app/utils/area_helpers.py
+# as well.
+#
+# These are FUNCTIONS, not module-level dicts, deliberately: a dict would be
+# built at import time, when there is no session and no sheet to read.
 
-# The mission's headline Key Indicators — pinned to the top of the group-view
-# Metric picker in THIS order, ahead of everything else, and marked with a ★
-# prefix there (see the picker's format_func) so they stand out from the rest
-# of the catalogue while staying plain-ASCII and type-to-search friendly.
-# Carson's list, mapped onto existing METRIC_OPTIONS keys — every one of these
-# already existed, so this reorders rather than adds anything.
-_PRIMARY_METRICS = ("gate", "date_metric", "new_found", "pew", "renew", "member_lessons")
+from app.config.flavor_loader import GOAL_TO_ACTUAL
+from app.config.metric_catalog import (
+    is_rate_metric,
+    key_indicator_metrics,
+    metric_options,
+    weekly_metric_keys,
+)
 
-# The 4 metrics that live only in the weekly Sunday form (get_weekly_form_data,
-# WEEKLY_FORM_RAW) rather than DAILY_LOG — one row per area per WEEK, not per
-# day. 3 of the 6 primary metrics (date_metric/pew/renew) are in this set
-# alongside "gate": all 4 need the SAME special-case sourcing below, not just
-# gate — a group can have baptisms but never logged Friends on Date, or vice
-# versa, so each is offered independently based on its OWN data.
-_WEEKLY_FORM_METRICS = {"gate", "date_metric", "pew", "renew"}
 
-# MMMs live in WEEKLY_KI (one agent-computed row per area per week), not
-# DAILY_LOG or the Sunday form — merged into the weekly frame in
-# render_group_breakdown so the metric rides the existing weekly pipeline
-# (picker, bar, trend, expectation lines) instead of growing a third path.
-_WEEKLY_KI_METRICS = {"mmm_sent"}
+def _primary_metrics() -> tuple[str, ...]:
+    """The mission's headline Key Indicators, pinned to the top of the Metric
+    picker and marked with a ★ prefix there.
 
-# Every weekly-grained pickable metric — one row per area per WEEK, no daily
-# grain to toggle to; always bucketed by week.
-_WEEKLY_METRICS = _WEEKLY_FORM_METRICS | _WEEKLY_KI_METRICS
+    For CCSM these are the seven `ki_*_real` values the weekly form collects —
+    the same set SCORE_CONFIG scores as the KI component — rather than a
+    hand-listed six. The matching `_meta` keys are that companionship's GOAL for
+    the week and are deliberately NOT pinned: a goal is not an achievement, and
+    showing them side by side in one picker invites reading one as the other.
+
+    The ★ prefix stays plain ASCII on purpose. st.selectbox's type-to-search
+    matches the DISPLAYED text, so a Mathematical-Bold label (𝗣𝗼𝘁…) could never
+    be found by typing "po".
+    """
+    return tuple(key_indicator_metrics())
+
+
+def _weekly_metrics() -> frozenset[str]:
+    """Metrics that live only in the weekly form — one row per area per WEEK,
+    no daily grain to toggle to, so they are always bucketed by week.
+
+    CCSM has no third source here. Provo additionally had WEEKLY_KI-computed
+    metrics (mmm_sent) merged in as `_WEEKLY_KI_METRICS`; CCSM's WEEKLY_KI holds
+    the same `ki_*` keys the form already supplies, so the weekly-form set is
+    the whole of it.
+    """
+    return weekly_metric_keys()
 
 # Shared style for every expectation reference (trend hlines, bar hlines, and
 # the area bar's dash markers) — one look everywhere Carson sees "the bar".
@@ -180,11 +155,9 @@ def _expectation_rate(entry: dict) -> str:
     return f"{entry['value']:g}/{unit}"
 
 
-# Rate/score metrics should not be summed across areas — averaged instead.
-_RATE_METRICS = {
-    "contact_rate", "mc_rate", "door_lesson_rate",
-    "close_rate", "nm_knocked_rate", "effort_score",
-}
+# Rate/score metrics are averaged across areas, never summed — see
+# is_rate_metric() in app/config/metric_catalog.py, which mirrors
+# CCSM_Agent1A.gs's A1A_RATE_METRICS and is held to it by a test.
 
 _ANY = "— any —"
 
@@ -319,7 +292,7 @@ def _detail_col(df: pd.DataFrame, name: str):
     Shortest-match matters: Tableau emits a giant '..._and_5_more_(combined)'
     mashup column that contains the same substrings as the real, short columns,
     so a naive `in` check finds the mashup instead of the data. Same rule as
-    _col() in 07_Finding_Funnel.py — duplicated rather than shared because
+    _col() in 07_Embudo_de_Búsqueda.py — duplicated rather than shared because
     Streamlit's page model has no way to import across pages/. Worth promoting
     both copies into app/utils/ when something else needs them.
     """
@@ -522,9 +495,21 @@ def _render_teaching_pipeline(
             return 0
         return int(pd.to_numeric(frame[col], errors="coerce").fillna(0).sum())
 
-    _found = _period_total(rows, "new_found")
-    _pew   = _period_total(weekly_wk, "pew")
-    _gate  = _period_total(weekly_wk, "gate")
+    # Which metric backs each stage comes from GOAL_TO_ACTUAL — the mission's
+    # own map from an outcome ("people found", "at sacrament", "baptized") to
+    # the Key Indicator that carries its real value. The three keys used to be
+    # spelled out as new_found / pew / gate: Utah Provo's. _period_total returns
+    # 0 for a column that isn't there, so all three bars read 0 for CCSM and the
+    # funnel showed a mission that found nobody, and baptized nobody, every
+    # period since launch.
+    #
+    # All three now come from `weekly_wk`. Found was previously taken from the
+    # nightly log, but CCSM states its finding outcome as a weekly Key
+    # Indicator, and a funnel whose first bar is counted over a different
+    # reporting cadence than the rest is not comparable stage to stage.
+    _found = _period_total(weekly_wk, GOAL_TO_ACTUAL.get("new_people_to_teach", ""))
+    _pew   = _period_total(weekly_wk, GOAL_TO_ACTUAL.get("at_sacrament", ""))
+    _gate  = _period_total(weekly_wk, GOAL_TO_ACTUAL.get("baptisms", ""))
 
     # ── Taught, from the Tableau detail export ────────────────────────────────
     _det = _load_tableau_detail()
@@ -670,7 +655,7 @@ def _render_teaching_pipeline(
         )
         st.plotly_chart(fig_funnel, use_container_width=True)
         st.caption(
-            t("{span}  |  {kpi_period} — counts what happened in this period. Found from nightly reports, At Sacrament and Baptized from the weekly Sunday form, Taught from the Tableau export; the bars come from different reports and aren't subsets of each other.", span=span, kpi_period=kpi_period)
+            t("{span}  |  {kpi_period} — counts what happened in this period. Found, At Sacrament and Baptized from the weekly Key Indicators, Taught from the Tableau export; the bars come from different reports and aren't subsets of each other.", span=span, kpi_period=kpi_period)
         )
         # At Sacrament (pew) is a raw weekly headcount the missionaries type into
         # the Sunday form, not a roster of named people — over a period spanning
@@ -975,7 +960,7 @@ def render_lineage_marker(area: str, area_val_key: str) -> bool:
         # Plain st.rerun() defaults to a full-app rerun even when called from
         # inside the caller's st.fragment — that would tear down and resend the
         # global CSS/header/sidebar (the exact unstyled-flash bug the fragment in
-        # 04_Breakdowns.py was built to prevent). scope="fragment" keeps this
+        # 04_Desgloses.py was built to prevent). scope="fragment" keeps this
         # redirect inside the fragment like every other selector change.
         st.rerun(scope="fragment")
     return True
@@ -1077,7 +1062,7 @@ def render_group_breakdown(
         # DAILY_LOG counts so it shouldn't carry any — guard regardless.
         _kpi_keys = [
             c[:-3] for c in snap_scope.columns
-            if c.endswith("_7d") and c[:-3] not in _RATE_METRICS
+            if c.endswith("_7d") and not is_rate_metric(c[:-3])
         ]
         # Goal scales with the period: the sheet stores one WEEKLY goal per area
         # (get_zone_goals sums them), so a 31-day month is goal*31/7. All Time
@@ -1130,44 +1115,30 @@ def render_group_breakdown(
     # arbitrary period without spilling over its edges, so they aren't offered
     # here.
     #
-    # gate/date_metric/pew/renew (_WEEKLY_FORM_METRICS) are the exceptions —
-    # 4 of Carson's 6 headline KIs live only in the weekly Sunday form, so each
-    # gets its own source instead of `rows`: WEEKLY_FORM_RAW via
+    # The seven Key Indicators are the exception — they live only in the weekly
+    # form, so each gets its own source instead of `rows`: WEEKLY_FORM_RAW via
     # get_weekly_form_data(), scoped to this group's areas. Whether EACH is
     # offered in the picker depends on the group having reported that field at
     # least once ever — not on the currently-selected period — because the
-    # Sunday form lands once a week: on "This Week" (the page's default) every
+    # weekly form lands once a week: on "This Week" (the page's default) every
     # week_end_date is still in the future, so a period-scoped check would make
     # the options flicker in and out of the dropdown as Period changes, or hide
     # the mission's top metrics entirely most days of the week. The VALUES
     # plotted below are still cut to the period, so a period with no submitted
-    # Sunday yet correctly renders an empty chart rather than stale numbers.
+    # week yet correctly renders an empty chart rather than stale numbers.
+    _weekly_keys = _weekly_metrics()
     _weekly_wk_all = get_weekly_form_data()
     if not _weekly_wk_all.empty:
         _weekly_wk_all = _scope_to_areas(_weekly_wk_all, "area", group_areas).rename(columns={"area": "Area"})
-    # MMMs ride the same weekly pipeline but come from WEEKLY_KI, not the
-    # Sunday form — outer-merged on (Area, week) so a week present in only
-    # one source still shows for both kinds of metric.
-    _wki_all = get_weekly_ki()
-    if not _wki_all.empty and "mmm_sent" in _wki_all.columns:
-        _wki_all = _scope_to_areas(_wki_all, "area", group_areas).rename(columns={"area": "Area"})
-        _wki_all = (
-            _wki_all[["Area", "week_end_date", "mmm_sent"]]
-            .dropna(subset=["Area", "week_end_date"])
-            .drop_duplicates(subset=["Area", "week_end_date"], keep="last")
-        )
-        if _weekly_wk_all.empty:
-            _weekly_wk_all = _wki_all
-        else:
-            _weekly_wk_all = _weekly_wk_all.merge(
-                _wki_all, on=["Area", "week_end_date"], how="outer"
-            )
+    # Provo merged a third source in here (mmm_sent from WEEKLY_KI). CCSM has no
+    # equivalent: its WEEKLY_KI holds the same ki_* keys the weekly form already
+    # supplies, so merging it would duplicate columns rather than add any.
     # Per-metric, not one shared flag: a group can have baptisms but never
-    # logged Friends on Date, or vice versa.
+    # logged a friend with a baptismal date, or vice versa.
     _weekly_has = {
         k: (not _weekly_wk_all.empty and k in _weekly_wk_all.columns
             and _weekly_wk_all[k].notna().any())
-        for k in _WEEKLY_METRICS
+        for k in _weekly_keys
     }
 
     _weekly_wk = _weekly_wk_all
@@ -1177,11 +1148,14 @@ def render_group_breakdown(
             & (_weekly_wk_all["week_end_date"] <= p_end.isoformat())
         ]
 
+    _catalog = metric_options()
+    _primary = _primary_metrics()
+
     metric_keys = [
-        k for k in METRIC_OPTIONS
-        if k not in _RATE_METRICS and (
+        k for k in _catalog
+        if not is_rate_metric(k) and (
             (has_rows and k in rows.columns)
-            or (k in _WEEKLY_METRICS and _weekly_has.get(k, False))
+            or (k in _weekly_keys and _weekly_has.get(k, False))
         )
     ]
 
@@ -1190,41 +1164,39 @@ def render_group_breakdown(
             st.info(t("No daily-log metrics available for this group yet."))
         return
 
-    # The 6 headline KIs float to the top, in Carson's fixed order, ahead of
-    # the rest of the catalogue below them — not a second copy, just a reorder
-    # of the same filtered list (a metric missing from this group, e.g. no
-    # baptisms ever, is simply absent from both the primary set and the rest).
+    # The headline KIs float to the top, ahead of the rest of the catalogue —
+    # not a second copy, just a reorder of the same filtered list (a metric this
+    # group has never reported is simply absent from both).
     metric_keys = (
-        [k for k in _PRIMARY_METRICS if k in metric_keys]
-        + [k for k in metric_keys if k not in _PRIMARY_METRICS]
+        [k for k in _primary if k in metric_keys]
+        + [k for k in metric_keys if k not in _primary]
     )
+
+    # Default selection: the first pinned KI this group actually has data for,
+    # else the first option. Provo defaulted to "nm_lessons" by name — a metric
+    # CCSM does not collect, so that index lookup always missed and the picker
+    # silently opened on whatever happened to sort first.
+    _default_idx = next(
+        (metric_keys.index(k) for k in _primary if k in metric_keys), 0)
 
     _m_col, _, _ = st.columns(3)
     with _m_col:
         metric = st.selectbox(
             t("Metric"),
             metric_keys,
-            # Defaults to NM Lessons (Carson, 2026-07-17) — the pinned KIs still
-            # lead the LIST; this only changes which option starts selected.
-            # Falls back to the first option for a group that has never logged
-            # an NM lesson.
-            index=(metric_keys.index("nm_lessons")
-                   if "nm_lessons" in metric_keys else 0),
-            # The 6 KIs get a ★ prefix so they still stand out at the top —
-            # but the label stays PLAIN ASCII (Carson, 2026-07-19: typing
-            # "po" wasn't finding "Potential Members at Church"). The old
-            # _bold_unicode made the label Mathematical-Bold code points
-            # (𝗣𝗼𝘁…), and st.selectbox's type-to-search matches the DISPLAYED
-            # text, so an ASCII "po" could never match the bold "𝗣𝗼". A plain
-            # prefix keeps every letter searchable while still marking them.
+            index=_default_idx,
+            # The KIs get a ★ prefix so they stand out at the top — but the
+            # label stays PLAIN ASCII. st.selectbox's type-to-search matches the
+            # DISPLAYED text, so a Mathematical-Bold label (𝗣𝗼𝘁…) could never be
+            # found by typing "po".
             format_func=lambda m: (
-                f"★ {METRIC_OPTIONS.get(m, m)}" if m in _PRIMARY_METRICS
-                else METRIC_OPTIONS.get(m, m)
+                f"★ {_catalog.get(m, m)}" if m in _primary
+                else _catalog.get(m, m)
             ),
             key="bd_metric",
         )
-    m_label = METRIC_OPTIONS.get(metric, metric)
-    _is_weekly = metric in _WEEKLY_METRICS
+    m_label = _catalog.get(metric, metric)
+    _is_weekly = metric in _weekly_keys
 
     if _is_area:
         # Replaces the old per-area bar (Carson, 2026-07-17: "add a bar chart
@@ -1240,7 +1212,7 @@ def render_group_breakdown(
         _area_color = series_style(0)[0]   # one area = the trend's own hue
         _all_vals = []
         for _mk in metric_keys:
-            if _mk in _WEEKLY_METRICS:
+            if _mk in _weekly_keys:
                 _v = (
                     float(pd.to_numeric(_weekly_wk[_mk], errors="coerce").fillna(0).sum())
                     if (not _weekly_wk.empty and _mk in _weekly_wk.columns) else 0.0
@@ -1251,7 +1223,7 @@ def render_group_breakdown(
                     if (has_rows and _mk in rows.columns) else 0.0
                 )
             _all_vals.append(_v)
-        _all_labels = [METRIC_OPTIONS.get(k, k) for k in metric_keys]
+        _all_labels = [_catalog.get(k, k) for k in metric_keys]
 
         fig_all = go.Figure(go.Bar(
             x=_all_labels,
@@ -1316,7 +1288,7 @@ def render_group_breakdown(
         render_section_label(t('{m_label} by Area — {scope_value}', m_label=m_label, scope_value=scope_value))
         st.caption(f"{span}  |  {kpi_period}"
                    + ("  |  from the weekly Sunday form — one point per week, not per day"
-                      if metric in _WEEKLY_FORM_METRICS
+                      if metric in _weekly_keys
                       else "  |  weekly totals — one point per week, not per day"
                       if _is_weekly else ""))
 
@@ -1333,7 +1305,7 @@ def render_group_breakdown(
         st.info(
             f"No weekly form submitted yet for {kpi_period.lower()} — "
             f"{m_label} reports once a week, on Sunday."
-            if metric in _WEEKLY_FORM_METRICS else
+            if metric in _weekly_keys else
             f"No weekly totals recorded yet for {kpi_period.lower()} — "
             f"{m_label} is tallied once a week."
         )
@@ -1707,7 +1679,7 @@ def render_group_breakdown(
                 # Same edge-clipping fix as the line markers: an ✕ at 0 would
                 # otherwise render as its top half only.
                 cliponaxis=False,
-                hovertemplate=("no weekly form" if metric in _WEEKLY_FORM_METRICS
+                hovertemplate=("no weekly form" if metric in _weekly_keys
                                else "no weekly total" if _is_weekly else "no report")
                               + "<extra>" + str(_area) + "</extra>",
             ))
@@ -1830,7 +1802,7 @@ def render_group_breakdown(
                               "line shows where it went instead of disappearing. "
                               "Click another area to switch straight to it, or "
                               "click it again to show all.")
-        if metric in _WEEKLY_FORM_METRICS:
+        if metric in _weekly_keys:
             st.caption("A gap in a line is a week with no weekly (Sunday) form "
                        "from that area; a submitted form with nothing to "
                        "report shows as a dot at 0. " + _click_caption)

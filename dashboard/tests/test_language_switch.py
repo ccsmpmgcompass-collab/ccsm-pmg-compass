@@ -26,7 +26,7 @@ def test_switch_sets_session_state():
 
 
 def test_language_persists_to_another_page():
-    at = AppTest.from_file("pages/01_dashboard.py", default_timeout=60)
+    at = AppTest.from_file("pages/01_Panel.py", default_timeout=60)
     at.session_state["pmg_lang"] = "es"
     at.run()
     assert not at.exception

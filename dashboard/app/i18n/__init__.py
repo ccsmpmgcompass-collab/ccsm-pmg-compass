@@ -16,11 +16,59 @@ from app.i18n.es import ES
 
 _LANGS = ("en", "es")
 _KEY = "pmg_lang"
+_DEFAULT_KEY = "pmg_lang_default"
+
+
+def mission_default_lang() -> str:
+    """The language this mission runs in, from AGENT_CONFIG's MISSION_LANGUAGE.
+
+    CCSM sets it to `ES`. Before this existed the default was the literal "en",
+    so every missionary and every member of a Spanish-speaking mission's
+    leadership opened an English dashboard and had to find the toggle — on a
+    platform whose forms, metric labels, coaching emails and knowledge base are
+    all already Spanish. Nothing was broken enough to report; it just quietly
+    made the app feel like it belonged to somebody else.
+
+    Falls back to English only when the sheet does not say. Resolved once and
+    cached in the session: get_lang() runs on every single t() call, and a
+    config read per translated string would be absurd even against a cache.
+    """
+    try:
+        cached = st.session_state.get(_DEFAULT_KEY)
+    except Exception:
+        cached = None
+    if cached in _LANGS:
+        return cached
+
+    lang = "en"
+    try:
+        from app.db.queries import get_config_value
+        raw = (get_config_value("MISSION_LANGUAGE", "") or "").strip().lower()
+        if raw[:2] in _LANGS:
+            lang = raw[:2]
+    except Exception:
+        # No session, no secrets, no sheet (tests, import time, a quota blip).
+        # English is the safe degrade: readable to everyone, and the switch is
+        # still there.
+        pass
+
+    try:
+        st.session_state[_DEFAULT_KEY] = lang
+    except Exception:
+        pass
+    return lang
 
 
 def get_lang() -> str:
-    lang = st.session_state.get(_KEY, "en")
-    return lang if lang in _LANGS else "en"
+    """The active display language: the user's choice if they made one,
+    otherwise the mission's own."""
+    try:
+        lang = st.session_state.get(_KEY)
+    except Exception:
+        lang = None
+    if lang in _LANGS:
+        return lang
+    return mission_default_lang()
 
 
 def set_lang(lang: str) -> None:

@@ -99,7 +99,7 @@ expected, not a bug. As a result:
 All 10 entry points were exercised against the live `COMPASS_CCSM` sheet
 using `streamlit.testing.v1.AppTest` (one subprocess per page, 180s timeout
 each). **All 10 rendered without raising** — 8 render as "empty" (no data yet,
-by design) and 2 (`Home.py`, `pages/18_Maintenance.py`) render as "clean"
+by design) and 2 (`Home.py`, `pages/18_Mantenimiento.py`) render as "clean"
 (real content). Full per-page results, including which Streamlit elements
 each page produced, are in
 `.superpowers/sdd/2026-07-28-ccsm-streamlit-dashboard/task-4-report.md`.
@@ -107,8 +107,8 @@ each page produced, are in
 Two pages worth a second look next time real data flows in (not bugs, just
 noted for whoever fixes things after data arrives):
 
-- `pages/04_Breakdowns.py` has a mojibake character (`�`) in its selector
+- `pages/04_Desgloses.py` has a mojibake character (`�`) in its selector
   help text — cosmetic, an encoding artifact in the source string.
-- `pages/06_Scores.py` shows "No daily activity data yet" even though
+- `pages/06_Puntajes.py` shows "No daily activity data yet" even though
   `SCORES` itself has 98 rows — worth confirming that's intentional (scores
   gated on daily activity) once real `DAILY_LOG` rows exist.

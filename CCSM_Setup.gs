@@ -227,6 +227,38 @@ function cs_formSubmitHandlerNames_() {
 }
 
 /**
+ * True when `fn` names a function that actually exists in this project.
+ *
+ * Used by smokeTestPipeline() to catch the one failure no trigger inventory
+ * can see: a trigger naming a handler whose .gs file was never pasted into the
+ * online editor. See the "6b" section there for the Agent1C case that motivated
+ * it.
+ *
+ * Direct eval, deliberately, because it is the only lookup that resolves in
+ * BOTH environments this code runs in. Live, every pasted file's functions are
+ * globals, so `this[fn]` would work. Under tests/load_gs.js every .gs file is
+ * evaluated inside a single Function body where those same functions are
+ * locals that never reach globalThis, so `this[fn]` is always undefined and the
+ * check would report every handler missing. Direct eval uses the lexical scope
+ * chain, which is correct in both. `typeof <name>` is also the one form that
+ * does not throw on an undeclared identifier.
+ *
+ * `fn` only ever comes from this file's own constant arrays, never from user
+ * input or sheet data; the identifier guard is belt-and-braces so this can
+ * never become an injection point if a future caller passes something else.
+ *
+ * Private to CCSM_Setup.gs.
+ */
+function cs_handlerIsDefined_(fn) {
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(String(fn))) return false;
+  try {
+    return eval('typeof ' + fn) === 'function';
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
  * True when `trigger` is a time-based (clock) trigger — the only kind
  * setupAllCcsmTriggers() owns and is allowed to sweep away.
  *
@@ -593,6 +625,41 @@ function smokeTestPipeline() {
   });
   if (counts['runAgent2']) {
     warn('runAgent2 is scheduled. It is meant to be run MANUALLY once per transfer.');
+  }
+
+  // ── 6b. Every handler this project schedules actually EXISTS ─────────────
+  //
+  // The inventory above only asks whether a TRIGGER exists. A trigger can name
+  // a function this project does not define — that is what happens when an
+  // agent's .gs file was never pasted into the online editor, since the editor
+  // runs only what is pasted into it and nothing in git reaches it.
+  //
+  // This is not hypothetical. Agent1B logged "Agent1C scheduled in ~1 min" on
+  // 2026-07-26 and Agent1C never appeared in AGENT_RUN_LOG at all — not even an
+  // ERROR row, which runAgent1C would have written for any exception inside
+  // itself, because its logRun() sits outside its try/catch. The function never
+  // started. Apps Script reports that as "Script function not found" in the
+  // Executions list ONLY: nothing reaches the sheet, no email is sent, and this
+  // smoke test reported "All 10 scheduled triggers installed" in green.
+  //
+  // Chained handlers are checked too, and matter MORE than the scheduled ones:
+  // they have no standing trigger to be missing, so a missing runAgent1C is
+  // invisible to every other check in this file.
+  var handlersToCheck = CCSM_TRIGGER_SCHEDULE.map(function(s) { return s.fn; })
+                                             .concat(CCSM_CHAINED_HANDLERS)
+                                             .concat(cs_formSubmitHandlerNames_());
+  var undefinedHandlers = handlersToCheck.filter(function(fn) {
+    return !cs_handlerIsDefined_(fn);
+  });
+
+  if (undefinedHandlers.length) {
+    fail('Handler function(s) NOT DEFINED in this project: ' + undefinedHandlers.join(', ') +
+         '. The matching CCSM_*.gs file was never pasted into this Apps Script editor ' +
+         '(committing it to git does not install it). Any trigger naming one of these ' +
+         'fails silently with "Script function not found" and writes nothing to ' +
+         'AGENT_RUN_LOG. Paste the file, then re-run this smoke test.');
+  } else {
+    ok('All ' + handlersToCheck.length + ' scheduled/chained/form-submit handlers are defined.');
   }
 
   // ── Summary ──────────────────────────────────────────────────────────────

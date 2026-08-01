@@ -1,5 +1,5 @@
 """
-04_Breakdowns.py
+04_Desgloses.py
 ────────────────────────────────────────────────────────────────────────────────
 Zone / District / Area breakdowns on one page — replaces the old separate
 04_Zone_Breakdown.py and 05_Area_Breakdown.py (combined 2026-07-15).
@@ -205,7 +205,7 @@ def _scope_body() -> None:
     # ── Scope selectors (shared with the Scores page) ──────────────────
     # Zone → District → Area → Find-by-missionary, deepest selection wins. The
     # held-outside-the-widget pattern and cascade-reset behaviour live in
-    # app/components/scope_selector.py now, shared verbatim with 06_Scores.py.
+    # app/components/scope_selector.py now, shared verbatim with 06_Puntajes.py.
     selected_zone, selected_district, selected_area, _level = render_scope_selectors(
         _areas_all, prefix="bd", zones=_load_zones(),
     )

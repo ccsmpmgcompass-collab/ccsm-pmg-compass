@@ -1,5 +1,5 @@
 """
-01_dashboard.py
+01_Panel.py
 ────────────────────────────────────────────────────────────────────────────────
 Whole-mission executive snapshot — combines the former Dashboard and Mission
 Breakdown pages into one. Mission-level only; for zone/district/area drilldown
@@ -17,6 +17,7 @@ from app.components.design_system import (
     render_section_label, render_kpi_row, render_table,
 )
 from app.config.flavor_loader import flavor, METRIC_LABELS
+from app.config.metric_catalog import key_indicator_metrics
 from app.i18n import t
 from app.config.theme import CHART_COLORS
 from app.db.queries import (
@@ -112,44 +113,63 @@ def _ki_val(metric_key: str) -> float:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 1. WEEKLY KEY INDICATORS — flavor-driven KPI row (last 7 days)
+# 1. NIGHTLY ACTIVITY — mission totals, last 7 days
 # ═══════════════════════════════════════════════════════════════════════════════
-render_section_label(t("Weekly Key Indicators — Last 7 Days"))
+render_section_label(t("Nightly Activity — Last 7 Days"))
 
-render_kpi_row([
-    {
-        "label": METRIC_LABELS.get(k, k),
-        "value": int(_mission_val(k)),
-        "goal":  _mission_goal(k),
-    }
-    for k in flavor.kpi_highlights
-])
+_nightly_keys = flavor.nightly_highlights
+if not _nightly_keys:
+    st.info(_EMPTY_MSG)
+else:
+    render_kpi_row([
+        {
+            "label": METRIC_LABELS.get(k, k),
+            "value": int(_mission_val(k)),
+            "goal":  _mission_goal(k),
+        }
+        for k in _nightly_keys
+    ])
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 2. KEY INDICATOR TILES — Pew / Date / Gate / Renew (weekly form, latest week)
+# 2. KEY INDICATOR TILES — weekly form, latest week
 # ═══════════════════════════════════════════════════════════════════════════════
+# Was a fixed Pew / Date / Gate / Renew row: Utah Provo's four Key Indicators,
+# none of which is a column in CCSM's WEEKLY_KI. _ki_val returns 0.0 for a
+# missing column, so this row showed four zeroes under four English labels for
+# every week the mission ever reported — a plausible screen, not an error.
+#
+# CCSM's KIs are the seven `ki_*_real` values the weekly form collects. `_real`
+# only: the matching `_meta` keys are that companionship's GOAL for the week and
+# belong beside a value as a target, never in a row of achieved results.
 ki_week = str(ki_df.iloc[-1]["week_end_date"]) if not ki_df.empty else ""
 render_section_label(
     t("Key Indicators — Week Ending {week}", week=ki_week) if ki_week
     else t("Key Indicators")
 )
 
-render_kpi_row([
-    {"label": "Pew",   "value": int(_ki_val("pew")),         "goal": _mission_goal("pew")},
-    {"label": "Date",  "value": int(_ki_val("date_metric")), "goal": _mission_goal("date_metric")},
-    {"label": "Gate",  "value": int(_ki_val("gate")),        "goal": _mission_goal("gate")},
-    {"label": "Renew", "value": int(_ki_val("renew")),       "goal": _mission_goal("renew")},
-])
+_ki_metrics = key_indicator_metrics()
+if not _ki_metrics:
+    st.info(_EMPTY_MSG)
+else:
+    render_kpi_row([
+        {
+            "label": METRIC_LABELS.get(k, label),
+            "value": int(_ki_val(k)),
+            "goal":  _mission_goal(k),
+        }
+        for k, label in _ki_metrics.items()
+    ])
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 3. ZONE LEADERBOARD — flavor-driven columns, ranked (last 7 days)
 # ═══════════════════════════════════════════════════════════════════════════════
 render_section_label(t("Zone Leaderboard — Last 7 Days"))
 
-if zone_df.empty or "metric_key" not in zone_df.columns or "zone" not in zone_df.columns:
+if (zone_df.empty or "metric_key" not in zone_df.columns
+        or "zone" not in zone_df.columns or not flavor.nightly_highlights):
     st.info(_EMPTY_MSG)
 else:
-    _kpi_keys = flavor.kpi_highlights
+    _kpi_keys = flavor.nightly_highlights
     zone_rows = []
     for zone_name, grp in zone_df.groupby("zone"):
         row: dict = {"Zone": zone_name}
@@ -188,7 +208,7 @@ else:
 
     with col_a:
         fig1 = go.Figure()
-        for i, key in enumerate(["nm_lessons", "new_found"]):
+        for i, key in enumerate(flavor.nightly_highlights):
             if key in trends_chart.columns:
                 fig1.add_trace(go.Scatter(
                     x=weeks, y=trends_chart[key], mode="lines+markers",
@@ -197,8 +217,8 @@ else:
                     marker=dict(size=6),
                 ))
         fig1.update_layout(
-            title="Finding & Teaching",
-            xaxis_title="Week Ending", yaxis_title="Count",
+            title=t("Nightly Activity"),
+            xaxis_title=t("Week Ending"), yaxis_title=t("Count"),
             xaxis_type="category", hovermode="x unified",
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             margin=dict(t=50, b=40, l=40, r=20),
@@ -209,7 +229,7 @@ else:
     with col_b:
         fig2 = go.Figure()
         ki_weeks = ki_chart["week_end_date"].astype(str) if not ki_chart.empty else weeks
-        for i, key in enumerate(["pew", "date_metric", "gate", "renew"]):
+        for i, key in enumerate(key_indicator_metrics()):
             if not ki_chart.empty and key in ki_chart.columns:
                 fig2.add_trace(go.Scatter(
                     x=ki_weeks, y=ki_chart[key], mode="lines+markers",
@@ -218,8 +238,8 @@ else:
                     marker=dict(size=6),
                 ))
         fig2.update_layout(
-            title="Key Indicators",
-            xaxis_title="Week Ending", yaxis_title="Count",
+            title=t("Key Indicators"),
+            xaxis_title=t("Week Ending"), yaxis_title=t("Count"),
             xaxis_type="category", hovermode="x unified",
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             margin=dict(t=50, b=40, l=40, r=20),
@@ -228,26 +248,38 @@ else:
         st.plotly_chart(fig2, use_container_width=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 5. DAILY NM LESSONS — last 7 days
+# 5. DAILY TREND — headline nightly metric, last 7 days
 # ═══════════════════════════════════════════════════════════════════════════════
-render_section_label(t("Daily NM Lessons — Last 7 Days"))
+# Was hardcoded to nm_lessons ("Non-Member Lessons per Day"). CCSM's nightly
+# form has no such question, so the guard below always fell to _EMPTY_MSG and
+# this section has never drawn anything.
+_daily_key = next(
+    (k for k in flavor.nightly_highlights if k in daily_df.columns),
+    "",
+) if not daily_df.empty else ""
+_daily_label = METRIC_LABELS.get(_daily_key, _daily_key)
 
-if daily_df.empty or "nm_lessons" not in daily_df.columns:
+render_section_label(
+    t("Daily {metric} — Last 7 Days", metric=_daily_label) if _daily_key
+    else t("Daily Trend — Last 7 Days")
+)
+
+if not _daily_key:
     st.info(_EMPTY_MSG)
 else:
     date_col = "Date" if "Date" in daily_df.columns else daily_df.columns[0]
     fig_daily = px.bar(
         daily_df,
         x=date_col,
-        y="nm_lessons",
-        labels={date_col: "Date", "nm_lessons": "NM Lessons"},
-        title="Non-Member Lessons per Day (Mission Total)",
+        y=_daily_key,
+        labels={date_col: t("Date"), _daily_key: _daily_label},
+        title=t("{metric} per day (mission total)", metric=_daily_label),
         color_discrete_sequence=["#6366f1"],
     )
     fig_daily.update_layout(
-        xaxis_title="Date",
+        xaxis_title=t("Date"),
         xaxis_type="category",
-        yaxis_title="NM Lessons",
+        yaxis_title=_daily_label,
         margin=dict(t=40, b=20),
     )
     st.plotly_chart(fig_daily, use_container_width=True)

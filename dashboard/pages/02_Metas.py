@@ -10,13 +10,48 @@ from app.components.design_system import (
     render_table, render_companionship_card,
 )
 from app.config.flavor_loader import flavor, METRIC_LABELS, GOAL_LABELS, GOAL_TO_ACTUAL
-from app.config.metrics import METRIC_OPTIONS as _METRIC_CATALOG
+from app.config.metric_catalog import (
+    key_indicator_metrics,
+    metric_data_type,
+    metric_options,
+    nightly_metrics,
+)
+from app.i18n.formats import NA, fmt_month_year
 
-# Metric DROPDOWNS show the full "Descriptive Title (ABBREV)" for the 6 Key
-# Indicators — consistent with the Breakdowns picker. Compact tiles/tables keep
-# the short METRIC_LABELS; only the pickers use this merged map.
-_KI_KEYS = ("gate", "date_metric", "new_found", "pew", "renew", "member_lessons")
-DROPDOWN_METRIC_LABELS = {**METRIC_LABELS, **{k: _METRIC_CATALOG[k] for k in _KI_KEYS}}
+
+def _placeholder_metric() -> str:
+    """A real metric key to seed a brand-new expectation row with.
+
+    The first nightly metric this mission asks. Empty string when the catalogue
+    is unreadable — the caller then seeds an indicator with no metric, which is
+    visibly incomplete, rather than one naming a metric that does not exist.
+    """
+    return next(iter(nightly_metrics()), "")
+
+
+def _ki_keys() -> tuple[str, ...]:
+    """The mission's Key Indicators, from the live weekly form.
+
+    Was a hardcoded ("gate", "date_metric", "new_found", "pew", "renew",
+    "member_lessons") — Utah Provo's six, none of which CCSM collects, so the
+    subscript below raised KeyError the moment the catalogue stopped carrying
+    Provo's keys. CCSM's are the seven `ki_*_real` values.
+    """
+    return tuple(key_indicator_metrics())
+
+
+def _dropdown_metric_labels() -> dict:
+    """Labels for metric DROPDOWNS.
+
+    A function, not a module-level dict: the catalogue is read from the sheet,
+    so it cannot be built at import time. Merged over METRIC_LABELS so pickers
+    show the full descriptive name while compact tiles and tables keep the
+    short form.
+    """
+    return {**dict(METRIC_LABELS), **metric_options()}
+
+
+DROPDOWN_METRIC_LABELS = _dropdown_metric_labels
 from app.db.queries import (
     get_goals_df,
     get_area_goals,
@@ -32,7 +67,6 @@ from app.db.queries import (
     get_recommended_goals,
     get_recommended_monthly_goals,
     get_mission_recommended_goals,
-    get_mission_rc_attendance_potential,
     get_mission_monthly_expectation_total,
     get_area_weekly_expectation,
     get_area_expectation_entry,
@@ -41,7 +75,6 @@ from app.db.queries import (
     save_area_type_expectations,
     get_all_area_type_indicators,
     is_builtin_area_type_label,
-    get_area_rc_attendance_potential,
     get_baptisms_actual,
     get_rec_stretch_pct,
     exclude_current_week,
@@ -111,7 +144,7 @@ _FEATURED_METRIC_KEYS: frozenset[str] = frozenset(
 # page (Carson, 2026-07-21: "Baptisms" -> "Baptized & Confirmed (GATE)") —
 # looked up via the underlying KI metric key, not the goal-storage key.
 _FEATURED_METRICS: list[tuple[str, str]] = [
-    (k, DROPDOWN_METRIC_LABELS.get(
+    (k, DROPDOWN_METRIC_LABELS().get(
         GOAL_TO_ACTUAL.get(k, k), GOAL_LABELS.get(k, METRIC_LABELS.get(k, k))
     ))
     for k in flavor.featured_goals
@@ -615,101 +648,60 @@ if selected_section == "Mission Goals":
         mission_recommended = {
             k: max(1, math.ceil(v * _weeks_in_month)) for k, v in _weekly_recommended.items()
         }
-        # Recent Convert Attendance / Renew AND Pew (People at Sacrament
-        # Meeting) are both Sunday-only events (church attendance happens
-        # once a week, on Sunday) — override their generic _weeks_in_month
-        # scaling with the actual Sunday COUNT for this month (4 or 5,
-        # depending on calendar alignment), not the days/7 estimate used
-        # for every other metric above. Carson, 2026-07-21: Pew was missing
-        # from this override, inflating its mission-wide REC/fraction by a
-        # 31-day month's 4.4286 "weeks" instead of the real 4 Sundays.
-        for _sunday_key in ("renew", "pew"):
+        # Church-attendance indicators are Sunday-only events — override their
+        # generic _weeks_in_month scaling with the actual Sunday COUNT for this
+        # month (4 or 5, depending on calendar alignment) rather than the days/7
+        # estimate used for every other metric. Scaling by weeks inflates the
+        # bar with Sundays the month does not contain: a 31-day month's 4.4286
+        # "weeks" against its real 4 Sundays.
+        #
+        # Identified from the KI catalogue instead of a hardcoded ("renew",
+        # "pew") — Provo's two keys, neither of which CCSM collects, so no
+        # CCSM indicator ever got this correction.
+        for _sunday_key in (k for k in key_indicator_metrics()
+                            if "sacrament" in k or "church" in k):
             if _sunday_key in _weekly_recommended:
                 mission_recommended[_sunday_key] = max(
                     1, math.ceil(_weekly_recommended[_sunday_key] * _sundays_in_month)
                 )
-        # Mission-wide MAX possible Recent-Convert church attendances this
-        # month — every area's own attendance potential (rc_total AS OF
-        # each Sunday, summed per-Sunday, not a flat headcount) added
-        # together, so this scales with the month's real Sunday count (4
-        # or 5) same as the Area Goals Monthly Renew fraction. Recent
-        # Convert Attendance shows goal / this total when no explicit
-        # "renew" expectation is saved.
-        mission_rc_total = get_mission_rc_attendance_potential(month_start)
-        # Members at Non-Member Lessons denominator: a HYPOTHETICAL "if every
-        # area hit its lesson target" total — NOT based on actual submitted
-        # data (unlike every other denominator/REC on this page). Each area
-        # counts at its own language-group rate (English 15/wk, Spanish
-        # 30/wk, Bilingual 23/wk — editable via the Area Expectation
-        # Settings tab), summed then scaled to THIS month's actual length.
-        #
-        # Routed through get_mission_monthly_expectation_total (2026-07-21,
-        # same fix as Pew/Renew) rather than a hand-rolled weekly-total ×
-        # weeks-in-month: that older path rounded the mission's WEEKLY total
-        # to a whole number FIRST (get_mission_weekly_expectation_total does
-        # int(round(...))) and then multiplied by this month's weeks and
-        # ceil'd AGAIN — a double rounding — and any area whose NM Lessons
-        # indicator is set to MONTHLY cadence got round-tripped through an
-        # AVERAGE month length (_AVG_WEEKS_PER_MONTH) instead of this
-        # month's real one. Carson, 2026-07-21: "how many a day they should
-        # be getting ... multiplying that by the number of days in the
-        # month and just rounding it" — get_mission_monthly_expectation_total
-        # already does exactly this (each area's own float rate, scaled by
-        # the real month length, summed, rounded ONCE via ceil at the end),
-        # so "days-per-day-rate x days-in-month" and "weekly-rate x this
-        # month's exact weeks" land on the same number — it's the leftover
-        # early rounding that was ever an issue, not the shape of the math.
-        mission_lesson_target = max(
-            1, get_mission_monthly_expectation_total("nm_lessons", month_start)
-        )
-        # MMMs Sent denominator: same hypothetical treatment and same fix —
-        # each area at its own MMM rate (70 English, 10 Spanish and
-        # Haitian/ASL/Chinese/Asian, 40 Bilingual), summed and scaled to
-        # this month's real length in one pass, no early rounding.
-        mission_mmm_target = max(
-            1, get_mission_monthly_expectation_total("mmm_sent", month_start)
-        )
+        # Provo computed three hypothetical mission-wide denominators here —
+        # Recent-Convert attendance potential (from rc_total), an NM Lessons
+        # target and an MMM target — as fallbacks for goals with no saved
+        # expectation. CCSM collects none of those three metrics, so each
+        # evaluated to its max(1, 0) floor of 1, and any goal falling back to
+        # one would have rendered as "goal / 1": a fraction that looks
+        # meaningful and is not. See _mission_denominator, which no longer
+        # falls back at all.
 
         def _mission_denominator(goal_key: str) -> int | None:
             """One mission goal input's "/N" fraction denominator, or None
-            for no fraction. DYNAMIC (Carson, 2026-07-19: an added
-            expectation must reflect on the goals page): the mission-wide
-            expectation total for the input's underlying metric, sized to
-            THIS month exactly (per-area monthly figures as-is, weekly ×
-            the month's exact weeks, renew × its Sunday count — see
+            for no fraction.
+
+            DYNAMIC: the mission-wide expectation total for the input's
+            underlying metric, sized to THIS month exactly (per-area monthly
+            figures as-is, weekly × the month's exact weeks, Sunday-only
+            church-attendance KIs × the month's Sunday count — see
             get_mission_monthly_expectation_total). Any indicator given an
-            expectation in Area Expectation Settings gets a fraction here
-            the moment it's saved. Falls back to the two derived
-            denominators where no expectation exists: renew → the mission's
-            MAX possible Recent-Convert attendances this month (every
-            area's own rc_total as of each Sunday, summed — see
-            get_mission_rc_attendance_potential — so this ALSO scales by
-            the month's Sunday count, not a flat headcount), member/NM
-            lessons → the hypothetical mission lesson target. LSI Follow-
-            Ups (Carson, 2026-07-21: "how many of those we're actually
-            following up on") is NOT a hypothetical target like the other
-            two fallbacks — it's whatever is CURRENTLY typed into the LSI
-            Given box in Other Metrics, read straight out of that widget's
-            session_state so it tracks live edits, same live-linked
-            treatment Fellowshipped Lessons already gets against NM Lessons
-            on Area Goals."""
+            expectation in Area Expectation Settings gets a fraction here the
+            moment it is saved.
+
+            Provo also carried four derived fallbacks for metrics with no saved
+            expectation — renew → the mission's maximum possible Recent-Convert
+            attendances (from rc_total), member/NM lessons → a hypothetical
+            lesson target, mmm_sent → an MMM target, lsi_followups → whatever
+            was typed into the LSI Given box. All four named metrics CCSM does
+            not collect, so each could only ever have evaluated to 0 or crashed
+            on a missing widget. They are gone: a metric with no expectation now
+            renders with no fraction, which says "nobody has set the bar" rather
+            than inventing one.
+            """
             actual = _GOAL_TO_ACTUAL.get(goal_key, goal_key)
             exp_total = get_mission_monthly_expectation_total(actual, month_start)
             if exp_total > 0:
                 return exp_total
-            if actual == "renew":
-                return mission_rc_total
-            if actual in ("member_lessons", "nm_lessons"):
-                return mission_lesson_target
-            if actual == "mmm_sent":
-                return mission_mmm_target
-            if actual == "lsi_followups":
-                return int(st.session_state.get(
-                    "mission_extra_lsi_given", _extra_val("lsi_given")
-                ))
             return None
         st.caption(
-            t("REC is a light stretch goal — about {get_rec_stretch_pct}% above the whole mission's typical MONTHLY performance across every area, for a month this length — to nudge the mission to do slightly better. Recent Convert Attendance's REC scales by the number of Sundays this month (church attendance is a once-a-week event), not the general weeks-in-month figure used for other metrics. Any goal whose indicator has expectations saved in Area Expectation Settings shows goal / a hypothetical mission-wide target for this month — every area at its own expectation, summed and sized to this month's exact length (weekly figures × its weeks, Renew × its Sunday count, monthly figures as-is) — not based on actual data. Where no expectation is saved, Recent Convert Attendance falls back to goal / the mission's MAX possible Recent-Convert attendances this month — every area's own recent-convert count as of each Sunday, summed across every Sunday and every area, so this also scales with the month's Sunday count — and Members at Non-Member Lessons to the hypothetical NM Lessons target. LSI Follow-Ups (in Other Metrics) shows goal / the mission's own LSI Given goal instead, live as you type it — so you can see how many of the LSIs given are actually being followed up on.", get_rec_stretch_pct=get_rec_stretch_pct())
+            t("REC is a light stretch goal — about {get_rec_stretch_pct}% above the whole mission's typical MONTHLY performance across every area, for a month this length — to nudge the mission to do slightly better. Church-attendance indicators scale by the number of Sundays this month, since attendance is a once-a-week event, rather than the general weeks-in-month figure used for other metrics. Any goal whose indicator has expectations saved in Area Expectation Settings shows goal / a hypothetical mission-wide target for this month — every area at its own expectation, summed and sized to this month's exact length — not based on actual data. A goal with no expectation saved shows no fraction at all.", get_rec_stretch_pct=get_rec_stretch_pct())
         )
 
         def _apply_all_mission_rec(recommended: dict) -> None:
@@ -783,11 +775,50 @@ if selected_section == "Mission Goals":
         # they already have their own box up in Featured Metrics above; see
         # _FEATURED_METRIC_KEYS' comment for why _FEATURED_KEYS (goal keys)
         # couldn't do this exclusion on its own.
+        # report_date is excluded too: it's asked on BOTH the Nightly and
+        # Weekly forms and shares that same Metric_Key in QUESTIONS_CONFIG
+        # (CcsmData.gs' CCSM_NIGHTLY_QUESTIONS/CCSM_WEEKLY_QUESTIONS each
+        # define a 'report_date' question). get_question_metrics() here is
+        # called with no form_type filter (unlike Area Goals' nightly_defs/
+        # weekly_defs split), so both rows came through as two entries with
+        # the same key, producing two `mission_extra_report_date` boxes and
+        # crashing with StreamlitDuplicateElementKey. It's also a DATE field
+        # (which date the report covers), not a countable production number
+        # a "goal" makes sense for.
         all_metrics = get_question_metrics()
-        other_metrics = [
-            (k, lbl, ft) for k, lbl, ft in all_metrics
-            if k not in _FEATURED_METRIC_KEYS and k != "rc_total"
-        ]
+        _seen_other_keys: set[str] = set()
+        other_metrics = []
+        for k, lbl, ft in all_metrics:
+            if k in _FEATURED_METRIC_KEYS or k == "report_date":
+                continue
+            # "rc_total" used to be excluded here too — Provo's running
+            # recent-convert headcount, which no goal makes sense for. CCSM has
+            # no such key, so the exclusion did nothing; two CCSM-specific ones
+            # take its place.
+            #
+            # `_meta` keys are the companionship's OWN weekly goal, collected on
+            # the weekly form beside each `_real` achievement. A goal box for
+            # one asks leadership to set a goal for a goal, and its saved value
+            # would then be compared against a target rather than an outcome.
+            if k.endswith("_meta"):
+                continue
+            # CHOICE metrics carry no summable number — CCSM's `effort` is
+            # answered Todo / La mayor parte / Algo. A weekly numeric goal for
+            # one is meaningless, and _num() would coerce the answer to 0 and
+            # make it look met. Detected via Data_Type, never by inspecting
+            # values.
+            if metric_data_type(k) == "CHOICE":
+                continue
+            # Belt-and-suspenders: any other Metric_Key that ends up defined
+            # on both forms (a future CcsmData.gs edit repeating the
+            # report_date mistake above) would otherwise reach st.number_input
+            # twice with the identical widget key and crash the whole page
+            # with StreamlitDuplicateElementKey — silently drop the repeat
+            # instead, keeping the first (Nightly-ordered) definition.
+            if k in _seen_other_keys:
+                continue
+            _seen_other_keys.add(k)
+            other_metrics.append((k, lbl, ft))
         extra_values: dict[str, int] = {}
         if other_metrics:
             with st.expander(t("Other Metrics")):
@@ -817,7 +848,7 @@ if selected_section == "Mission Goals":
                             if key in mission_recommended:
                                 _render_rec_pill("me", key, widget_key, mission_recommended[key])
 
-        _month_label = _month_start_date.strftime("%B %Y")
+        _month_label = fmt_month_year(_month_start_date)
 
         if st.button(t("Save Mission Goals"), type="primary", key="mission_goal_save"):
             row, err = upsert_goal(
@@ -847,9 +878,8 @@ if selected_section == "Mission Goals":
             set_by = current_goal_row.get("set_by", "")
             ws = current_goal_row.get("month_start", "")
             if set_by:
-                try:
-                    ws_label = date.fromisoformat(ws).strftime("%B %Y")
-                except ValueError:
+                ws_label = fmt_month_year(ws)
+                if ws_label == NA:
                     ws_label = ws
                 st.caption(t('Last set by {set_by} · month of {ws_label}', set_by=set_by, ws_label=ws_label))
 
@@ -951,12 +981,14 @@ if selected_section == "Area Goal Customization":
         st.warning(t("QUESTIONS_CONFIG has no metrics defined."))
         st.stop()
 
-    # UI label overrides (rename rule: never show "Doors Knocked"/"Doors")
-    _LABEL_OVERRIDES = {
-        "nm_doors": "NM Attempted",
-        "member_lessons": "Fellowshipped Lessons",
-        "referrals_today": "Member Referrals",
-    }
+    # No UI label overrides. This was {nm_doors: "NM Attempted",
+    # member_lessons: "Fellowshipped Lessons", referrals_today: "Member
+    # Referrals"} — a Provo rename rule ("never show 'Doors Knocked'") over
+    # three keys CCSM has no question for, so it renamed nothing and only
+    # risked overriding a real Spanish label if a key ever collided.
+    # QUESTIONS_CONFIG's Metric_Display_Name is what the missionaries see on
+    # the form itself, so it is the right label here too.
+    _LABEL_OVERRIDES: dict[str, str] = {}
 
     # ── Bulk: Recommend All Areas ─────────────────────────────────────────────
     # One click computes the REC value for EVERY active area — weekly Nightly
@@ -965,11 +997,12 @@ if selected_section == "Area Goal Customization":
     # (save_all_area_goals / bulk_upsert_area_monthly_goals), not one write
     # per area, so 60 areas can't trip the API quota.
 
-    _BULK_MONTHLY_KEYS = ["gate", "date_metric", "new_found", "pew", "renew", "member_lessons"]
+    # The mission's own Key Indicators, not a fixed list of Provo's six —
+    # which would have written zeros into every area's monthly row.
+    _BULK_MONTHLY_KEYS = list(key_indicator_metrics())
     _BULK_MONTH_START = current_month_start()
-    try:
-        _bulk_month_label = date.fromisoformat(_BULK_MONTH_START).strftime("%B %Y")
-    except ValueError:
+    _bulk_month_label = fmt_month_year(_BULK_MONTH_START)
+    if _bulk_month_label == NA:
         _bulk_month_label = _BULK_MONTH_START
 
     def _compute_all_area_recs() -> None:
@@ -1014,10 +1047,12 @@ if selected_section == "Area Goal Customization":
             _wk_df = pd.DataFrame.from_dict(_preview["weekly"], orient="index")
             _wk_df.index.name = "Area"
             st.dataframe(_wk_df.rename(columns=_wk_labels), height=420)
-        _MONTHLY_PREVIEW_LABELS = {
-            "gate": "Gate", "date_metric": "Date", "new_found": "New",
-            "pew": "Pew", "renew": "Renew", "member_lessons": "Mate",
-        }
+        # Column headers for the monthly preview table. Was a fixed
+        # Gate/Date/New/Pew/Renew/Mate map — Provo's six abbreviations. None
+        # matched a CCSM key, so .rename() silently left every column as a raw
+        # `ki_*_real` token in a table leadership reads before saving goals for
+        # the whole mission.
+        _MONTHLY_PREVIEW_LABELS = dict(key_indicator_metrics())
         with st.expander(t('Preview — monthly goals for {bulk_month_label}', bulk_month_label=_bulk_month_label)):
             _mo_df = pd.DataFrame.from_dict(_preview["monthly"], orient="index")
             _mo_df.index.name = "Area"
@@ -1178,10 +1213,11 @@ if selected_section == "Area Goal Customization":
                         _render_rec_pill(prefix, key, widget_key, recommended[key])
         return values
 
-    # Online Referrals dropped from this section's goal grid per explicit
-    # request — its saved value (if any) is preserved untouched via the
-    # "preserve goals of any metric not shown above" loop below, not zeroed.
-    nightly_defs = [m for m in metric_defs if m[2] == "NIGHTLY" and m[0] != "online_referrals"]
+    # Every nightly metric the mission asks. This used to exclude
+    # "online_referrals" — a Provo metric, dropped from Provo's grid at that
+    # mission's request. CCSM has no such question, so the filter excluded
+    # nothing here while implying a deliberate omission.
+    nightly_defs = [m for m in metric_defs if m[2] == "NIGHTLY"]
     weekly_defs  = [m for m in metric_defs if m[2] == "WEEKLY"]
 
     # Fill every NIGHTLY input with its recommended value at once (only shown
@@ -1197,7 +1233,7 @@ if selected_section == "Area Goal Customization":
 
     render_section_label(t("Nightly Form Goals (weekly totals)"))
     st.caption(
-        t("REC is a light stretch goal — about {get_rec_stretch_pct}% above this area's all-time weekly average — to nudge the area to do slightly better. Any metric with an expectation saved in Area Expectation Settings shows goal / this area's weekly expectation — add or change one there and the fraction follows the moment it's saved. Fellowshipped Lessons (formerly Member Lessons) shows goal / this area's own NM Lessons goal, live as you type it above (unless it's given its own expectation, which then wins). LSI Follow-Ups shows goal / this area's own LSI Given goal the same way, so you can see how many of the LSIs given are actually being followed up on.", get_rec_stretch_pct=get_rec_stretch_pct())
+        t("REC is a light stretch goal — about {get_rec_stretch_pct}% above this area's all-time weekly average — to nudge the area to do slightly better. Any metric with an expectation saved in Area Expectation Settings shows goal / this area's weekly expectation — add or change one there and the fraction follows the moment it's saved.", get_rec_stretch_pct=get_rec_stretch_pct())
     )
 
     # Denominators are DYNAMIC, not a fixed metric list (Carson, 2026-07-19:
@@ -1217,19 +1253,21 @@ if selected_section == "Area Goal Customization":
     # actually following up on ... instead of having to connect the dots
     # myself") — same precedence: an explicit lsi_followups expectation, if
     # ever saved, wins over this fallback.
+    #
+    # Two extra live-linked pairs used to be appended here — member_lessons
+    # over the NM Lessons box, and lsi_followups over the LSI Given box. Both
+    # are Provo metric pairs. Against CCSM's catalogue neither key is ever
+    # rendered, so each only ever wrote a denominator for a widget that does
+    # not exist. They are not replaced with CCSM equivalents: which of a
+    # mission's metrics is a meaningful denominator for which other is the
+    # mission's call, and it can make that call by saving an expectation in
+    # Area Expectation Settings — which the loop below already honours for
+    # every metric, live.
     _weekly_denominators = {}
     for _wk_key, _wk_lbl, _wk_ft in nightly_defs:
         _wk_e = get_area_expectation_entry(selected_area, _wk_key)
         if _wk_e and int(round(_wk_e["weekly"])) >= 1:
             _weekly_denominators[_wk_key] = int(round(_wk_e["weekly"]))
-    if "member_lessons" not in _weekly_denominators:
-        _weekly_denominators["member_lessons"] = int(st.session_state.get(
-            f"goal_n_{selected_area}_nm_lessons", _current("nm_lessons")
-        ))
-    if "lsi_followups" not in _weekly_denominators:
-        _weekly_denominators["lsi_followups"] = int(st.session_state.get(
-            f"goal_n_{selected_area}_lsi_given", _current("lsi_given")
-        ))
 
     new_goals = _render_goal_inputs(nightly_defs, "n", recommended_goals, _weekly_denominators)
 
@@ -1284,48 +1322,40 @@ if selected_section == "Area Goal Customization":
 
     st.divider()
 
-    # ── Monthly Goals: Gate, Date, New, Pew, Renew, Mate ──────────────────────
+    # ── Monthly Goals: the mission's Key Indicators ───────────────────────────
     # Stored SEPARATELY from GOALS_CONFIG, in AREA_MONTHLY_GOALS (keyed by
-    # area + month_start) — NOT read by the live AgentScores.gs scoring
-    # script, which compares GOALS_CONFIG's number directly against ONE
-    # week of real data with no conversion (see asc_computeScore /
-    # computeAllAreaScores, weekly Sunday-11pm trigger). Making these boxes
-    # monthly without a separate tab would silently break every area's
-    # weekly score the moment this shipped. New (new_found) and Mate
-    # (member_lessons) ALSO have their own weekly box above in Nightly Form
-    # Goals — the two are independent numbers now, not kept in sync.
+    # area + month_start) — NOT read by the live AgentScores scoring script,
+    # which compares GOALS_CONFIG's number directly against ONE week of real
+    # data with no conversion. Making these boxes monthly without a separate
+    # tab would silently break every area's weekly score.
 
     render_section_label(t("Monthly Goals"))
 
-    # Same review-order KIs as before: Gate, Date, New, Pew, Renew, Mate.
-    # Gate/Date/Pew/Renew are matched by keyword on the WEEKLY metric's
-    # key/label ("renew" is checked before "new" so it isn't captured by the
-    # New bucket). New and Mate are matched by their EXACT raw key instead,
-    # searched across ALL metrics — they're stored as NIGHTLY-cadence
-    # metrics, and a fuzzy "member"-style keyword would risk colliding with
-    # unrelated metrics like "LA Members Attempted".
-    _MONTHLY_KI_RANKS = [(0, "gate"), (1, "date"), (4, "renew"), (3, "pew")]
-    _MONTHLY_EXACT_RANKS = {"new_found": 2, "member_lessons": 5}
-    _MONTHLY_LABEL_OVERRIDES = {"new_found": "New", "member_lessons": "Mate"}
-
-    def _monthly_ki_rank(m):
-        text = f"{m[0]} {m[1]}".lower()
-        for idx, kw in _MONTHLY_KI_RANKS:
-            if kw in text:
-                return idx
-        return None
-
-    monthly_ki_defs = sorted(
-        [m for m in weekly_defs if _monthly_ki_rank(m) is not None]
-        + [m for m in metric_defs if m[0] in _MONTHLY_EXACT_RANKS],
-        key=lambda m: _MONTHLY_EXACT_RANKS.get(m[0], _monthly_ki_rank(m)),
-    )
+    # The seven Key Indicators, in the order the weekly form asks them.
+    #
+    # This used to pick them by KEYWORD — matching "gate", "date", "renew",
+    # "pew" anywhere in a metric's key or label, plus the exact keys
+    # "new_found" and "member_lessons". Against CCSM's metrics that selection
+    # collapses to exactly ONE box: nothing matches gate/renew/pew/new_found/
+    # member_lessons, and "date" matches `ki_baptismal_date_real` purely by
+    # coincidence of spelling. A single arbitrary metric would have appeared
+    # here under the heading "Monthly Goals", looking deliberate.
+    #
+    # Keyword matching over metric names is the wrong tool regardless: it
+    # depends on the mission's language. Taking the catalogue's own KI set is
+    # both correct and self-correcting when the form changes.
+    _ki_catalog = key_indicator_metrics()
+    _weekly_by_key = {m[0]: m for m in weekly_defs}
+    monthly_ki_defs = [
+        _weekly_by_key.get(k, (k, label, "WEEKLY"))
+        for k, label in _ki_catalog.items()
+    ]
+    _MONTHLY_LABEL_OVERRIDES: dict[str, str] = {}
 
     _monthly_month_start = current_month_start()
     _monthly_row = get_current_area_monthly_goal(selected_area, _monthly_month_start)
-    try:
-        _monthly_label = date.fromisoformat(_monthly_month_start).strftime("%B %Y")
-    except ValueError:
+    _monthly_label = fmt_month_year(_monthly_month_start)
+    if _monthly_label == NA:
         _monthly_label = _monthly_month_start
 
     def _monthly_current(key: str) -> int:
@@ -1366,28 +1396,28 @@ if selected_section == "Area Goal Customization":
                 args=(selected_area, monthly_recommended, monthly_ki_defs),
             )
 
-    # Renew's monthly denominator is the MAX possible Recent-Convert church
-    # attendances this month (every recent convert, every Sunday they were
-    # eligible for) — NOT latest_rc_total * sundays, since a convert baptized
-    # mid-month should only count toward the Sundays after their baptism.
-    renew_attendance_potential = get_area_rc_attendance_potential(
-        selected_area, _monthly_month_start
-    )
-    # Monthly denominators are DYNAMIC (Carson, 2026-07-19: "if I add ... an
-    # expectation ... it will reflect that on the goals page"): EVERY
-    # monthly KI whose category defines an expectation in Area Expectation
-    # Settings gets a "/N" fraction — a monthly-cadence indicator counts
-    # as-is, a weekly-cadence one scales by THIS month's exact weeks
-    # (pew and renew, both Sunday-only church-attendance events, scale by
-    # the month's actual Sunday count instead, matching the REC convention
-    # above — Carson, 2026-07-21: Pew was missing this override too, same
-    # bug as the mission-wide total). ceil, floored at
-    # 1 — a fraction out of 0 means nothing. Two derived fallbacks keep
-    # their old denominators when no explicit expectation exists (an
-    # explicit one always wins): Renew's is the MAX possible Recent-
-    # Convert attendances this month (see renew_attendance_potential
-    # above), and Mate's is the area's NM Lessons expectation scaled to
-    # this month (its own hypothetical lesson target).
+    # Monthly denominators are DYNAMIC: every monthly KI whose category defines
+    # an expectation in Area Expectation Settings gets a "/N" fraction — a
+    # monthly-cadence indicator counts as-is, a weekly-cadence one scales by
+    # THIS month's exact weeks. Church-attendance KIs are Sunday-only events, so
+    # they scale by the month's actual SUNDAY count instead; scaling those by
+    # weeks would set a bar for Sundays that do not exist in the month.
+    # ceil, floored at 1 — a fraction out of 0 means nothing.
+    #
+    # Provo had two derived fallbacks here for KIs with no explicit expectation:
+    # Renew's was the maximum possible Recent-Convert attendances this month
+    # (from rc_total, a running headcount of the recent converts an area works
+    # with), and Mate's was the area's NM Lessons expectation scaled to the
+    # month. Both are gone. CCSM's weekly form asks no rc_total — there is no
+    # recent-convert headcount anywhere in its data — so that denominator could
+    # only ever have been 0, and "3 / 0" is worse than no fraction at all. A KI
+    # with no expectation set now simply renders without one, which is honest:
+    # nobody has said what the bar is.
+    _SUNDAY_ONLY_KIS = {
+        k for k in _ki_catalog
+        if "sacrament" in k or "church" in k
+    }
+
     def _area_monthly_exp_target(key: str) -> int | None:
         _e = get_area_expectation_entry(selected_area, key)
         if not _e:
@@ -1396,7 +1426,7 @@ if selected_section == "Area Goal Customization":
             _v = _e["value"]
         else:
             _v = _e["value"] * (
-                _sundays_this_month if key in ("pew", "renew") else _monthly_weeks
+                _sundays_this_month if key in _SUNDAY_ONLY_KIS else _monthly_weeks
             )
         return max(1, math.ceil(_v))
 
@@ -1418,15 +1448,6 @@ if selected_section == "Area Goal Customization":
         _t = _area_monthly_exp_target(_mk)
         if _t is not None:
             _monthly_denominators[_mk] = _t
-    if "renew" not in _monthly_denominators:
-        _monthly_denominators["renew"] = renew_attendance_potential
-    if "member_lessons" not in _monthly_denominators:
-        _monthly_denominators["member_lessons"] = max(
-            1,
-            math.ceil(
-                get_area_weekly_expectation(selected_area, "nm_lessons") * _monthly_weeks
-            ),
-        )
 
     monthly_values = {}
     for i in range(0, len(monthly_ki_defs), 4):
@@ -1452,15 +1473,13 @@ if selected_section == "Area Goal Customization":
             def _mv(key: str) -> int:
                 return int(monthly_values.get(key, _monthly_current(key)))
 
+            # Every KI actually on screen, not six fixed Provo keyword args.
+            # Those evaluated to 0 for CCSM, so this button reported "saved"
+            # and stored nothing the user had typed.
             _row, _err = upsert_area_monthly_goal(
                 selected_area,
                 _monthly_month_start,
-                gate=_mv("gate"),
-                date_metric=_mv("date_metric"),
-                new_found=_mv("new_found"),
-                pew=_mv("pew"),
-                renew=_mv("renew"),
-                member_lessons=_mv("member_lessons"),
+                goals={k: _mv(k) for k, _lbl, _ft in monthly_ki_defs},
                 set_by=user.get("email", ""),
             )
             if _err:
@@ -1630,8 +1649,14 @@ if selected_section == "Goal Settings":
     # ceil(avg × (1 + nudge%)) math the REC badges use, on the mission-wide
     # basis get_mission_recommended_goals() uses) — so moving the slider
     # visibly moves the green goal line relative to real performance.
+    # Was `if k != "rc_total"` — Provo's headcount key, absent from CCSM. The
+    # projection charts a weekly total against a projected goal, so the metrics
+    # to leave out here are the ones that cannot be totalled: CHOICE answers,
+    # and the `_meta` keys (a goal, not a result — projecting one and drawing a
+    # goal line beside it would put two targets on the same chart).
     _proj_defs = [
-        (k, lbl, f) for k, lbl, f in get_question_metrics() if k != "rc_total"
+        (k, lbl, f) for k, lbl, f in get_question_metrics()
+        if not k.endswith("_meta") and metric_data_type(k) != "CHOICE"
     ]
     if _proj_defs:
         _proj_pct = get_rec_stretch_pct()
@@ -1989,8 +2014,8 @@ if selected_section == "Area Expectation Settings":
                             # instead of having them grouped together in a
                             # larger box") — st.container(border=True) is a
                             # native Streamlit primitive already used
-                            # elsewhere in this app (10_Notes.py,
-                            # 17_Action_Center.py), not custom CSS. This
+                            # elsewhere in this app (10_Notas.py,
+                            # 17_Centro_de_Acción.py), not custom CSS. This
                             # also resolves the earlier "boxes uneven,
                             # Potential Members at Church out of line"
                             # complaint: no indicator shares a row with
@@ -2013,7 +2038,7 @@ if selected_section == "Area Expectation Settings":
                                     _row["metric"] = st.selectbox(
                                         t("Indicator"), _opts,
                                         index=_opts.index(_row["metric"]),
-                                        format_func=lambda k: DROPDOWN_METRIC_LABELS.get(k, k),
+                                        format_func=lambda k: DROPDOWN_METRIC_LABELS().get(k, k),
                                         key=f"area_ind_metric_{_row['_id']}",
                                     )
                                 with _c2:
@@ -2067,7 +2092,7 @@ if selected_section == "Area Expectation Settings":
                     t("Indicator"), _metric_keys,
                     index=None,
                     placeholder=t("SELECT INDICATOR"),
-                    format_func=lambda k: DROPDOWN_METRIC_LABELS.get(k, k),
+                    format_func=lambda k: DROPDOWN_METRIC_LABELS().get(k, k),
                     key=f"area_ind_new_metric_{_category}_{_add_gen}",
                 )
             with _a2:
@@ -2152,9 +2177,16 @@ if selected_section == "Area Expectation Settings":
                 else:
                     _new_id = st.session_state["area_exp_next_id"]
                     st.session_state["area_exp_next_id"] += 1
+                    # Placeholder indicator for the new category. Was
+                    # "nm_lessons" — a metric CCSM does not collect, so every
+                    # custom category was born holding an indicator that
+                    # matches no column and can never resolve. The first
+                    # nightly metric the mission actually asks is a real,
+                    # editable starting point.
                     _rows.append({
                         "_id": _new_id, "category": _label,
-                        "metric": "nm_lessons", "cadence": "weekly", "value": 0.0,
+                        "metric": _placeholder_metric(), "cadence": "weekly",
+                        "value": 0.0,
                     })
                     st.session_state.pop("area_type_exp_new_category", None)
                     st.rerun()
@@ -2177,7 +2209,7 @@ if selected_section == "Area Expectation Settings":
                     st.warning(t('"{ovr_area}" already has its own section above.', ovr_area=_ovr_area))
                 else:
                     _seed = resolve_area_expectations(_ovr_area) or {
-                        "nm_lessons": {"cadence": "weekly", "value": 0.0}
+                        _placeholder_metric(): {"cadence": "weekly", "value": 0.0}
                     }
                     for _m, _entry in _seed.items():
                         _new_id = st.session_state["area_exp_next_id"]

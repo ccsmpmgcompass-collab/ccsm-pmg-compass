@@ -150,23 +150,49 @@ def get_mission_goals_for_display(month_start: str | None = None) -> dict:
 
 
 _AREA_TAB = "AREA_MONTHLY_GOALS"
-_AREA_COLS = [
-    "area", "month_start", "gate", "date_metric", "new_found", "pew",
-    "renew", "member_lessons", "set_by", "notes",
-]
-_AREA_INT_COLS = ["gate", "date_metric", "new_found", "pew", "renew", "member_lessons"]
+
+
+def _area_int_cols() -> list[str]:
+    """The metric columns of AREA_MONTHLY_GOALS: one per Key Indicator.
+
+    Was a fixed ["gate", "date_metric", "new_found", "pew", "renew",
+    "member_lessons"] — Utah Provo's six KIs. Since the Goals page offers
+    CCSM's seven, every value a user typed was written into a column for a
+    metric that does not exist and every CCSM metric was silently dropped:
+    the page reported "saved" and stored nothing.
+
+    Falls back to whatever the tab already holds if the catalogue is
+    unreadable, so a transient sheet failure degrades to "can't add new
+    columns" rather than to "rewrite the tab with none".
+    """
+    try:
+        from app.config.metric_catalog import key_indicator_metrics
+        keys = list(key_indicator_metrics())
+        if keys:
+            return keys
+    except Exception:
+        pass
+    df = read_tab(_AREA_TAB, header_marker="month_start")
+    if not df.empty:
+        return [c for c in df.columns
+                if c not in ("area", "month_start", "set_by", "notes")]
+    return []
+
+
+def _area_cols() -> list[str]:
+    return ["area", "month_start"] + _area_int_cols() + ["set_by", "notes"]
 
 
 def _read_area_goals() -> pd.DataFrame:
     df = read_tab(_AREA_TAB, header_marker="month_start")
     if df.empty or "month_start" not in df.columns:
-        return pd.DataFrame(columns=_AREA_COLS)
+        return pd.DataFrame(columns=_area_cols())
     return df
 
 
 def _area_row_to_dict(row: pd.Series) -> dict:
     d = {}
-    for col in _AREA_INT_COLS:
+    for col in _area_int_cols():
         d[col] = int(float(row.get(col, 0) or 0))
     d["area"] = str(row.get("area", ""))
     d["month_start"] = str(row.get("month_start", ""))
@@ -184,9 +210,9 @@ def get_area_monthly_goals(month_start: str | None = None) -> pd.DataFrame:
     month_start = month_start or current_month_start()
     df = _read_area_goals()
     if df.empty:
-        return pd.DataFrame(columns=_AREA_COLS)
+        return pd.DataFrame(columns=_area_cols())
     df = df[df["month_start"].astype(str) == month_start].copy()
-    for c in _AREA_INT_COLS:
+    for c in _area_int_cols():
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
     df["area"] = df["area"].astype(str).str.strip()
     return df
@@ -218,28 +244,32 @@ def get_current_area_monthly_goal(area: str, month_start: str | None = None) -> 
 def upsert_area_monthly_goal(
     area: str,
     month_start: str,
-    gate: int,
-    date_metric: int,
-    new_found: int,
-    pew: int,
-    renew: int,
-    member_lessons: int,
+    goals: dict,
     set_by: str,
     notes: str = "",
 ) -> tuple[dict | None, str | None]:
-    """Insert or update one area's Monthly Goals (Gate/Date/New/Pew/Renew/Mate)
-    for the given month. Returns (row, None) or (None, error)."""
+    """Insert or update one area's Monthly Goals for the given month.
+
+    `goals` is {metric_key: value} over the mission's Key Indicators. This used
+    to be six fixed keyword arguments named after Provo's KIs, so a caller
+    passing CCSM's metrics could not reach the function at all — and the page
+    that called it passed gate=/date_metric=/… which now evaluate to 0, so
+    "Save" reported success and stored nothing.
+
+    Unknown keys are dropped rather than written: the tab's columns come from
+    the catalogue, and silently widening the schema from caller input is how a
+    typo becomes a permanent column.
+
+    Returns (row, None) or (None, error).
+    """
+    metric_cols = _area_int_cols()
+    area_cols = _area_cols()
     new_row = {
-        "area":           area,
-        "month_start":    month_start,
-        "gate":           gate,
-        "date_metric":    date_metric,
-        "new_found":      new_found,
-        "pew":            pew,
-        "renew":          renew,
-        "member_lessons": member_lessons,
-        "set_by":         set_by,
-        "notes":          notes,
+        "area":        area,
+        "month_start": month_start,
+        **{k: int(goals.get(k, 0) or 0) for k in metric_cols},
+        "set_by":      set_by,
+        "notes":       notes,
     }
     try:
         df = _read_area_goals()
@@ -258,8 +288,8 @@ def upsert_area_monthly_goal(
         else:
             df = pd.DataFrame([new_row])
 
-        rows = [_AREA_COLS] + [
-            [str(row.get(c, "") or "") for c in _AREA_COLS]
+        rows = [area_cols] + [
+            [str(row.get(c, "") or "") for c in area_cols]
             for _, row in df.iterrows()
         ]
         overwrite_tab(_AREA_TAB, rows)
@@ -276,25 +306,25 @@ def bulk_upsert_area_monthly_goals(
     set_by: str,
 ) -> tuple[int, str | None]:
     """Bulk counterpart to upsert_area_monthly_goal: upsert EVERY area in
-    `goals_by_area` ({area: {gate, date_metric, new_found, pew, renew,
-    member_lessons}}) for the given month in ONE overwrite_tab call — one
-    Sheets API write total, not one per area. Rows for other months (and for
-    areas not in `goals_by_area`) are preserved as-is. Returns
-    (areas_written, None) or (0, error)."""
+    `goals_by_area` ({area: {metric_key: value}}) for the given month in ONE
+    overwrite_tab call — one Sheets API write total, not one per area. Rows for
+    other months (and for areas not in `goals_by_area`) are preserved as-is.
+
+    Metric columns come from the catalogue, same as the single-area path; the
+    old fixed six were Provo's KIs, so this wrote zeros for every area.
+
+    Returns (areas_written, None) or (0, error)."""
     try:
         df = _read_area_goals()
+        metric_cols = _area_int_cols()
+        area_cols = _area_cols()
         for area, goals in goals_by_area.items():
             new_row = {
-                "area":           area,
-                "month_start":    month_start,
-                "gate":           goals.get("gate", 0),
-                "date_metric":    goals.get("date_metric", 0),
-                "new_found":      goals.get("new_found", 0),
-                "pew":            goals.get("pew", 0),
-                "renew":          goals.get("renew", 0),
-                "member_lessons": goals.get("member_lessons", 0),
-                "set_by":         set_by,
-                "notes":          "",
+                "area":        area,
+                "month_start": month_start,
+                **{k: int(goals.get(k, 0) or 0) for k in metric_cols},
+                "set_by":      set_by,
+                "notes":       "",
             }
             area_norm = str(area).strip().lower()
             if not df.empty and "month_start" in df.columns and "area" in df.columns:
@@ -311,8 +341,8 @@ def bulk_upsert_area_monthly_goals(
             else:
                 df = pd.DataFrame([new_row])
 
-        rows = [_AREA_COLS] + [
-            [str(row.get(c, "") or "") for c in _AREA_COLS]
+        rows = [area_cols] + [
+            [str(row.get(c, "") or "") for c in area_cols]
             for _, row in df.iterrows()
         ]
         overwrite_tab(_AREA_TAB, rows)

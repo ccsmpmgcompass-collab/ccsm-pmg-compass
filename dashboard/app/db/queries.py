@@ -319,8 +319,8 @@ def get_zone_weekly_actuals() -> pd.DataFrame:
     """
     One row per zone for the most recent shared week: nightly-derived metrics
     (get_weekly_ki_by_zone()'s latest week_end_date) combined with the
-    weekly-form KI metrics (pew/date_metric/gate/renew/rc_total, summed per
-    zone from get_weekly_form_data()'s latest week). The two sources' latest
+    weekly-form Key Indicators (summed per zone from get_weekly_form_data()'s
+    latest week — whatever QUESTIONS_CONFIG says that form asks). The two sources' latest
     weeks aren't guaranteed to be the same calendar week (nightly rolls up
     continuously; the weekly form is Sunday-gated), so each is taken
     independently at its own latest COMPLETE week before merging (the
@@ -341,7 +341,13 @@ def get_zone_weekly_actuals() -> pd.DataFrame:
     if not weekly_form.empty:
         latest_wf_week = weekly_form["week_end_date"].max()
         wf_cur = weekly_form[weekly_form["week_end_date"] == latest_wf_week]
-        wf_latest = wf_cur.groupby("zone")[["pew", "date_metric", "gate", "renew", "rc_total"]].sum().reset_index()
+        # Sum whichever metric columns the weekly form actually produced, not a
+        # hardcoded list. The old ["pew","date_metric","gate","renew","rc_total"]
+        # named Provo's KIs — none present in CCSM's frame — so this raised a
+        # KeyError the moment the parser above started returning real rows.
+        _wf_metrics = [c for c in wf_cur.columns
+                       if c not in ("week_end_date", "area", "zone")]
+        wf_latest = wf_cur.groupby("zone")[_wf_metrics].sum().reset_index()
 
     if nightly_latest.empty and wf_latest.empty:
         return pd.DataFrame()
@@ -384,13 +390,96 @@ def get_latest_weekly_ki() -> pd.DataFrame:
 # WEEKLY_FORM_RAW — weekly KI form (pew / date / gate / renew / rc_total)
 # ══════════════════════════════════════════════════════════════════════════════
 
-_WEEKLY_KI_PATTERNS = [
-    ("(Pew)",   "pew"),
-    ("(Date)",  "date_metric"),
-    ("(Gate)",  "gate"),
-    ("(Renew)", "renew"),
-    ("(Total)", "rc_total"),
-]
+# ── Weekly form structure ─────────────────────────────────────────────────────
+# The weekly Google Form has one SECTION PER ZONE, so its response sheet repeats
+# the whole question block ten times: 182 columns, with "¿En qué área sirve?" at
+# ten different positions. A missionary fills only their own zone's section and
+# every other section's columns are blank on that row.
+#
+# These two constants mirror A3_FORM_AREA_COL / A3_FORM_ZONE_COL in
+# CCSM_Agent3.gs. They are structural questions, so unlike the metric columns
+# they have no QUESTIONS_CONFIG row to read them from.
+# tests/test_weekly_form_parser.py asserts both still match the live header.
+#
+# This parser previously looked for "What is your Area?", "What is your Zone?",
+# "What week" and (Pew)/(Date)/(Gate)/(Renew)/(Total) — Utah Provo's English
+# form, inherited with the fork. Against CCSM's Spanish header EVERY ONE of
+# those patterns matches ZERO columns, so section detection found nothing,
+# get_weekly_form_data() returned an empty frame on every call, and the whole
+# Key Indicator pipeline — dashboard KI cards, KI trends, zone KI comparisons,
+# projections, Goals actuals — was blank by construction rather than for want
+# of data.
+_FORM_AREA_COL = "¿En qué área sirve?"
+_FORM_ZONE_COL = "¿En qué zona sirve?"
+
+# Fallback only; the real header is read from QUESTIONS_CONFIG's WEEKLY
+# report_date row, so a reworded form question follows automatically.
+_FORM_WEEK_DATE_COL = "¿Qué fecha está ingresando?"
+
+
+def _weekly_form_layout(cols: list) -> dict:
+    """Locate the repeated per-zone sections in a *_FORM_RAW header.
+
+    read_tab() renames duplicate headers to `name`, `name_1`, `name_2`… so that
+    the DataFrame builds, which is why every match here is a `startswith` on the
+    base question text rather than an equality test.
+
+    Returns {"sections": [(start, end), …], "zone_col": name|None,
+             "ts_col": name|None} with `end` exclusive.
+    """
+    starts = [i for i, c in enumerate(cols) if str(c).startswith(_FORM_AREA_COL)]
+    sections = [
+        (s, starts[i + 1] if i + 1 < len(starts) else len(cols))
+        for i, s in enumerate(starts)
+    ]
+    return {
+        "sections": sections,
+        "zone_col": next((c for c in cols if str(c).startswith(_FORM_ZONE_COL)), None),
+        # Google names column 1 in the FORM's locale; the live sheet says
+        # "Timestamp" but a re-created form could say "Marca temporal".
+        "ts_col": next(
+            (c for c in cols
+             if str(c).startswith("Timestamp") or str(c).startswith("Marca temporal")),
+            None,
+        ),
+    }
+
+
+def _weekly_metric_columns() -> list[tuple[str, str]]:
+    """[(Form_Column_Header, metric_key), …] for every active WEEKLY metric,
+    straight from QUESTIONS_CONFIG — so a question added to the weekly form is
+    picked up without a code change, and a reworded one keeps working.
+
+    Excludes report_date: that column IS the week the row is about, handled
+    separately below, not a value to sum.
+    """
+    df = read_tab("QUESTIONS_CONFIG")
+    if df.empty or "Metric_Key" not in df.columns:
+        return []
+    out: list[tuple[str, str]] = []
+    for _, r in df.iterrows():
+        key = str(r.get("Metric_Key", "")).strip()
+        header = str(r.get("Form_Column_Header", "")).strip()
+        form = str(r.get("Form_Type", "")).strip().upper()
+        active = str(r.get("Active", "TRUE")).strip().upper()
+        if not key or not header or form != "WEEKLY":
+            continue
+        if key == "report_date" or active not in ("TRUE", "YES", "1", ""):
+            continue
+        out.append((header, key))
+    return out
+
+
+def _weekly_date_column() -> str:
+    df = read_tab("QUESTIONS_CONFIG")
+    if not df.empty and {"Metric_Key", "Form_Type", "Form_Column_Header"} <= set(df.columns):
+        rows = df[(df["Metric_Key"].astype(str).str.strip() == "report_date")
+                  & (df["Form_Type"].astype(str).str.strip().str.upper() == "WEEKLY")]
+        if not rows.empty:
+            header = str(rows.iloc[0]["Form_Column_Header"]).strip()
+            if header:
+                return header
+    return _FORM_WEEK_DATE_COL
 
 
 def _norm_week_date(raw: str) -> str:
@@ -407,38 +496,48 @@ def _norm_week_date(raw: str) -> str:
 @st.cache_data(ttl=300)
 def get_weekly_form_data() -> pd.DataFrame:
     """
-    Parse WEEKLY_FORM_RAW (multi-section weekly form, one section per zone)
-    into tidy rows: week_end_date | area | zone | pew | date_metric | gate
-    | renew | rc_total.
+    Parse WEEKLY_FORM_RAW (one form section per zone) into tidy rows:
+    week_end_date | area | zone | <one column per active WEEKLY metric>.
 
-    This is the only aggregation of the weekly KI metrics available to the
-    app — WEEKLY_KI carries nightly-form rollups only.
+    The metric columns are whatever QUESTIONS_CONFIG says the weekly form asks —
+    for CCSM the seven Key Indicators as `_real` (achieved) and `_meta` (that
+    companionship's goal for the week) pairs, plus leader_call and
+    correlation_meeting. Callers must not sum a `_real` and a `_meta` together:
+    one is an outcome and the other a target.
+
+    This is the only aggregation of the weekly metrics available to the app —
+    WEEKLY_KI carries nightly-form rollups.
     """
     df = read_tab("WEEKLY_FORM_RAW")
     if df.empty:
         return pd.DataFrame()
 
     cols = list(df.columns)
-    sec_starts = [i for i, c in enumerate(cols) if c.startswith("What is your Area?")]
-    if not sec_starts:
+    layout = _weekly_form_layout(cols)
+    if not layout["sections"]:
         return pd.DataFrame()
-    zone_col = next((c for c in cols if c.startswith("What is your Zone?")), None)
-    ts_col   = next((c for c in cols if c.startswith("Timestamp")), None)
+
+    metric_cols = _weekly_metric_columns()
+    if not metric_cols:
+        return pd.DataFrame()
+    date_header = _weekly_date_column()
+    zone_col, ts_col = layout["zone_col"], layout["ts_col"]
 
     out = []
     for _, row in df.iterrows():
         zone = str(row[zone_col]).strip() if zone_col else ""
-        for si, start in enumerate(sec_starts):
-            end = sec_starts[si + 1] if si + 1 < len(sec_starts) else len(cols)
+        for start, end in layout["sections"]:
             area = str(row.iloc[start]).strip()
             if not area:
                 continue
 
             rec = {"area": area, "zone": zone}
-            for pat, key in _WEEKLY_KI_PATTERNS:
+            for header, key in metric_cols:
                 val = 0.0
                 for j in range(start, end):
-                    if pat in cols[j]:
+                    # startswith, not equality: read_tab suffixes duplicate
+                    # headers (_1, _2, …) and every question repeats per zone.
+                    if str(cols[j]).startswith(header):
                         v = pd.to_numeric(row.iloc[j], errors="coerce")
                         val = 0.0 if pd.isna(v) else float(v)
                         break
@@ -446,7 +545,7 @@ def get_weekly_form_data() -> pd.DataFrame:
 
             week = ""
             for j in range(start, end):
-                if cols[j].startswith("What week"):
+                if str(cols[j]).startswith(date_header):
                     raw_week = _norm_week_date(row.iloc[j])
                     if raw_week:
                         # Snap to the Sunday that ends the week (previous or same).
@@ -469,8 +568,7 @@ def get_weekly_form_data() -> pd.DataFrame:
     tidy = pd.DataFrame(out)
     # One row per area per week — keep the latest submission if duplicated
     tidy = tidy.drop_duplicates(subset=["week_end_date", "area"], keep="last")
-    return tidy[["week_end_date", "area", "zone",
-                 "pew", "date_metric", "gate", "renew", "rc_total"]]
+    return tidy[["week_end_date", "area", "zone"] + [k for _, k in metric_cols]]
 
 
 @st.cache_data(ttl=300)
@@ -493,11 +591,10 @@ def get_weekly_submission_data() -> pd.DataFrame:
         return pd.DataFrame()
 
     cols = list(df.columns)
-    sec_starts = [i for i, c in enumerate(cols) if c.startswith("What is your Area?")]
-    if not sec_starts:
+    layout = _weekly_form_layout(cols)
+    if not layout["sections"]:
         return pd.DataFrame()
-    zone_col = next((c for c in cols if c.startswith("What is your Zone?")), None)
-    ts_col   = next((c for c in cols if c.startswith("Timestamp")), None)
+    zone_col, ts_col = layout["zone_col"], layout["ts_col"]
     if ts_col is None:
         return pd.DataFrame()
 
@@ -509,7 +606,7 @@ def get_weekly_submission_data() -> pd.DataFrame:
         d = datetime.strptime(sub, "%Y-%m-%d")
         sunday = (d - timedelta(days=(d.weekday() + 1) % 7)).strftime("%Y-%m-%d")
         zone = str(row[zone_col]).strip() if zone_col else ""
-        for start in sec_starts:
+        for start, _end in layout["sections"]:
             area = str(row.iloc[start]).strip()
             if not area:
                 continue
@@ -522,13 +619,94 @@ def get_weekly_submission_data() -> pd.DataFrame:
 
 
 def get_weekly_ki_totals(n_weeks: int = 52) -> pd.DataFrame:
-    """Mission-wide weekly KI totals (pew/date/gate/renew/rc_total) per week."""
+    """Mission-wide weekly-form totals per week — every metric that form asks.
+
+    Columns are taken from the parsed frame rather than a hardcoded list; the
+    old ["pew","date_metric","gate","renew","rc_total"] was Provo's and would
+    KeyError against CCSM's columns.
+    """
     df = get_weekly_form_data()
     if df.empty:
         return pd.DataFrame()
-    keys = ["pew", "date_metric", "gate", "renew", "rc_total"]
+    keys = [c for c in df.columns if c not in ("week_end_date", "area", "zone")]
+    if not keys:
+        return pd.DataFrame()
     grouped = df.groupby("week_end_date")[keys].sum().reset_index()
     return grouped.sort_values("week_end_date").tail(n_weeks)
+
+
+def get_nightly_weekly_trends(n_weeks: int = 52) -> pd.DataFrame:
+    """Mission-wide weekly totals for the NIGHTLY metrics, from DAILY_LOG.
+
+    CCSM's WEEKLY_KI is structurally different from Utah Provo's. Provo derives
+    WEEKLY_KI from DAILY_LOG, so it holds nightly rollups and a nightly metric
+    can be trended straight off it. CCSM's CCSM_Agent5A.gs replaced that
+    wholesale (see its header, "STRUCTURAL CHANGE vs Provo"): WEEKLY_KI is a
+    parse of the weekly form's Real/Meta columns, so it holds ONLY the seven
+    ki_* pairs and contains no nightly metric at all.
+
+    Nightly metrics therefore have to be bucketed from DAILY_LOG here. Without
+    this, every nightly metric routed to get_weekly_ki_trends() and found no
+    such column — a projection or trend of nothing.
+
+    Weeks end Sunday, matching the Mon–Sun reporting week used everywhere else
+    (see exclude_current_week and CCSM_Agent1A's own week calculation).
+    """
+    df = get_daily_log(days=n_weeks * 7 + 14)
+    if df.empty or "Date" not in df.columns:
+        return pd.DataFrame()
+
+    d = pd.to_datetime(df["Date"], errors="coerce")
+    keep = d.notna()
+    if not keep.any():
+        return pd.DataFrame()
+    df = df[keep].copy()
+    d = d[keep]
+    # Snap each day to the Sunday that ENDS its Mon–Sun week: Monday=0 … so
+    # (6 - weekday) days forward always lands on that week's Sunday.
+    df["week_end_date"] = (
+        d + pd.to_timedelta(6 - d.dt.weekday, unit="D")
+    ).dt.strftime("%Y-%m-%d")
+
+    meta = {"Date", "Area", "Zone", "District", "week_end_date"}
+    metric_cols = [c for c in df.columns if c not in meta]
+    if not metric_cols:
+        return pd.DataFrame()
+    numeric = _num(df, metric_cols)
+    grouped = numeric.groupby("week_end_date")[metric_cols].sum(numeric_only=True).reset_index()
+    return grouped.sort_values("week_end_date").tail(n_weeks)
+
+
+def get_nightly_weekly_trends_by_area(n_weeks: int = 52) -> pd.DataFrame:
+    """Per-AREA weekly totals for the nightly metrics, from DAILY_LOG.
+
+    The per-area counterpart to get_nightly_weekly_trends(); returns
+    area | week_end_date | <one column per nightly metric>. Used by the Effort
+    score, whose metrics are all nightly and therefore have no per-area weekly
+    source in CCSM's WEEKLY_KI.
+    """
+    df = get_daily_log(days=n_weeks * 7 + 14)
+    if df.empty or "Date" not in df.columns or "Area" not in df.columns:
+        return pd.DataFrame()
+
+    d = pd.to_datetime(df["Date"], errors="coerce")
+    keep = d.notna()
+    if not keep.any():
+        return pd.DataFrame()
+    df = df[keep].copy()
+    d = d[keep]
+    df["week_end_date"] = (
+        d + pd.to_timedelta(6 - d.dt.weekday, unit="D")
+    ).dt.strftime("%Y-%m-%d")
+    df["area"] = df["Area"].astype(str).str.strip()
+
+    meta = {"Date", "Area", "Zone", "District", "week_end_date", "area"}
+    metric_cols = [c for c in df.columns if c not in meta]
+    if not metric_cols:
+        return pd.DataFrame()
+    numeric = _num(df, metric_cols)
+    return (numeric.groupby(["area", "week_end_date"])[metric_cols]
+            .sum(numeric_only=True).reset_index())
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -754,6 +932,67 @@ def get_live_snapshot() -> pd.DataFrame:
         return df
     numeric_cols = [c for c in df.columns if c not in ("Area", "Zone", "District", "Last_Updated")]
     return _num(df, numeric_cols)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SCORES
+# ══════════════════════════════════════════════════════════════════════════════
+
+#: Leadership tracking rows in SCORES, matched by Area_Name. Mirrors
+#: asc_isLeadershipRow_ in CCSM_AgentScores.gs. They never submit and score 0,
+#: so leaving them in drags every mission average down.
+_SCORES_LEADERSHIP_RE = (
+    r"^(Mission President|Assistant to President|Zone Leader|"
+    r"Sister Training Leader -|District Leader -)"
+)
+
+
+@st.cache_data(ttl=300)
+def get_scores(week_ending: str = None) -> pd.DataFrame:
+    """The SCORES tab: one row per area per scored week.
+
+    A shared reader so the Puntajes page and the Informes page cannot disagree
+    about which rows count — leadership rows are dropped here, once.
+
+    `week_ending` filters to a single week; None returns every week.
+    """
+    df = read_tab("SCORES")
+    if df.empty:
+        return pd.DataFrame()
+
+    df.columns = [str(c).strip() for c in df.columns]
+    for col in ("Effort_Score", "Skill_Score", "KI_Score", "Effectiveness_Score"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    if "Week_Ending_Date" in df.columns:
+        df["Week_Ending_Date"] = (
+            df["Week_Ending_Date"].astype(str).str.strip().str[:10]
+        )
+
+    drop = pd.Series(False, index=df.index)
+    if "Area_Name" in df.columns:
+        drop = df["Area_Name"].astype(str).str.match(
+            _SCORES_LEADERSHIP_RE, case=False, na=False)
+    if "Zone" in df.columns:
+        drop = drop | (df["Zone"].astype(str).str.strip().str.upper() == "ALL")
+    df = df[~drop].copy()
+
+    if week_ending:
+        df = df[df["Week_Ending_Date"] == str(week_ending)[:10]].copy()
+    return df
+
+
+@st.cache_data(ttl=300)
+def get_scored_weeks() -> list:
+    """Every Week_Ending_Date present in SCORES, newest first."""
+    df = get_scores()
+    if df.empty or "Week_Ending_Date" not in df.columns:
+        return []
+    return sorted(
+        {w for w in df["Week_Ending_Date"].astype(str) if w and w != "nan"},
+        reverse=True,
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1097,111 +1336,16 @@ def apply_goal_recalibration_suggestion(area: str, metric_key: str, suggested_go
 # RECOMMENDED GOALS (based on actual performance — area's own, or mission-wide)
 # ══════════════════════════════════════════════════════════════════════════════
 
-@st.cache_data(ttl=300)
-def get_latest_rc_total(area: str) -> int:
-    """
-    Most recent submitted "Recent Convert Total" (rc_total) value for `area`,
-    from WEEKLY_FORM_RAW. rc_total is a running snapshot count of the recent
-    converts an area is working with — not a weekly production number — so
-    unlike other transfer KIs it is never averaged or stretched into a goal.
-    It's used as a fixed denominator next to the Renew goal (Renew = recent
-    converts attending church, out of this total). Returns 0 if the area has
-    no rc_total data.
-    """
-    wf = get_weekly_form_data()
-    if wf.empty or not {"rc_total", "area", "week_end_date"}.issubset(wf.columns):
-        return 0
-    sub = wf[wf["area"].astype(str).str.strip() == str(area).strip()]
-    if sub.empty:
-        return 0
-    vals = pd.to_numeric(
-        sub.sort_values("week_end_date")["rc_total"], errors="coerce"
-    ).dropna()
-    if vals.empty:
-        return 0
-    return int(round(float(vals.iloc[-1])))
-
-
-@st.cache_data(ttl=300)
-def get_area_rc_attendance_potential(area: str, month_start: str) -> int:
-    """
-    Denominator for Area Goals' Monthly Goals Renew fraction: the MAXIMUM
-    possible number of Recent-Convert church attendances this month, if
-    every recent convert made every Sunday they were eligible for.
-
-    This is NOT simply latest_rc_total * sundays_in_month — rc_total is a
-    running headcount that can change mid-month (e.g. a baptism), so a
-    convert baptized in week 3 should only count toward the Sundays AFTER
-    their baptism, not the ones before it when they weren't yet a recent
-    convert. So for EACH Sunday in the month, this uses the area's rc_total
-    AS REPORTED for that week (an "as of that Sunday" snapshot, via a
-    backward as-of match against the area's submitted weekly rows) rather
-    than one flat current total — then sums across every Sunday. A Sunday
-    later than any submitted data (i.e. still in the future) naturally
-    falls back to the most recent known rc_total as the best estimate,
-    since that's the latest value on or before it.
-    """
-    wf = get_weekly_form_data()
-    if wf.empty or not {"rc_total", "area", "week_end_date"}.issubset(wf.columns):
-        return 0
-    sub = wf[wf["area"].astype(str).str.strip() == str(area).strip()].copy()
-    if sub.empty:
-        return 0
-    sub["week_end_date"] = pd.to_datetime(sub["week_end_date"], errors="coerce")
-    sub["rc_total"] = pd.to_numeric(sub["rc_total"], errors="coerce")
-    sub = sub.dropna(subset=["week_end_date", "rc_total"]).sort_values("week_end_date")
-    if sub.empty:
-        return 0
-
-    start = date.fromisoformat(month_start)
-    next_start = date(start.year + 1, 1, 1) if start.month == 12 else date(start.year, start.month + 1, 1)
-    sundays = [
-        start + timedelta(days=i) for i in range((next_start - start).days)
-        if (start + timedelta(days=i)).weekday() == 6
-    ]
-    if not sundays:
-        return 0
-
-    sunday_df = pd.DataFrame({"sunday": pd.to_datetime(sundays)}).sort_values("sunday")
-    merged = pd.merge_asof(
-        sunday_df, sub[["week_end_date", "rc_total"]],
-        left_on="sunday", right_on="week_end_date", direction="backward",
-    )
-    return int(merged["rc_total"].fillna(0).sum())
-
-
-@st.cache_data(ttl=300)
-def get_mission_rc_attendance_potential(month_start: str) -> int:
-    """
-    Mission-wide MAXIMUM possible Recent-Convert church attendances this
-    month — every submitting area's own get_area_rc_attendance_potential()
-    (that area's rc_total AS OF each Sunday, not a flat headcount, summed
-    across every Sunday in the month), added together across the whole
-    mission. Used as the fixed denominator next to Mission Goals' Recent
-    Convert Attendance box when no explicit "renew" expectation is saved in
-    Area Expectation Settings (an explicit expectation always wins — see
-    _mission_denominator in pages/02_Goals.py).
-
-    Carson, 2026-07-21: "adding up all of the recent converts the entire
-    mission has and multiplying that by the amount of Sundays... that
-    number changes depending on how many Sundays are in the month" — this
-    replaces the old get_mission_latest_rc_total(), a flat sum with NO
-    Sunday scaling at all (same bug class as the Pew fix earlier that day:
-    a monthly ATTENDANCE goal needs a monthly ATTENDANCE-COUNT denominator,
-    not a one-time headcount). Naturally adapts to the month's real Sunday
-    count (4 or 5) since each area's own potential already sums per-Sunday,
-    and per-area (not a flat mission-wide total x Sundays) so a convert
-    baptized mid-month is only counted for the Sundays after their baptism,
-    matching the Area Goals Monthly Renew fraction's own precision.
-    Returns 0 if there's no rc_total data anywhere.
-    """
-    areas = get_submitting_areas()
-    if areas.empty or "Area_Name" not in areas.columns:
-        return 0
-    return sum(
-        get_area_rc_attendance_potential(nm, month_start)
-        for nm in areas["Area_Name"].dropna().astype(str)
-    )
+# ── Recent-convert totals: REMOVED ────────────────────────────────────────────
+# get_latest_rc_total / get_area_rc_attendance_potential /
+# get_mission_rc_attendance_potential lived here. All three read a `rc_total`
+# column — Utah Provo's running headcount of the recent converts an area is
+# working with — that CCSM's weekly form does not ask, so each could only ever
+# return 0. Their only callers were the Goals page's Renew fraction
+# denominators, removed in 3a8bfa7 because "3 / 0" is worse than no fraction.
+#
+# If CCSM ever adds a recent-convert headcount question, rebuild this from the
+# QUESTIONS_CONFIG metric key rather than reinstating the hardcoded "rc_total".
 
 
 # ── Per-language weekly expectations ────────────────────────────────────────
@@ -1231,43 +1375,48 @@ def get_mission_rc_attendance_potential(month_start: str) -> int:
 # held to the full English 70-MMM standard (Carson, 2026-07-18).
 
 
-def _language_group(language_type, area_name="") -> str:
-    """Map a raw MISSION_ORG Language_Type string (and area name) onto one of
-    the area-type expectation groups. Substring-based on purpose — the roster
-    is hand-typed, so "Spanish/English", "Bilingual (Spanish)", "Haitian
-    Creole", "Chinese - Mandarin" etc. all land in the right bucket.
+#: The expectation group every area belongs to when the roster defines no
+#: language split. CCSM is a single-language mission and its MISSION_ORG has no
+#: Language_Type column at all.
+DEFAULT_AREA_TYPE_GROUP = "all"
 
-    Haitian/Creole/French, ASL, and Chinese are three SEPARATE groups (split
-    2026-07-18 — previously one shared "english_low_mmm" bucket that couldn't
-    be edited independently). Haitian/Creole/French is ALSO matched off the
-    AREA NAME: any area whose title contains "Haitian", "Creole" or "French"
-    lands there even when its roster Language_Type is blank or just says
-    English (Carson, 2026-07-18 — those areas don't have the members for the
-    70-MMM English bar). An explicit Spanish/Bilingual Language_Type still
-    wins over the name. English-speaking "Asian" YSA areas stay on the full
-    English 70-MMM standard."""
+
+def _language_group(language_type, area_name="") -> str:
+    """Map a raw MISSION_ORG Language_Type string onto an expectation group.
+
+    Utah Provo splits its roster six ways (English, Spanish, Bilingual,
+    Haitian/Creole/French, ASL, Chinese) because it serves all of them, and the
+    inherited version of this function hardcoded that split plus area-NAME
+    matching on "Haitian"/"Creole"/"French".
+
+    CCSM serves one language and its MISSION_ORG has no Language_Type column,
+    so every lookup returned blank and every area fell through to Provo's
+    "english" bucket — which is not merely the wrong label, it is the strictest
+    of Provo's six expectation sets (70 MMMs/week), applied to 98 Chilean areas
+    for metrics they do not collect.
+
+    A roster that DOES carry a language is still honoured, so this stays correct
+    if CCSM ever adds one (a Mapuche- or English-speaking area, say). Matching
+    is substring-based because the column is hand-typed.
+    """
     lang = str(language_type or "").strip().lower()
+    if not lang:
+        return DEFAULT_AREA_TYPE_GROUP
     if "bilingual" in lang or ("spanish" in lang and "english" in lang):
         return "bilingual"
-    if "spanish" in lang:
+    if "spanish" in lang or "español" in lang or "espanol" in lang:
         return "spanish"
-    if any(t in lang for t in ("haitian", "creole", "french")):
-        return "haitian_creole"
-    if any(t in lang for t in ("asl", "sign")):
-        return "asl"
-    if any(t in lang for t in ("chinese", "mandarin", "cantonese")):
-        return "chinese"
-    if any(t in str(area_name or "").lower() for t in ("haitian", "creole", "french")):
-        return "haitian_creole"
-    return "english"
+    if "english" in lang or "inglés" in lang or "ingles" in lang:
+        return "english"
+    return DEFAULT_AREA_TYPE_GROUP
 
 
 @st.cache_data(ttl=300)
 def get_area_language_group(area: str) -> str:
-    """
-    One area's area-type expectation group ("english", "spanish",
-    "bilingual", "haitian_creole", "asl", or "chinese"), from its MISSION_ORG
-    Language_Type. Unknown/missing areas are "english".
+    """One area's expectation group, from its MISSION_ORG Language_Type.
+
+    Returns DEFAULT_AREA_TYPE_GROUP when the roster carries no language column,
+    which is CCSM's case — see _language_group.
     """
     areas = get_submitting_areas()
     if (
@@ -1279,7 +1428,7 @@ def get_area_language_group(area: str) -> str:
         match = areas[names == str(area).strip().lower()]
         if not match.empty:
             return _language_group(match.iloc[0].get("Language_Type", ""), area)
-    return _language_group("", area)
+    return DEFAULT_AREA_TYPE_GROUP
 
 
 def get_area_weekly_expectation(area: str, metric: str) -> int:
@@ -1313,7 +1462,7 @@ def get_mission_weekly_expectation_total(metric: str) -> int:
     categories included, monthly indicators converted to a weekly-
     equivalent), summed. Used as the fixed denominator on Mission Goals'
     fractions — the caller scales this weekly figure up to a monthly one
-    (see _weeks_in_month in pages/02_Goals.py, dynamic per calendar month).
+    (see _weeks_in_month in pages/02_Metas.py, dynamic per calendar month).
     """
     areas = get_submitting_areas()
     if areas.empty or "Area_Name" not in areas.columns:
@@ -1374,12 +1523,25 @@ def get_mission_monthly_expectation_total(metric: str, month_start: str) -> int:
         if entry["cadence"] == "monthly":
             total += v
         else:
+            # A weekly expectation scales to a month differently depending on
+            # where the number comes from. A NIGHTLY metric accumulates every
+            # day, so a month holds days/7 = 4.4286 weeks of it. A WEEKLY-FORM
+            # metric is reported once per week, so a month holds however many
+            # of those reports actually occur — 4 or 5, never 4.4286.
+            #
             # Carson, 2026-07-21: Pew ("People at Sacrament Meeting") is a
-            # once-a-week church-attendance event exactly like Renew, but
-            # was only scaled by the generic weeks-in-month figure — a
-            # 31-day month's 4.4286 "weeks" vs the real 4 Sundays inflated
-            # 60 areas x 1/wk to 266 instead of the correct 240.
-            total += v * (sundays if metric in ("pew", "renew") else weeks)
+            # once-a-week church-attendance event exactly like Renew, but was
+            # only scaled by the generic weeks-in-month figure — a 31-day
+            # month's 4.4286 "weeks" vs the real 4 Sundays inflated 60 areas x
+            # 1/wk to 266 instead of the correct 240.
+            #
+            # That was fixed by naming Provo's two once-a-week keys. Naming
+            # keys does not travel: CCSM's weekly form carries all SEVEN of its
+            # Key Indicators, so every one of them was being inflated by ~11%
+            # here, and a mission whose form changes would silently regain the
+            # bug. The rule is the metric's FORM, which the catalogue knows.
+            once_weekly = metric in _weekly_form_metric_keys()
+            total += v * (sundays if once_weekly else weeks)
     return int(math.ceil(total)) if total > 0 else 0
 
 
@@ -1387,7 +1549,7 @@ def get_mission_monthly_expectation_total(metric: str, month_start: str) -> int:
 #
 # Backs get_area_weekly_expectation/get_mission_weekly_expectation_total
 # above (nm_lessons/new_found/mmm_sent) AND the Effort score on
-# pages/06_Scores.py (nm_lessons/new_found/mmm_sent/pew/gate) — ONE table
+# pages/06_Puntajes.py (nm_lessons/new_found/mmm_sent/pew/gate) — ONE table
 # for both, editable from the Goals page's "Area Expectation Settings" tab
 # (Carson, 2026-07-18) via save_area_type_expectations() below.
 #
@@ -1414,64 +1576,71 @@ AREA_TYPE_EXPECTATIONS_TAB = "AREA_TYPE_EXPECTATIONS"
 # used in preference to this constant whenever possible.
 _AVG_WEEKS_PER_MONTH = 30.4368 / 7
 
-# group key -> [(metric, cadence, value), ...], in display order.
-_AREA_TYPE_INDICATOR_DEFAULTS: dict[str, list[tuple[str, str, float]]] = {
-    "english": [
-        ("nm_lessons", "weekly", 15.0), ("new_found", "weekly", 2.0),
-        ("mmm_sent", "weekly", 70.0), ("pew", "weekly", 1.0),
-        ("gate", "monthly", 1.0),
-    ],
-    "spanish": [
-        ("nm_lessons", "weekly", 30.0), ("new_found", "weekly", 4.0),
-        ("mmm_sent", "weekly", 10.0), ("pew", "weekly", 1.0),
-        ("gate", "monthly", 2.0),
-    ],
-    "bilingual": [
-        ("nm_lessons", "weekly", 23.0), ("new_found", "weekly", 3.0),
-        ("mmm_sent", "weekly", 40.0), ("pew", "weekly", 1.0),
-        ("gate", "monthly", 2.0),
-    ],
-    # Haitian/Creole/French, ASL, and Chinese start IDENTICAL (same numbers
-    # the old shared "english_low_mmm" bucket used) but are three separate
-    # categories, independently editable (Carson, 2026-07-18) — see the
-    # comment above _language_group.
-    "haitian_creole": [
-        ("nm_lessons", "weekly", 15.0), ("new_found", "weekly", 2.0),
-        ("mmm_sent", "weekly", 10.0), ("pew", "weekly", 1.0),
-        ("gate", "monthly", 1.0),
-    ],
-    "asl": [
-        ("nm_lessons", "weekly", 15.0), ("new_found", "weekly", 2.0),
-        ("mmm_sent", "weekly", 10.0), ("pew", "weekly", 1.0),
-        ("gate", "monthly", 1.0),
-    ],
-    "chinese": [
-        ("nm_lessons", "weekly", 15.0), ("new_found", "weekly", 2.0),
-        ("mmm_sent", "weekly", 10.0), ("pew", "weekly", 1.0),
-        ("gate", "monthly", 1.0),
-    ],
-}
+def _area_type_indicator_defaults() -> dict[str, list[tuple[str, str, float]]]:
+    """group key -> [(metric, cadence, value), …], the fallback used when
+    AREA_TYPE_EXPECTATIONS is empty or a category is missing from it.
+
+    Built from AGENT_CONFIG's GOAL_* keys — the weekly per-area targets the
+    mission itself set, and the same numbers CCSM_Agent1A.gs coaches against —
+    rather than a written-down table. There is one group because CCSM is a
+    single-language mission (see _language_group).
+
+    This replaced six hardcoded Utah Provo groups over Provo metrics
+    (nm_lessons 15/30/23, new_found, mmm_sent 70/10/40, pew, gate). Since
+    CCSM's roster has no Language_Type column, every one of its 98 areas landed
+    in the strictest of those six and was measured against metrics it does not
+    collect — so every expectation on the Goals page read as unmet, forever.
+
+    A GOAL_* value of 0 is skipped: an expectation of zero is not a bar, and
+    _scale_effort_metric() treats it as "nothing expected, full marks", which
+    would quietly award a perfect score for a metric nobody set a target on.
+    """
+    config = get_agent_config()
+    rows: list[tuple[str, str, float]] = []
+    for key, raw in config.items():
+        if not str(key).startswith("GOAL_"):
+            continue
+        metric = str(key)[len("GOAL_"):].strip()
+        if not metric:
+            continue
+        try:
+            value = float(str(raw).strip())
+        except (TypeError, ValueError):
+            continue
+        if value <= 0:
+            continue
+        # Every GOAL_* in AGENT_CONFIG is a WEEKLY per-area target (see
+        # CCSM_AGENT_CONFIG_ROWS in CcsmData.gs). Provo's table mixed in a
+        # monthly cadence for `gate`; CCSM has no monthly goal key.
+        rows.append((metric, "weekly", value))
+
+    rows.sort(key=lambda r: r[0])
+    return {DEFAULT_AREA_TYPE_GROUP: rows}
 
 # group key -> the label AREA_TYPE_EXPECTATIONS' Area_Type column carries.
+#
+# One built-in group, because CCSM is a single-language mission whose roster
+# carries no Language_Type column (see _language_group). Provo's six —
+# English / Spanish / Bilingual / Haitian-Creole-French / ASL / Chinese — named
+# languages CCSM does not serve, and offered the mission six editable
+# expectation sets where five could never apply to any area.
+#
+# The label is the Spanish the rest of this app uses, since it appears on the
+# Goals page's Area Expectation Settings tab. Adding a group later (a Mapuche-
+# or English-speaking area, say) means adding a key here and a matching branch
+# in _language_group.
 _AREA_TYPE_LABELS: dict[str, str] = {
-    "english":         "English",
-    "spanish":         "Spanish",
-    "bilingual":       "Bilingual",
-    "haitian_creole":  "Haitian/Creole/French",
-    "asl":             "ASL",
-    "chinese":         "Chinese",
+    DEFAULT_AREA_TYPE_GROUP: "Todas las Áreas",
 }
 
 _AREA_TYPE_EXPECTATIONS_HEADER = ["Area_Type", "Metric", "Cadence", "Value"]
 
 
 def is_builtin_area_type_label(label: str) -> bool:
-    """True for one of the 6 fixed language-group labels (see
-    _AREA_TYPE_LABELS: English/Spanish/Bilingual/Haitian-Creole-French/ASL/
-    Chinese — the last three used to be ONE shared bucket, split 2026-07-18
-    so Carson can edit them independently). Anything else is a CUSTOM
-    category a user added from Goals > Area Expectation Settings > "Add a
-    custom expectation" (Carson, 2026-07-18)."""
+    """True for a built-in group label (see _AREA_TYPE_LABELS). Anything else
+    is a CUSTOM category a user added from Goals > Area Expectation Settings >
+    "Add a custom expectation" — those stay fully supported, and are how a
+    mission expresses a distinction this table does not model."""
     return label in _AREA_TYPE_LABELS.values()
 
 
@@ -1502,7 +1671,7 @@ def get_all_area_type_indicators() -> list[dict]:
     if df.empty or not {"Area_Type", "Metric", "Cadence", "Value"} <= set(df.columns):
         return [
             {"category": _AREA_TYPE_LABELS[g], "metric": m, "cadence": c, "value": v}
-            for g, indicators in _AREA_TYPE_INDICATOR_DEFAULTS.items()
+            for g, indicators in _area_type_indicator_defaults().items()
             for m, c, v in indicators
         ]
     rows = []
@@ -1604,9 +1773,13 @@ def _resolve_area_category(area: str) -> tuple[str, list[dict]]:
             return label, indicators
 
     group = get_area_language_group(area)
-    builtin_label = _AREA_TYPE_LABELS[group]
+    # .get, not [ ]: a roster that names a language with no built-in group
+    # (see _language_group) must fall back to the default group rather than
+    # raising KeyError from a data value.
+    builtin_label = _AREA_TYPE_LABELS.get(
+        group, _AREA_TYPE_LABELS[DEFAULT_AREA_TYPE_GROUP])
     # No "or [defaults]" fallback here: get_all_area_type_indicators() already
-    # bootstraps ALL 6 built-in groups' defaults together the one time the
+    # bootstraps every built-in group's defaults together the one time the
     # whole tab is empty, so by this point a missing built-in label means the
     # Area Expectation Settings editor deliberately removed every one of that
     # category's rows — that must mean zero expectations for it, not a silent
@@ -1698,7 +1871,7 @@ def save_area_type_expectations(indicators: list[dict]) -> str | None:
     categories' indicators PLUS any custom categories/indicators — back to
     the sheet in one batched overwrite_tab() call, the same clear-and-
     rewrite-cleanly convention SCORE_CONFIG uses (see _rewrite_score_config
-    in pages/06_Scores.py), appropriate here too since this is a small,
+    in pages/06_Puntajes.py), appropriate here too since this is a small,
     whole-table config tab, not append-only data.
 
     `indicators` is an ORDERED list of {"category":, "metric":, "cadence":,
@@ -1736,19 +1909,137 @@ def save_area_type_expectations(indicators: list[dict]) -> str | None:
     # for up to 5 minutes. (get_area_language_group needs no clear: it
     # reads the MISSION_ORG roster, not this tab. The Scores page's cached
     # Effort scores re-key themselves off these rows via _exp_fingerprint
-    # in pages/06_Scores.py rather than needing a clear from here.)
+    # in pages/06_Puntajes.py rather than needing a clear from here.)
     get_mission_weekly_expectation_total.clear()
     get_mission_monthly_expectation_total.clear()
     return None
 
 
-_EFFORT_METRIC_WEIGHTS: dict[str, float] = {
-    "nm_lessons": 30.0,
-    "new_found":  25.0,
-    "mmm_sent":   20.0,
-    "pew":        15.0,
-    "gate":       10.0,
-}
+@st.cache_data(ttl=300)
+def get_score_component_weights(component: str, area_code: str = "ALL") -> dict[str, float]:
+    """{metric_key: weight} for one SCORE_CONFIG component ('effort', 'skill',
+    'ki'), for `area_code` falling back to the mission-wide 'ALL' rows.
+
+    SCORE_CONFIG is the tab CCSM_AgentScores.gs reads to compute the scores it
+    writes to SCORES, so reading it here is what keeps the dashboard's
+    explanation of a score and the agent's calculation of it in agreement. A
+    per-area row overrides the 'ALL' row for the same metric — the same
+    precedence applySection1() uses in that agent.
+
+    Section 1 of the tab is Area_Code | Metric_Key | Score_Component | Weight |
+    Active, and a blank row separates it from section 2. Rows past that
+    separator have a different meaning, so parsing stops there.
+    """
+    raw = read_tab("SCORE_CONFIG")
+    if raw.empty:
+        return {}
+
+    want = str(component).strip().lower()
+    rows = [[str(v).strip() for v in r] for r in raw.values.tolist()]
+
+    weights: dict[str, float] = {}
+    overrides: dict[str, float] = {}
+    for row in rows:
+        if not any(row):
+            break                       # blank separator -> section 2 begins
+        if len(row) < 5 or row[0] == "Area_Code":
+            continue
+        code, key, comp, weight, active = row[0], row[1], row[2], row[3], row[4]
+        if comp.strip().lower() != want or not key:
+            continue
+        if active.strip().upper() == "FALSE":
+            continue
+        try:
+            w = float(weight)
+        except (TypeError, ValueError):
+            continue
+        if code.strip().upper() == "ALL":
+            weights[key] = w
+        elif code.strip().casefold() == str(area_code).strip().casefold():
+            overrides[key] = w
+
+    weights.update(overrides)
+    return weights
+
+
+#: An even split across the three components. Used only when SCORE_CONFIG has
+#: no section-2 row at all — with nothing configured, the only defensible
+#: statement is that Effort, Skill and KI count the same. Deliberately NOT any
+#: particular mission's numbers: the previous default was Utah Provo's
+#: 0.30/0.40/0.30, which silently reweighted every Effectiveness score this app
+#: recomputed for CCSM (whose real row is 0.33/0.33/0.34).
+_EVEN_COMPOSITION: dict[str, float] = {"effort": 1 / 3, "skill": 1 / 3, "ki": 1 / 3}
+
+
+@st.cache_data(ttl=300)
+def get_effectiveness_composition_weights(area_code: str = "ALL") -> dict[str, float]:
+    """{effort, skill, ki} — how the three components combine into
+    Effectiveness, from SCORE_CONFIG's SECOND section.
+
+    That section sits below a blank separator row and is headed
+    Area_Code | Effort_Weight | Skill_Weight | KI_Weight. It is the same row
+    CCSM_AgentScores.gs reads, so honouring it is what keeps a recomputed
+    Effectiveness score equal to the one the agent wrote to SCORES.
+
+    A per-area row wins over the mission-wide 'ALL' row. Falls back to an even
+    split when the section is missing or unparseable — never to a mission's
+    hardcoded numbers.
+    """
+    raw = read_tab("SCORE_CONFIG")
+    if raw.empty:
+        return dict(_EVEN_COMPOSITION)
+
+    rows = [[str(v).strip() for v in r] for r in raw.values.tolist()]
+
+    # Skip section 1 entirely: stop at the first blank separator row.
+    section2: list[list[str]] = []
+    seen_blank = False
+    for row in rows:
+        if not any(row):
+            seen_blank = True
+            continue
+        if seen_blank:
+            section2.append(row)
+
+    found: dict[str, dict[str, float]] = {}
+    for row in section2:
+        if len(row) < 4 or row[0] == "Area_Code":
+            continue
+        try:
+            trio = {
+                "effort": float(row[1]),
+                "skill":  float(row[2]),
+                "ki":     float(row[3]),
+            }
+        except (TypeError, ValueError):
+            continue
+        # A row of all zeroes cannot combine anything — treat it as absent
+        # rather than dividing by zero downstream.
+        if sum(trio.values()) <= 0:
+            continue
+        found[row[0].strip().casefold()] = trio
+
+    for code in (str(area_code).strip().casefold(), "all"):
+        if code in found:
+            return found[code]
+    return dict(_EVEN_COMPOSITION)
+
+
+def _effort_metric_weights(area_code: str = "ALL") -> dict[str, float]:
+    """Weights behind the Effort score.
+
+    Was a hardcoded {nm_lessons: 30, new_found: 25, mmm_sent: 20, pew: 15,
+    gate: 10} — Utah Provo's metrics, none of which CCSM collects. Every actual
+    therefore resolved to None/NaN and this whole score computed as NaN for all
+    98 areas: the Scores page's Effort breakdown rendered nothing at all, which
+    reads as "no data yet" rather than as a broken calculation.
+
+    CCSM's Effort component is defined in SCORE_CONFIG (contacts_attempted,
+    roleplays, member_contacts, effort) and is what CCSM_AgentScores.gs actually
+    uses. Reading the same source means the breakdown EXPLAINS the score the
+    agent produced instead of computing a rival one.
+    """
+    return get_score_component_weights("effort", area_code)
 
 
 def _scale_effort_metric(actual: float, expectation: float) -> float:
@@ -1769,27 +2060,32 @@ def compute_effort_score(
     actuals: dict[str, float | None], expectations: dict[str, float]
 ) -> float | None:
     """
-    Weighted-average Effort score (0-100) from up to 5 metrics: nm_lessons,
-    new_found, mmm_sent, pew (Potential Member at Church), gate (Baptized &
-    Confirmed — expectations['gate'] must already be the WEEKLY-prorated
-    figure, see get_area_effort_expectations_weekly). Weights:
-    _EFFORT_METRIC_WEIGHTS.
+    Weighted-average Effort score (0-100) over the metrics SCORE_CONFIG assigns
+    to the 'effort' component — the same set and weights CCSM_AgentScores.gs
+    uses, so this explains the agent's score rather than computing a rival one.
 
-    actuals: metric_key -> actual value, or None if that metric's data
-    source had no submission this week (pew/gate come from the weekly form,
-    which isn't always filled in) — that metric is excluded and the
-    remaining weights renormalized to sum 100.
+    actuals: metric_key -> actual value, or None if that metric's data source
+    had no submission this week — that metric is excluded and the remaining
+    weights renormalized.
 
-    Returns None only when every metric is excluded (nothing to score).
+    A metric with no weight in SCORE_CONFIG is skipped rather than raising: the
+    tab is editable from the Scores page, so a metric can legitimately be
+    dropped from scoring between one read and the next.
+
+    Returns None when nothing is left to score, which callers must render as
+    "no score" — never as zero. Zero is a real score meaning the area did
+    nothing; None means we could not tell.
     """
-    present = {k: v for k, v in actuals.items() if v is not None}
+    weights = _effort_metric_weights()
+    present = {k: v for k, v in actuals.items()
+               if v is not None and weights.get(k, 0) > 0}
     if not present:
         return None
-    total_weight = sum(_EFFORT_METRIC_WEIGHTS[k] for k in present)
+    total_weight = sum(weights[k] for k in present)
     if total_weight <= 0:
         return None
     weighted_sum = sum(
-        _scale_effort_metric(present[k], expectations[k]) * _EFFORT_METRIC_WEIGHTS[k]
+        _scale_effort_metric(present[k], expectations.get(k, 0.0)) * weights[k]
         for k in present
     )
     return weighted_sum / total_weight
@@ -1804,17 +2100,23 @@ def compute_effort_score_breakdown(
     and weighted contribution toward the final score (these contributions
     sum to compute_effort_score's weighted_sum, before the total_weight
     normalization). Powers the Scores page's per-area Effort pie chart —
-    "which of the 5 things they're doing is actually moving the score."
+    "which of the things they're doing is actually moving the score."
+
+    Weights come from SCORE_CONFIG, so this stays in step with
+    compute_effort_score and with the agent that wrote the score.
     """
-    present = {k: v for k, v in actuals.items() if v is not None}
+    weights = _effort_metric_weights()
+    present = {k: v for k, v in actuals.items()
+               if v is not None and weights.get(k, 0) > 0}
     rows = []
     for k, v in present.items():
-        weight = _EFFORT_METRIC_WEIGHTS[k]
-        scaled = _scale_effort_metric(v, expectations[k])
+        weight = weights[k]
+        expectation = expectations.get(k, 0.0)
+        scaled = _scale_effort_metric(v, expectation)
         rows.append({
             "metric":       k,
             "actual":       v,
-            "expectation":  expectations[k],
+            "expectation":  expectation,
             "weight":       weight,
             "scaled_score": scaled,
             "contribution": scaled * weight,
@@ -1824,65 +2126,69 @@ def compute_effort_score_breakdown(
 
 def get_area_effort_actuals_weekly(area: str, week_end_date: str) -> dict[str, float | None] | None:
     """
-    Raw actuals for the 5 metrics behind the mission-president Effort score
-    (nm_lessons/new_found/mmm_sent from WEEKLY_KI, pew/gate from the weekly
-    form) for one area + week — the single-row counterpart to
-    compute_mission_president_effort_scores' batch merge, used by the Scores
-    page's per-area contribution pie chart. Returns None if WEEKLY_KI has no
-    nm_lessons for this area/week (mirrors the NaN-skip in the batch
-    version: nothing to score).
+    Raw actuals for the metrics SCORE_CONFIG assigns to the Effort component,
+    for one area + week. Single-row counterpart to
+    compute_mission_president_effort_scores' batch merge; powers the Scores
+    page's per-area Effort contribution chart.
+
+    Effort metrics are NIGHTLY (contacts_attempted, roleplays, member_contacts,
+    effort), so they are summed out of DAILY_LOG for that Mon-Sun week. They are
+    deliberately NOT read from WEEKLY_KI: CCSM's WEEKLY_KI holds only the weekly
+    form's ki_* pairs (see get_nightly_weekly_trends), so the previous version —
+    which looked for nm_lessons/new_found/mmm_sent there and returned None when
+    nm_lessons was absent — returned None for every area, every week.
+
+    `effort` is a CHOICE metric (Todo / La mayor parte / Algo) rather than a
+    count. It is scored by the agent through ccsmEffortScore() and has no
+    numeric column to sum here, so it is reported as None (excluded, weights
+    renormalized) instead of being coerced to a meaningless 0.
+
+    Returns None when the area has no submissions at all that week — nothing to
+    score, which the caller must render as "no score" rather than zero.
     """
     area = str(area).strip()
     week_end_date = str(week_end_date).strip()[:10]
 
-    wki = get_weekly_ki()
-    nm_lessons = None
-    new_found = mmm_sent = 0.0
-    if not wki.empty:
-        row = wki[
-            (wki["area"].astype(str).str.strip() == area)
-            & (wki["week_end_date"] == week_end_date)
-        ]
-        if not row.empty:
-            r = row.iloc[0]
-            if "nm_lessons" in row.columns and pd.notna(r.get("nm_lessons")):
-                nm_lessons = float(r["nm_lessons"])
-            if "new_found" in row.columns and pd.notna(r.get("new_found")):
-                new_found = float(r["new_found"])
-            if "mmm_sent" in row.columns and pd.notna(r.get("mmm_sent")):
-                mmm_sent = float(r["mmm_sent"])
-
-    if nm_lessons is None:
+    weights = _effort_metric_weights()
+    if not weights:
         return None
 
-    wform = get_weekly_form_data()
-    pew = gate = None
-    if not wform.empty:
-        row = wform[
-            (wform["area"].astype(str).str.strip() == area)
-            & (wform["week_end_date"] == week_end_date)
-        ]
-        if not row.empty:
-            r = row.iloc[0]
-            if "pew" in row.columns and pd.notna(r.get("pew")):
-                pew = float(r["pew"])
-            if "gate" in row.columns and pd.notna(r.get("gate")):
-                gate = float(r["gate"])
+    daily = get_daily_log(days=3650)
+    if daily.empty or "Date" not in daily.columns or "Area" not in daily.columns:
+        return None
 
-    return {
-        "nm_lessons": nm_lessons,
-        "new_found":  new_found,
-        "mmm_sent":   mmm_sent,
-        "pew":        pew,
-        "gate":       gate,
-    }
+    d = pd.to_datetime(daily["Date"], errors="coerce")
+    week = (d + pd.to_timedelta(6 - d.dt.weekday, unit="D")).dt.strftime("%Y-%m-%d")
+    rows = daily[(daily["Area"].astype(str).str.strip() == area)
+                 & (week == week_end_date)]
+    if rows.empty:
+        return None
+
+    from app.config.metric_catalog import non_numeric_metrics
+    non_numeric = non_numeric_metrics()
+
+    actuals: dict[str, float | None] = {}
+    for key in weights:
+        # Consult QUESTIONS_CONFIG's Data_Type rather than inspecting values:
+        # get_daily_log() runs every metric column through _num(), which
+        # coerces "Todo" to NaN and then fills it with 0, so a CHOICE metric is
+        # indistinguishable from a real zero by the time it reaches here.
+        if key in non_numeric or key not in rows.columns:
+            actuals[key] = None
+            continue
+        vals = pd.to_numeric(rows[key], errors="coerce")
+        actuals[key] = float(vals.fillna(0).sum())
+
+    if all(v is None for v in actuals.values()):
+        return None
+    return actuals
 
 
 def _mp_weeks_in_month(day: date) -> float:
     """
     Number of 7-day weeks in the calendar month containing `day`, e.g.
     31/7 ≈ 4.43 for a 31-day month, 4.0 for a 28-day February. Same
-    monthly-to-weekly conversion pages/02_Goals.py uses for its Goal
+    monthly-to-weekly conversion pages/02_Metas.py uses for its Goal
     fractions (_weeks_in_month there).
     """
     month_start = day.replace(day=1)
@@ -1907,7 +2213,11 @@ def get_area_effort_expectations_weekly(area: str, week_end_date: str) -> dict[s
     day = datetime.strptime(str(week_end_date)[:10], "%Y-%m-%d").date()
     weeks = _mp_weeks_in_month(day)
     result = {}
-    for key in ("nm_lessons", "new_found", "mmm_sent", "pew", "gate"):
+    # Keys come from SCORE_CONFIG's effort component, not a fixed tuple of
+    # Provo's five. A metric with no expectation defined defaults to 0, which
+    # _scale_effort_metric treats as "nothing was expected, so nothing was
+    # fallen short of" — a full score rather than a divide-by-zero.
+    for key in _effort_metric_weights():
         entry = exp.get(key)
         if not entry:
             result[key] = 0.0
@@ -1930,45 +2240,45 @@ def compute_mission_president_effort_scores(scores_df: pd.DataFrame) -> pd.Serie
     if scores_df.empty:
         return pd.Series(dtype=float)
 
+    weights = _effort_metric_weights()
+    if not weights:
+        return pd.Series([float("nan")] * len(scores_df), index=scores_df.index, dtype=float)
+
     base = scores_df[["Area_Name", "Week_Ending_Date"]].copy()
     base["Area_Name"] = base["Area_Name"].astype(str).str.strip()
     base["Week_Ending_Date"] = base["Week_Ending_Date"].astype(str).str.strip().str[:10]
 
-    wki = get_weekly_ki()
-    if not wki.empty:
-        wki = wki.rename(columns={"area": "Area_Name", "week_end_date": "Week_Ending_Date"})
-        wki["Area_Name"] = wki["Area_Name"].astype(str).str.strip()
-        wki = wki.drop_duplicates(subset=["Area_Name", "Week_Ending_Date"], keep="last")
-        keep = [c for c in ("Area_Name", "Week_Ending_Date", "nm_lessons", "new_found", "mmm_sent") if c in wki.columns]
-        base = base.merge(wki[keep], on=["Area_Name", "Week_Ending_Date"], how="left")
-    for col in ("nm_lessons", "new_found", "mmm_sent"):
-        if col not in base.columns:
-            base[col] = float("nan")
-
-    wform = get_weekly_form_data()
-    if not wform.empty:
-        wform = wform.rename(columns={"area": "Area_Name", "week_end_date": "Week_Ending_Date"})
-        wform["Area_Name"] = wform["Area_Name"].astype(str).str.strip()
-        keep = [c for c in ("Area_Name", "Week_Ending_Date", "pew", "gate") if c in wform.columns]
-        base = base.merge(wform[keep], on=["Area_Name", "Week_Ending_Date"], how="left")
-    for col in ("pew", "gate"):
+    # Effort metrics are NIGHTLY, so they roll up from DAILY_LOG by week. The
+    # previous version merged nm_lessons/new_found/mmm_sent from WEEKLY_KI and
+    # pew/gate from the weekly form — Provo's five. CCSM's WEEKLY_KI holds only
+    # the weekly form's ki_* pairs, so the merge contributed nothing, the
+    # `if pd.isna(r["nm_lessons"])` guard fired on every row, and this returned
+    # NaN for all 98 areas: the Effort column and its breakdown showed nothing,
+    # which reads as "no data yet" rather than as a broken calculation.
+    weekly = get_nightly_weekly_trends_by_area(n_weeks=520)
+    metric_keys = list(weights)
+    if not weekly.empty:
+        weekly = weekly.rename(
+            columns={"area": "Area_Name", "week_end_date": "Week_Ending_Date"})
+        weekly["Area_Name"] = weekly["Area_Name"].astype(str).str.strip()
+        keep = ["Area_Name", "Week_Ending_Date"] + [
+            k for k in metric_keys if k in weekly.columns]
+        base = base.merge(weekly[keep], on=["Area_Name", "Week_Ending_Date"], how="left")
+    for col in metric_keys:
         if col not in base.columns:
             base[col] = float("nan")
 
     base.index = scores_df.index
     scores = []
-    for idx, r in base.iterrows():
-        if pd.isna(r["nm_lessons"]):
-            scores.append(float("nan"))
-            continue
+    for _idx, r in base.iterrows():
         actuals = {
-            "nm_lessons": float(r["nm_lessons"]),
-            "new_found":  float(r["new_found"]) if pd.notna(r["new_found"]) else 0.0,
-            "mmm_sent":   float(r["mmm_sent"]) if pd.notna(r["mmm_sent"]) else 0.0,
-            "pew":        float(r["pew"]) if pd.notna(r["pew"]) else None,
-            "gate":       float(r["gate"]) if pd.notna(r["gate"]) else None,
+            k: (float(r[k]) if pd.notna(r[k]) else None) for k in metric_keys
         }
-        expectations = get_area_effort_expectations_weekly(r["Area_Name"], r["Week_Ending_Date"])
+        if all(v is None for v in actuals.values()):
+            scores.append(float("nan"))       # no submissions that week
+            continue
+        expectations = get_area_effort_expectations_weekly(
+            r["Area_Name"], r["Week_Ending_Date"])
         score = compute_effort_score(actuals, expectations)
         scores.append(score if score is not None else float("nan"))
 
@@ -2048,6 +2358,31 @@ def _stretch_recommendation(df: pd.DataFrame, keys: list, area: str | None) -> d
     return out
 
 
+def _goalable_weekly_keys(metric_defs: list) -> list:
+    """Weekly-form metrics a goal can sensibly be recommended for.
+
+    Was `f == "WEEKLY" and k != "rc_total"` in three places — rc_total is
+    Provo's running recent-convert headcount, a number no goal applies to.
+    CCSM has no such key, so all three exclusions excluded nothing, and the two
+    kinds of weekly key CCSM DOES have that no goal applies to were let
+    straight through:
+
+      * `_meta` keys are the companionship's own weekly goal, captured on the
+        form beside each `_real` achievement. Recommending a goal for one means
+        recommending a goal for a goal, and the recommendation is computed from
+        the history of that field — i.e. from what areas have previously aimed
+        at, not from what they achieved.
+      * CHOICE metrics carry no summable number to average.
+    """
+    from app.config.metric_catalog import metric_data_type
+
+    return [
+        k for k, _, f in metric_defs
+        if f == "WEEKLY" and not k.endswith("_meta")
+        and metric_data_type(k) != "CHOICE"
+    ]
+
+
 @st.cache_data(ttl=300)
 def get_recommended_goals(area: str) -> dict:
     """
@@ -2058,8 +2393,8 @@ def get_recommended_goals(area: str) -> dict:
     - WEEKLY / transfer metrics — source WEEKLY_FORM_RAW. The stored goal stays
       weekly; the Goals page projects it over the 6-week transfer for display.
 
-    rc_total (Recent Convert Total) is excluded here entirely — it has no goal
-    input on the Goals page. See get_latest_rc_total().
+    Weekly keys that no goal applies to are excluded — see
+    _goalable_weekly_keys().
 
     Using full history rather than a recent window trades away the recent-weeks
     seasonality self-correction (e.g. a BYU/YSA summer dip no longer pulls the rec
@@ -2071,7 +2406,7 @@ def get_recommended_goals(area: str) -> dict:
     """
     metric_defs = get_question_metrics()
     nightly_keys = [k for k, _, f in metric_defs if f == "NIGHTLY"]
-    weekly_keys = [k for k, _, f in metric_defs if f == "WEEKLY" and k != "rc_total"]
+    weekly_keys = _goalable_weekly_keys(metric_defs)
 
     recommended = {}
     recommended.update(_stretch_recommendation(get_weekly_ki(), nightly_keys, area))
@@ -2152,7 +2487,7 @@ def get_recommended_monthly_goals(area: str) -> dict:
     """
     metric_defs = get_question_metrics()
     nightly_keys = [k for k, _, f in metric_defs if f == "NIGHTLY"]
-    weekly_keys = [k for k, _, f in metric_defs if f == "WEEKLY" and k != "rc_total"]
+    weekly_keys = _goalable_weekly_keys(metric_defs)
 
     recommended = {}
     recommended.update(_stretch_recommendation_monthly(get_weekly_ki(), nightly_keys, area))
@@ -2193,7 +2528,7 @@ def get_mission_recommended_goals() -> dict:
     """
     metric_defs = get_question_metrics()
     nightly_keys = [k for k, _, f in metric_defs if f == "NIGHTLY"]
-    weekly_keys = [k for k, _, f in metric_defs if f == "WEEKLY" and k != "rc_total"]
+    weekly_keys = _goalable_weekly_keys(metric_defs)
 
     recommended = {}
     recommended.update(_stretch_recommendation(get_weekly_ki(), nightly_keys, None))
@@ -2494,22 +2829,19 @@ def set_suggestion_status(
     overwrite_tab(_REVIEW_TAB, [_REVIEW_HEADER] + body)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# MIRACLES
-# ══════════════════════════════════════════════════════════════════════════════
-
-def get_miracles(search: str = None) -> pd.DataFrame:
-    """Read the Miracles form response sheet. Returns all rows; no status management."""
-    df = read_tab("Miracles")
-    if df.empty:
-        return df
-    if search:
-        s = search.lower()
-        df = df[df.apply(
-            lambda r: any(s in str(v).lower() for v in r.values),
-            axis=1,
-        )]
-    return df
+# get_miracles() was here. It read a tab called "Miracles" — a Google Form
+# response sheet Utah Provo has and COMPASS_CCSM does not. CCSM never adopted
+# the miracle form (docs/superpowers/specs/2026-07-11-ccsm-sheet-and-agents-
+# design.md cuts the miracle-form utilities; the dashboard design doc cuts the
+# Miracles tab for the same reason), so the only page that called this was
+# deleted before launch and tests/test_isolation.py::test_miracles_removed
+# keeps it deleted.
+#
+# Removed rather than left in place: read_tab() returns an empty DataFrame for
+# a tab that does not exist, so this function was a working-looking accessor
+# that could only ever return nothing — precisely the shape of dead Provo
+# plumbing this app has been cleared of. If CCSM ever adds a miracles form,
+# add the reader back against the tab that then exists.
 
 
 @st.cache_data(ttl=300)
@@ -2690,9 +3022,17 @@ def detect_anomalies(metric_key: str, threshold: float = 0.70) -> pd.DataFrame:
     return pd.DataFrame(results)
 
 
-# Weekly-form KI metrics live in WEEKLY_FORM_RAW (get_weekly_ki_totals), not in
+# Weekly-form metrics live in WEEKLY_FORM_RAW (get_weekly_ki_totals), not in
 # the nightly-form rollups (get_weekly_ki_trends). Route projections accordingly.
-_WEEKLY_FORM_METRICS = {"pew", "date_metric", "gate", "renew", "rc_total"}
+#
+# Read from QUESTIONS_CONFIG rather than hardcoded: the old
+# {"pew","date_metric","gate","renew","rc_total"} was Provo's set, so for CCSM
+# every weekly metric fell through to the NIGHTLY branch and projected off a
+# series that has no such column — yielding a confident-looking projection of
+# nothing. Routing a projection to the wrong source is worse than refusing one.
+def _weekly_form_metric_keys() -> set:
+    from app.config.metric_catalog import weekly_metric_keys
+    return set(weekly_metric_keys())
 
 
 def project_next_week(metric_key: str, n_weeks: int = 12) -> dict:
@@ -2713,10 +3053,17 @@ def project_next_week(metric_key: str, n_weeks: int = 12) -> dict:
     """
     from app.analytics.trends import compute_projection
 
-    if metric_key in _WEEKLY_FORM_METRICS:
+    if metric_key in _weekly_form_metric_keys():
         trends = get_weekly_ki_totals(n_weeks * 2)
     else:
+        # Nightly metrics bucket from DAILY_LOG, NOT from WEEKLY_KI: CCSM's
+        # WEEKLY_KI holds only the weekly form's ki_* pairs (see
+        # get_nightly_weekly_trends), so the old route found no such column and
+        # produced a confident-looking projection of nothing. WEEKLY_KI is still
+        # tried first for anything that genuinely lives there.
         trends = get_weekly_ki_trends(n_weeks * 2)
+        if trends.empty or metric_key not in trends.columns:
+            trends = get_nightly_weekly_trends(n_weeks * 2)
     if trends.empty or metric_key not in trends.columns:
         return {}
 

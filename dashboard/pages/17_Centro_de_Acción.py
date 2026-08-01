@@ -1,10 +1,10 @@
 """
-pages/17_Action_Center.py
+pages/17_Centro_de_Acción.py
 PMG Compass | Leadership Action Center
 One bell-linked page pulling together everything mission leadership needs
 to act on: suggestions awaiting approval, note follow-ups due, custom
 leadership-to-leadership tasks, and a rollup of the same maintenance
-signals 18_Maintenance.py tracks. Every item links
+signals 18_Mantenimiento.py tracks. Every item links
 straight to where it gets handled, pre-filtered when the target page
 supports it (see the session_state keys set before each st.switch_page).
 """
@@ -64,7 +64,7 @@ if summary["suggestions_ap_count"] > 0:
         st.markdown(t('**{suggestions_ap_count} suggestion(s) at AP Approval**', suggestions_ap_count=summary['suggestions_ap_count']))
         if st.button(t("Review in Suggestions"), key="ac_go_ap_approval"):
             st.session_state["sug_status"] = "AP Approval"
-            st.switch_page("pages/15_Suggestions.py")
+            st.switch_page("pages/15_Sugerencias.py")
 
 if summary["suggestions_mp_count"] > 0:
     _any_items = True
@@ -72,14 +72,14 @@ if summary["suggestions_mp_count"] > 0:
         st.markdown(t('**{suggestions_mp_count} suggestion(s) at Mission President Approval**', suggestions_mp_count=summary['suggestions_mp_count']))
         if st.button(t("Review in Suggestions"), key="ac_go_mp_approval"):
             st.session_state["sug_status"] = "Mission President Approval"
-            st.switch_page("pages/15_Suggestions.py")
+            st.switch_page("pages/15_Sugerencias.py")
 
 if summary["followups_count"] > 0:
     _any_items = True
     with st.container(border=True):
         st.markdown(t('**{followups_count} note follow-up(s) due**', followups_count=summary['followups_count']))
         if st.button(t("Review in Notes"), key="ac_go_notes"):
-            st.switch_page("pages/10_Notes.py")
+            st.switch_page("pages/10_Notas.py")
 
 my_tasks = summary["my_tasks_df"]
 if not my_tasks.empty:
@@ -111,7 +111,7 @@ roster = [r for r in get_leadership_roster() if r["email"].lower() != current_em
 if not roster:
     st.info(t("No other leadership accounts found in MISSION_ORG."))
 else:
-    # Due-date checkbox lives OUTSIDE the form (same pattern as 10_Notes.py's
+    # Due-date checkbox lives OUTSIDE the form (same pattern as 10_Notas.py's
     # follow-up date) so ticking it reruns immediately and the date picker
     # appears without needing to submit first.
     has_due = st.checkbox(t("Set a due date"), key="ac_task_has_due")
@@ -162,6 +162,6 @@ if summary["maintenance_issues"]:
     for issue in summary["maintenance_issues"]:
         st.warning(issue)
     if st.button(t("Open Maintenance page"), key="ac_go_maintenance"):
-        st.switch_page("pages/18_Maintenance.py")
+        st.switch_page("pages/18_Mantenimiento.py")
 else:
     st.success(t("No maintenance issues detected."))
