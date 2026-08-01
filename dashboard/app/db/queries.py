@@ -1275,111 +1275,16 @@ def apply_goal_recalibration_suggestion(area: str, metric_key: str, suggested_go
 # RECOMMENDED GOALS (based on actual performance — area's own, or mission-wide)
 # ══════════════════════════════════════════════════════════════════════════════
 
-@st.cache_data(ttl=300)
-def get_latest_rc_total(area: str) -> int:
-    """
-    Most recent submitted "Recent Convert Total" (rc_total) value for `area`,
-    from WEEKLY_FORM_RAW. rc_total is a running snapshot count of the recent
-    converts an area is working with — not a weekly production number — so
-    unlike other transfer KIs it is never averaged or stretched into a goal.
-    It's used as a fixed denominator next to the Renew goal (Renew = recent
-    converts attending church, out of this total). Returns 0 if the area has
-    no rc_total data.
-    """
-    wf = get_weekly_form_data()
-    if wf.empty or not {"rc_total", "area", "week_end_date"}.issubset(wf.columns):
-        return 0
-    sub = wf[wf["area"].astype(str).str.strip() == str(area).strip()]
-    if sub.empty:
-        return 0
-    vals = pd.to_numeric(
-        sub.sort_values("week_end_date")["rc_total"], errors="coerce"
-    ).dropna()
-    if vals.empty:
-        return 0
-    return int(round(float(vals.iloc[-1])))
-
-
-@st.cache_data(ttl=300)
-def get_area_rc_attendance_potential(area: str, month_start: str) -> int:
-    """
-    Denominator for Area Goals' Monthly Goals Renew fraction: the MAXIMUM
-    possible number of Recent-Convert church attendances this month, if
-    every recent convert made every Sunday they were eligible for.
-
-    This is NOT simply latest_rc_total * sundays_in_month — rc_total is a
-    running headcount that can change mid-month (e.g. a baptism), so a
-    convert baptized in week 3 should only count toward the Sundays AFTER
-    their baptism, not the ones before it when they weren't yet a recent
-    convert. So for EACH Sunday in the month, this uses the area's rc_total
-    AS REPORTED for that week (an "as of that Sunday" snapshot, via a
-    backward as-of match against the area's submitted weekly rows) rather
-    than one flat current total — then sums across every Sunday. A Sunday
-    later than any submitted data (i.e. still in the future) naturally
-    falls back to the most recent known rc_total as the best estimate,
-    since that's the latest value on or before it.
-    """
-    wf = get_weekly_form_data()
-    if wf.empty or not {"rc_total", "area", "week_end_date"}.issubset(wf.columns):
-        return 0
-    sub = wf[wf["area"].astype(str).str.strip() == str(area).strip()].copy()
-    if sub.empty:
-        return 0
-    sub["week_end_date"] = pd.to_datetime(sub["week_end_date"], errors="coerce")
-    sub["rc_total"] = pd.to_numeric(sub["rc_total"], errors="coerce")
-    sub = sub.dropna(subset=["week_end_date", "rc_total"]).sort_values("week_end_date")
-    if sub.empty:
-        return 0
-
-    start = date.fromisoformat(month_start)
-    next_start = date(start.year + 1, 1, 1) if start.month == 12 else date(start.year, start.month + 1, 1)
-    sundays = [
-        start + timedelta(days=i) for i in range((next_start - start).days)
-        if (start + timedelta(days=i)).weekday() == 6
-    ]
-    if not sundays:
-        return 0
-
-    sunday_df = pd.DataFrame({"sunday": pd.to_datetime(sundays)}).sort_values("sunday")
-    merged = pd.merge_asof(
-        sunday_df, sub[["week_end_date", "rc_total"]],
-        left_on="sunday", right_on="week_end_date", direction="backward",
-    )
-    return int(merged["rc_total"].fillna(0).sum())
-
-
-@st.cache_data(ttl=300)
-def get_mission_rc_attendance_potential(month_start: str) -> int:
-    """
-    Mission-wide MAXIMUM possible Recent-Convert church attendances this
-    month — every submitting area's own get_area_rc_attendance_potential()
-    (that area's rc_total AS OF each Sunday, not a flat headcount, summed
-    across every Sunday in the month), added together across the whole
-    mission. Used as the fixed denominator next to Mission Goals' Recent
-    Convert Attendance box when no explicit "renew" expectation is saved in
-    Area Expectation Settings (an explicit expectation always wins — see
-    _mission_denominator in pages/02_Goals.py).
-
-    Carson, 2026-07-21: "adding up all of the recent converts the entire
-    mission has and multiplying that by the amount of Sundays... that
-    number changes depending on how many Sundays are in the month" — this
-    replaces the old get_mission_latest_rc_total(), a flat sum with NO
-    Sunday scaling at all (same bug class as the Pew fix earlier that day:
-    a monthly ATTENDANCE goal needs a monthly ATTENDANCE-COUNT denominator,
-    not a one-time headcount). Naturally adapts to the month's real Sunday
-    count (4 or 5) since each area's own potential already sums per-Sunday,
-    and per-area (not a flat mission-wide total x Sundays) so a convert
-    baptized mid-month is only counted for the Sundays after their baptism,
-    matching the Area Goals Monthly Renew fraction's own precision.
-    Returns 0 if there's no rc_total data anywhere.
-    """
-    areas = get_submitting_areas()
-    if areas.empty or "Area_Name" not in areas.columns:
-        return 0
-    return sum(
-        get_area_rc_attendance_potential(nm, month_start)
-        for nm in areas["Area_Name"].dropna().astype(str)
-    )
+# ── Recent-convert totals: REMOVED ────────────────────────────────────────────
+# get_latest_rc_total / get_area_rc_attendance_potential /
+# get_mission_rc_attendance_potential lived here. All three read a `rc_total`
+# column — Utah Provo's running headcount of the recent converts an area is
+# working with — that CCSM's weekly form does not ask, so each could only ever
+# return 0. Their only callers were the Goals page's Renew fraction
+# denominators, removed in 3a8bfa7 because "3 / 0" is worse than no fraction.
+#
+# If CCSM ever adds a recent-convert headcount question, rebuild this from the
+# QUESTIONS_CONFIG metric key rather than reinstating the hardcoded "rc_total".
 
 
 # ── Per-language weekly expectations ────────────────────────────────────────

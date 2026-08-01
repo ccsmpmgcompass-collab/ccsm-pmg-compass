@@ -962,7 +962,9 @@ if selected_section == "Area Goal Customization":
     # (save_all_area_goals / bulk_upsert_area_monthly_goals), not one write
     # per area, so 60 areas can't trip the API quota.
 
-    _BULK_MONTHLY_KEYS = ["gate", "date_metric", "new_found", "pew", "renew", "member_lessons"]
+    # The mission's own Key Indicators, not a fixed list of Provo's six —
+    # which would have written zeros into every area's monthly row.
+    _BULK_MONTHLY_KEYS = list(key_indicator_metrics())
     _BULK_MONTH_START = current_month_start()
     try:
         _bulk_month_label = date.fromisoformat(_BULK_MONTH_START).strftime("%B %Y")
@@ -1433,15 +1435,13 @@ if selected_section == "Area Goal Customization":
             def _mv(key: str) -> int:
                 return int(monthly_values.get(key, _monthly_current(key)))
 
+            # Every KI actually on screen, not six fixed Provo keyword args.
+            # Those evaluated to 0 for CCSM, so this button reported "saved"
+            # and stored nothing the user had typed.
             _row, _err = upsert_area_monthly_goal(
                 selected_area,
                 _monthly_month_start,
-                gate=_mv("gate"),
-                date_metric=_mv("date_metric"),
-                new_found=_mv("new_found"),
-                pew=_mv("pew"),
-                renew=_mv("renew"),
-                member_lessons=_mv("member_lessons"),
+                goals={k: _mv(k) for k, _lbl, _ft in monthly_ki_defs},
                 set_by=user.get("email", ""),
             )
             if _err:
