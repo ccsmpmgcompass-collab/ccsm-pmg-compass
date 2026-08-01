@@ -257,17 +257,16 @@ scope.runAgentEscalation();
 scope.runAgent3Evening();
 scope.runAgentDuplicate();
 
-// Sunday: 18:00 runAgentReminder | 21:00 runAgent1A (chains 1B -> 1C)
-//         22:00 runAgent5A
+// Sunday: 18:00 runAgentReminder | 22:00 runAgent5A
 scope.runAgentReminder();
+scope.runAgent5A();
+
+// Monday: 00:05 runAgentScores | 07:00 runAgent4 | 21:30 runAgent1A (chains 1B -> 1C)
+scope.runAgentScores();
+scope.runAgent4();
 scope.runAgent1A();
 scope.runAgent1B();   // chained by runAgent1A via scheduleNext(); the stub
 scope.runAgent1C();   // never fires triggers, so the chain is driven here.
-scope.runAgent5A();
-
-// Monday: 00:05 runAgentScores | 07:00 runAgent4
-scope.runAgentScores();
-scope.runAgent4();
 
 // Friday: 12:00 runAgent5B (chains Agent6)
 scope.runAgent5B();

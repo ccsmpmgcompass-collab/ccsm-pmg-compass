@@ -28,8 +28,9 @@ const ALL_GS = [
   'CCSM_Agent1A.gs', 'CCSM_Agent1B.gs', 'CCSM_Agent1C.gs', 'CCSM_Agent2.gs',
   'CCSM_Agent3.gs', 'CCSM_Agent4.gs', 'CCSM_Agent5A.gs', 'CCSM_Agent5B.gs',
   'CCSM_Agent6.gs', 'CCSM_AgentDuplicate.gs', 'CCSM_AgentEscalation.gs',
-  'CCSM_AgentQA.gs', 'CCSM_AgentReminder.gs', 'CCSM_AgentScores.gs',
-  'CCSM_AgentValidation.gs', 'CCSM_SeedContent.gs', 'CCSM_Setup.gs',
+  'CCSM_AgentMissionReport.gs', 'CCSM_AgentQA.gs', 'CCSM_AgentReminder.gs',
+  'CCSM_AgentScores.gs', 'CCSM_AgentValidation.gs', 'CCSM_SeedContent.gs',
+  'CCSM_Setup.gs',
 ];
 
 function runSmokeTest(gsFiles) {

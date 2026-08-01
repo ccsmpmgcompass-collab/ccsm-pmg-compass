@@ -8,8 +8,9 @@
  * names are kept identical to the Provo original so future diffs stay
  * readable.
  *
- * SCHEDULE: Every Tuesday and Saturday at 7:00 AM
- *           Run setupAgent4Trigger() ONCE to create both triggers.
+ * SCHEDULE: Every Monday at 7:00 AM (see CCSM_Setup.gs CCSM_TRIGGER_SCHEDULE)
+ *           Run setupAllCcsmTriggers() to install it — setupAgent4Trigger()
+ *           below is a deprecated shim kept only for the editor's dropdown.
  *
  * WHAT IT DOES:
  *   1. Runs 14 system health checks across all tabs and settings
@@ -235,26 +236,15 @@ function a4_ensureOwnTabs_() {
 // ─── TRIGGER SETUP ──────────────────────────────────────────────────────────
 
 /**
- * Creates Tuesday 7 AM and Saturday 7 AM triggers for runAgent4.
- * Run this ONCE: Apps Script editor -> Run -> setupAgent4Trigger
- * Safe to re-run — deletes any existing runAgent4 triggers first.
+ * DEPRECATED — see CCSM_Setup.gs "LEGACY PER-AGENT INSTALLERS". This used to
+ * install TWO triggers, Tuesday and Saturday 7 AM, from an old schedule.
+ * CCSM_TRIGGER_SCHEDULE (the canonical table) has since moved to a single
+ * Monday 7 AM trigger; running this by mistake would delete that and
+ * silently replace it with the old Tue+Sat pair. Now a delegating shim.
  */
 function setupAgent4Trigger() {
-  deleteTriggerByName('runAgent4');
-
-  ScriptApp.newTrigger('runAgent4')
-    .timeBased()
-    .onWeekDay(ScriptApp.WeekDay.TUESDAY)
-    .atHour(7)
-    .create();
-
-  ScriptApp.newTrigger('runAgent4')
-    .timeBased()
-    .onWeekDay(ScriptApp.WeekDay.SATURDAY)
-    .atHour(7)
-    .create();
-
-  Logger.log('Agent4 triggers created: runAgent4 every Tuesday and Saturday at 7 AM');
+  Logger.log('Agent4: setupAgent4Trigger() is DEPRECATED — delegating to setupAllCcsmTriggers().');
+  setupAllCcsmTriggers();
 }
 
 // ─── HEALTH CHECKS ──────────────────────────────────────────────────────────
