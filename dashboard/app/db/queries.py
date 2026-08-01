@@ -2768,22 +2768,19 @@ def set_suggestion_status(
     overwrite_tab(_REVIEW_TAB, [_REVIEW_HEADER] + body)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# MIRACLES
-# ══════════════════════════════════════════════════════════════════════════════
-
-def get_miracles(search: str = None) -> pd.DataFrame:
-    """Read the Miracles form response sheet. Returns all rows; no status management."""
-    df = read_tab("Miracles")
-    if df.empty:
-        return df
-    if search:
-        s = search.lower()
-        df = df[df.apply(
-            lambda r: any(s in str(v).lower() for v in r.values),
-            axis=1,
-        )]
-    return df
+# get_miracles() was here. It read a tab called "Miracles" — a Google Form
+# response sheet Utah Provo has and COMPASS_CCSM does not. CCSM never adopted
+# the miracle form (docs/superpowers/specs/2026-07-11-ccsm-sheet-and-agents-
+# design.md cuts the miracle-form utilities; the dashboard design doc cuts the
+# Miracles tab for the same reason), so the only page that called this was
+# deleted before launch and tests/test_isolation.py::test_miracles_removed
+# keeps it deleted.
+#
+# Removed rather than left in place: read_tab() returns an empty DataFrame for
+# a tab that does not exist, so this function was a working-looking accessor
+# that could only ever return nothing — precisely the shape of dead Provo
+# plumbing this app has been cleared of. If CCSM ever adds a miracles form,
+# add the reader back against the tab that then exists.
 
 
 @st.cache_data(ttl=300)

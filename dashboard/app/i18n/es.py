@@ -1331,6 +1331,63 @@ ES: dict[str, str] = {
     "Push failed: {e}": "El envío falló: {e}",
     "Push failed: {data}": "El envío falló: {data}",
 
+    # ── Editar Envíos (corrections to DAILY_LOG / WEEKLY_KI) ─────────────────
+    "Edit Submissions": "Editar Envíos",
+    "Correct a report a companionship already submitted":
+        "Corrija un informe que una compañía ya envió",
+    "Corrections are written to DAILY_LOG and WEEKLY_KI — the tabs the "
+    "dashboard and the agents both read — not to the Google Forms response "
+    "sheets, which the agents do not re-read. Every change is recorded in "
+    "AUDIT_LOG with your address.":
+        "Las correcciones se escriben en DAILY_LOG y WEEKLY_KI — las pestañas "
+        "que leen tanto el panel como los agentes — y no en las hojas de "
+        "respuestas de Google Forms, que los agentes no vuelven a leer. Cada "
+        "cambio queda registrado en AUDIT_LOG con su dirección.",
+    "Which report": "Qué informe",
+    "Nightly report": "Informe diario",
+    "Weekly report (Key Indicators)": "Informe semanal (Indicadores Clave)",
+    "Week ending": "Semana que termina",
+    "No active areas found in MISSION_ORG.":
+        "No se encontraron áreas activas en MISSION_ORG.",
+    "{tab} has no columns yet, so there is nothing to correct. The agents "
+    "create it on their first successful run — check Agent Runs on the "
+    "Mantenimiento page.":
+        "{tab} aún no tiene columnas, así que no hay nada que corregir. Los "
+        "agentes la crean en su primera ejecución exitosa — revise "
+        "Ejecuciones de Agentes en la página Mantenimiento.",
+    "— a date not reported (backfill) —":
+        "— una fecha no informada (completar) —",
+    "Backfilling creates a row that was never submitted. The nightly agent "
+    "skips any date already present, so once this is saved the companionship's "
+    "own late submission for that date will NOT replace it. Only use this when "
+    "the report will never arrive.":
+        "Completar crea un registro que nunca fue enviado. El agente diario "
+        "omite toda fecha que ya exista, así que una vez guardado esto, el "
+        "envío tardío de la propia compañía para esa fecha NO lo reemplazará. "
+        "Úselo solo cuando el informe nunca vaya a llegar.",
+    "Date to create": "Fecha que se creará",
+    "Pick a date to continue.": "Elija una fecha para continuar.",
+    "No report found for {area} on {date}.":
+        "No se encontró un informe de {area} para el {date}.",
+    "Currently recorded — {area}, {date}":
+        "Registrado actualmente — {area}, {date}",
+    "New values": "Valores nuevos",
+    "Only the fields you change are written. Everything left alone keeps the "
+    "value the companionship reported.":
+        "Solo se escriben los campos que usted cambie. Todo lo demás conserva "
+        "el valor que informó la compañía.",
+    "No changes yet.": "Aún no hay cambios.",
+    "{count} field(s) changed: {fields}":
+        "{count} campo(s) modificado(s): {fields}",
+    "Save correction": "Guardar corrección",
+    "Create this report": "Crear este informe",
+    "Saved {count} field(s) for {area} on {date}. The change reaches the rest "
+    "of the dashboard on the agents' next run.":
+        "Se guardaron {count} campo(s) de {area} para el {date}. El cambio "
+        "llega al resto del panel en la próxima ejecución de los agentes.",
+    "Full record as stored": "Registro completo tal como está guardado",
+    "Field": "Campo",
+
     # KPI card captions. These live inside an f-string HTML block in
     # design_system.render_kpi_row, so the string extractor cannot see them —
     # they were plain English on every page, in both languages, until routed

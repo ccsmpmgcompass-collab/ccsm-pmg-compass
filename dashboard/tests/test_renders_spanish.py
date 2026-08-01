@@ -66,18 +66,24 @@ def test_breakdowns_renders_spanish():
     assert "Zone, District & Area Performance" not in es
 
 
-ALL_PAGES = [
-    "Home.py",
-    "pages/01_Panel.py",
-    "pages/02_Metas.py",
-    "pages/04_Desgloses.py",
-    "pages/06_Puntajes.py",
-    "pages/07_Embudo_de_Búsqueda.py",
-    "pages/10_Notas.py",
-    "pages/15_Sugerencias.py",
-    "pages/17_Centro_de_Acción.py",
-    "pages/18_Mantenimiento.py",
-]
+def _all_pages() -> list[str]:
+    """Every page in the app, discovered rather than listed.
+
+    This was a hardcoded list, which meant a page added later was not audited
+    in either language until somebody remembered to add it here — and the
+    symptom of forgetting is a silently unchecked page, not a failure. Reading
+    the directory makes coverage automatic.
+    """
+    from pathlib import Path
+    pages_dir = Path(__file__).resolve().parent.parent / "pages"
+    found = sorted(
+        f"pages/{p.name}" for p in pages_dir.glob("*.py")
+        if p.name != "__init__.py"
+    )
+    return ["Home.py"] + found
+
+
+ALL_PAGES = _all_pages()
 
 
 @pytest.mark.parametrize("page", ALL_PAGES)
