@@ -66,11 +66,25 @@ PROVO_KEYS = [
 ]
 
 
+# Sections that pick an area need a roster to pick from. CCSM's real
+# MISSION_ORG columns — note there is no Language_Type.
+MISSION_ORG = pd.DataFrame([
+    {"Area_Code": "A014", "Area_Name": "Arauco 1", "Zone": "Arauco",
+     "District": "Arauco", "Companion1_Name": "Elder Uno",
+     "Companion1_Email": "arauco1@missionary.org", "Companion2_Name": "Elder Dos",
+     "Companion2_Email": "arauco1@missionary.org", "Is_DL": "FALSE",
+     "Is_ZL": "FALSE", "Is_STL": "FALSE", "Is_AP": "FALSE", "Is_MP": "FALSE",
+     "Active": "TRUE"},
+])
+
+
 @pytest.fixture(autouse=True)
 def _sheets(monkeypatch):
     def fake(tab_name, header_marker=None):
         if tab_name == "QUESTIONS_CONFIG":
             return QUESTIONS.copy()
+        if tab_name == "MISSION_ORG":
+            return MISSION_ORG.copy()
         return pd.DataFrame()
 
     monkeypatch.setattr("app.db.sheets_client._read_tab_cached", fake)
@@ -178,6 +192,36 @@ def test_no_raw_provo_key_reaches_the_screen(page):
     body = _text(_run(page))
     leaked = sorted({k for k in PROVO_KEYS if k in body})
     assert leaked == [], f"{page} displays Provo metric key(s): {leaked}"
+
+
+def test_monthly_goals_offers_every_key_indicator():
+    """The Monthly Goals section used to pick its boxes by KEYWORD — matching
+    "gate", "date", "renew", "pew" anywhere in a metric's key or label, plus the
+    exact keys "new_found" and "member_lessons".
+
+    Against CCSM's metrics that collapses to exactly ONE box: nothing matches
+    gate/renew/pew/new_found/member_lessons, and "date" matches
+    `ki_baptismal_date_real` purely by coincidence of spelling. A single
+    arbitrary indicator would have rendered under the heading "Monthly Goals",
+    looking entirely deliberate.
+    """
+    at = AppTest.from_file("pages/02_Goals.py", default_timeout=90)
+    at.session_state["pmg_lang"] = "es"
+    at.session_state["goals_active_section"] = "Area Goal Customization"
+    at.run()
+    assert not at.exception, at.exception
+
+    monthly = [w for w in at.number_input if w.key and w.key.startswith("mgoal_")]
+    labels = {w.label for w in monthly}
+
+    # Both KIs in this file's QUESTIONS fixture must appear, not just the one
+    # whose name happens to contain an English keyword.
+    assert any("Nuevas Personas" in l for l in labels), \
+        f"KI missing from Monthly Goals. Saw: {sorted(labels)}"
+    assert any("Bautizados" in l for l in labels), \
+        f"KI missing from Monthly Goals. Saw: {sorted(labels)}"
+    assert len(monthly) == 2, \
+        f"expected one box per Key Indicator, got {len(monthly)}: {sorted(labels)}"
 
 
 def test_goals_offers_ccsm_metrics_by_name():
