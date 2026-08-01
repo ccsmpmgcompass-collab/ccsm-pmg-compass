@@ -935,6 +935,67 @@ def get_live_snapshot() -> pd.DataFrame:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# SCORES
+# ══════════════════════════════════════════════════════════════════════════════
+
+#: Leadership tracking rows in SCORES, matched by Area_Name. Mirrors
+#: asc_isLeadershipRow_ in CCSM_AgentScores.gs. They never submit and score 0,
+#: so leaving them in drags every mission average down.
+_SCORES_LEADERSHIP_RE = (
+    r"^(Mission President|Assistant to President|Zone Leader|"
+    r"Sister Training Leader -|District Leader -)"
+)
+
+
+@st.cache_data(ttl=300)
+def get_scores(week_ending: str = None) -> pd.DataFrame:
+    """The SCORES tab: one row per area per scored week.
+
+    A shared reader so the Puntajes page and the Informes page cannot disagree
+    about which rows count — leadership rows are dropped here, once.
+
+    `week_ending` filters to a single week; None returns every week.
+    """
+    df = read_tab("SCORES")
+    if df.empty:
+        return pd.DataFrame()
+
+    df.columns = [str(c).strip() for c in df.columns]
+    for col in ("Effort_Score", "Skill_Score", "KI_Score", "Effectiveness_Score"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    if "Week_Ending_Date" in df.columns:
+        df["Week_Ending_Date"] = (
+            df["Week_Ending_Date"].astype(str).str.strip().str[:10]
+        )
+
+    drop = pd.Series(False, index=df.index)
+    if "Area_Name" in df.columns:
+        drop = df["Area_Name"].astype(str).str.match(
+            _SCORES_LEADERSHIP_RE, case=False, na=False)
+    if "Zone" in df.columns:
+        drop = drop | (df["Zone"].astype(str).str.strip().str.upper() == "ALL")
+    df = df[~drop].copy()
+
+    if week_ending:
+        df = df[df["Week_Ending_Date"] == str(week_ending)[:10]].copy()
+    return df
+
+
+@st.cache_data(ttl=300)
+def get_scored_weeks() -> list:
+    """Every Week_Ending_Date present in SCORES, newest first."""
+    df = get_scores()
+    if df.empty or "Week_Ending_Date" not in df.columns:
+        return []
+    return sorted(
+        {w for w in df["Week_Ending_Date"].astype(str) if w and w != "nan"},
+        reverse=True,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # MISSION_ORG
 # ══════════════════════════════════════════════════════════════════════════════
 

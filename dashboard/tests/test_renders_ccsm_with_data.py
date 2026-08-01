@@ -173,6 +173,56 @@ def _dashboard_summary() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _scores() -> pd.DataFrame:
+    return pd.DataFrame([
+        {"Area_Code": "A014", "Area_Name": "Arauco 1", "Zone": "Arauco",
+         "Missionary_Names": "Elder Uno / Elder Dos",
+         "Week_Ending_Date": "2026-07-26", "Effort_Score": "72.5",
+         "Skill_Score": "64.0", "KI_Score": "80.0",
+         "Effectiveness_Score": "72.2", "Computed_At": "2026-07-26 23:00"},
+        {"Area_Code": "A021", "Area_Name": "Lota 2", "Zone": "Arauco",
+         "Missionary_Names": "Hermana Tres / Hermana Cuatro",
+         "Week_Ending_Date": "2026-07-26", "Effort_Score": "55.0",
+         "Skill_Score": "48.5", "KI_Score": "60.0",
+         "Effectiveness_Score": "54.5", "Computed_At": "2026-07-26 23:00"},
+        # A leadership tracking row. Never a real area — it never submits and
+        # scores 0, so leaving it in drags every mission average down.
+        {"Area_Code": "ZL01", "Area_Name": "Zone Leader - Arauco", "Zone": "ALL",
+         "Missionary_Names": "", "Week_Ending_Date": "2026-07-26",
+         "Effort_Score": "0", "Skill_Score": "0", "KI_Score": "0",
+         "Effectiveness_Score": "0", "Computed_At": "2026-07-26 23:00"},
+    ])
+
+
+def _live_snapshot() -> pd.DataFrame:
+    """One row per area with 7d/14d/28d/transfer totals per nightly metric —
+    the shape CCSM_Agent3 rebuilds on every run."""
+    rows = []
+    for area, zone, district in (("Arauco 1", "Arauco", "Arauco"),
+                                 ("Lota 2", "Arauco", "Lota")):
+        row = {"Area": area, "Zone": zone, "District": district,
+               "Last_Updated": "2026-08-01 06:00"}
+        for i, key in enumerate(_NUMERIC_NIGHTLY):
+            for window, mult in (("7d", 7), ("14d", 14), ("28d", 28),
+                                 ("transfer", 35)):
+                row[f"{key}_{window}"] = str((3 + i) * mult)
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+TRANSFER_SCHEDULE = pd.DataFrame([
+    {"Transfer_Number": "1", "Start_Date": "2026-07-27", "Weeks": "6",
+     "Status": "Activo"},
+])
+
+AGENT_CONFIG = pd.DataFrame([
+    {"Key": "MISSION_NAME", "Value": "Chile Concepción South Mission"},
+    {"Key": "MISSION_LANGUAGE", "Value": "ES"},
+    {"Key": "MISSION_LOCALE", "Value": "es_CL"},
+    {"Key": "MISSION_TIMEZONE", "Value": "America/Santiago"},
+    {"Key": "TRANSFER_START_DATE", "Value": "2026-07-27"},
+])
+
 _TABS = {}
 
 
@@ -186,6 +236,10 @@ def _sheets(monkeypatch):
         "DAILY_LOG": _daily_log(),
         "WEEKLY_KI": _weekly_ki(),
         "DASHBOARD_SUMMARY": _dashboard_summary(),
+        "SCORES": _scores(),
+        "LIVE_SNAPSHOT": _live_snapshot(),
+        "TRANSFER_SCHEDULE": TRANSFER_SCHEDULE,
+        "AGENT_CONFIG": AGENT_CONFIG,
     })
 
     def fake(tab_name, header_marker=None):
@@ -270,7 +324,16 @@ PROVO_LABELS = [
     "Fellowshipped Lessons", "Non-Member Lessons",
 ]
 
-PAGES = ["pages/01_Panel.py", "pages/06_Puntajes.py"]
+PAGES = [
+    "pages/01_Panel.py",
+    "pages/06_Puntajes.py",
+    # The Phase 4 pages. Included here rather than only in the "does it render"
+    # audit, because those run on empty fixtures and every one of these pages
+    # has an empty-state branch that would swallow a vocabulary mistake whole.
+    "pages/11_Informes.py",
+    "pages/12_Traslados.py",
+    "pages/14_Referencias.py",
+]
 
 
 # ── The data actually reaches the page ────────────────────────────────────────

@@ -1331,6 +1331,166 @@ ES: dict[str, str] = {
     "Push failed: {e}": "El envío falló: {e}",
     "Push failed: {data}": "El envío falló: {data}",
 
+    # ── Informes (weekly mission report) ─────────────────────────────────────
+    "Reports": "Informes",
+    "{mission} — weekly mission report": "{mission} — informe semanal de la misión",
+    "Scope": "Alcance",
+    "Whole mission": "Toda la misión",
+    "Week ending {week} · {scope} · {areas} area(s)":
+        "Semana que termina el {week} · {scope} · {areas} área(s)",
+    "No reported week yet. This page fills in once the weekly form has been "
+    "submitted and the agents have written WEEKLY_KI.":
+        "Aún no hay ninguna semana informada. Esta página se completa cuando "
+        "se haya enviado el formulario semanal y los agentes hayan escrito "
+        "WEEKLY_KI.",
+    "Key Indicator": "Indicador Clave",
+    "Achieved": "Logrado",
+    "Goal set": "Meta fijada",
+    "% of goal": "% de la meta",
+    "No weekly Key Indicator data for this week and scope.":
+        "No hay datos de Indicadores Clave para esta semana y alcance.",
+    "No nightly data for this week.":
+        "No hay datos diarios para esta semana.",
+    "{start} to {end}": "{start} al {end}",
+    "Week total": "Total de la semana",
+    "Per area / day": "Por área / día",
+    "No scores for this week yet. CCSM_AgentScores writes them on its weekly "
+    "run.":
+        "Aún no hay puntajes para esta semana. CCSM_AgentScores los escribe "
+        "en su ejecución semanal.",
+    "Skill": "Habilidad",
+    "Effectiveness": "Efectividad",
+    "Weekly Form Compliance": "Cumplimiento del Formulario Semanal",
+    "Areas reporting": "Áreas que informaron",
+    "Not reported": "Sin informar",
+    "No areas in scope.": "No hay áreas en este alcance.",
+    "{pct} of areas in scope submitted the weekly form.":
+        "El {pct} de las áreas del alcance envió el formulario semanal.",
+    "Areas with no weekly report ({count})":
+        "Áreas sin informe semanal ({count})",
+    "Export": "Exportar",
+    "Download scores for this week (CSV)":
+        "Descargar los puntajes de esta semana (CSV)",
+    "Download Key Indicators for this week (CSV)":
+        "Descargar los Indicadores Clave de esta semana (CSV)",
+    "CSVs are written UTF-8 with a BOM so Excel opens the accents correctly.":
+        "Los CSV se escriben en UTF-8 con BOM para que Excel abra bien los "
+        "acentos.",
+
+    # ── Traslados (transfer cycle) ───────────────────────────────────────────
+    "Transfers": "Traslados",
+    "Transfer": "Traslado",
+    "Transfer {number}": "Traslado {number}",
+    "Current transfer": "Traslado actual",
+    "{mission} — the current transfer cycle":
+        "{mission} — el ciclo de traslado actual",
+    "No transfer has been scheduled yet. Fill in TRANSFER_SCHEDULE "
+    "(Transfer_Number, Start_Date, Weeks, Status), or set "
+    "TRANSFER_START_DATE in AGENT_CONFIG.":
+        "Aún no se ha programado ningún traslado. Complete TRANSFER_SCHEDULE "
+        "(Transfer_Number, Start_Date, Weeks, Status), o defina "
+        "TRANSFER_START_DATE en AGENT_CONFIG.",
+    "TRANSFER_SCHEDULE is empty, so this uses TRANSFER_START_DATE from "
+    "AGENT_CONFIG and assumes a {weeks}-week cycle.":
+        "TRANSFER_SCHEDULE está vacía, así que esto usa TRANSFER_START_DATE "
+        "de AGENT_CONFIG y supone un ciclo de {weeks} semanas.",
+    "Days elapsed": "Días transcurridos",
+    "Days remaining": "Días restantes",
+    "Weeks": "Semanas",
+    "{start} to {end} · {weeks} weeks{status}":
+        "{start} al {end} · {weeks} semanas{status}",
+    "This transfer ended on {end} and no later one is scheduled. Add the next "
+    "row to TRANSFER_SCHEDULE so the transfer-to-date figures below start "
+    "counting from the right day.":
+        "Este traslado terminó el {end} y no hay uno posterior programado. "
+        "Agregue la siguiente fila a TRANSFER_SCHEDULE para que las cifras "
+        "acumuladas del traslado empiecen a contar desde el día correcto.",
+    "Full transfer schedule ({count})":
+        "Calendario completo de traslados ({count})",
+    "Starts": "Comienza",
+    "Ends": "Termina",
+    "Current": "Actual",
+    "Area Performance This Transfer": "Desempeño por Área en Este Traslado",
+    "Totals from the start of the transfer through today, as CCSM_Agent3 "
+    "computes them into LIVE_SNAPSHOT. Non-numeric questions are left out — a "
+    "running sum of a Sí/No or Todo/Algo answer means nothing.":
+        "Totales desde el inicio del traslado hasta hoy, tal como "
+        "CCSM_Agent3 los calcula en LIVE_SNAPSHOT. Se excluyen las preguntas "
+        "no numéricas — sumar respuestas Sí/No o Todo/Algo no significa nada.",
+    "LIVE_SNAPSHOT is empty. CCSM_Agent3 rebuilds it on each run from "
+    "DAILY_LOG — check Agent Runs on the Mantenimiento page.":
+        "LIVE_SNAPSHOT está vacía. CCSM_Agent3 la reconstruye en cada "
+        "ejecución a partir de DAILY_LOG — revise Ejecuciones de Agentes en "
+        "la página Mantenimiento.",
+    "LIVE_SNAPSHOT has no transfer-to-date columns yet. They appear once the "
+    "nightly agent has run against a populated DAILY_LOG.":
+        "LIVE_SNAPSHOT aún no tiene columnas acumuladas del traslado. "
+        "Aparecen cuando el agente diario se ejecuta sobre una DAILY_LOG con "
+        "datos.",
+    "Metrics": "Métricas",
+    "Pick at least one metric.": "Elija al menos una métrica.",
+    "Roster": "Nómina",
+    "MISSION_ORG has no active areas.": "MISSION_ORG no tiene áreas activas.",
+    "Areas": "Áreas",
+    "Zones": "Zonas",
+    "Districts": "Distritos",
+    "Companion 1": "Compañero 1",
+    "Companion 2": "Compañero 2",
+    "Every area ({count})": "Todas las áreas ({count})",
+    "All zones": "Todas las zonas",
+
+    # ── Referencias (member referrals) ───────────────────────────────────────
+    "Referrals": "Referencias",
+    "{mission} — member referrals asked for and received":
+        "{mission} — referencias de miembros solicitadas y recibidas",
+    "This mission's nightly form does not ask about referrals, so there is "
+    "nothing to report here. The questions this page needs are "
+    "`references_asked` and `member_referrals_received` in QUESTIONS_CONFIG.":
+        "El formulario diario de esta misión no pregunta por referencias, así "
+        "que no hay nada que informar aquí. Las preguntas que necesita esta "
+        "página son `references_asked` y `member_referrals_received` en "
+        "QUESTIONS_CONFIG.",
+    "No nightly data in this window yet. Referral figures appear once "
+    "companionships submit the nightly form and the agents write DAILY_LOG.":
+        "Aún no hay datos diarios en este período. Las cifras de referencias "
+        "aparecen cuando las compañías envían el formulario diario y los "
+        "agentes escriben DAILY_LOG.",
+    "DAILY_LOG has no column for: {cols}. Those figures are left out rather "
+    "than shown as zero.":
+        "DAILY_LOG no tiene columna para: {cols}. Esas cifras se omiten en "
+        "lugar de mostrarse como cero.",
+    "Last {days} days": "Últimos {days} días",
+    "{rate} of referrals asked for came back as a member referral ({received} "
+    "from {asked} asks).":
+        "El {rate} de las referencias solicitadas se convirtió en una "
+        "referencia de un miembro ({received} de {asked} solicitudes).",
+    "No referrals were asked for in this window, so there is no "
+    "ask-to-referral rate to report ({received} referral(s) received).":
+        "No se solicitaron referencias en este período, así que no hay una "
+        "tasa de solicitud a referencia que informar ({received} "
+        "referencia(s) recibida(s)).",
+    "Referrals per day": "Referencias por día",
+    "Rate": "Tasa",
+    "Ranked by referrals received. An area that asked for none has no rate "
+    "rather than a 0% one — it has not tried and failed, it has not tried.":
+        "Ordenado por referencias recibidas. Un área que no solicitó ninguna "
+        "no tiene tasa, en lugar de tener un 0% — no lo intentó y falló, "
+        "simplemente no lo intentó.",
+    "What this page counts": "Qué cuenta esta página",
+    "- **{asked}** — how many times companionships asked a member for someone "
+    "to teach, from the nightly form.\n- **{received}** — how many referrals "
+    "members actually gave them, also from the nightly form.\n\nBoth are "
+    "self-reported nightly counts, so they measure the conversation, not a "
+    "record in another system. There is no referral feed to reconcile "
+    "against.":
+        "- **{asked}** — cuántas veces las compañías pidieron a un miembro "
+        "alguien a quien enseñar, según el formulario diario.\n"
+        "- **{received}** — cuántas referencias les dieron realmente los "
+        "miembros, también del formulario diario.\n\nAmbas son cuentas "
+        "diarias autoinformadas, así que miden la conversación, no un "
+        "registro en otro sistema. No hay un flujo de referencias con el cual "
+        "conciliarlas.",
+
     # ── Editar Envíos (corrections to DAILY_LOG / WEEKLY_KI) ─────────────────
     "Edit Submissions": "Editar Envíos",
     "Correct a report a companionship already submitted":
