@@ -118,11 +118,18 @@ function runAgent1A() {
     var dailyTotals = a1a_aggregateDailyLog(weekStart, weekEnd);
     var effortMap   = a1a_readEffortScores(weekStart, weekEnd);
 
+    // Multi-week data for the trend chart / scoreboard / goal grid /
+    // You-vs-You / funnel strip / consistency block (see a1a_buildDerived).
+    var derivedWeeks  = a1a_lastNWeekEnds_(weekEnd, 8);
+    var history       = a1a_loadMultiWeekHistory(derivedWeeks);
+    var transferStart = getConfig('TRANSFER_START_DATE') || '';
+
     var areaData = {};
     missionOrg.forEach(function(areaObj) {
       var name   = areaObj['Area_Name'];
       var stats  = a1a_buildStats(dailyTotals[name] || {}, effortMap[name] || {});
       var ranked = a1a_rankMetrics(stats, goals[name] || goalDefaults, rateTargets, (feedback[name] || {}).lastGrowthMetric);
+      var growth = ranked[ranked.length - 1] || null;
 
       areaData[name] = {
         code:      areaObj['Area_Code']        || '',
@@ -133,9 +140,10 @@ function runAgent1A() {
         name1:     areaObj['Companion1_Name']  || '',
         name2:     areaObj['Companion2_Name']  || '',
         stats:     stats,
-        strength1: ranked[0]                 || null,
-        strength2: ranked[1]                 || null,
-        growth:    ranked[ranked.length - 1] || null
+        strength1: ranked[0] || null,
+        strength2: ranked[1] || null,
+        growth:    growth,
+        derived:   a1a_buildDerived(name, stats, growth, history, derivedWeeks, weekEnd, transferStart)
       };
     });
 
@@ -328,6 +336,219 @@ function a1a_aggregateDailyLog(weekStart, weekEnd) {
     });
   }
   return agg;
+}
+
+/**
+ * Multi-week analogue of a1a_aggregateDailyLog above, for a1a_buildDerived's
+ * trend/scoreboard/goal-grid/You-vs-You/funnel/consistency data. Reads
+ * DAILY_LOG ONCE and buckets every row into whichever of `weekEnds` (an
+ * array of week-ending Sunday date strings) it falls inside, rather than
+ * re-scanning the sheet once per week.
+ *
+ * Returns { byArea, datesByArea }:
+ *   byArea[area][weekEndStr]      -- same shape as a1a_aggregateDailyLog's
+ *                                     per-area object (submissions + every
+ *                                     DAILY_LOG metric column).
+ *   datesByArea[area][dateStr]    -- true for every date the area has a
+ *                                     DAILY_LOG row, used by the consistency
+ *                                     block's dayFlags/streak.
+ */
+function a1a_loadMultiWeekHistory(weekEnds) {
+  var byArea = {}, datesByArea = {};
+  var data = a1a_getSheetData('DAILY_LOG');
+  if (!data || data.length < 2) return { byArea: byArea, datesByArea: datesByArea };
+
+  var headers = data[0].map(function(h) { return String(h).trim(); });
+  var areaIdx = headers.indexOf('Area');
+  var dateIdx = headers.indexOf('Date');
+  if (areaIdx < 0 || dateIdx < 0) return { byArea: byArea, datesByArea: datesByArea };
+
+  // Map every date inside any of the 8 weeks to its week-ending Sunday, so
+  // the main scan below is a single O(1) lookup per row instead of an
+  // 8-way range check.
+  var weekEndForDate = {};
+  weekEnds.forEach(function(we) {
+    var start = a1a_getWeekStart(we);
+    var startD = a1a_parseLocalDate(start);
+    for (var i = 0; i < 7; i++) {
+      var d = a1a_toDateString(new Date(startD.getFullYear(), startD.getMonth(), startD.getDate() + i));
+      weekEndForDate[d] = we;
+    }
+  });
+
+  for (var i = 1; i < data.length; i++) {
+    var dateStr = a1a_toDateString(data[i][dateIdx]);
+    if (!dateStr) continue;
+    var area = String(data[i][areaIdx] || '').trim();
+    if (!area) continue;
+
+    if (!datesByArea[area]) datesByArea[area] = {};
+    datesByArea[area][dateStr] = true;
+
+    var we = weekEndForDate[dateStr];
+    if (!we) continue; // outside the 8-week window this run cares about
+
+    if (!byArea[area]) byArea[area] = {};
+    if (!byArea[area][we]) byArea[area][we] = { submissions: 0 };
+    byArea[area][we].submissions++;
+    headers.forEach(function(h, idx) {
+      if (idx < 4) return;
+      byArea[area][we][h] = (byArea[area][we][h] || 0) + (parseFloat(data[i][idx]) || 0);
+    });
+  }
+  return { byArea: byArea, datesByArea: datesByArea };
+}
+
+/** N week-ending Sundays, ascending, ending at weekEnd (inclusive). */
+function a1a_lastNWeekEnds_(weekEnd, n) {
+  var endD = a1a_parseLocalDate(weekEnd);
+  var out = [];
+  for (var w = n - 1; w >= 0; w--) {
+    out.push(a1a_toDateString(new Date(endD.getFullYear(), endD.getMonth(), endD.getDate() - 7 * w)));
+  }
+  return out;
+}
+
+function a1a_pastWeekValue_(metricKey, dailyWeeks, weekEnd) {
+  var wk = dailyWeeks[weekEnd];
+  return wk ? wk[metricKey] : undefined;
+}
+
+function a1a_mean_(arr) {
+  if (arr.length === 0) return null;
+  var s = 0; arr.forEach(function(v) { s += v; });
+  return a1a_round1(arr.length ? s / arr.length : 0);
+}
+
+function a1a_round1(n) {
+  return Math.round(n * 10) / 10;
+}
+
+/**
+ * Builds the multi-week comparison data (trend chart / scoreboard / goal
+ * grid / You-vs-You / funnel strip / consistency block) for one area's
+ * coaching letter. CCSM analogue of Provo's docs/Agent1A.gs
+ * a1a_buildDerived, adapted:
+ *
+ *   - No WEEKLY_BREAKDOWNS input. CCSM's WEEKLY_KI holds only the 7 ki_*
+ *     real/meta pairs, not nightly rollups (see this file's own header), so
+ *     every multi-week number here comes from DAILY_LOG (via
+ *     a1a_loadMultiWeekHistory) alone.
+ *   - The funnel is CCSM's real nightly chain — contacts_attempted ->
+ *     contacts_made -> meaningful_conversations -> friend_lessons ->
+ *     new_people_found — not Provo's doors/LSI shape. CCSM's form has no
+ *     LSI metric, so there is no lsiGiven/lsiFollowups field at all (do not
+ *     add one — see tests/test_agent1a_derived.js).
+ *
+ * @param {string}  areaName
+ * @param {Object}  stats        this week's a1a_buildStats() output
+ * @param {Object}  growth       the ranked growth pick ({key, display, ...})
+ *                               or null
+ * @param {Object}  history      { byArea, datesByArea } from
+ *                               a1a_loadMultiWeekHistory(weeks)
+ * @param {Array}   weeks        8 week-ending Sundays, ascending, from
+ *                               a1a_lastNWeekEnds_(weekEnd, 8) — MUST be the
+ *                               same array passed to a1a_loadMultiWeekHistory
+ * @param {string}  weekEnd      this week's ending Sunday (last of `weeks`)
+ * @param {string}  transferStart AGENT_CONFIG TRANSFER_START_DATE, or ''
+ */
+function a1a_buildDerived(areaName, stats, growth, history, weeks, weekEnd, transferStart) {
+  var dailyWeeks = history.byArea[areaName] || {};
+  var dateSet    = history.datesByArea[areaName] || {};
+
+  var SKIP = { submissions: 1, effort_all: 1, effort_most: 1, effort_some: 1, effort_total: 1 };
+  var seen = {};
+  var metricKeys = [];
+  Object.keys(stats).forEach(function(k) {
+    if (SKIP[k] || seen[k]) return;
+    if (typeof stats[k] === 'number') { seen[k] = 1; metricKeys.push(k); }
+  });
+
+  var lastWk = weeks[weeks.length - 2];
+  var histWeekList = Object.keys(dailyWeeks).filter(function(k) { return k !== weekEnd; });
+
+  var prevXferStart = '';
+  if (transferStart) {
+    var ts = a1a_parseLocalDate(transferStart);
+    prevXferStart = a1a_toDateString(new Date(ts.getFullYear(), ts.getMonth(), ts.getDate() - 42));
+  }
+
+  var lastWeek = {}, delta = {}, xferAvg = {}, lastXferAvg = {}, best = {}, isBest = {};
+  metricKeys.forEach(function(m) {
+    var cur = (typeof stats[m] === 'number') ? stats[m] : 0;
+    var lv = a1a_pastWeekValue_(m, dailyWeeks, lastWk);
+    lastWeek[m] = (lv === undefined) ? null : lv;
+    delta[m] = (lv === null || lv === undefined) ? null : a1a_round1(cur - lv);
+
+    var xferVals = [cur], lastXferVals = [], allVals = [cur];
+    histWeekList.forEach(function(wk) {
+      var v = a1a_pastWeekValue_(m, dailyWeeks, wk);
+      if (v === null || v === undefined) return;
+      allVals.push(v);
+      if (transferStart && wk >= transferStart) xferVals.push(v);
+      else if (prevXferStart && wk >= prevXferStart && wk < transferStart) lastXferVals.push(v);
+    });
+    xferAvg[m]     = transferStart ? a1a_mean_(xferVals) : null;
+    lastXferAvg[m] = a1a_mean_(lastXferVals);
+    var mx = null;
+    allVals.forEach(function(v) { if (mx === null || v > mx) mx = v; });
+    best[m] = mx;
+    if (allVals.length >= 2 && cur > 0 && cur >= mx) isBest[m] = true;
+  });
+
+  var trend = null;
+  if (growth) {
+    var series = weeks.map(function(wk) {
+      var v = (wk === weekEnd) ? ((typeof stats[growth.key] === 'number') ? stats[growth.key] : null)
+            : a1a_pastWeekValue_(growth.key, dailyWeeks, wk);
+      return { week: wk, value: (v === undefined ? null : v) };
+    });
+    trend = { key: growth.key, display: growth.display, series: series };
+  }
+
+  function pct(num, den) { return den > 0 ? Math.round(num / den * 100) : null; }
+  var funnel = {
+    attempted:     stats.contacts_attempted || 0,
+    contacted:     stats.contacts_made || 0,
+    contactedPct:  pct(stats.contacts_made || 0, stats.contacts_attempted || 0),
+    meaningful:    stats.meaningful_conversations || 0,
+    meaningfulPct: pct(stats.meaningful_conversations || 0, stats.contacts_made || 0),
+    lessons:       stats.friend_lessons || 0,
+    lessonPct:     pct(stats.friend_lessons || 0, stats.meaningful_conversations || 0),
+    newFound:      stats.new_people_found || 0,
+    newFoundPct:   pct(stats.new_people_found || 0, stats.friend_lessons || 0),
+    lessonsPerNewFriend: (stats.new_people_found || 0) > 0
+      ? a1a_round1((stats.friend_lessons || 0) / stats.new_people_found) : null
+  };
+
+  // Spanish single-letter weekday initials: Lun Mar Miercoles Jue Vie Sab Dom.
+  // 'X' for Miercoles (not 'M') and 'D' for Domingo (not 'S') are the
+  // standard Spanish abbreviations that avoid the Mon/Tue and Sat/Sun clash.
+  var labels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+  var dayFlags = [];
+  var startD = a1a_parseLocalDate(weekEnd);
+  for (var i = 6; i >= 0; i--) {
+    var dayStr = a1a_toDateString(new Date(startD.getFullYear(), startD.getMonth(), startD.getDate() - i));
+    dayFlags.push({ label: labels[6 - i], reported: dateSet[dayStr] === true });
+  }
+  var streak = 0;
+  var cursor = a1a_parseLocalDate(weekEnd);
+  while (dateSet[a1a_toDateString(cursor)] === true) {
+    streak++;
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() - 1);
+  }
+  var consistency = {
+    daysReported: stats.submissions || 0,
+    dayFlags: dayFlags,
+    streak: streak,
+    effortAll:  stats.effort_all  || 0,
+    effortMost: stats.effort_most || 0,
+    effortSome: stats.effort_some || 0
+  };
+
+  return { weeks: weeks, lastWeek: lastWeek, delta: delta, xferAvg: xferAvg,
+           lastXferAvg: lastXferAvg, best: best, isBest: isBest,
+           trend: trend, funnel: funnel, consistency: consistency };
 }
 
 /**
