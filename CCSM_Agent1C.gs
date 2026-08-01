@@ -112,6 +112,88 @@ var A1C_TABLE_METRICS = [
   { key: 'baptismal_invitations',    label: 'Inv. Baut.' }
 ];
 
+// ─── PERSONAL-SECTION NUMBERS (Stage 2, 2026-08-01) ─────────────────────────
+// The area coaching section used to be documented "intentionally
+// NUMBER-FREE" (see the old a1c_buildAreaSection comment this replaced).
+// Same reversal Provo's own coaching letter went through — see
+// [[project-coaching-letter-accuracy-stats]]: "Personal sections show
+// numbers again... ONLY the area's own numbers, OK to span transfers,
+// NEVER the 4 AgentScores scores, no area-vs-area/mission averages." CCSM's
+// phase-5 mandate ("raise detail to Provo's level") is that same decision
+// for this mission.
+
+// Only these 4 are true 0-1 fractions (displayed as a percent). effort_score
+// is deliberately NOT here: unlike whatever scale Provo's own effort_score
+// used, CCSM_Agent1A.gs's a1a_buildStats computes it as a straight 1-3
+// weighted average (Todo=3 / La mayor parte=2 / Algo=1), never a fraction —
+// so it is formatted (and delta'd) as a plain one-decimal number, not
+// multiplied by 100.
+var A1C_PERCENT_METRIC_KEYS = ['contact_rate', 'mc_rate', 'lesson_rate', 'close_rate'];
+
+function a1c_fmtMetricVal_(key, val) {
+  if (val === null || val === undefined || typeof val !== 'number' || isNaN(val)) return '—';
+  if (A1C_PERCENT_METRIC_KEYS.indexOf(key) !== -1) return Math.round(val * 100) + '%';
+  if (key === 'effort_score') return String(a1a_round1(val));
+  return String(Math.round(val));
+}
+
+// Spanish display labels for every CCSM metric the scoreboard/goal grid can
+// show — the 5 rate metrics plus every real QUESTIONS_CONFIG nightly metric
+// (see [[project-ccsm-readiness-aug7]]'s catalogue). Falls back to the raw
+// key if a future QUESTIONS_CONFIG addition isn't listed here yet (never a
+// blank label — see a1c_scoreboardLabel_).
+var A1C_METRIC_LABELS = {
+  contact_rate: 'Tasa de Contacto', mc_rate: 'Tasa de Significativas',
+  lesson_rate: 'Tasa de Lecciones', close_rate: 'Tasa de Compromiso',
+  effort_score: 'Esfuerzo',
+  contacts_attempted: 'Contactos Intentados', contacts_made: 'Contactos Logrados',
+  meaningful_conversations: 'Conversaciones Significativas', new_people_found: 'Nuevas Personas',
+  friend_texts: 'Mensajes de Texto', friend_calls: 'Llamadas',
+  friend_lessons: 'Lecciones a Amigos', pmf_lessons: 'Lecciones PMF',
+  rc_lessons: 'Lecciones a Conversos Recientes', rc_lessons_mcp: 'Lecciones CR con Miembro',
+  lessons_member_present: 'Lecciones con Miembro Presente', member_contacts: 'Contactos de Miembros',
+  references_asked: 'Referencias Pedidas', member_referrals_received: 'Referencias de Miembros',
+  bom_shared: 'Libros de Mormón Compartidos', roleplays: 'Juegos de Rol',
+  church_invites: 'Invitaciones a la Iglesia', baptism_doctrine_lessons: 'Lecciones de Doctrina Bautismal',
+  baptismal_invitations: 'Invitaciones al Bautismo', baptismal_calendars: 'Calendarios de Bautismo'
+};
+
+function a1c_scoreboardLabel_(key) {
+  return A1C_METRIC_LABELS[key] || key;
+}
+
+// Scoreboard groups follow the same Buscar/Ensenar/Invitar funnel language
+// already used by this file's _LEADERSHIP_MSGS themes. Named metrics first;
+// any OTHER numeric nightly metric the mission tracks (dynamic via
+// QUESTIONS_CONFIG/DAILY_LOG, e.g. a newly added question) lands in
+// 'Otros' rather than being silently dropped.
+var A1C_SCOREBOARD_GROUPS = [
+  { title: '🚪 BUSCAR — Formulario Nocturno',
+    keys: ['contacts_attempted', 'contacts_made', 'contact_rate', 'meaningful_conversations',
+           'mc_rate', 'new_people_found', 'friend_texts', 'friend_calls'] },
+  { title: '📚 ENSEÑAR — Formulario Nocturno',
+    keys: ['friend_lessons', 'lesson_rate', 'pmf_lessons', 'rc_lessons', 'rc_lessons_mcp',
+           'lessons_member_present', 'member_contacts', 'references_asked',
+           'member_referrals_received', 'bom_shared', 'roleplays'] },
+  { title: '⛪ INVITAR — Formulario Nocturno',
+    keys: ['church_invites', 'baptism_doctrine_lessons', 'baptismal_invitations',
+           'baptismal_calendars', 'close_rate'] }
+];
+
+function a1c_shortDate_(weekEnd) {
+  var m = String(weekEnd || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return '';
+  return parseInt(m[3], 10) + ' ' + A1C_SPANISH_MONTHS[parseInt(m[2], 10) - 1].substr(0, 3);
+}
+
+/** Title + ' · 12 ago' salt (empty salt -> title unchanged). Salting makes
+ *  each week's repeated section titles read as NEW content to Gmail, so its
+ *  '⋯' trim has less to hide. */
+function a1c_saltTitle_(title, weekEnd) {
+  var d = a1c_shortDate_(weekEnd);
+  return d ? title + ' · ' + d : title;
+}
+
 // Leadership coaching message bank — human-curated, never AI-generated. One
 // is picked (theme matched to the zone/district's actual growth-focus data)
 // and appended to each zone/district leadership email after the data table.
@@ -496,25 +578,105 @@ function a1c_buildEmail(person, areas, summaries, weekEnd) {
 }
 
 /**
- * Builds the personal area coaching section: area name, 2 strength messages,
- * 1 growth message. Intentionally NUMBER-FREE — individual coaching emails
- * carry no stats and no area-vs-area comparison, only qualitative
- * encouragement (leadership summary sections DO keep their numbers — see
- * a1c_buildLeadershipSection).
+ * Numbers line for a strength/growth message block:
+ *   "58% (meta 50%)  ▲ subió de 44% la semana pasada"  (+ prom. de transfer on growth)
+ * Arrows: ▲ green #16a34a, ▼ amber #b45309 (never red), — muted.
+ */
+function a1c_statLine_(pick, derived, isGrowth) {
+  if (!pick) return '';
+  var key = pick.key;
+  var cur  = a1c_fmtMetricVal_(key, pick.actual);
+  var goal = a1c_fmtMetricVal_(key, pick.goal);
+  var html = '<div style="font-size:12px;color:#374151;margin-bottom:6px;"><strong>' +
+             a1c_esc(cur) + '</strong> (meta ' + a1c_esc(goal) + ')';
+  var lastV = derived && derived.lastWeek ? derived.lastWeek[key] : null;
+  if (lastV !== null && lastV !== undefined) {
+    var diff = pick.actual - lastV;
+    if (diff > 0)      html += ' &nbsp;<span style="color:#16a34a;font-weight:700;">▲ subió de ' + a1c_esc(a1c_fmtMetricVal_(key, lastV)) + ' la semana pasada</span>';
+    else if (diff < 0) html += ' &nbsp;<span style="color:#b45309;font-weight:700;">▼ bajó de ' + a1c_esc(a1c_fmtMetricVal_(key, lastV)) + ' la semana pasada</span>';
+    else               html += ' &nbsp;<span style="color:#6b7280;">— igual que la semana pasada</span>';
+  }
+  if (isGrowth && derived && derived.xferAvg && derived.xferAvg[key] !== null && derived.xferAvg[key] !== undefined) {
+    html += ' &nbsp;·&nbsp; prom. del transfer ' + a1c_esc(a1c_fmtMetricVal_(key, derived.xferAvg[key]));
+  }
+  html += '</div>';
+  return html;
+}
+
+/**
+ * Goal-progress bar for a strength/growth pick: blue fill + "X% de la meta"
+ * while short, green + "Meta alcanzada ✓" once actual >= goal. No bar when
+ * the goal is missing/<=0 (a goal of 0 is "nothing expected" territory, not
+ * a real target to show progress against).
+ */
+function a1c_buildGoalBar_(pick, C) {
+  if (!pick) return '';
+  var goal   = parseFloat(pick.goal);
+  var actual = parseFloat(pick.actual);
+  if (isNaN(goal) || goal <= 0 || isNaN(actual)) return '';
+  var pct = Math.round(actual / goal * 100);
+  if (pct < 0) pct = 0;
+  var reached  = pct >= 100;
+  var widthPct = reached ? 100 : pct;
+  var fill  = reached ? C.green : C.blue;
+  var label = reached ? 'Meta alcanzada ✓' : pct + '% de la meta';
+  var html = '<div style="margin:2px 0 8px;">';
+  html += '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>' +
+          '<td style="background:' + C.border + ';border-radius:5px;padding:0;">' +
+          '<div style="width:' + widthPct + '%;background:' + fill + ';height:10px;border-radius:5px;"></div>' +
+          '</td></tr></table>';
+  html += '<div style="font-size:10px;color:#374151;margin-top:3px;">' +
+          '<strong style="color:' + fill + ';">' + a1c_esc(label) + '</strong>' +
+          ' &nbsp;·&nbsp; meta ' + a1c_esc(a1c_fmtMetricVal_(pick.key, goal)) + '</div>';
+  html += '</div>';
+  return html;
+}
+
+/** Area header: name + days-reported chip + streak (from area.derived.consistency). */
+function a1c_buildAreaHeader_(areaName, area, C) {
+  var der  = area.derived;
+  var cons = der && der.consistency;
+  var html = '<div style="margin:0 0 8px;">' +
+    '<div style="font-size:16px;font-weight:700;color:' + C.header + ';">' + a1c_esc(areaName) + '</div>';
+  if (cons) {
+    var days = cons.daysReported;
+    var col  = days >= 7 ? '#16a34a' : (days >= 5 ? '#b45309' : '#6b7280');
+    html += '<div style="font-size:11px;color:' + C.muted + ';margin-top:3px;">' +
+      '✓ <strong style="color:' + col + ';">' + days + '/7 días reportados</strong>';
+    if (cons.streak > 1) html += ' &nbsp;·&nbsp; 🔥 racha de ' + cons.streak + ' días de reporte nocturno';
+    html += '</div>';
+    if (days > 0 && days < 7) {
+      html += '<div style="font-size:10px;color:' + C.muted + ';margin-top:2px;">' +
+        'Los totales abajo reflejan los ' + days + ' día' + (days > 1 ? 's' : '') + ' reportados.</div>';
+    }
+  }
+  html += '</div>';
+  return html;
+}
+
+/**
+ * Builds the personal area coaching section: header (with days-reported
+ * chip), 2 strength messages, 1 growth message — each now carrying its own
+ * numbers line + goal bar (see the "PERSONAL-SECTION NUMBERS" note above
+ * A1C_PERCENT_METRIC_KEYS) — then the full scoreboard.
  */
 function a1c_buildAreaSection(areaName, area, weekEnd, C) {
-  var s  = area.strength1;
-  var s2 = area.strength2;
-  var g  = area.growth;
+  var s   = area.strength1;
+  var s2  = area.strength2;
+  var g   = area.growth;
+  var der = area.derived;
 
   var html = '<div style="margin:16px 0;padding:0 4px;">';
+  html += a1c_buildAreaHeader_(areaName, area, C);
 
-  html += '<div style="font-size:16px;font-weight:700;color:' + C.header + ';margin-bottom:8px;">' +
-          a1c_esc(areaName) + '</div>';
+  if (s)  html += a1c_buildMessageBlock('💪 Fortaleza — ' + a1c_esc(s.display),  area.msg_strength1, C, C.green,
+                                         a1c_statLine_(s, der, false) + a1c_buildGoalBar_(s, C));
+  if (s2) html += a1c_buildMessageBlock('💪 Fortaleza — ' + a1c_esc(s2.display), area.msg_strength2, C, C.green,
+                                         a1c_statLine_(s2, der, false) + a1c_buildGoalBar_(s2, C));
+  if (g)  html += a1c_buildMessageBlock('📈 Área de Crecimiento — ' + a1c_esc(g.display), area.msg_growth, C, C.blue,
+                                         a1c_statLine_(g, der, true) + a1c_buildGoalBar_(g, C));
 
-  if (s)  html += a1c_buildMessageBlock('💪 Fortaleza — ' + a1c_esc(s.display),  area.msg_strength1, C, C.green);
-  if (s2) html += a1c_buildMessageBlock('💪 Fortaleza — ' + a1c_esc(s2.display), area.msg_strength2, C, C.green);
-  if (g)  html += a1c_buildMessageBlock('📈 Área de Crecimiento — ' + a1c_esc(g.display), area.msg_growth, C, C.blue);
+  html += a1c_buildScoreboard_(area.stats, der, C, weekEnd);
 
   html += '</div>';
   html += '<hr style="border:none;border-top:1px solid #e5e7eb;margin:8px 0;">';
@@ -525,9 +687,10 @@ function a1c_buildAreaSection(areaName, area, weekEnd, C) {
  * Renders one coaching message block (subject, body, PMG page, scripture).
  * All text comes directly from MESSAGE_BANK (via getMessageBank()'s camelCase
  * shape — see file header note #2) or from _LEADERSHIP_MSGS — nothing here
- * is AI-generated.
+ * is AI-generated. `numbersHtml` (stat line + goal bar) is optional and
+ * renders directly under the label, above the quoted message.
  */
-function a1c_buildMessageBlock(label, msg, C, accentColor) {
+function a1c_buildMessageBlock(label, msg, C, accentColor, numbersHtml) {
   if (!msg) return '';
   var body       = a1c_esc(msg.bodyText       || '');
   var subject    = a1c_esc(msg.subjectLine    || '');
@@ -538,6 +701,7 @@ function a1c_buildMessageBlock(label, msg, C, accentColor) {
 
   var html = '<div style="border-left:4px solid ' + accentColor + ';padding:10px 14px;margin:10px 0;background:#fafafa;">';
   html += '<div style="font-size:12px;font-weight:700;color:' + accentColor + ';margin-bottom:6px;">' + label + '</div>';
+  if (numbersHtml) html += numbersHtml;
   if (subject) html += '<div style="font-style:italic;font-size:13px;margin-bottom:6px;color:#374151;">"' + subject + '"</div>';
   if (body)    html += '<div style="font-size:13px;line-height:1.6;color:#1f2937;">' + body.replace(/\n/g, '<br>') + '</div>';
   if (pmgRef || scripture) {
@@ -548,6 +712,84 @@ function a1c_buildMessageBlock(label, msg, C, accentColor) {
     html += '</div>';
   }
   html += '</div>';
+  return html;
+}
+
+/**
+ * "Tu Semana — Todos los Indicadores": full metrics table (this week / last
+ * week / delta / transfer avg / best) grouped Buscar/Ensenar/Invitar, plus a
+ * tiny this-week-vs-best bar under each value. CCSM analogue of Provo's
+ * docs/Agent1C.gs a1c_buildScoreboard_ — see A1C_SCOREBOARD_GROUPS above for
+ * the CCSM-specific grouping and metric set.
+ */
+function a1c_buildScoreboard_(stats, der, C, weekEnd) {
+  if (!der || !stats) return '';
+  function cell(v, al, extra) {
+    return '<td style="padding:4px 6px;text-align:' + (al || 'center') + ';border-bottom:1px solid ' + C.border + ';' + (extra || '') + '">' + v + '</td>';
+  }
+  function deltaCell(key) {
+    var dv = der.delta ? der.delta[key] : null;
+    if (dv === null || dv === undefined) return cell('—', 'center', 'color:' + C.muted + ';');
+    var isPct = A1C_PERCENT_METRIC_KEYS.indexOf(key) !== -1;
+    var mag = isPct ? Math.round(Math.abs(dv) * 100) : (key === 'effort_score' ? Math.abs(dv) : Math.round(Math.abs(dv)));
+    if (dv > 0) return cell('▲ +' + mag, 'center', 'color:#16a34a;font-weight:700;');
+    if (dv < 0) return cell('▼ −' + mag, 'center', 'color:#b45309;font-weight:700;');
+    return cell('—', 'center', 'color:' + C.muted + ';');
+  }
+  // Tiny This-Wk-vs-Best bar under the value: position on a common scale is
+  // the easiest visual to read. No bar when Best is unknown (no fake zeros).
+  function miniBar(key) {
+    var thisWk = stats[key];
+    var best = der.best ? der.best[key] : null;
+    if (typeof thisWk !== 'number' || typeof best !== 'number' || best <= 0) return '';
+    var w = thisWk <= 0 ? 0 : Math.max(2, Math.min(100, Math.round(thisWk / best * 100)));
+    return '<div style="background:' + C.border + ';border-radius:2px;margin-top:2px;">' +
+           '<div style="width:' + w + '%;background:' + C.blue + ';height:4px;border-radius:2px;font-size:1px;line-height:1px;">&nbsp;</div></div>';
+  }
+  function row(key, idx) {
+    var label = a1c_scoreboardLabel_(key);
+    var bg = idx % 2 === 0 ? '#ffffff' : C.bgLight;
+    var bestMark = der.isBest && der.isBest[key] ? ' ★' : '';
+    return '<tr style="background:' + bg + ';">' +
+      cell(a1c_esc(label), 'left') +
+      cell('<strong>' + a1c_esc(a1c_fmtMetricVal_(key, stats[key])) + bestMark + '</strong>' + miniBar(key)) +
+      cell('<span style="color:' + C.muted + ';">' + a1c_esc(a1c_fmtMetricVal_(key, der.lastWeek ? der.lastWeek[key] : null)) + '</span>') +
+      deltaCell(key) +
+      cell(a1c_esc(a1c_fmtMetricVal_(key, der.xferAvg ? der.xferAvg[key] : null))) +
+      cell(a1c_esc(a1c_fmtMetricVal_(key, der.best ? der.best[key] : null))) +
+      '</tr>';
+  }
+
+  var claimed = { submissions: 1, effort_all: 1, effort_most: 1, effort_some: 1, effort_total: 1, effort_score: 1 };
+  A1C_SCOREBOARD_GROUPS.forEach(function(gr) { gr.keys.forEach(function(k) { claimed[k] = 1; }); });
+  var extras = [];
+  Object.keys(stats).forEach(function(k) {
+    if (claimed[k]) return;
+    if (typeof stats[k] === 'number') extras.push(k);
+  });
+
+  var html = '<div style="margin:16px 0;">';
+  html += '<div style="font-size:12px;font-weight:700;color:' + C.header +
+          ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">' +
+          a1c_esc(a1c_saltTitle_('Tu Semana — Todos los Indicadores', weekEnd)) + '</div>';
+  html += '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:11px;">';
+  html += '<tr style="background:' + C.header + ';color:#ffffff;">' +
+    '<th style="padding:5px 8px;text-align:left;font-size:10px;">Indicador</th>' +
+    '<th style="padding:5px 6px;text-align:center;font-size:10px;">Esta Sem</th>' +
+    '<th style="padding:5px 6px;text-align:center;font-size:10px;">Sem Pasada</th>' +
+    '<th style="padding:5px 6px;text-align:center;font-size:10px;">Δ</th>' +
+    '<th style="padding:5px 6px;text-align:center;font-size:10px;">Prom Transfer</th>' +
+    '<th style="padding:5px 6px;text-align:center;font-size:10px;">Mejor</th></tr>';
+
+  var groups = A1C_SCOREBOARD_GROUPS.slice();
+  if (extras.length > 0) groups.push({ title: '📦 OTROS — Formulario Nocturno', keys: extras.sort() });
+  groups.forEach(function(gr) {
+    var present = gr.keys.filter(function(k) { return stats[k] !== undefined; });
+    if (present.length === 0) return;
+    html += '<tr><td colspan="6" style="padding:5px 8px;background:#dbeafe;font-weight:700;font-size:10px;color:' + C.header + ';">' + gr.title + '</td></tr>';
+    present.forEach(function(k, idx) { html += row(k, idx); });
+  });
+  html += '</table></div>';
   return html;
 }
 
