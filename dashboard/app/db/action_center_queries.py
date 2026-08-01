@@ -115,7 +115,7 @@ def get_leadership_roster() -> list[dict]:
 
 def _latest_date(tab: str, marker: str, candidates: tuple):
     """Return the max date found in `tab`'s first matching column, or None.
-    Mirrors 18_Maintenance.py's _latest_date helper exactly (same tabs, same
+    Mirrors 18_Mantenimiento.py's _latest_date helper exactly (same tabs, same
     header_marker/candidate conventions) so the two pages never disagree."""
     df = read_tab(tab, header_marker=marker)
     if df.empty:
@@ -128,7 +128,7 @@ def _latest_date(tab: str, marker: str, candidates: tuple):
 
 
 def _maintenance_issues() -> list[str]:
-    """Re-run the same two health signals 18_Maintenance.py surfaces (agent
+    """Re-run the same two health signals 18_Mantenimiento.py surfaces (agent
     failures, stale data) as short messages for the Action Center."""
     issues: list[str] = []
 

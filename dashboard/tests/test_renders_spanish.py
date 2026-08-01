@@ -55,28 +55,28 @@ def test_home_still_renders_english():
 
 
 def test_dashboard_renders_spanish():
-    es = _text(_run("pages/01_dashboard.py", "es"))
+    es = _text(_run("pages/01_Panel.py", "es"))
     assert "Panel Ejecutivo" in es
     assert "Executive Dashboard" not in es
 
 
 def test_breakdowns_renders_spanish():
-    es = _text(_run("pages/04_Breakdowns.py", "es"))
+    es = _text(_run("pages/04_Desgloses.py", "es"))
     assert "Desgloses" in es
     assert "Zone, District & Area Performance" not in es
 
 
 ALL_PAGES = [
     "Home.py",
-    "pages/01_dashboard.py",
-    "pages/02_Goals.py",
-    "pages/04_Breakdowns.py",
-    "pages/06_Scores.py",
-    "pages/07_Finding_Funnel.py",
-    "pages/10_Notes.py",
-    "pages/15_Suggestions.py",
-    "pages/17_Action_Center.py",
-    "pages/18_Maintenance.py",
+    "pages/01_Panel.py",
+    "pages/02_Metas.py",
+    "pages/04_Desgloses.py",
+    "pages/06_Puntajes.py",
+    "pages/07_Embudo_de_Búsqueda.py",
+    "pages/10_Notas.py",
+    "pages/15_Sugerencias.py",
+    "pages/17_Centro_de_Acción.py",
+    "pages/18_Mantenimiento.py",
 ]
 
 
@@ -89,8 +89,8 @@ def test_every_page_survives_both_languages(page):
 
 
 def test_notes_and_suggestions_render_spanish():
-    assert "Filtrar Notas" in _text(_run("pages/10_Notes.py", "es"))
-    assert "Sugerencias" in _text(_run("pages/15_Suggestions.py", "es"))
+    assert "Filtrar Notas" in _text(_run("pages/10_Notas.py", "es"))
+    assert "Sugerencias" in _text(_run("pages/15_Sugerencias.py", "es"))
 
 
 def test_suggestion_status_filter_sends_english_to_the_sheet(monkeypatch):
@@ -108,7 +108,7 @@ def test_suggestion_status_filter_sends_english_to_the_sheet(monkeypatch):
         return real(*a, **k)
 
     monkeypatch.setattr(q, "get_suggestions", spy)
-    at = AppTest.from_file("pages/15_Suggestions.py", default_timeout=90)
+    at = AppTest.from_file("pages/15_Sugerencias.py", default_timeout=90)
     at.session_state["pmg_lang"] = "es"
     at.run()
     assert not at.exception
@@ -119,7 +119,7 @@ def test_suggestion_status_filter_sends_english_to_the_sheet(monkeypatch):
 
 
 def test_scores_page_renders_spanish():
-    es = _text(_run("pages/06_Scores.py", "es"))
+    es = _text(_run("pages/06_Puntajes.py", "es"))
     assert "Puntajes" in es
 
 

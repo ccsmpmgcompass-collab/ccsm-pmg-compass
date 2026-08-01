@@ -1,5 +1,5 @@
 """
-01_dashboard.py
+01_Panel.py
 ────────────────────────────────────────────────────────────────────────────────
 Whole-mission executive snapshot — combines the former Dashboard and Mission
 Breakdown pages into one. Mission-level only; for zone/district/area drilldown

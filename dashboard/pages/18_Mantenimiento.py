@@ -1,5 +1,5 @@
 """
-18_Maintenance.py
+18_Mantenimiento.py
 PMG Compass | Maintenance
 The mission's back office in one tabbed page — COMPASS_CCSM is meant to be
 backend-only, so anything that used to require opening the Sheet should be
@@ -43,6 +43,8 @@ from app.db.sheets_client import (
     update_cells,
 )
 from app.i18n import t
+from app.i18n.formats import fmt_date, fmt_day_month, fmt_int
+from app.utils.area_helpers import mission_today
 
 st.set_page_config(
     page_title="CCSM · Maintenance — PMG Compass",
@@ -160,11 +162,15 @@ if _flash_msg:
 
 if _sec == _TAB_HEALTH:
     render_section_label(t("Weekly To-Do"))
-    _today = date.today()
+    # mission_today(), not date.today(): this app runs on Streamlit Cloud in
+    # UTC, which is already tomorrow through the Chilean evening — so "this
+    # week" would roll over on a Sunday night while the mission is still in
+    # Saturday, and the checkboxes would reset a day early.
+    _today = mission_today()
     _monday = _today - timedelta(days=_today.weekday())
-    _wk = _monday.strftime("%Y-%m-%d")
+    _wk = _monday.strftime("%Y-%m-%d")   # session-state key — stays ISO
     st.caption(
-        t('The weekly maintenance routine — week of {monday} {day}. Checkboxes reset each Monday and live in your browser session only; everything they ask about is verifiable further down this tab.', monday=_monday.strftime('%b'), day=_monday.day)
+        t('The weekly maintenance routine — week of {week_of}. Checkboxes reset each Monday and live in your browser session only; everything they ask about is verifiable further down this tab.', week_of=fmt_day_month(_monday))
     )
     _TODOS = [
         "Every agent's last run is green (Agent Runs below)",
@@ -1017,7 +1023,7 @@ elif _sec == _TAB_SYSTEM:
     if _wf_link:
         _l3.link_button(t("Weekly form ↗"), _wf_link, use_container_width=True)
     st.page_link(
-        "pages/06_Scores.py",
+        "pages/06_Puntajes.py",
         label="Effectiveness score weights are edited on the **Scores** page →",
     )
 

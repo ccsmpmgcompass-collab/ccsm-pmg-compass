@@ -208,7 +208,7 @@ def _clear_query_caches() -> None:
     [[feedback-cache-data-pollution-across-pytest-tests]].
 
     Global, not per-module: the caches that actually broke these tests are
-    defined in the PAGE modules (pages/06_Scores.py::_load_daily), not in
+    defined in the PAGE modules (pages/06_Puntajes.py::_load_daily), not in
     app.db.queries. Another test file renders that page against an empty
     DAILY_LOG, `_load_daily(14)` memoises the empty frame, and Daily Activity
     then renders its "no metrics" branch here — every vocabulary assertion
@@ -270,7 +270,7 @@ PROVO_LABELS = [
     "Fellowshipped Lessons", "Non-Member Lessons",
 ]
 
-PAGES = ["pages/01_dashboard.py", "pages/06_Scores.py"]
+PAGES = ["pages/01_Panel.py", "pages/06_Puntajes.py"]
 
 
 # ── The data actually reaches the page ────────────────────────────────────────
@@ -311,7 +311,7 @@ def test_no_provo_key_or_label_reaches_a_populated_page(page):
 def test_dashboard_shows_ccsms_key_indicators():
     """The KI row was a fixed Pew / Date / Gate / Renew, all reading 0. Every
     one of CCSM's seven must be named instead."""
-    body = _text(_run("pages/01_dashboard.py"))
+    body = _text(_run("pages/01_Panel.py"))
     missing = [label for _, label in _KI_BASES if label not in body]
     assert missing == [], f"Key Indicators absent from the Dashboard: {missing}"
 
@@ -320,7 +320,7 @@ def test_dashboard_nightly_row_shows_scored_metrics():
     """The nightly KPI row and zone leaderboard come from SCORE_CONFIG's effort
     component. `effort` itself is CHOICE and must NOT be offered as a countable
     tile."""
-    body = _text(_run("pages/01_dashboard.py"))
+    body = _text(_run("pages/01_Panel.py"))
     for label in ("Intentos de Contacto", "Prácticas de Enseñanza",
                   "Contactos con Miembros"):
         assert label in body, f"{label!r} missing from the Dashboard"
@@ -331,12 +331,12 @@ def test_daily_activity_totals_every_nightly_metric():
     catalogue. Every numeric nightly metric must get a Mission Totals tile.
 
     Asserted against st.metric TILE LABELS, not against the page's whole text.
-    Searching the whole body passes for the wrong reason: 06_Scores.py's
+    Searching the whole body passes for the wrong reason: 06_Puntajes.py's
     Analyze tab builds its picker from the same catalogue, so every CCSM label
     appears somewhere on the page even when Daily Activity itself rendered five
     "No data for this category" panels.
     """
-    at = _run("pages/06_Scores.py")
+    at = _run("pages/06_Puntajes.py")
     tile_labels = {m.label for m in at.metric}
     missing = [
         label for _key, label, dtype in _NIGHTLY
@@ -352,7 +352,7 @@ def test_daily_activity_excludes_non_numeric_metrics():
     """`effort` is CHOICE and `exchanges` is YESNO. Summing either produces a
     number with no meaning, and _num() would coerce the words to 0 — a real
     zero and an unparseable answer would look identical."""
-    at = _run("pages/06_Scores.py")
+    at = _run("pages/06_Puntajes.py")
     chart_pickers = [w for w in at.multiselect if w.key == "da_trend_metrics"]
     assert chart_pickers, "Daily Activity's metric picker did not render"
 

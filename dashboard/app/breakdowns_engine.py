@@ -1,7 +1,7 @@
 """
 breakdowns_engine.py
 ────────────────────────────────────────────────────────────────────────────────
-Rendering engine for pages/04_Breakdowns.py: the metric catalogue, cached data
+Rendering engine for pages/04_Desgloses.py: the metric catalogue, cached data
 loaders, chart helpers, and the shared group-breakdown / teaching-pipeline /
 compliance-calendar renderers. Extracted from the page 2026-07-18 so the page
 file is just scope-selector dispatch + notes.
@@ -292,7 +292,7 @@ def _detail_col(df: pd.DataFrame, name: str):
     Shortest-match matters: Tableau emits a giant '..._and_5_more_(combined)'
     mashup column that contains the same substrings as the real, short columns,
     so a naive `in` check finds the mashup instead of the data. Same rule as
-    _col() in 07_Finding_Funnel.py — duplicated rather than shared because
+    _col() in 07_Embudo_de_Búsqueda.py — duplicated rather than shared because
     Streamlit's page model has no way to import across pages/. Worth promoting
     both copies into app/utils/ when something else needs them.
     """
@@ -960,7 +960,7 @@ def render_lineage_marker(area: str, area_val_key: str) -> bool:
         # Plain st.rerun() defaults to a full-app rerun even when called from
         # inside the caller's st.fragment — that would tear down and resend the
         # global CSS/header/sidebar (the exact unstyled-flash bug the fragment in
-        # 04_Breakdowns.py was built to prevent). scope="fragment" keeps this
+        # 04_Desgloses.py was built to prevent). scope="fragment" keeps this
         # redirect inside the fragment like every other selector change.
         st.rerun(scope="fragment")
     return True

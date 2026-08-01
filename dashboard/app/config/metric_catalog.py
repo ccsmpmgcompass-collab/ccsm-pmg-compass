@@ -143,7 +143,7 @@ def _load_question_rows() -> list[dict]:
             "data_type": str(r.get("Data_Type", "")).strip().upper(),
         }
         # A key defined on BOTH forms (report_date is) must appear once. Keeping
-        # the first (Nightly-ordered) definition matches how 02_Goals.py dedupes
+        # the first (Nightly-ordered) definition matches how 02_Metas.py dedupes
         # and how the agents read it. Without this, callers building a dict keyed
         # on metric would silently drop one and callers building a list would
         # render two widgets with the same key — the crash fixed in 37823bd.

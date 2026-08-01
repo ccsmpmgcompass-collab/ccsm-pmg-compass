@@ -16,6 +16,7 @@ from app.config.metric_catalog import (
     metric_options,
     nightly_metrics,
 )
+from app.i18n.formats import NA, fmt_month_year
 
 
 def _placeholder_metric() -> str:
@@ -847,7 +848,7 @@ if selected_section == "Mission Goals":
                             if key in mission_recommended:
                                 _render_rec_pill("me", key, widget_key, mission_recommended[key])
 
-        _month_label = _month_start_date.strftime("%B %Y")
+        _month_label = fmt_month_year(_month_start_date)
 
         if st.button(t("Save Mission Goals"), type="primary", key="mission_goal_save"):
             row, err = upsert_goal(
@@ -877,9 +878,8 @@ if selected_section == "Mission Goals":
             set_by = current_goal_row.get("set_by", "")
             ws = current_goal_row.get("month_start", "")
             if set_by:
-                try:
-                    ws_label = date.fromisoformat(ws).strftime("%B %Y")
-                except ValueError:
+                ws_label = fmt_month_year(ws)
+                if ws_label == NA:
                     ws_label = ws
                 st.caption(t('Last set by {set_by} · month of {ws_label}', set_by=set_by, ws_label=ws_label))
 
@@ -1001,9 +1001,8 @@ if selected_section == "Area Goal Customization":
     # which would have written zeros into every area's monthly row.
     _BULK_MONTHLY_KEYS = list(key_indicator_metrics())
     _BULK_MONTH_START = current_month_start()
-    try:
-        _bulk_month_label = date.fromisoformat(_BULK_MONTH_START).strftime("%B %Y")
-    except ValueError:
+    _bulk_month_label = fmt_month_year(_BULK_MONTH_START)
+    if _bulk_month_label == NA:
         _bulk_month_label = _BULK_MONTH_START
 
     def _compute_all_area_recs() -> None:
@@ -1355,9 +1354,8 @@ if selected_section == "Area Goal Customization":
 
     _monthly_month_start = current_month_start()
     _monthly_row = get_current_area_monthly_goal(selected_area, _monthly_month_start)
-    try:
-        _monthly_label = date.fromisoformat(_monthly_month_start).strftime("%B %Y")
-    except ValueError:
+    _monthly_label = fmt_month_year(_monthly_month_start)
+    if _monthly_label == NA:
         _monthly_label = _monthly_month_start
 
     def _monthly_current(key: str) -> int:
@@ -2016,8 +2014,8 @@ if selected_section == "Area Expectation Settings":
                             # instead of having them grouped together in a
                             # larger box") — st.container(border=True) is a
                             # native Streamlit primitive already used
-                            # elsewhere in this app (10_Notes.py,
-                            # 17_Action_Center.py), not custom CSS. This
+                            # elsewhere in this app (10_Notas.py,
+                            # 17_Centro_de_Acción.py), not custom CSS. This
                             # also resolves the earlier "boxes uneven,
                             # Potential Members at Church out of line"
                             # complaint: no indicator shares a row with

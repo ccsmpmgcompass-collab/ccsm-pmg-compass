@@ -16,6 +16,7 @@ from app.analytics.finding_funnel import (
     PRESETS, data_date_bounds, preset_range, filter_by_range, build_area_rankings,
 )
 from app.i18n import t
+from app.i18n.formats import NA, fmt_date_range, fmt_day_month, fmt_int, fmt_percent
 
 st.set_page_config(page_title="CCSM · Finding Funnel — PMG Compass", page_icon="", layout="wide")
 
@@ -58,11 +59,13 @@ def _date(df: pd.DataFrame, name: str) -> pd.Series:
 
 
 def _disp_int(v) -> str:
-    return f"{int(round(v)):,}" if v else "—"
+    """`1.234` in Spanish, `1,234` in English. Was f"{int(round(v)):,}", which
+    hardcoded the anglo separator regardless of interface language."""
+    return fmt_int(v) if v else NA
 
 
 def _disp_pct(v) -> str:
-    return f"{v:.0f}%" if v else "—"
+    return fmt_percent(v) if v else NA
 
 
 def _fmt_dur(hours: float) -> str:
@@ -91,11 +94,15 @@ def _source_caption(by: str, at: str) -> str:
 
 
 def _fmt_range(a: date, b: date) -> str:
-    """'Jun 15 – Jun 18, 2026' (or include both years if they differ)."""
+    """'5 de ago – 11 de ago de 2026' in Spanish, 'Aug 5 – Aug 11, 2026' in English.
+
+    strftime('%b') emits English month abbreviations whatever the interface
+    language is set to — it follows the process locale, not ours — so this range
+    read "Jun 15 – Jun 18" on an otherwise fully Spanish page.
+    """
     if a.year == b.year:
-        return f"{a.strftime('%b')} {a.day} – {b.strftime('%b')} {b.day}, {b.year}"
-    return (f"{a.strftime('%b')} {a.day}, {a.year} – "
-            f"{b.strftime('%b')} {b.day}, {b.year}")
+        return fmt_date_range(a, b)
+    return f"{fmt_day_month(a, with_year=True)} – {fmt_day_month(b, with_year=True)}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════

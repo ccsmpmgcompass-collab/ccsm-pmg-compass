@@ -67,8 +67,8 @@ def test_cut_pages_absent():
 
 def test_miracles_removed():
     assert not (ROOT / "pages" / "15_Suggestions_&_Miracles.py").exists()
-    p = ROOT / "pages" / "15_Suggestions.py"
-    assert p.exists(), "page should be renamed to 15_Suggestions.py"
+    p = ROOT / "pages" / "15_Sugerencias.py"
+    assert p.exists(), "page should be renamed to 15_Sugerencias.py"
     assert "miracle_pdf" not in p.read_text(encoding="utf-8-sig")
     assert not (ROOT / "app" / "export").exists()
 

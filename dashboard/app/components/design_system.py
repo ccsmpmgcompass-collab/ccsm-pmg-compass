@@ -6,6 +6,7 @@ import streamlit as st
 import plotly.io as pio
 import plotly.graph_objects as go
 from app.i18n import t
+from app.i18n.formats import fmt_int
 
 PALETTE = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"]
 
@@ -510,7 +511,8 @@ def render_kpi_row(metrics: list[dict]) -> None:
                 f'<div style="height:100%;width:{pct}%;background:{bar};'
                 f'border-radius:2px;transition:width 0.4s ease;"></div></div>'
                 f'<div style="font-size:0.65rem;color:#4b5563;margin-top:3px;">'
-                f'{pct}% of {int(goal)} goal</div></div>'
+                f'{_html.escape(t("{pct}% of {goal} goal", pct=fmt_int(pct), goal=fmt_int(goal)))}'
+                f'</div></div>'
             )
 
         expectation_html = ""
@@ -526,10 +528,18 @@ def render_kpi_row(metrics: list[dict]) -> None:
                 f'<div style="height:100%;width:{exp_pct}%;background:#8b5cf6;'
                 f'border-radius:2px;transition:width 0.4s ease;"></div></div>'
                 f'<div style="font-size:0.65rem;color:#4b5563;margin-top:3px;">'
-                f'{exp_pct}% of {int(expectation)} expectation</div></div>'
+                f'{_html.escape(t("{pct}% of {expectation} expectation", pct=fmt_int(exp_pct), expectation=fmt_int(expectation)))}'
+                f'</div></div>'
             )
 
-        fmt = f"{int(value):,}" if isinstance(value, (int, float)) else _html.escape(str(value))
+        # fmt_int, not f"{int(value):,}": that hardcoded the anglo thousands
+        # separator into the largest number on the page, so a Spanish-language
+        # dashboard showed "1,234" where Chile writes "1.234" — and to a
+        # Chilean reader "1,234" is one point two three four, not one thousand.
+        # int() also truncated floats, and a None value rendered as the literal
+        # text "None"; fmt_int rounds and renders None as an em dash.
+        fmt = (fmt_int(value) if isinstance(value, (int, float))
+               else _html.escape(str(value)))
         cards += (
             f'<div style="background:rgba(255,255,255,0.04);'
             f'backdrop-filter:blur(12px) saturate(150%);'
@@ -636,7 +646,7 @@ def render_companionship_card(area_row, zone: str = "", district: str = "") -> N
     `area_row` is one MISSION_ORG row (a pandas Series — e.g.
     `get_submitting_areas()` filtered to the selected Area_Name, `.iloc[0]`).
 
-    Sole implementation of this card: pages/02_Goals.py and the Breakdowns
+    Sole implementation of this card: pages/02_Metas.py and the Breakdowns
     page's area view both call it. (The old 05_Area_Breakdown.py carried a
     duplicate inline copy of this markup; combining the breakdown pages
     retired that copy, so there is no longer a second version to keep in sync.)

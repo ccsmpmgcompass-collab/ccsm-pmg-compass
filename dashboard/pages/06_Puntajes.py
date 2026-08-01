@@ -1,5 +1,5 @@
 """
-06_Scores.py
+06_Puntajes.py
 ──────────────────────────────────────────────────────────────
 Scores — PMG Compass
 Three performance-analysis tools in one page (merged 2026-07-21):

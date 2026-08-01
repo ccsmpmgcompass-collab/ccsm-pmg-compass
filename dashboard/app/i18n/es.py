@@ -1190,10 +1190,14 @@ ES: dict[str, str] = {
         "Google Forms por separado más abajo.",
     "Metric key `{slug}` already exists — pick another.":
         "La clave de métrica `{slug}` ya existe — elija otra.",
-    "The weekly maintenance routine — week of {monday} {day}. Checkboxes reset "
+    # One {week_of} placeholder, not {monday} {day}: the date is built by
+    # app.i18n.formats.fmt_day_month now, so this string no longer has to
+    # reassemble an English month abbreviation into Spanish word order — and
+    # the month name itself is finally Spanish.
+    "The weekly maintenance routine — week of {week_of}. Checkboxes reset "
     "each Monday and live in your browser session only; everything they ask "
     "about is verifiable further down this tab.":
-        "La rutina de mantenimiento semanal — semana del {day} de {monday}. Las "
+        "La rutina de mantenimiento semanal — semana del {week_of}. Las "
         "casillas se reinician cada lunes y viven solo en la sesión de su navegador; "
         "todo lo que preguntan se puede verificar más abajo en esta pestaña.",
 
@@ -1326,6 +1330,13 @@ ES: dict[str, str] = {
         "No se pudo guardar la configuración: {save_err}",
     "Push failed: {e}": "El envío falló: {e}",
     "Push failed: {data}": "El envío falló: {data}",
+
+    # KPI card captions. These live inside an f-string HTML block in
+    # design_system.render_kpi_row, so the string extractor cannot see them —
+    # they were plain English on every page, in both languages, until routed
+    # through t() by hand.
+    "{pct}% of {goal} goal": "{pct}% de la meta de {goal}",
+    "{pct}% of {expectation} expectation": "{pct}% de la expectativa de {expectation}",
 
     # ── Phase 2 de-contamination: Dashboard + Scores rebuilt sections ────────
     # New strings from replacing Provo-keyed sections with catalogue-driven
