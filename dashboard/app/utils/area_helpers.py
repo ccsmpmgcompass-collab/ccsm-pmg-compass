@@ -1,32 +1,56 @@
 from datetime import date, datetime, timedelta, time
 
 # Nightly submissions for "today" aren't reliably in the sheet until the evening
-# refresh/report cycle (Agent3 at 9 PM, Agent7 at 9:30 PM, Mountain Time). Before
-# this cutoff we don't count the current day at all, so it doesn't read as a miss
-# and break the streak.
+# refresh runs (CCSM_Agent3's evening trigger, 9 PM mission-local — see
+# CCSM_TRIGGER_SCHEDULE in CCSM_Setup.gs). Before this cutoff we don't count the
+# current day at all, so it doesn't read as a miss and break the streak.
 NIGHTLY_CUTOFF = time(21, 30)  # 9:30 PM
-_MOUNTAIN_TZ = "America/Denver"
+
+# Fallback only. The real value comes from AGENT_CONFIG's MISSION_TIMEZONE,
+# which is what every Apps Script agent uses (CCSM_Helpers.getMissionTimezone),
+# so the dashboard and the agents agree on which day it is.
+#
+# This was hardcoded to "America/Denver" — Utah Provo's zone, inherited with the
+# fork. Chile runs UTC-4/-3 against Denver's UTC-7/-6, so for the three-to-four
+# hours around local midnight `mission_today()` returned YESTERDAY for CCSM.
+# Everything date-anchored was affected: which day counts as missed, whether a
+# streak survives, which week a submission lands in.
+_FALLBACK_TZ = "America/Santiago"
 
 
-def _mountain_now() -> datetime:
-    """Current wall-clock time in mission (Mountain) time. Falls back to naive
+def mission_timezone() -> str:
+    """The mission's IANA timezone from AGENT_CONFIG.
+
+    Imported lazily: this module is imported by pure-logic paths (and by tests)
+    that must not require Streamlit secrets or a live sheet just to compute a
+    date difference.
+    """
+    try:
+        from app.db.queries import get_config_value
+        return (get_config_value("MISSION_TIMEZONE", "") or "").strip() or _FALLBACK_TZ
+    except Exception:
+        return _FALLBACK_TZ
+
+
+def _mission_now() -> datetime:
+    """Current wall-clock time in the mission's timezone. Falls back to naive
     local time if zoneinfo is unavailable so callers never crash."""
     try:
         import zoneinfo
-        return datetime.now(zoneinfo.ZoneInfo(_MOUNTAIN_TZ))
+        return datetime.now(zoneinfo.ZoneInfo(mission_timezone()))
     except Exception:
         return datetime.now()
 
 
 def mission_today(now: datetime = None) -> date:
-    """Today's date in mission (Mountain) time.
+    """Today's date in the mission's own timezone.
 
     Always prefer this over date.today() for anything user-facing: the app runs
-    on Streamlit Cloud in UTC, which rolls over to tomorrow in the early evening
-    Mountain — i.e. right when the nightly reports are being submitted.
+    on Streamlit Cloud in UTC, which rolls over to tomorrow in the evening
+    mission-local — i.e. right when the nightly reports are being submitted.
     `now` is injectable for testing.
     """
-    return (now or _mountain_now()).date()
+    return (now or _mission_now()).date()
 
 
 def compliance_anchor_date(now: datetime = None) -> date:
@@ -37,7 +61,7 @@ def compliance_anchor_date(now: datetime = None) -> date:
     have had a chance to land. `now` is injectable for testing.
     """
     if now is None:
-        now = _mountain_now()
+        now = _mission_now()
     if now.time() >= NIGHTLY_CUTOFF:
         return now.date()
     return now.date() - timedelta(days=1)
@@ -96,7 +120,7 @@ def latest_due_sunday(now: datetime = None) -> date:
     reads as a miss. If today is Sunday, the week ending today isn't due yet, so
     step back to the previous Sunday. `now` is injectable for testing.
     """
-    d = (now or _mountain_now()).date()
+    d = (now or _mission_now()).date()
     offset = (d.weekday() + 1) % 7      # days since Sunday (Sun=0, Mon=1, …)
     last_sun = d - timedelta(days=offset)
     if offset == 0:                     # today IS Sunday → not due yet
@@ -136,34 +160,26 @@ def weekly_due_weeks(
     return weeks
 
 
-_METRIC_LABEL_OVERRIDES = {
-    "nm_doors":              "NM Attempted",
-    "nm_lessons":            "NM Lessons",
-    "nm_contacted":          "NM Contacted",
-    "nm_meaningful":         "NM Meaningful Convos",
-    "nm_texts":              "NM Texts Sent",
-    "mmm_sent":              "MMM Sent",
-    "lsi_given":             "LSI Given",
-    "lsi_followups":         "LSI Follow-Ups",
-    "rc_lessons":            "RC Lessons",
-    "la_lessons":            "LA Lessons",
-    "la_Attempt":            "LA Attempted",
-    "fellowshipper_Attempt": "Fellowshipper Attempted",
-    "aux_Attempt":           "Aux/Coord Attempted",
-    "info_Attempt":          "Informational Attempted",
-    "locos_Attempt":         "LOCOS Attempted",
-    "rc_total":              "RC Could Have Attended",
-    "date_metric":           "Date",
-}
-
-
 def format_metric_label(key: str) -> str:
-    """Convert a metric key to its display label (snake_case → Title Case
-    fallback, with overrides for keys whose friendly name differs)."""
+    """Display label for a metric key.
+
+    Delegates to app.config.metric_catalog, which reads the live
+    QUESTIONS_CONFIG. This function used to carry its own override map — one of
+    three copies of Utah Provo's metric vocabulary (nm_doors, lsi_given,
+    locos_Attempt, date_metric …), none of which is a question on a CCSM form.
+    Three copies meant three things to keep in step, and they were already out
+    of step with each other and with the mission.
+
+    Falls back to Title Case if the catalogue is unavailable, so a label never
+    takes down a page that was only trying to draw a chart axis.
+    """
     key = str(key)
-    if key in _METRIC_LABEL_OVERRIDES:
-        return _METRIC_LABEL_OVERRIDES[key]
-    return key.replace("_", " ").title()
+    try:
+        from app.config.metric_catalog import format_metric_label as _label
+        from app.i18n import get_lang
+        return _label(key, lang=get_lang())
+    except Exception:
+        return key.replace("_", " ").title()
 
 
 def build_calendar_data(

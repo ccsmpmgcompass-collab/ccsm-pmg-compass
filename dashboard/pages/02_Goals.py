@@ -10,13 +10,32 @@ from app.components.design_system import (
     render_table, render_companionship_card,
 )
 from app.config.flavor_loader import flavor, METRIC_LABELS, GOAL_LABELS, GOAL_TO_ACTUAL
-from app.config.metrics import METRIC_OPTIONS as _METRIC_CATALOG
+from app.config.metric_catalog import key_indicator_metrics, metric_options
 
-# Metric DROPDOWNS show the full "Descriptive Title (ABBREV)" for the 6 Key
-# Indicators — consistent with the Breakdowns picker. Compact tiles/tables keep
-# the short METRIC_LABELS; only the pickers use this merged map.
-_KI_KEYS = ("gate", "date_metric", "new_found", "pew", "renew", "member_lessons")
-DROPDOWN_METRIC_LABELS = {**METRIC_LABELS, **{k: _METRIC_CATALOG[k] for k in _KI_KEYS}}
+
+def _ki_keys() -> tuple[str, ...]:
+    """The mission's Key Indicators, from the live weekly form.
+
+    Was a hardcoded ("gate", "date_metric", "new_found", "pew", "renew",
+    "member_lessons") — Utah Provo's six, none of which CCSM collects, so the
+    subscript below raised KeyError the moment the catalogue stopped carrying
+    Provo's keys. CCSM's are the seven `ki_*_real` values.
+    """
+    return tuple(key_indicator_metrics())
+
+
+def _dropdown_metric_labels() -> dict:
+    """Labels for metric DROPDOWNS.
+
+    A function, not a module-level dict: the catalogue is read from the sheet,
+    so it cannot be built at import time. Merged over METRIC_LABELS so pickers
+    show the full descriptive name while compact tiles and tables keep the
+    short form.
+    """
+    return {**dict(METRIC_LABELS), **metric_options()}
+
+
+DROPDOWN_METRIC_LABELS = _dropdown_metric_labels
 from app.db.queries import (
     get_goals_df,
     get_area_goals,
@@ -111,7 +130,7 @@ _FEATURED_METRIC_KEYS: frozenset[str] = frozenset(
 # page (Carson, 2026-07-21: "Baptisms" -> "Baptized & Confirmed (GATE)") —
 # looked up via the underlying KI metric key, not the goal-storage key.
 _FEATURED_METRICS: list[tuple[str, str]] = [
-    (k, DROPDOWN_METRIC_LABELS.get(
+    (k, DROPDOWN_METRIC_LABELS().get(
         GOAL_TO_ACTUAL.get(k, k), GOAL_LABELS.get(k, METRIC_LABELS.get(k, k))
     ))
     for k in flavor.featured_goals
@@ -2034,7 +2053,7 @@ if selected_section == "Area Expectation Settings":
                                     _row["metric"] = st.selectbox(
                                         t("Indicator"), _opts,
                                         index=_opts.index(_row["metric"]),
-                                        format_func=lambda k: DROPDOWN_METRIC_LABELS.get(k, k),
+                                        format_func=lambda k: DROPDOWN_METRIC_LABELS().get(k, k),
                                         key=f"area_ind_metric_{_row['_id']}",
                                     )
                                 with _c2:
@@ -2088,7 +2107,7 @@ if selected_section == "Area Expectation Settings":
                     t("Indicator"), _metric_keys,
                     index=None,
                     placeholder=t("SELECT INDICATOR"),
-                    format_func=lambda k: DROPDOWN_METRIC_LABELS.get(k, k),
+                    format_func=lambda k: DROPDOWN_METRIC_LABELS().get(k, k),
                     key=f"area_ind_new_metric_{_category}_{_add_gen}",
                 )
             with _a2:

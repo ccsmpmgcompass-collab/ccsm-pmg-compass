@@ -928,6 +928,13 @@ ES: dict[str, str] = {
     "QUESTIONS_CONFIG is missing or empty.": "QUESTIONS_CONFIG falta o está vacía.",
     "QUESTIONS_CONFIG has no metrics defined.":
         "QUESTIONS_CONFIG no tiene métricas definidas.",
+    "No metrics are configured yet — check QUESTIONS_CONFIG on the Maintenance page.":
+        "Aún no hay métricas configuradas — revise QUESTIONS_CONFIG en la página de "
+        "Mantenimiento.",
+    # Names the source form, so it keeps the mission's own capitalization of it
+    # (Formulario Semanal), matching how the nightly/weekly forms are referred
+    # to elsewhere in the app.
+    "{metric} — Weekly Form": "{metric} — Formulario Semanal",
     "The questions on the nightly and weekly report forms. Active drives what "
     "the agents process and what most pages show. Toggling here (or adding a "
     "question) does **not** touch the Google Forms until you push below — the "

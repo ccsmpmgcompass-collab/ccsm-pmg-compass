@@ -29,6 +29,7 @@ from app.components.design_system import (
 from app.components.scope_selector import ANY as SCOPE_ANY
 from app.components.scope_selector import render_scope_selectors
 from app.config.flavor_loader import flavor, METRIC_LABELS as _FLAVOR_METRIC_LABELS
+from app.config.metric_catalog import nightly_metrics as _nightly_metrics, weekly_metrics as _weekly_metrics
 from app.config.theme import series_style, CHART_COLORS
 from app.db.queries import (
     compute_effort_score_breakdown,
@@ -69,36 +70,17 @@ MISSION_WIDE_CODE = "ALL"
 MISSION_WIDE_LABEL = t("Whole Mission (all areas)")
 
 # Friendly display names for every metric that feeds the Effectiveness score.
-METRIC_LABELS: dict[str, str] = {
-    # Finding & teaching
-    "new_found":             "New",
-    "nm_lessons":            "Non-Member Lessons",
-    "member_lessons":        "Mate",
-    "rc_lessons":            "Recent-Convert Lessons",
-    "la_lessons":            "Less-Active Lessons",
-    "nm_meaningful":         "NM Meaningful Conversations",
-    "nm_contacted":          "Non-Members Contacted",
-    "nm_texts":              "Non-Member Texts Sent",
-    "mmm_sent":              "MMM Sent",
-    # Love / Share / Invite + referrals
-    "lsi_given":             "Love-Share-Invite Given",
-    "lsi_followups":         "Love-Share-Invite Follow-Ups",
-    "referrals_today":       "Member Referrals",
-    "online_referrals":      "Online Referrals",
-    # Door / attempt activity
-    "nm_doors":              "NM Attempted",
-    "la_knocked":            "Less-Active Attempts",
-    "fellowshipper_knocked": "Fellowshipper Attempts",
-    "aux_knocked":           "Aux / Coordination Attempts",
-    "info_knocked":          "Informational Attempts",
-    "locos_knocked":         "LOCOS Attempts",
-    # Weekly Key Indicators
-    "gate":                  "Gate",
-    "date_metric":           "Date",
-    "pew":                   "Pew",
-    "renew":                 "Renew",
-    "rc_total":              "RC — Could Have Attended",
-}
+#
+# Was a hardcoded dict of Utah Provo's vocabulary — new_found, nm_lessons,
+# lsi_given ("Love-Share-Invite Given"), locos_knocked, pew, gate, renew,
+# rc_total — inherited with the fork. CCSM runs no Love/Share/Invite at all, so
+# none of those keys exist in its data; the labels rendered onto this page
+# anyway, because a label dict does not need matching data to be displayed.
+#
+# Now the generated catalogue. `_FLAVOR_METRIC_LABELS` is itself the live
+# QUESTIONS_CONFIG view (see app/config/flavor_loader._LiveMetricLabels), so
+# this is an alias rather than a fifth copy.
+METRIC_LABELS = _FLAVOR_METRIC_LABELS
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -747,41 +729,28 @@ def _load_scores_mp_effort(exp_fingerprint: tuple = ()) -> pd.DataFrame:
 
 # ── Analyze's metric label dicts (renamed to avoid colliding with Scores' own
 # METRIC_LABELS above) ──────────────────────────────────────────────────────
-_ANALYZE_METRIC_LABELS = {
-    "nm_lessons":          "NM Lessons",
-    "member_lessons":      "Lessons With a Member Participating (MATE)",
-    "rc_lessons":          "RC Lessons",
-    "la_lessons":          "LA Lessons",
-    "lsi_given":           "LSI Given",
-    "lsi_followups":       "LSI Follow-ups",
-    "new_found":           "New People Being Taught (NEW)",
-    "online_referrals":    "Online Referrals",
-    "nm_doors":            "NM Attempted",
-    "nm_contacted":        "NM Contacted",
-    "nm_meaningful":       "NM Meaningful",
-    "mmm_sent":            "MMM Sent",
-    "la_Attempt":          "LA Attempted",
-    "fellowshipper_Attempt": "Fellowshipper Attempted",
-    "aux_Attempt":         "Aux Attempted",
-    "info_Attempt":        "Info Attempted",
-    "locos_Attempt":       "LOCOS Attempted",
-    "referrals_today":     "Referrals Today",
-    "nm_texts":            "NM Texts",
-}
+def _ANALYZE_METRIC_LABELS() -> dict:
+    """Nightly metrics for Analyze's anomaly section — the only ones with
+    area-level daily history to flag an anomaly against.
 
-# Projection dropdown covers every metric — the nightly-form metrics above PLUS
-# the weekly-form KI metrics (pew/date/gate/renew/rc_total), which project from
-# WEEKLY_FORM_RAW. Weekly-form ones are suffixed so it's clear which form drives
-# them. (The anomaly section still uses _ANALYZE_METRIC_LABELS only — weekly-form metrics
-# have no area-level history to flag anomalies against.)
-_ANALYZE_PROJECTION_METRIC_LABELS = {
-    **_ANALYZE_METRIC_LABELS,
-    "pew":         "People at Sacrament Meeting (PEW) — Weekly Form",
-    "date_metric": "Baptismal Date (DATE) — Weekly Form",
-    "gate":        "Baptized & Confirmed (GATE) — Weekly Form",
-    "renew":       "New Members at Sacrament Meeting (RENEW) — Weekly Form",
-    "rc_total":    "RC Total (Weekly Form)",
-}
+    Was another hardcoded Provo catalogue. A function now, because the
+    catalogue is read from the sheet and there is no session at import time.
+    """
+    return dict(_nightly_metrics())
+
+
+def _ANALYZE_PROJECTION_METRIC_LABELS() -> dict:
+    """Everything the projection dropdown covers: the nightly metrics above
+    PLUS the weekly-form Key Indicators, which project from WEEKLY_FORM_RAW.
+
+    Weekly ones are suffixed so it is clear which form drives them — a
+    projection off a once-a-week series behaves very differently from one off
+    daily data, and the reader should not have to know the metric to know that.
+    """
+    labels = dict(_nightly_metrics())
+    for key, name in _weekly_metrics().items():
+        labels[key] = t('{metric} — Weekly Form', metric=name)
+    return labels
 
 # ── Daily Activity's metric groups + cached loaders ────────────────────────────
 # ── Metric groups derived from active flavor ───────────────────────────────────
@@ -1851,12 +1820,22 @@ def _render_daily_tab():
 
 
 def _render_analyze_tab():
+    # The catalogue comes from QUESTIONS_CONFIG, so it CAN be empty — an
+    # unreadable tab, a quota blip, a mission mid-setup. st.selectbox over an
+    # empty options list returns None, and the old hardcoded dict could never
+    # be empty, so every lookup below assumed a real key and this whole page
+    # died with `KeyError: None` before rendering anything.
+    _an_labels = _ANALYZE_METRIC_LABELS()
+    if not _an_labels:
+        st.info(t("No metrics are configured yet — check QUESTIONS_CONFIG on the Maintenance page."))
+        return
+
     _an_c1, _an_c2 = st.columns(2)
     with _an_c1:
         metric_key = st.selectbox(
             t("Metric"),
-            options=list(_ANALYZE_METRIC_LABELS.keys()),
-            format_func=lambda k: _ANALYZE_METRIC_LABELS[k],
+            options=list(_an_labels.keys()),
+            format_func=lambda k: _an_labels.get(k, k),
             key="analyze_metric",
         )
     with _an_c2:
@@ -1872,7 +1851,7 @@ def _render_analyze_tab():
 
     threshold = threshold_pct / 100.0
 
-    metric_label = _ANALYZE_METRIC_LABELS[metric_key]
+    metric_label = _an_labels.get(metric_key, metric_key)
 
     # ══════════════════════════════════════════════════════════════════════════════
     # SECTION 1: Areas of Concern
@@ -1953,14 +1932,20 @@ def _render_analyze_tab():
 
     render_section_label(t("Trend Projection"))
 
+    # Same empty-catalogue guard as the metric picker above — see its comment.
+    _proj_labels = _ANALYZE_PROJECTION_METRIC_LABELS()
+    if not _proj_labels:
+        st.info(t("No metrics are configured yet — check QUESTIONS_CONFIG on the Maintenance page."))
+        return
+
     proj_metric_key = st.selectbox(
         t("Metric to project"),
-        options=list(_ANALYZE_PROJECTION_METRIC_LABELS.keys()),
-        format_func=lambda k: _ANALYZE_PROJECTION_METRIC_LABELS[k],
+        options=list(_proj_labels.keys()),
+        format_func=lambda k: _proj_labels.get(k, k),
         key="analyze_proj_metric",
         help=t("Pick any nightly-form or weekly-form metric to see its projection."),
     )
-    proj_label = _ANALYZE_PROJECTION_METRIC_LABELS[proj_metric_key]
+    proj_label = _proj_labels.get(proj_metric_key, proj_metric_key)
 
     st.caption(
         t("Mission-wide totals from completed weeks (current in-progress week excluded), "
