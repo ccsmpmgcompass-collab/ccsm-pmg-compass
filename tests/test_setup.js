@@ -32,8 +32,9 @@ const GS_FILES = [
   'CCSM_Agent1A.gs', 'CCSM_Agent1B.gs', 'CCSM_Agent1C.gs', 'CCSM_Agent2.gs',
   'CCSM_Agent3.gs', 'CCSM_Agent4.gs', 'CCSM_Agent5A.gs', 'CCSM_Agent5B.gs',
   'CCSM_Agent6.gs', 'CCSM_AgentDuplicate.gs', 'CCSM_AgentEscalation.gs',
-  'CCSM_AgentQA.gs', 'CCSM_AgentReminder.gs', 'CCSM_AgentScores.gs',
-  'CCSM_AgentValidation.gs', 'CCSM_SeedContent.gs', 'CCSM_Setup.gs',
+  'CCSM_AgentMissionReport.gs', 'CCSM_AgentQA.gs', 'CCSM_AgentReminder.gs',
+  'CCSM_AgentScores.gs', 'CCSM_AgentValidation.gs', 'CCSM_SeedContent.gs',
+  'CCSM_Setup.gs',
 ];
 
 // The two installable form-submit triggers. Not on CCSM_TRIGGER_SCHEDULE
@@ -71,6 +72,7 @@ const EXPECTED_TRIGGERS = [
   { fn: 'runAgentEscalation', everyDays: 1,        atHour: 7 },
   { fn: 'runAgent4',          onWeekDay: 'MONDAY', atHour: 7 },
   { fn: 'runAgentScores',     onWeekDay: 'MONDAY', atHour: 0,  nearMinute: 5 },
+  { fn: 'runAgentMissionReport', onWeekDay: 'MONDAY', atHour: 22 },
 ];
 
 scope.setupAllCcsmTriggers();
@@ -215,7 +217,8 @@ console.log('setup converge-to-table OK');
 //     trigger with the stale schedule.
 // ===========================================================================
 ['setupReminderTrigger', 'setupEscalationTriggers', 'setupSuggestionNotifyTrigger',
- 'setupAgent1ATrigger', 'setupAgent4Trigger', 'setupAgent5ATrigger']
+ 'setupAgent1ATrigger', 'setupAgent4Trigger', 'setupAgent5ATrigger',
+ 'setupAgentMissionReportTrigger']
   .forEach((name) => {
     assert.strictEqual(typeof scope[name], 'function', name + ' must still exist');
     assert.strictEqual(scope[name].length, 0, name + ' must be zero-argument');

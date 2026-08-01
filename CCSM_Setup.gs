@@ -36,6 +36,7 @@
  *   runAgentEscalation   Daily     7:00 AM   escalation System 1 + System 2
  *   runAgent4            Monday    7:00 AM   system health check + self-heal
  *   runAgentScores       Monday   12:05 AM   weekly area scores
+ *   runAgentMissionReport Monday  10:00 PM   mission-wide numbers for AP/MP
  *   runAgent2            (none)              MANUAL — run once per transfer
  *
  * Plus TWO installable form-submit triggers, which are NOT time-based and so
@@ -134,6 +135,12 @@
  *   replacing the canonical schedule with a stale one. See "LEGACY
  *   PER-AGENT INSTALLERS" below.
  *
+ *   setupAgentMissionReportTrigger() — brand new (Phase 6, no legacy
+ *   history to drift from), but built as a shim from day one rather than a
+ *   direct installer: after finding three direct installers drift silently
+ *   above, "install directly, hope it never gets edited independently" is
+ *   the pattern to stop repeating, not extend.
+ *
  *   setupAgentDuplicateTrigger(), setupQAFormTrigger() — these two still
  *   install directly, and must: they create the form-submit triggers in
  *   CCSM_FORM_SUBMIT_TRIGGERS, which setupAllCcsmTriggers() installs by
@@ -207,7 +214,8 @@ var CCSM_TRIGGER_SCHEDULE = [
   { fn: 'runAgentDuplicate',  everyDays: 1,          hour: 21, minute: 30,   describe: 'Daily 9:30 PM' },
   { fn: 'runAgentEscalation', everyDays: 1,          hour: 7,                describe: 'Daily 7:00 AM' },
   { fn: 'runAgent4',          weekDay: 'MONDAY',     hour: 7,                describe: 'Monday 7:00 AM' },
-  { fn: 'runAgentScores',     weekDay: 'MONDAY',     hour: 0,  minute: 5,    describe: 'Monday 12:05 AM' }
+  { fn: 'runAgentScores',     weekDay: 'MONDAY',     hour: 0,  minute: 5,    describe: 'Monday 12:05 AM' },
+  { fn: 'runAgentMissionReport', weekDay: 'MONDAY',  hour: 22,               describe: 'Monday 10:00 PM (mission-wide numbers, AP/MP)' }
 ];
 
 /**
