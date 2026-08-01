@@ -37,14 +37,25 @@ from app.db.queries import (
     get_notes, get_question_metrics, get_config_value,
 )
 
-# Leadership-relevant metrics used for computed leaderboards / standouts.
-# (key in LIVE_SNAPSHOT/zone data, human label)
-_KEY_METRICS = [
-    ("nm_lessons", "NM Lessons"),
-    ("new_found", "New People Found"),
-    ("nm_meaningful", "NM Meaningful Conversations"),
-    ("member_lessons", "Member Lessons"),
-]
+def _key_metrics() -> list[tuple[str, str]]:
+    """Leadership-relevant metrics for computed leaderboards / standouts, as
+    (key in LIVE_SNAPSHOT/zone data, human label).
+
+    Was a hardcoded list of four Utah Provo metrics, inherited with the fork,
+    none of them a question on a CCSM form. Feeding those to the model is worse
+    than feeding it nothing: it produces fluent, confident answers about metrics
+    this mission has never collected, and a missionary has no way to tell that
+    apart from a real one.
+
+    Now the mission's own weekly Key Indicators, from QUESTIONS_CONFIG.
+
+    (The old keys are deliberately not named here — tests/
+    test_gemini_prompt_vocabulary.py scans this whole file for them, and an
+    exemption for docstrings would be an exemption a future prompt string could
+    hide behind.)
+    """
+    from app.config.metric_catalog import key_indicator_metrics
+    return list(key_indicator_metrics().items())
 
 _MAX_OUTPUT_TOKENS = 8192
 
@@ -399,11 +410,30 @@ def load_weekly_trends_context() -> str:
                         pass
                 lines.append(f"  week ending {week}: " + ", ".join(vals) + _partial_tag(week, monday))
             if lines:
+                # The glossary is built from QUESTIONS_CONFIG, not written out.
+                # It used to read "pew=brought friend to church,
+                # date_metric=baptismal dates set, gate=baptisms,
+                # renew=reactivations, rc_total=recent converts" — Provo's
+                # metrics, none of which CCSM collects. Handing a model a
+                # glossary for data it will never see is how you get fluent,
+                # confident answers about things that did not happen, and a
+                # missionary cannot tell those from real ones.
+                #
+                # `_real` is what the companionship achieved; `_meta` is the
+                # goal they set for themselves. The model is told so explicitly,
+                # because summing or conflating them would report the mission as
+                # having met targets it did not.
+                from app.config.metric_catalog import metric_options
+                _cat = metric_options(include_rates=False)
+                _glossary = ", ".join(
+                    f"{c}={_cat[c]}" for c in ki_cols if c in _cat
+                )
                 parts.append(
-                    "Mission-wide weekly baptism-pipeline KIs from the weekly form "
-                    "(pew=brought friend to church, date_metric=baptismal dates set, "
-                    "gate=baptisms, renew=reactivations, rc_total=recent converts; "
-                    "last 8 weeks, oldest first):\n"
+                    "Mission-wide weekly Key Indicators from the weekly form"
+                    + (f" ({_glossary})" if _glossary else "")
+                    + ". Keys ending _real are what the companionship ACHIEVED; "
+                      "keys ending _meta are the GOAL they set for that week — "
+                      "never add the two together. Last 8 weeks, oldest first:\n"
                     + "\n".join(lines)
                 )
 
@@ -507,7 +537,7 @@ def load_analytics_context() -> str:
         # ── Zone leaderboards (last 7 days) ──────────────────────────────────
         zone_df = get_zone_totals()
         if not zone_df.empty and "metric_key" in zone_df.columns:
-            for key, name in _KEY_METRICS:
+            for key, name in _key_metrics():
                 sub = zone_df[zone_df["metric_key"] == key]
                 if sub.empty:
                     continue
@@ -522,7 +552,7 @@ def load_analytics_context() -> str:
         snap = get_live_snapshot()
         if not snap.empty:
             standout_blocks = []
-            for key, name in _KEY_METRICS:
+            for key, name in _key_metrics():
                 col = f"{key}_7d"
                 if col not in snap.columns:
                     continue
@@ -549,31 +579,45 @@ def load_analytics_context() -> str:
             ki_pool = ki_sorted[ki_sorted["week_end_date"] < monday]  # completed weeks only
             if ki_pool.empty:
                 ki_pool = ki_sorted  # fall back if no completed week yet
-            active = ki_pool[(ki_pool[["pew", "date_metric", "gate", "renew", "rc_total"]].sum(axis=1)) > 0]
-            row = (active.iloc[-1] if not active.empty else ki_pool.iloc[-1])
-            wk = str(row["week_end_date"])
-            pew, dt, gate = int(row["pew"]), int(row["date_metric"]), int(row["gate"])
-            renew, rc = int(row["renew"]), int(row["rc_total"])
-            found = None
-            if not tr.empty and "new_found" in tr.columns:
-                m = tr[tr["week_end_date"] == wk]
-                if not m.empty:
-                    found = int(m.iloc[-1]["new_found"])
-            funnel = []
-            if found is not None:
-                funnel.append(f"New people found {found}")
-            funnel += [f"church attendance (Pew) {pew}", f"baptismal dates set (Date) {dt}",
-                       f"baptisms (Gate) {gate}", f"reactivations (Renew) {renew}",
-                       f"recent converts taught (RC) {rc}"]
-            convs = []
-            if found and dt:
-                convs.append(f"Found->Date {round(dt / found * 100)}%")
-            if dt and gate:
-                convs.append(f"Date->Baptism {round(gate / dt * 100)}%")
-            block = f"Baptism pipeline for the latest completed week (ending {wk}): " + " | ".join(funnel)
-            if convs:
-                block += "\n  Conversion rates: " + ", ".join(convs)
-            parts.append(block)
+            # Built from the mission's OWN Key Indicators. This block used to
+            # index ["pew","date_metric","gate","renew","rc_total"] directly —
+            # Provo's columns — which raises KeyError against CCSM's frame, and
+            # the bare `except Exception: return ""` at the end of this function
+            # swallowed it, so the model silently received NO analytics context
+            # at all and answered from the raw tables alone.
+            from app.config.metric_catalog import key_indicator_metrics
+            ki_labels = key_indicator_metrics()
+            present = [k for k in ki_labels if k in ki_pool.columns]
+            if present:
+                active = ki_pool[ki_pool[present].sum(axis=1) > 0]
+                row = (active.iloc[-1] if not active.empty else ki_pool.iloc[-1])
+                wk = str(row["week_end_date"])
+
+                def _n(key):
+                    try:
+                        return int(float(row.get(key, 0)))
+                    except (TypeError, ValueError):
+                        return 0
+
+                funnel = [f"{ki_labels[k]} {_n(k)}" for k in present]
+
+                # Conversion rates only between stages that genuinely feed one
+                # another. These are per-window counts, not a strict funnel — a
+                # later stage CAN exceed an earlier one, so a "rate" over 100%
+                # is real data, not a bug. Only ratios the mission itself tracks
+                # are shown, and only when the denominator is non-zero.
+                convs = []
+                _date, _bap = "ki_baptismal_date_real", "ki_baptized_confirmed_real"
+                if _date in present and _bap in present and _n(_date):
+                    convs.append(
+                        f"{ki_labels[_date]} -> {ki_labels[_bap]}: "
+                        f"{round(_n(_bap) / _n(_date) * 100)}%"
+                    )
+                block = (f"Key Indicators for the latest completed week (ending {wk}): "
+                         + " | ".join(funnel))
+                if convs:
+                    block += "\n  Conversion rates: " + ", ".join(convs)
+                parts.append(block)
 
         # ── Compliance extremes ──────────────────────────────────────────────
         comp = get_alltime_compliance()
@@ -623,9 +667,9 @@ def load_supplemental_contexts() -> dict:
 _APP_KNOWLEDGE = (
     "APP PAGES (what each does and where to find things):\n"
     "- Home: the Mission Assistant chatbot (this conversation). Ask anything about mission data, procedures, performance, people, or how the app works. An 'App Guide' expander lists every page.\n"
-    "- Dashboard: whole-mission executive snapshot — weekly KPIs vs goals, Pew/Date/Gate/Renew key indicators, a ranked zone leaderboard, two 8-week trend charts, daily activity, effort breakdown, and submission compliance (nightly + weekly calendars, combined score, per-area detail heatmap). Sourced from DASHBOARD_SUMMARY (refreshed daily at noon by Agent5A). Mission level only — no per-area drill-down.\n"
+    "- Dashboard: whole-mission executive snapshot — weekly KPIs vs goals, the mission Key Indicators, a ranked zone leaderboard, two 8-week trend charts, daily activity, effort breakdown, and submission compliance (nightly + weekly calendars, combined score, per-area detail heatmap). Sourced from DASHBOARD_SUMMARY (refreshed daily at noon by Agent5A). Mission level only — no per-area drill-down.\n"
     "- Goals: every area's progress against its weekly and transfer goals, color-coded (green=met, yellow=close, red=behind). Goals are edited inline here and stored in GOALS_CONFIG.\n"
-    "- Breakdowns: one page with Zone / District / Area selectors — the deepest selection is what gets broken down. Zone or district: period comparisons across that group's areas, the Pew/Date/Gate pipeline, and per-area trends. Area: a compliance calendar (which nights they submitted), anomaly flags (metric drops vs a 4-week baseline), and that area's notes. (Replaced the former separate Zone Breakdown and Area Breakdown pages.)\n"
+    "- Breakdowns: one page with Zone / District / Area selectors — the deepest selection is what gets broken down. Zone or district: period comparisons across that group's areas, the Key Indicator pipeline, and per-area trends. Area: a compliance calendar (which nights they submitted), anomaly flags (metric drops vs a 4-week baseline), and that area's notes. (Replaced the former separate Zone Breakdown and Area Breakdown pages.)\n"
     "- Scores: three tabs. Scores — weekly composite scores per area across four dimensions (Effort, Skill, KI, Effectiveness), weighting configurable with an inline editor. Daily Activity — a day-by-day explorer of the nightly form across every metric, area, and date (from DAILY_LOG). Analyze — automatic anomaly detection (areas down >30% vs their 4-week baseline) and next-week projections via linear regression. (Merged into one page July 2026.)\n"
     "- Finding Funnel: the finding-to-baptism pipeline built from uploaded Tableau CSV exports, plus area rankings. Requires a manual Tableau upload.\n"
     "- Notes: area notes with tags, full-text search, and follow-up-date email reminders.\n"
@@ -650,26 +694,30 @@ _APP_KNOWLEDGE = (
     "5. The app reads everything live from Google Sheets through a service account; there is no separate database.\n"
     "\n"
     "FORMS & CADENCE:\n"
-    "- Nightly form: submitted each evening; due before the 9:30 PM Mountain Time cutoff to count toward that day's compliance.\n"
-    "- Weekly form: submitted Sunday night; carries the baptism-pipeline KIs (Pew/Date/Gate/Renew/RC).\n"
+    "- Nightly form: submitted each evening; due before the 9:30 PM mission-local cutoff to count toward that day's compliance.\n"
+    "- Weekly form: submitted Sunday night; carries the seven Key Indicators, each as a Real (achieved) and a Meta (goal) value.\n"
     "\n"
-    "KEY METRICS (plain meanings):\n"
-    "- NM Lessons: lessons taught to non-members (friends) this week.\n"
-    "- NM Attempted: contact attempts with non-members (doors, texts, approaches).\n"
-    "- New Friends Found: new people added to the teaching pool this week.\n"
-    "- Pew [KI]: a friend attended sacrament meeting / church.\n"
-    "- Date [KI]: a friend received a baptismal date.\n"
-    "- Gate [KI]: a friend attended their own baptism.\n"
-    "- Renew: inactive members reactivated this week.\n"
-    "- RC: recent converts still receiving missionary lessons.\n"
-    "Baptism pipeline order: New Friend Found -> NM Lessons -> Date -> Gate -> Baptism.\n"
+    # The metric glossary is NOT written here. It used to list Provo's — NM
+    # Lessons, NM Attempted, Pew, Date, Gate, Renew, RC, plus a "baptism
+    # pipeline order" over metrics CCSM does not collect. Handing a model
+    # definitions for data it will never see produces fluent, confident answers
+    # about things that never happened, which a missionary cannot distinguish
+    # from real ones. load_metrics_glossary() supplies the real list from
+    # QUESTIONS_CONFIG at prompt-assembly time instead.
+    "KEY METRICS: see the METRICS GLOSSARY data section, which is generated from "
+    "this mission's own form configuration. Do not describe or reason about any "
+    "metric that is not listed there, and never infer a metric's meaning from "
+    "its name alone.\n"
+    "Metric keys ending _real are what a companionship ACHIEVED that week; keys "
+    "ending _meta are the GOAL they set for themselves. Never add the two "
+    "together, and never report a _meta value as an accomplishment.\n"
     "\n"
-    "MISSION STRUCTURE: organized into 8 zones, subdivided into districts and "
+    "MISSION STRUCTURE: organized into zones, subdivided into districts and "
     "areas (each area is a companionship). Hierarchy is Mission -> Zone -> "
     "District -> Area. Leadership roles: Mission President (MP), Assistant to the "
     "President (AP), Zone Leader (ZL), Sister Training Leader (STL), District "
-    "Leader (DL). For the exact current list and count of areas, use the "
-    "MISSIONARY ASSIGNMENTS data section — do not state a specific area count "
+    "Leader (DL). For the exact current list and count of zones and areas, use the "
+    "MISSIONARY ASSIGNMENTS data section — do not state a zone or area count "
     "from memory."
 )
 
@@ -722,7 +770,7 @@ Knowledge Base entries, not just the first match.
 - Rankings, "who's best/worst", pipeline, conversion rates, standouts -> \
 COMPUTED ANALYTICS (already calculated for you — use it, don't re-derive).
 - Current numbers -> CURRENT MISSION DATA. Trends / "over time" / "vs last week" \
--> HISTORICAL WEEKLY TRENDS. Baptism KIs (Pew/Date/Gate/Renew/RC) -> the \
+-> HISTORICAL WEEKLY TRENDS. Key Indicators -> the \
 weekly-form KI lines and the pipeline block.
 - Per-area goals -> PER-AREA WEEKLY GOALS. Who serves where / leadership -> \
 MISSIONARY ASSIGNMENTS. Recent submissions -> RECENT NIGHTLY ACTIVITY. Overall \
@@ -733,8 +781,11 @@ ANSWER LIKE A SHARP CHIEF OF STAFF (this is what makes leaders trust you):
 - LEAD WITH THE ANSWER. First sentence is the bottom line, not preamble.
 - Bold the key numbers and names with **markdown** so a busy leader can skim.
 - Make every number MEAN something: pair it with a rank, a comparison, a trend, \
-or a share of the whole ("**528** NM Lessons — led by **Kings Peak (71)**, up \
-sharply from last week"). A number with no context is a missed opportunity.
+or a share of the whole ("**528** lessons with friends — led by **that zone \
+(71)**, up sharply from last week"). A number with no context is a missed \
+opportunity. Use metric and zone names taken from the data sections you were \
+given, never from this example: the example's shape is what matters, and \
+inventing a plausible-sounding zone or metric is the one thing you must not do.
 - For BROAD or STRATEGIC questions ("give me a briefing", "what should I focus \
 on", "what's concerning", "how are we doing") deliver a tight executive briefing \
 with short bold headers, e.g.:

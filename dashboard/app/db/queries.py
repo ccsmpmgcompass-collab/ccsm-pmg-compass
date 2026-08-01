@@ -635,6 +635,48 @@ def get_weekly_ki_totals(n_weeks: int = 52) -> pd.DataFrame:
     return grouped.sort_values("week_end_date").tail(n_weeks)
 
 
+def get_nightly_weekly_trends(n_weeks: int = 52) -> pd.DataFrame:
+    """Mission-wide weekly totals for the NIGHTLY metrics, from DAILY_LOG.
+
+    CCSM's WEEKLY_KI is structurally different from Utah Provo's. Provo derives
+    WEEKLY_KI from DAILY_LOG, so it holds nightly rollups and a nightly metric
+    can be trended straight off it. CCSM's CCSM_Agent5A.gs replaced that
+    wholesale (see its header, "STRUCTURAL CHANGE vs Provo"): WEEKLY_KI is a
+    parse of the weekly form's Real/Meta columns, so it holds ONLY the seven
+    ki_* pairs and contains no nightly metric at all.
+
+    Nightly metrics therefore have to be bucketed from DAILY_LOG here. Without
+    this, every nightly metric routed to get_weekly_ki_trends() and found no
+    such column — a projection or trend of nothing.
+
+    Weeks end Sunday, matching the Mon–Sun reporting week used everywhere else
+    (see exclude_current_week and CCSM_Agent1A's own week calculation).
+    """
+    df = get_daily_log(days=n_weeks * 7 + 14)
+    if df.empty or "Date" not in df.columns:
+        return pd.DataFrame()
+
+    d = pd.to_datetime(df["Date"], errors="coerce")
+    keep = d.notna()
+    if not keep.any():
+        return pd.DataFrame()
+    df = df[keep].copy()
+    d = d[keep]
+    # Snap each day to the Sunday that ENDS its Mon–Sun week: Monday=0 … so
+    # (6 - weekday) days forward always lands on that week's Sunday.
+    df["week_end_date"] = (
+        d + pd.to_timedelta(6 - d.dt.weekday, unit="D")
+    ).dt.strftime("%Y-%m-%d")
+
+    meta = {"Date", "Area", "Zone", "District", "week_end_date"}
+    metric_cols = [c for c in df.columns if c not in meta]
+    if not metric_cols:
+        return pd.DataFrame()
+    numeric = _num(df, metric_cols)
+    grouped = numeric.groupby("week_end_date")[metric_cols].sum(numeric_only=True).reset_index()
+    return grouped.sort_values("week_end_date").tail(n_weeks)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # DAILY_LOG
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2828,7 +2870,14 @@ def project_next_week(metric_key: str, n_weeks: int = 12) -> dict:
     if metric_key in _weekly_form_metric_keys():
         trends = get_weekly_ki_totals(n_weeks * 2)
     else:
+        # Nightly metrics bucket from DAILY_LOG, NOT from WEEKLY_KI: CCSM's
+        # WEEKLY_KI holds only the weekly form's ki_* pairs (see
+        # get_nightly_weekly_trends), so the old route found no such column and
+        # produced a confident-looking projection of nothing. WEEKLY_KI is still
+        # tried first for anything that genuinely lives there.
         trends = get_weekly_ki_trends(n_weeks * 2)
+        if trends.empty or metric_key not in trends.columns:
+            trends = get_nightly_weekly_trends(n_weeks * 2)
     if trends.empty or metric_key not in trends.columns:
         return {}
 
