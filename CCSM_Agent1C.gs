@@ -162,6 +162,56 @@ function a1c_scoreboardLabel_(key) {
   return A1C_METRIC_LABELS[key] || key;
 }
 
+// Rate-metric formulas, code-grounded from A1A_RATE_METRICS' own num/den
+// keys (CCSM_Agent1A.gs) -- not translated from Provo's glossary, which
+// describes metrics CCSM doesn't collect. Count metrics get no gloss: their
+// A1C_METRIC_LABELS are already plain, unabbreviated Spanish, nothing to
+// decode.
+var A1C_GLOSS = {
+  contact_rate: 'Contactos Logrados ÷ Contactos Intentados',
+  mc_rate:      'Conversaciones Significativas ÷ Contactos Logrados',
+  lesson_rate:  'Lecciones a Amigos ÷ Contactos Intentados',
+  close_rate:   'Invitaciones al Bautismo ÷ Lecciones a Amigos',
+  effort_score: 'Todo=3, La mayor parte=2, Algo=1 — promedio de la semana'
+};
+
+/**
+ * Display name + formula in parentheses when a gloss exists, e.g.
+ *   "Tasa de Contacto (Contactos Logrados ÷ Contactos Intentados)".
+ * Returns ESCAPED html (callers insert it raw).
+ */
+function a1c_glossedDisplay_(key, display) {
+  var full = A1C_GLOSS[key];
+  if (!full || full === display) return a1c_esc(display);
+  return a1c_esc(display) + ' <span style="font-weight:400;">(' + a1c_esc(full) + ')</span>';
+}
+
+// Bottom-of-letter glossary: generic symbols/abbreviations used anywhere in
+// this email, so nothing needs a lookup outside the letter itself. Kept
+// short and code-grounded -- CCSM's metric labels (A1C_METRIC_LABELS) are
+// already unabbreviated Spanish, so only the rate-metric formulas and the
+// handful of generic symbols actually need decoding.
+var A1C_GLOSSARY = [
+  ['Δ',              'cambio contra la semana pasada'],
+  ['Prom Transfer',  'promedio durante este transfer'],
+  ['Tasa de Contacto',                'Contactos Logrados ÷ Contactos Intentados'],
+  ['Tasa de Conversaciones Significativas', 'Conversaciones Significativas ÷ Contactos Logrados'],
+  ['Tasa de Lecciones',               'Lecciones a Amigos ÷ Contactos Intentados'],
+  ['Tasa de Invitación Bautismal',    'Invitaciones al Bautismo ÷ Lecciones a Amigos'],
+  ['Esfuerzo',        "Promedio ponderado del reporte nocturno — Todo=3, La mayor parte=2, Algo=1"]
+];
+
+function a1c_buildGlossary_(C, weekEnd) {
+  var parts = [];
+  A1C_GLOSSARY.forEach(function(p) {
+    parts.push('<strong>' + a1c_esc(p[0]) + '</strong> = ' + a1c_esc(p[1]));
+  });
+  return '<div style="margin:20px 4px 0;padding:10px 12px;background:' + C.bgLight +
+         ';border-radius:6px;font-size:10px;color:' + C.muted + ';line-height:1.7;">' +
+         '<div style="font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">' +
+         a1c_esc(a1c_saltTitle_('Qué significan las abreviaturas', weekEnd)) + '</div>' + parts.join(' &nbsp;·&nbsp; ') + '</div>';
+}
+
 // Scoreboard groups follow the same Buscar/Ensenar/Invitar funnel language
 // already used by this file's _LEADERSHIP_MSGS themes. Named metrics first;
 // any OTHER numeric nightly metric the mission tracks (dynamic via
@@ -567,6 +617,10 @@ function a1c_buildEmail(person, areas, summaries, weekEnd) {
     }
   });
 
+  // Glossary — every letter, at the very bottom of the body (covers the
+  // personal area section(s) above and any leadership section below).
+  html += a1c_buildGlossary_(C, weekEnd);
+
   // Footer
   html += '<div style="margin-top:24px;padding:12px 16px;background:' + C.bgLight + ';border-radius:0 0 8px 8px;' +
           'font-size:11px;color:' + C.muted + ';text-align:center;">' +
@@ -670,11 +724,11 @@ function a1c_buildAreaSection(areaName, area, weekEnd, C) {
   var html = '<div style="margin:16px 0;padding:0 4px;">';
   html += a1c_buildAreaHeader_(areaName, area, C);
 
-  if (s)  html += a1c_buildMessageBlock('💪 Fortaleza — ' + a1c_esc(s.display),  area.msg_strength1, C, C.green,
+  if (s)  html += a1c_buildMessageBlock('💪 Fortaleza — ' + a1c_glossedDisplay_(s.key, s.display),  area.msg_strength1, C, C.green,
                                          a1c_statLine_(s, der, false) + a1c_buildGoalBar_(s, C));
-  if (s2) html += a1c_buildMessageBlock('💪 Fortaleza — ' + a1c_esc(s2.display), area.msg_strength2, C, C.green,
+  if (s2) html += a1c_buildMessageBlock('💪 Fortaleza — ' + a1c_glossedDisplay_(s2.key, s2.display), area.msg_strength2, C, C.green,
                                          a1c_statLine_(s2, der, false) + a1c_buildGoalBar_(s2, C));
-  if (g)  html += a1c_buildMessageBlock('📈 Área de Crecimiento — ' + a1c_esc(g.display), area.msg_growth, C, C.blue,
+  if (g)  html += a1c_buildMessageBlock('📈 Área de Crecimiento — ' + a1c_glossedDisplay_(g.key, g.display), area.msg_growth, C, C.blue,
                                          a1c_statLine_(g, der, true) + a1c_buildGoalBar_(g, C));
 
   html += a1c_buildYouVsYou_(g, der, C);
@@ -682,6 +736,7 @@ function a1c_buildAreaSection(areaName, area, weekEnd, C) {
   html += a1c_buildScoreboard_(area.stats, der, C, weekEnd);
   html += a1c_buildGoalGrid_(area.ranked, C, weekEnd);
   html += a1c_buildFunnelStrip_(der && der.funnel, C, weekEnd);
+  html += a1c_buildConsistencyBlock_(der && der.consistency, C, weekEnd);
 
   html += '</div>';
   html += '<hr style="border:none;border-top:1px solid #e5e7eb;margin:8px 0;">';
@@ -706,7 +761,7 @@ function a1c_buildTrendChart_(trend, C) {
   var html = '<div style="margin:18px 0 6px;">';
   html += '<div style="font-size:12px;font-weight:700;color:' + C.header +
           ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">📊 ' +
-          a1c_esc(trend.display) + ' — últimas 8 semanas</div>';
+          a1c_glossedDisplay_(trend.key, trend.display) + ' — últimas 8 semanas</div>';
   html += '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>';
   var wPct = Math.floor(100 / pts.length);
   pts.forEach(function(p, i) {
@@ -764,7 +819,7 @@ function a1c_buildGoalGrid_(ranked, C, weekEnd) {
     var caption = reached ? 'Meta alcanzada ✓' : pct + '% de la meta';
     var h = '<div style="margin:0 0 10px;">';
     h += '<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:3px;">' +
-         a1c_esc(p.display) + '</div>';
+         a1c_glossedDisplay_(p.key, p.display) + '</div>';
     h += '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:10px;">';
     h += '<tr><td style="width:38px;color:' + C.muted + ';padding-right:6px;">Meta</td>' +
          '<td><div style="background:' + C.border + ';border-radius:5px;">' +
@@ -831,7 +886,7 @@ function a1c_buildYouVsYou_(pick, derived, C) {
   var html = '<div style="margin:14px 0 6px;">';
   html += '<div style="font-size:12px;font-weight:700;color:' + C.header +
           ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">🆚 Tú contra Ti — ' +
-          a1c_esc(pick.display) + '</div>';
+          a1c_glossedDisplay_(key, pick.display) + '</div>';
   html += '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:11px;">';
   rows.forEach(function(r) {
     html += '<tr><td style="padding:3px 8px 3px 0;color:#374151;white-space:nowrap;width:90px;">' +
@@ -881,6 +936,47 @@ function a1c_buildFunnelStrip_(f, C, weekEnd) {
     html += '<div style="font-size:10px;color:' + C.muted + ';margin-top:6px;">' +
             f.lessonsPerNewFriend + ' lecciones por cada nueva amistad encontrada</div>';
   }
+  html += '</div>';
+  return html;
+}
+
+/**
+ * Day-by-day reporting grid + segmented effort bar (Todo/La mayor parte/
+ * Algo shares of reported nights). Supplements the compact days-reported
+ * chip already in a1c_buildAreaHeader_ with the full picture.
+ */
+function a1c_buildConsistencyBlock_(cons, C, weekEnd) {
+  if (!cons) return '';
+  var html = '<div style="margin:16px 0 6px;">';
+  html += '<div style="font-size:12px;font-weight:700;color:' + C.header +
+          ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">💪 Esfuerzo y Constancia' +
+          (a1c_shortDate_(weekEnd) ? ' · ' + a1c_esc(a1c_shortDate_(weekEnd)) : '') + '</div>';
+  html += '<table cellpadding="0" cellspacing="0"><tr style="font-size:10px;text-align:center;">';
+  cons.dayFlags.forEach(function(f) {
+    var bg = f.reported ? '#16a34a' : '#d1d5db';
+    html += '<td style="padding:0 3px;"><div style="width:26px;padding:5px 0;background:' + bg +
+            ';color:white;border-radius:4px;font-weight:700;">' + a1c_esc(f.label) + '</div></td>';
+  });
+  html += '<td style="padding-left:10px;font-size:11px;color:#374151;">' + cons.daysReported + '/7 reportes nocturnos';
+  if (cons.streak > 1) html += '&nbsp;·&nbsp;🔥 racha de ' + cons.streak + ' días';
+  html += '</td></tr></table>';
+  // Segmented effort bar -- Todo (green) / La mayor parte (blue) / Algo
+  // (amber) shares of reported nights. The text line below is its legend.
+  var effTotal = (cons.effortAll || 0) + (cons.effortMost || 0) + (cons.effortSome || 0);
+  function seg(n, color) {
+    if (!n) return '';
+    var w = Math.round(n / effTotal * 100);
+    return '<td width="' + w + '%" style="background:' + color + ';height:10px;font-size:1px;line-height:1px;">&nbsp;</td>';
+  }
+  if (effTotal > 0) {
+    html += '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:1px 0;margin-top:8px;"><tr>' +
+            seg(cons.effortAll, '#16a34a') + seg(cons.effortMost, '#2563eb') + seg(cons.effortSome, '#b45309') +
+            '</tr></table>';
+  }
+  html += '<div style="font-size:11px;color:#374151;margin-top:8px;">Esfuerzo en el altar: ' +
+    '<strong style="color:#16a34a;">Todo ×' + cons.effortAll + '</strong> · ' +
+    '<strong style="color:#2563eb;">La mayor parte ×' + cons.effortMost + '</strong> · ' +
+    '<strong style="color:#b45309;">Algo ×' + cons.effortSome + '</strong></div>';
   html += '</div>';
   return html;
 }
