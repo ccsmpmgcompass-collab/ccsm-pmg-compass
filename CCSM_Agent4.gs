@@ -8,8 +8,9 @@
  * names are kept identical to the Provo original so future diffs stay
  * readable.
  *
- * SCHEDULE: Every Tuesday and Saturday at 7:00 AM
- *           Run setupAgent4Trigger() ONCE to create both triggers.
+ * SCHEDULE: Every Monday at 7:00 AM (see CCSM_Setup.gs CCSM_TRIGGER_SCHEDULE)
+ *           Run setupAllCcsmTriggers() to install it — setupAgent4Trigger()
+ *           below is a deprecated shim kept only for the editor's dropdown.
  *
  * WHAT IT DOES:
  *   1. Runs 14 system health checks across all tabs and settings

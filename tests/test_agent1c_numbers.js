@@ -121,6 +121,21 @@ assert.ok(body.includes('Contactos Intentados'), 'expected a real CCSM metric la
 assert.ok(!/Goal reached|% of goal|This Wk|Last Wk|Xfer Avg|Metric<\/th>/.test(body),
   'no English scoreboard/goal-bar strings may leak into the Spanish letter');
 
-console.log('scoreboard OK');
+// ===========================================================================
+// Regression coverage for two real shipped bugs (found in code review,
+// 2026-08-01):
+//   1. effort_score was excluded from the "Otros" bucket but never placed
+//      in any named group either, so it silently never appeared anywhere
+//      in "Todos los Indicadores" despite being one of the 5 core metrics.
+//   2. The raw junk 'effort' key (CHOICE-type NIGHTLY_FORM_RAW text,
+//      always 0 as a number) was NOT excluded from the dynamic "any other
+//      numeric stats key" scan, so it leaked into the scoreboard as a
+//      literal untranslated English row reading "effort | 0".
+// ===========================================================================
+assert.ok(body.includes('ESFUERZO'), 'expected the new dedicated Esfuerzo scoreboard group');
+assert.ok(body.includes('Nivel de Esfuerzo'), 'expected effort_score\'s real Spanish label to actually render in the scoreboard');
+assert.ok(!/>effort</.test(body), 'the raw junk "effort" key must never render as its own scoreboard row');
+
+console.log('scoreboard OK (including effort_score visibility + junk-key regression checks)');
 
 console.log('agent1c numbers OK');

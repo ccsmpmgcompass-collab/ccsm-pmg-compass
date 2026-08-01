@@ -89,7 +89,22 @@ assert.ok(body.includes('Prom. Transfer'), 'expected the "Prom. Transfer" row');
 assert.ok(body.includes('Tu Mejor'), 'expected the "Tu Mejor" row');
 assert.ok(!/This Week|Last Week|Transfer Avg|Your Best/.test(body), 'no English You-vs-You labels may leak');
 
-console.log('You-vs-You OK');
+// ===========================================================================
+// Regression coverage for a real shipped bug (found in code review,
+// 2026-08-01): a1a_loadMultiWeekHistory never derived rate metrics per
+// week, so You-vs-You's "Semana Pasada"/"Prom. Transfer"/"Tu Mejor" rows
+// for a rate-metric growth pick (close_rate here) silently repeated THIS
+// week's own value instead of real history. Known close_rate per week from
+// the friend_lessons/baptismal_invitations numbers seeded above: twoAgo
+// 0/7=0%, lastWeek 1/14=7% (rounds from 7.14), current 1/20=5%. Both the
+// real last-week value (7%) and the current value (5%) must appear,
+// proving the panel shows genuinely different historical numbers, not the
+// current week repeated on every row.
+// ===========================================================================
+assert.ok(body.includes('5%'), 'expected the current week\'s real close_rate (5%) on the "Esta Semana" row');
+assert.ok(body.includes('7%'), 'expected last week\'s REAL close_rate (7%, from 1/14) on "Semana Pasada"/"Tu Mejor" -- not a repeat of this week\'s 5%');
+
+console.log('You-vs-You OK (including real-history regression check)');
 
 // ===========================================================================
 // Funnel strip: title, Spanish tile labels, current week's real numbers,

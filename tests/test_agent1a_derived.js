@@ -111,6 +111,39 @@ assert.strictEqual(der.isBest.contacts_made, true, 'current week IS the best wee
 console.log('xferAvg/best/isBest OK');
 
 // ===========================================================================
+// RATE METRIC correctness (contact_rate) — regression coverage for a real
+// shipped bug (found in code review, 2026-08-01): a1a_loadMultiWeekHistory
+// only summed raw DAILY_LOG columns and never derived the 4 fraction rate
+// metrics per week, so a1a_pastWeekValue_ found no such key for ANY week
+// (including weeks that DID report), xferVals/allVals collapsed to just
+// the current week's own value, and xferAvg/best silently rendered as a
+// copy of THIS week's number mislabeled as historical. A compounding
+// second bug (a1a_round1's 0.1 absolute step applied to a 0-1 fraction)
+// rounded 5% to 10%, a 100% relative error. Both are fixed; this section
+// proves it with real computed values, not just "a label is present."
+//
+// Known contact_rate per week from the contacts_attempted/contacts_made
+// numbers already seeded above: twoAgo 2/10=0.2, lastWeek 10/20=0.5,
+// current 15/30=0.5.
+// ===========================================================================
+assert.strictEqual(der.lastWeek.contact_rate, 0.5, 'lastWeek.contact_rate must be last week\'s TRUE rate (10/20), not null/undefined');
+assert.strictEqual(der.delta.contact_rate, 0, 'delta.contact_rate must be current(0.5) - lastWeek(0.5) = 0, not null');
+assert.strictEqual(der.xferAvg.contact_rate, 0.4, 'xferAvg.contact_rate must average the 3 REAL weekly rates [0.5,0.5,0.2] = 0.4, not collapse to the current week\'s own 0.5');
+assert.strictEqual(der.best.contact_rate, 0.5, 'best.contact_rate must be the true highest of the 3 real weekly rates, not just the current week');
+assert.strictEqual(der.isBest.contact_rate, true, 'current week ties the true best (0.5), so isBest must fire');
+
+// effort_score: same regression, but via the separate a1a_loadMultiWeekEffort
+// (NIGHTLY_FORM_RAW) path rather than a1a_loadMultiWeekHistory. Every
+// reported night this whole fixture answered 'Algo' (score 1), constant
+// across all 3 weeks, so effort_score must be exactly 1 for every week —
+// a real computed value, not a null/undefined collapse.
+assert.strictEqual(der.lastWeek.effort_score, 1, 'lastWeek.effort_score must be last week\'s real weighted average (all "Algo" = 1), not null');
+assert.strictEqual(der.xferAvg.effort_score, 1, 'xferAvg.effort_score must average the 3 real weeks (all 1) = 1');
+assert.strictEqual(der.best.effort_score, 1, 'best.effort_score must be the true best across real weeks');
+
+console.log('rate metric (contact_rate) + effort_score history OK');
+
+// ===========================================================================
 // trend — present for whichever metric ranked as growth, 8-point series,
 // last point matches this week's own stat (structural check only — which
 // metric ranks as growth depends on goal config, not asserted here).

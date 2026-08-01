@@ -227,7 +227,13 @@ var A1C_SCOREBOARD_GROUPS = [
            'member_referrals_received', 'bom_shared', 'roleplays'] },
   { title: '⛪ INVITAR — Formulario Nocturno',
     keys: ['church_invites', 'baptism_doctrine_lessons', 'baptismal_invitations',
-           'baptismal_calendars', 'close_rate'] }
+           'baptismal_calendars', 'close_rate'] },
+  // Found in code review, 2026-08-01: effort_score was excluded from the
+  // "Otros" extras bucket (correctly -- it's a real tracked metric, not
+  // junk) but never placed in any group either, so it silently never
+  // appeared anywhere in "Todos los Indicadores" despite being one of the
+  // 5 core rate metrics and the title's own promise.
+  { title: '💪 ESFUERZO', keys: ['effort_score'] }
 ];
 
 function a1c_shortDate_(weekEnd) {
@@ -1058,7 +1064,12 @@ function a1c_buildScoreboard_(stats, der, C, weekEnd) {
       '</tr>';
   }
 
-  var claimed = { submissions: 1, effort_all: 1, effort_most: 1, effort_some: 1, effort_total: 1, effort_score: 1 };
+  // 'effort' is the raw CHOICE-type NIGHTLY_FORM_RAW column ('Todo'/'Algo'/
+  // etc), always 0 as a number -- see CCSM_Agent1A.gs's a1a_buildDerived
+  // SKIP set for the same exclusion and why. effort_score (the real
+  // metric) is claimed via its own A1C_SCOREBOARD_GROUPS entry below, not
+  // listed here -- this set is only for non-metric fields to always hide.
+  var claimed = { submissions: 1, effort: 1, effort_all: 1, effort_most: 1, effort_some: 1, effort_total: 1 };
   A1C_SCOREBOARD_GROUPS.forEach(function(gr) { gr.keys.forEach(function(k) { claimed[k] = 1; }); });
   var extras = [];
   Object.keys(stats).forEach(function(k) {

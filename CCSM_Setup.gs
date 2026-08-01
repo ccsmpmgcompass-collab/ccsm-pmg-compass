@@ -29,7 +29,7 @@
  *   runAgent3            Daily     6:00 AM   nightly refresh + missed-day alerts
  *   runAgent3Evening     Daily     9:00 PM   second daily refresh
  *   runAgent5A           Sunday   10:00 PM   dashboard summary + WEEKLY_KI
- *   runAgent1A           Monday    9:00 PM   Monday coaching (chains 1B -> 1C)
+ *   runAgent1A           Monday    9:15 PM   Monday coaching (chains 1B -> 1C)
  *   runAgent5B           Friday   12:00 PM   Friday encouragement (chains Agent6)
  *   runAgentReminder     Sunday    6:00 PM   NOTES reminders (+ weekly compliance, see below)
  *   runAgentDuplicate    Daily     9:30 PM   duplicate nightly-submission sweep
