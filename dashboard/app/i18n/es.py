@@ -1745,4 +1745,41 @@ ES: dict[str, str] = {
         "Encontradas, En Sacramental y Bautizadas provienen de los Indicadores "
         "Clave semanales, y Enseñadas de la exportación de Tableau; las barras "
         "provienen de reportes distintos y no son subconjuntos entre sí.",
+
+    # ── 12_Traslados.py — Apply a Transfer (added 2026-08-05) ────────────────
+    "Apply a Transfer": "Aplicar un Traslado",
+    "Applying a transfer is available to mission leadership only.":
+        "Aplicar un traslado está disponible solo para el liderazgo de la misión.",
+    "Pull the current roster from IMOS, preview what would change in "
+    "MISSION_ORG, then apply it. Each step needs a separate click — nothing "
+    "here runs automatically.":
+        "Extraiga la organización actual desde IMOS, previsualice qué "
+        "cambiaría en MISSION_ORG y luego apliquelo. Cada paso requiere un "
+        "clic por separado — nada aquí ocurre automáticamente.",
+    "TRANSFER_IMPORT is empty. Pull the roster first (below), or paste "
+    "it into the TRANSFER_IMPORT tab by hand.":
+        "TRANSFER_IMPORT está vacío. Extraiga primero la organización (abajo), "
+        "o péguela manualmente en la pestaña TRANSFER_IMPORT.",
+    "TRANSFER_IMPORT has {count} rows.": "TRANSFER_IMPORT tiene {count} filas.",
+    "1 · Preview": "1 · Previsualizar",
+    "Reading MISSION_ORG and TRANSFER_IMPORT...":
+        "Leyendo MISSION_ORG y TRANSFER_IMPORT...",
+    "{roster} roster rows vs {org} MISSION_ORG rows.":
+        "{roster} filas de organización vs {org} filas de MISSION_ORG.",
+    "New areas": "Áreas nuevas",
+    "Deactivating": "Desactivando",
+    "Changed": "Modificadas",
+    "Reactivating": "Reactivando",
+    "Override the deactivation guard (only if this many deactivations "
+    "is genuinely correct)":
+        "Anular el límite de desactivación (solo si esta cantidad de "
+        "desactivaciones es realmente correcta)",
+    "2 · Apply": "2 · Aplicar",
+    "Applying to MISSION_ORG...": "Aplicando a MISSION_ORG...",
+    "Applied.": "Aplicado.",
+    "New areas need an email address added by hand: {areas}":
+        "Las áreas nuevas necesitan que se agregue un correo manualmente: {areas}",
+    "3 · Sync nightly + weekly form dropdowns":
+        "3 · Sincronizar los menús de los formularios diario y semanal",
+    "Syncing form dropdowns...": "Sincronizando los menús de los formularios...",
 }

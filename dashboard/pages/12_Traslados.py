@@ -16,7 +16,10 @@ TRANSFER_START_DATE through today. That is enough to answer the questions a
 transfer actually raises: which week are we in, who is where, and how has each
 area done since it started.
 
-This page is READ-ONLY. It plans nothing and moves nobody.
+Below the read-only view, this page can also PULL the roster (via the cloud
+Playwright job — see Task 6/7), PREVIEW the diff against MISSION_ORG, APPLY
+it, and SYNC the nightly/weekly form area dropdowns. No Drive automation —
+CCSM has none, and this build doesn't add any.
 """
 
 from __future__ import annotations
@@ -26,19 +29,22 @@ from datetime import date, timedelta
 import pandas as pd
 import streamlit as st
 
-from app.auth.auth import require_auth
+from app.auth.auth import is_leadership, require_auth
 from app.components.design_system import (
     inject_global_css, render_kpi_row, render_page_header, render_section_label,
     render_sidebar, render_table,
 )
 from app.config.flavor_loader import METRIC_LABELS, flavor
 from app.config.metric_catalog import non_numeric_metrics, nightly_metrics
+from app.db import sheets_client as sc
 from app.db.queries import (
     get_areas_df, get_config_value, get_live_snapshot,
 )
 from app.db.sheets_client import read_tab
 from app.i18n import t
 from app.i18n.formats import NA, fmt_date, fmt_int, fmt_number
+from app.ingestion import transfer_apply_service as tas
+from app.integrations.transfer_bridge import FormSyncError, form_sync
 from app.utils.area_helpers import mission_today
 
 st.set_page_config(
@@ -247,3 +253,90 @@ else:
     })
     with st.expander(t("Every area ({count})", count=fmt_int(len(_roster)))):
         render_table(_roster)
+
+# ── Apply a transfer ─────────────────────────────────────────────────────────────
+# Mission-leadership-only, same gate as 19_Editar_Envíos.py — this section
+# pulls a real IMOS login and can mutate live MISSION_ORG.
+
+if not is_leadership(user.get("email", "")):
+    st.info(t("Applying a transfer is available to mission leadership only."))
+    st.stop()
+
+render_section_label(t("Apply a Transfer"))
+
+st.caption(
+    t("Pull the current roster from IMOS, preview what would change in "
+      "MISSION_ORG, then apply it. Each step needs a separate click — nothing "
+      "here runs automatically.")
+)
+
+_import_rows = sc.read_values("TRANSFER_IMPORT")
+if len(_import_rows) <= 1:
+    st.info(
+        t("TRANSFER_IMPORT is empty. Pull the roster first (below), or paste "
+          "it into the TRANSFER_IMPORT tab by hand.")
+    )
+else:
+    st.caption(
+        t("TRANSFER_IMPORT has {count} rows.", count=fmt_int(len(_import_rows) - 1))
+    )
+
+if st.button(t("1 · Preview"), key="tf_preview_btn"):
+    with st.spinner(t("Reading MISSION_ORG and TRANSFER_IMPORT...")):
+        st.session_state["tf_preview"] = tas.preview()
+
+_preview = st.session_state.get("tf_preview")
+if _preview:
+    _guard, _diff = _preview["guard"], _preview["diff"]
+    st.caption(
+        t("{roster} roster rows vs {org} MISSION_ORG rows.",
+          roster=fmt_int(_preview["roster_count"]), org=fmt_int(_preview["org_count"]))
+    )
+    if not _guard["ok"]:
+        st.error(_guard["msg"])
+    for _label, _key in [(t("New areas"), "added"), (t("Deactivating"), "deactivated"),
+                         (t("Changed"), "changed"), (t("Reactivating"), "reactivated")]:
+        _items = _diff[_key]
+        if _items:
+            with st.expander(f"{_label} ({fmt_int(len(_items))})"):
+                for _item in _items:
+                    st.write(f"- {_item}")
+
+    _override = False
+    if not _guard["ok"]:
+        _override = st.checkbox(
+            t("Override the deactivation guard (only if this many deactivations "
+              "is genuinely correct)"),
+            key="tf_override",
+        )
+
+    if st.button(t("2 · Apply"), key="tf_apply_btn", disabled=(not _guard["ok"] and not _override)):
+        with st.spinner(t("Applying to MISSION_ORG...")):
+            try:
+                _summary = tas.apply(override=_override)
+            except tas.TransferBlocked as e:
+                st.error(str(e))
+            else:
+                st.success(t("Applied."))
+                if _summary.get("new_emails_needed"):
+                    st.warning(
+                        t("New areas need an email address added by hand: {areas}",
+                          areas=", ".join(_summary["new_emails_needed"]))
+                    )
+                st.session_state.pop("tf_preview", None)
+
+st.divider()
+
+if st.button(t("3 · Sync nightly + weekly form dropdowns"), key="tf_sync_btn"):
+    with st.spinner(t("Syncing form dropdowns...")):
+        try:
+            _result = form_sync("both")
+        except FormSyncError as e:
+            st.error(str(e))
+        else:
+            for _label, _key in [("Nightly", "nightly"), ("Weekly", "weekly")]:
+                _r = _result.get(_key)
+                if _r:
+                    (st.success if _r["status"] == "OK" else st.warning)(
+                        f"{_label}: {_r['msg']}"
+                    )
