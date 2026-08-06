@@ -41,11 +41,40 @@ runs on demand from any machine.
 
 ## Current state (verified 2026-08-05, not assumed)
 
-- CCSM dashboard `pages/`: `01_dashboard.py`, `02_Goals.py`, `04_Breakdowns.py`,
-  `06_Scores.py`, `07_Finding_Funnel.py`, `10_Notes.py`, `15_Suggestions.py`,
-  `17_Action_Center.py`, `18_Maintenance.py`. No Transfer Flow page.
-- CCSM dashboard `app/`: no `ingestion/` directory, no `integrations/`
-  directory. None of Provo's transfer/Playwright/cloud-job modules exist yet.
+**Correction, same day:** the first pass at this section was read against a
+local checkout that was 7 commits behind `origin/main` (a "Phase 2-4"
+dashboard build had merged — see `project-ccsm-dashboard-phase2-4` memory —
+before this session pulled it in). Re-verified after merging:
+
+- CCSM dashboard `pages/` (current, Spanish-named, post Phase 2-4):
+  `01_Panel.py`, `02_Metas.py`, `04_Desgloses.py`, `06_Puntajes.py`,
+  `07_Embudo_de_Búsqueda.py`, `10_Notas.py`, `11_Informes.py`,
+  **`12_Traslados.py`**, `14_Referencias.py`, `15_Sugerencias.py`,
+  `17_Centro_de_Acción.py`, `18_Mantenimiento.py`, `19_Editar_Envíos.py`.
+- **`12_Traslados.py` already exists** — but it is explicitly **read-only**
+  ("This page is READ-ONLY. It plans nothing and moves nobody"), built from
+  `TRANSFER_SCHEDULE` + `AGENT_CONFIG.TRANSFER_START_DATE` +
+  `LIVE_SNAPSHOT`'s `<metric>_transfer` columns. Its own docstring says why
+  the real thing was cut: "Utah Provo's Transfer Flow page ran the
+  area-lineage and transfer-import machinery — AREA_LINEAGE, TRANSFER_LOG,
+  TRANSFER_IMPORT, a Supabase instance and a deployed TransferWebApp.gs. CCSM
+  has none of that." This confirms rather than contradicts the plan below —
+  **extend this existing page with the write/pull capability, do not create
+  a second competing transfer page.**
+- `11_Informes.py` and `14_Referencias.py` follow the identical pattern:
+  Provo's version cut because it depended on infra CCSM lacks (Tableau tabs,
+  a referral-scraper pipeline), rebuilt read-only on CCSM's own data instead.
+  This is a consistent, deliberate house style across the whole Phase 2-4
+  build, not a gap specific to Transfer Flow.
+- CCSM dashboard `app/` still has **no `ingestion/` directory, no
+  `integrations/` directory** — confirmed on the current, merged tree. None
+  of Provo's transfer-engine/Playwright/cloud-job modules exist yet; the core
+  finding holds.
+- **Write infrastructure already exists at the sheets layer**:
+  `app/db/sheets_client.py` already has `append_row`, `append_rows`,
+  `update_row`, `update_cell`, `update_cells` (built for Notes/Score
+  Config/`19_Editar_Envíos.py`). `transfer_engine.py`'s port can call these
+  directly — no need to also port Provo's lower-level sheets write plumbing.
 - Live `COMPASS_CCSM` tabs (read directly via gspread): has `TRANSFER_SCHEDULE`.
   Missing `TRANSFER_IMPORT`, `MISSION_ORG_SNAPSHOT`, `AREA_LINEAGE`,
   `TRANSFER_LOG`, `CLOUD_JOB_STATUS`.
@@ -86,9 +115,13 @@ Port unchanged in logic, only sheet targeting changes (already redirected via
   with schema-only diffs expected, not logic diffs.
 - `app/ingestion/transfer_apply_service.py` — preview/apply orchestration
   against the live sheet.
-- New `pages/12_Transfer_Flow.py` (or CCSM's next free page number) —
-  Pull → Preview diff+guard → Apply → Sync forms. Drive preview
-  expanders and create/archive sections are dropped entirely, not stubbed.
+- **Extend the existing `pages/12_Traslados.py`**, not a new page — add
+  Pull → Preview diff+guard → Apply → Sync forms sections below its current
+  read-only "which week, who's where" view, MP/AP-gated (matching
+  `require_auth()` already used by every other write-capable CCSM page).
+  Drive preview expanders and create/archive sections are dropped entirely,
+  not stubbed. Update the page's own docstring once it's no longer
+  read-only.
 - Form sync (Forms API, outside gspread's reach) needs a CCSM-side
   `docs/TransferWebApp.gs` Web App, mirroring Provo's `docs/TransferWebApp.gs`
   — a NEW file, respects CCSM's own docs/ boundary. Exact filename confirmed
