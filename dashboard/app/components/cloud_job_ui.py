@@ -48,6 +48,25 @@ def _poll_until_terminal(job_id: str, on_tick=None,
         sleep(poll_interval_s)
 
 
+def _format_elapsed(seconds: float) -> str:
+    """mm:ss for the in-place progress line — never re-derive this inline,
+    a poll tick every few seconds makes an off-by-one here show up fast."""
+    total = max(0, int(seconds))
+    return f"{total // 60}:{total % 60:02d}"
+
+
+def _progress_message(job: dict, elapsed_s: float) -> str:
+    """The in-place progress line's text — pulled out of on_tick() so it's
+    unit-testable without a running Streamlit script. Worth it: an earlier
+    version passed status_text= as a t() kwarg, which collides with t()'s
+    own first parameter (also named `text`) and raised TypeError only when
+    actually clicked in a browser — no test caught it because none of them
+    called t() through this path."""
+    status_text = job.get("progress_text", "") or t("Working...")
+    return t("{status_text} ({elapsed} elapsed)",
+              status_text=status_text, elapsed=_format_elapsed(elapsed_s))
+
+
 def run_cloud_job(job_type: str, workflow_file: str, dispatch_inputs: dict,
                    running_label: str = "Running in the cloud...",
                    timeout_s: float = _TIMEOUT_S) -> dict:
@@ -64,8 +83,15 @@ def run_cloud_job(job_type: str, workflow_file: str, dispatch_inputs: dict,
     github_actions.dispatch_workflow(workflow_file, {**dispatch_inputs, "job_id": job_id})
 
     with st.status(running_label, expanded=True) as box:
+        # A single placeholder, updated in place — box.write() here would
+        # append a fresh line on every 3-second tick instead of replacing
+        # the last one, so a job that sits at the same step for a while
+        # renders a wall of identical "Working..." lines.
+        progress = st.empty()
+        start = time.monotonic()
+
         def on_tick(job: dict) -> None:
-            box.write(job.get("progress_text", "") or t("Working..."))
+            progress.write(_progress_message(job, time.monotonic() - start))
 
         try:
             job = _poll_until_terminal(job_id, on_tick=on_tick, timeout_s=timeout_s)

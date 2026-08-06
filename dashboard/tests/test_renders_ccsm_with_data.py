@@ -361,6 +361,24 @@ def test_page_is_not_empty(page):
         )
 
 
+def test_traslados_roster_update_tab_renders():
+    """The Schedule/Roster Update tab split (2026-08-06) made Schedule the
+    default radio selection, so test_page_is_not_empty[pages/12_Traslados.py]
+    alone no longer touches the checklist box or the Pull/Preview/Apply/Sync
+    UI — those only render when Roster Update is selected. Exercise it
+    explicitly, same session_state convention as
+    test_goals_duplicate_metric_keys.py's goals_active_section."""
+    at = _run("pages/12_Traslados.py", traslados_active_section="Roster Update")
+    body = _text(at)
+    assert len(body) > 400, f"Roster Update tab rendered almost nothing:\n{body}"
+    assert "Lista de verificación del día de traslado" in body
+    assert "Extraer organización desde IMOS" in body
+    assert "Actualización de emergencia" in body
+    leaked = sorted({k for k in PROVO_KEYS if k in body}
+                    | {l for l in PROVO_LABELS if l in body})
+    assert leaked == [], f"Roster Update tab displays Provo vocabulary: {leaked}"
+
+
 # ── Vocabulary, against a page with real data on it ───────────────────────────
 
 @pytest.mark.parametrize("page", PAGES)

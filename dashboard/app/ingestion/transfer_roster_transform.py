@@ -93,12 +93,15 @@ def _pick_companions(names: list, positions: list) -> tuple:
     still possible in the field (e.g. a trio) — keep the 4-slot ceiling so a
     real trio/quad doesn't raise, even though only slots 1-2 currently have
     anywhere to land in MISSION_ORG (apply_transfer's headers-driven merge
-    just drops the extra slots harmlessly — see transfer_engine.py)."""
-    if len(names) > 4:
-        raise ValueError(
-            f"Companionship has {len(names)} missionaries — more than the "
-            f"4-person ceiling this system supports. Names: {names}"
-        )
+    just drops the extra slots harmlessly — see transfer_engine.py).
+
+    A companionship of 5+ (seen live 2026-08-06 — a temporary training/
+    zone-leader overlap in one area) logs a warning and drops whoever's left
+    over past comp1-4, rather than raising: failing the ENTIRE roster pull
+    over one outlier area is worse than losing a name that had nowhere to
+    land in MISSION_ORG anyway. The SC (if any) is found before truncating,
+    so a senior companion listed late in the raw file order is never the
+    one dropped."""
     if len(names) == 1:
         return names[0], "", "", ""
     sc_idx = next((i for i, p in enumerate(positions) if p == "SC"), None)
@@ -108,6 +111,13 @@ def _pick_companions(names: list, positions: list) -> tuple:
     else:
         comp1 = names[0]
         rest = names[1:]
+    if len(rest) > 3:
+        _logger.warning(
+            "Companionship has %d missionaries, more than the 4-person "
+            "ceiling — keeping %s plus %s, dropping %s",
+            len(names), comp1, rest[:3], rest[3:],
+        )
+        rest = rest[:3]
     rest_padded = rest + [""] * (3 - len(rest))
     return comp1, rest_padded[0], rest_padded[1], rest_padded[2]
 
