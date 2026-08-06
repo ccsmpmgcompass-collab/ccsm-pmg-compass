@@ -22,12 +22,12 @@ from app.i18n.es import ES
 from tools.extract_ui_strings import extract, extract_unwrapped
 
 GROUPS = {
-    "task9":  ["Home.py", "pages/01_dashboard.py", "pages/04_Breakdowns.py"],
-    "task10": ["pages/07_Finding_Funnel.py", "pages/10_Notes.py",
-               "pages/15_Suggestions.py", "pages/17_Action_Center.py"],
-    "task11": ["pages/06_Scores.py", "app/components/design_system.py",
+    "task9":  ["Home.py", "pages/01_Panel.py", "pages/04_Desgloses.py"],
+    "task10": ["pages/07_Embudo_de_Búsqueda.py", "pages/10_Notas.py",
+               "pages/15_Sugerencias.py", "pages/17_Centro_de_Acción.py"],
+    "task11": ["pages/06_Puntajes.py", "app/components/design_system.py",
                "app/components/scope_selector.py"],
-    "task12": ["pages/02_Goals.py", "pages/18_Maintenance.py"],
+    "task12": ["pages/02_Metas.py", "pages/18_Mantenimiento.py"],
     "leftovers": ["app/breakdowns_engine.py", "app/auth/auth.py"],
     # Query modules render their own st.error/st.warning on failure, so their
     # messages are user-facing even though they live in the data layer.

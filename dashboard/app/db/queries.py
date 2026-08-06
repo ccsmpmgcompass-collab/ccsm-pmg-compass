@@ -935,6 +935,67 @@ def get_live_snapshot() -> pd.DataFrame:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# SCORES
+# ══════════════════════════════════════════════════════════════════════════════
+
+#: Leadership tracking rows in SCORES, matched by Area_Name. Mirrors
+#: asc_isLeadershipRow_ in CCSM_AgentScores.gs. They never submit and score 0,
+#: so leaving them in drags every mission average down.
+_SCORES_LEADERSHIP_RE = (
+    r"^(Mission President|Assistant to President|Zone Leader|"
+    r"Sister Training Leader -|District Leader -)"
+)
+
+
+@st.cache_data(ttl=300)
+def get_scores(week_ending: str = None) -> pd.DataFrame:
+    """The SCORES tab: one row per area per scored week.
+
+    A shared reader so the Puntajes page and the Informes page cannot disagree
+    about which rows count — leadership rows are dropped here, once.
+
+    `week_ending` filters to a single week; None returns every week.
+    """
+    df = read_tab("SCORES")
+    if df.empty:
+        return pd.DataFrame()
+
+    df.columns = [str(c).strip() for c in df.columns]
+    for col in ("Effort_Score", "Skill_Score", "KI_Score", "Effectiveness_Score"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    if "Week_Ending_Date" in df.columns:
+        df["Week_Ending_Date"] = (
+            df["Week_Ending_Date"].astype(str).str.strip().str[:10]
+        )
+
+    drop = pd.Series(False, index=df.index)
+    if "Area_Name" in df.columns:
+        drop = df["Area_Name"].astype(str).str.match(
+            _SCORES_LEADERSHIP_RE, case=False, na=False)
+    if "Zone" in df.columns:
+        drop = drop | (df["Zone"].astype(str).str.strip().str.upper() == "ALL")
+    df = df[~drop].copy()
+
+    if week_ending:
+        df = df[df["Week_Ending_Date"] == str(week_ending)[:10]].copy()
+    return df
+
+
+@st.cache_data(ttl=300)
+def get_scored_weeks() -> list:
+    """Every Week_Ending_Date present in SCORES, newest first."""
+    df = get_scores()
+    if df.empty or "Week_Ending_Date" not in df.columns:
+        return []
+    return sorted(
+        {w for w in df["Week_Ending_Date"].astype(str) if w and w != "nan"},
+        reverse=True,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # MISSION_ORG
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1401,7 +1462,7 @@ def get_mission_weekly_expectation_total(metric: str) -> int:
     categories included, monthly indicators converted to a weekly-
     equivalent), summed. Used as the fixed denominator on Mission Goals'
     fractions — the caller scales this weekly figure up to a monthly one
-    (see _weeks_in_month in pages/02_Goals.py, dynamic per calendar month).
+    (see _weeks_in_month in pages/02_Metas.py, dynamic per calendar month).
     """
     areas = get_submitting_areas()
     if areas.empty or "Area_Name" not in areas.columns:
@@ -1462,12 +1523,25 @@ def get_mission_monthly_expectation_total(metric: str, month_start: str) -> int:
         if entry["cadence"] == "monthly":
             total += v
         else:
+            # A weekly expectation scales to a month differently depending on
+            # where the number comes from. A NIGHTLY metric accumulates every
+            # day, so a month holds days/7 = 4.4286 weeks of it. A WEEKLY-FORM
+            # metric is reported once per week, so a month holds however many
+            # of those reports actually occur — 4 or 5, never 4.4286.
+            #
             # Carson, 2026-07-21: Pew ("People at Sacrament Meeting") is a
-            # once-a-week church-attendance event exactly like Renew, but
-            # was only scaled by the generic weeks-in-month figure — a
-            # 31-day month's 4.4286 "weeks" vs the real 4 Sundays inflated
-            # 60 areas x 1/wk to 266 instead of the correct 240.
-            total += v * (sundays if metric in ("pew", "renew") else weeks)
+            # once-a-week church-attendance event exactly like Renew, but was
+            # only scaled by the generic weeks-in-month figure — a 31-day
+            # month's 4.4286 "weeks" vs the real 4 Sundays inflated 60 areas x
+            # 1/wk to 266 instead of the correct 240.
+            #
+            # That was fixed by naming Provo's two once-a-week keys. Naming
+            # keys does not travel: CCSM's weekly form carries all SEVEN of its
+            # Key Indicators, so every one of them was being inflated by ~11%
+            # here, and a mission whose form changes would silently regain the
+            # bug. The rule is the metric's FORM, which the catalogue knows.
+            once_weekly = metric in _weekly_form_metric_keys()
+            total += v * (sundays if once_weekly else weeks)
     return int(math.ceil(total)) if total > 0 else 0
 
 
@@ -1475,7 +1549,7 @@ def get_mission_monthly_expectation_total(metric: str, month_start: str) -> int:
 #
 # Backs get_area_weekly_expectation/get_mission_weekly_expectation_total
 # above (nm_lessons/new_found/mmm_sent) AND the Effort score on
-# pages/06_Scores.py (nm_lessons/new_found/mmm_sent/pew/gate) — ONE table
+# pages/06_Puntajes.py (nm_lessons/new_found/mmm_sent/pew/gate) — ONE table
 # for both, editable from the Goals page's "Area Expectation Settings" tab
 # (Carson, 2026-07-18) via save_area_type_expectations() below.
 #
@@ -1797,7 +1871,7 @@ def save_area_type_expectations(indicators: list[dict]) -> str | None:
     categories' indicators PLUS any custom categories/indicators — back to
     the sheet in one batched overwrite_tab() call, the same clear-and-
     rewrite-cleanly convention SCORE_CONFIG uses (see _rewrite_score_config
-    in pages/06_Scores.py), appropriate here too since this is a small,
+    in pages/06_Puntajes.py), appropriate here too since this is a small,
     whole-table config tab, not append-only data.
 
     `indicators` is an ORDERED list of {"category":, "metric":, "cadence":,
@@ -1835,7 +1909,7 @@ def save_area_type_expectations(indicators: list[dict]) -> str | None:
     # for up to 5 minutes. (get_area_language_group needs no clear: it
     # reads the MISSION_ORG roster, not this tab. The Scores page's cached
     # Effort scores re-key themselves off these rows via _exp_fingerprint
-    # in pages/06_Scores.py rather than needing a clear from here.)
+    # in pages/06_Puntajes.py rather than needing a clear from here.)
     get_mission_weekly_expectation_total.clear()
     get_mission_monthly_expectation_total.clear()
     return None
@@ -1886,6 +1960,69 @@ def get_score_component_weights(component: str, area_code: str = "ALL") -> dict[
 
     weights.update(overrides)
     return weights
+
+
+#: An even split across the three components. Used only when SCORE_CONFIG has
+#: no section-2 row at all — with nothing configured, the only defensible
+#: statement is that Effort, Skill and KI count the same. Deliberately NOT any
+#: particular mission's numbers: the previous default was Utah Provo's
+#: 0.30/0.40/0.30, which silently reweighted every Effectiveness score this app
+#: recomputed for CCSM (whose real row is 0.33/0.33/0.34).
+_EVEN_COMPOSITION: dict[str, float] = {"effort": 1 / 3, "skill": 1 / 3, "ki": 1 / 3}
+
+
+@st.cache_data(ttl=300)
+def get_effectiveness_composition_weights(area_code: str = "ALL") -> dict[str, float]:
+    """{effort, skill, ki} — how the three components combine into
+    Effectiveness, from SCORE_CONFIG's SECOND section.
+
+    That section sits below a blank separator row and is headed
+    Area_Code | Effort_Weight | Skill_Weight | KI_Weight. It is the same row
+    CCSM_AgentScores.gs reads, so honouring it is what keeps a recomputed
+    Effectiveness score equal to the one the agent wrote to SCORES.
+
+    A per-area row wins over the mission-wide 'ALL' row. Falls back to an even
+    split when the section is missing or unparseable — never to a mission's
+    hardcoded numbers.
+    """
+    raw = read_tab("SCORE_CONFIG")
+    if raw.empty:
+        return dict(_EVEN_COMPOSITION)
+
+    rows = [[str(v).strip() for v in r] for r in raw.values.tolist()]
+
+    # Skip section 1 entirely: stop at the first blank separator row.
+    section2: list[list[str]] = []
+    seen_blank = False
+    for row in rows:
+        if not any(row):
+            seen_blank = True
+            continue
+        if seen_blank:
+            section2.append(row)
+
+    found: dict[str, dict[str, float]] = {}
+    for row in section2:
+        if len(row) < 4 or row[0] == "Area_Code":
+            continue
+        try:
+            trio = {
+                "effort": float(row[1]),
+                "skill":  float(row[2]),
+                "ki":     float(row[3]),
+            }
+        except (TypeError, ValueError):
+            continue
+        # A row of all zeroes cannot combine anything — treat it as absent
+        # rather than dividing by zero downstream.
+        if sum(trio.values()) <= 0:
+            continue
+        found[row[0].strip().casefold()] = trio
+
+    for code in (str(area_code).strip().casefold(), "all"):
+        if code in found:
+            return found[code]
+    return dict(_EVEN_COMPOSITION)
 
 
 def _effort_metric_weights(area_code: str = "ALL") -> dict[str, float]:
@@ -2051,7 +2188,7 @@ def _mp_weeks_in_month(day: date) -> float:
     """
     Number of 7-day weeks in the calendar month containing `day`, e.g.
     31/7 ≈ 4.43 for a 31-day month, 4.0 for a 28-day February. Same
-    monthly-to-weekly conversion pages/02_Goals.py uses for its Goal
+    monthly-to-weekly conversion pages/02_Metas.py uses for its Goal
     fractions (_weeks_in_month there).
     """
     month_start = day.replace(day=1)
@@ -2221,6 +2358,31 @@ def _stretch_recommendation(df: pd.DataFrame, keys: list, area: str | None) -> d
     return out
 
 
+def _goalable_weekly_keys(metric_defs: list) -> list:
+    """Weekly-form metrics a goal can sensibly be recommended for.
+
+    Was `f == "WEEKLY" and k != "rc_total"` in three places — rc_total is
+    Provo's running recent-convert headcount, a number no goal applies to.
+    CCSM has no such key, so all three exclusions excluded nothing, and the two
+    kinds of weekly key CCSM DOES have that no goal applies to were let
+    straight through:
+
+      * `_meta` keys are the companionship's own weekly goal, captured on the
+        form beside each `_real` achievement. Recommending a goal for one means
+        recommending a goal for a goal, and the recommendation is computed from
+        the history of that field — i.e. from what areas have previously aimed
+        at, not from what they achieved.
+      * CHOICE metrics carry no summable number to average.
+    """
+    from app.config.metric_catalog import metric_data_type
+
+    return [
+        k for k, _, f in metric_defs
+        if f == "WEEKLY" and not k.endswith("_meta")
+        and metric_data_type(k) != "CHOICE"
+    ]
+
+
 @st.cache_data(ttl=300)
 def get_recommended_goals(area: str) -> dict:
     """
@@ -2231,8 +2393,8 @@ def get_recommended_goals(area: str) -> dict:
     - WEEKLY / transfer metrics — source WEEKLY_FORM_RAW. The stored goal stays
       weekly; the Goals page projects it over the 6-week transfer for display.
 
-    rc_total (Recent Convert Total) is excluded here entirely — it has no goal
-    input on the Goals page. See get_latest_rc_total().
+    Weekly keys that no goal applies to are excluded — see
+    _goalable_weekly_keys().
 
     Using full history rather than a recent window trades away the recent-weeks
     seasonality self-correction (e.g. a BYU/YSA summer dip no longer pulls the rec
@@ -2244,7 +2406,7 @@ def get_recommended_goals(area: str) -> dict:
     """
     metric_defs = get_question_metrics()
     nightly_keys = [k for k, _, f in metric_defs if f == "NIGHTLY"]
-    weekly_keys = [k for k, _, f in metric_defs if f == "WEEKLY" and k != "rc_total"]
+    weekly_keys = _goalable_weekly_keys(metric_defs)
 
     recommended = {}
     recommended.update(_stretch_recommendation(get_weekly_ki(), nightly_keys, area))
@@ -2325,7 +2487,7 @@ def get_recommended_monthly_goals(area: str) -> dict:
     """
     metric_defs = get_question_metrics()
     nightly_keys = [k for k, _, f in metric_defs if f == "NIGHTLY"]
-    weekly_keys = [k for k, _, f in metric_defs if f == "WEEKLY" and k != "rc_total"]
+    weekly_keys = _goalable_weekly_keys(metric_defs)
 
     recommended = {}
     recommended.update(_stretch_recommendation_monthly(get_weekly_ki(), nightly_keys, area))
@@ -2366,7 +2528,7 @@ def get_mission_recommended_goals() -> dict:
     """
     metric_defs = get_question_metrics()
     nightly_keys = [k for k, _, f in metric_defs if f == "NIGHTLY"]
-    weekly_keys = [k for k, _, f in metric_defs if f == "WEEKLY" and k != "rc_total"]
+    weekly_keys = _goalable_weekly_keys(metric_defs)
 
     recommended = {}
     recommended.update(_stretch_recommendation(get_weekly_ki(), nightly_keys, None))
@@ -2667,22 +2829,19 @@ def set_suggestion_status(
     overwrite_tab(_REVIEW_TAB, [_REVIEW_HEADER] + body)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# MIRACLES
-# ══════════════════════════════════════════════════════════════════════════════
-
-def get_miracles(search: str = None) -> pd.DataFrame:
-    """Read the Miracles form response sheet. Returns all rows; no status management."""
-    df = read_tab("Miracles")
-    if df.empty:
-        return df
-    if search:
-        s = search.lower()
-        df = df[df.apply(
-            lambda r: any(s in str(v).lower() for v in r.values),
-            axis=1,
-        )]
-    return df
+# get_miracles() was here. It read a tab called "Miracles" — a Google Form
+# response sheet Utah Provo has and COMPASS_CCSM does not. CCSM never adopted
+# the miracle form (docs/superpowers/specs/2026-07-11-ccsm-sheet-and-agents-
+# design.md cuts the miracle-form utilities; the dashboard design doc cuts the
+# Miracles tab for the same reason), so the only page that called this was
+# deleted before launch and tests/test_isolation.py::test_miracles_removed
+# keeps it deleted.
+#
+# Removed rather than left in place: read_tab() returns an empty DataFrame for
+# a tab that does not exist, so this function was a working-looking accessor
+# that could only ever return nothing — precisely the shape of dead Provo
+# plumbing this app has been cleared of. If CCSM ever adds a miracles form,
+# add the reader back against the tab that then exists.
 
 
 @st.cache_data(ttl=300)

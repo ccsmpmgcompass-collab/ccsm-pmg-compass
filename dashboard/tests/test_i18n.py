@@ -6,23 +6,35 @@ from app.i18n.es import ES
 
 
 @pytest.fixture(autouse=True)
-def _clear_state():
+def _clear_state(monkeypatch):
     """Reset session state AND the ES dict around every test.
 
     Several tests below inject translations into ES to exercise lookup. ES is a
     module-level dict, so without this restore those injections would persist
     for the whole pytest session and the Task 9-12 coverage tests would count
     real UI strings ("Area Scores") as translated when they are not.
+
+    AGENT_CONFIG is stubbed to silence because get_lang() now resolves its
+    default from MISSION_LANGUAGE. Unstubbed, these tests read the LIVE
+    COMPASS_CCSM sheet (secrets.toml is present locally), which makes a unit
+    test network-dependent and makes its result depend on a mission's
+    configuration. Tests that care about the default set it explicitly.
     """
     original = dict(ES)
     st.session_state.clear()
+    monkeypatch.setattr("app.db.queries.get_config_value",
+                        lambda key, default="": default)
     yield
     st.session_state.clear()
     ES.clear()
     ES.update(original)
 
 
-def test_defaults_to_english():
+def test_defaults_to_the_missions_language():
+    """The default is the mission's own MISSION_LANGUAGE, not a hardcoded
+    "en" — see app/i18n/mission_default_lang. With the config silent (this
+    file's fixture) it degrades to English, which is what is asserted here;
+    tests/test_formats_es_cl.py pins the ES case."""
     assert get_lang() == "en"
 
 
