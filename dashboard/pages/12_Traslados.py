@@ -43,6 +43,7 @@ from app.db.queries import (
 from app.db.sheets_client import read_tab
 from app.i18n import t
 from app.i18n.formats import NA, fmt_date, fmt_int, fmt_number
+from app.components.cloud_job_ui import CloudJobFailed, CloudJobTimeout, run_cloud_job
 from app.ingestion import transfer_apply_service as tas
 from app.integrations.transfer_bridge import FormSyncError, form_sync
 from app.utils.area_helpers import mission_today
@@ -280,6 +281,19 @@ else:
     st.caption(
         t("TRANSFER_IMPORT has {count} rows.", count=fmt_int(len(_import_rows) - 1))
     )
+
+if st.button(t("0 · Pull roster from IMOS (cloud)"), key="tf_pull_btn"):
+    try:
+        run_cloud_job(
+            job_type="transfer_pull",
+            workflow_file="transfer-roster-pull.yml",
+            dispatch_inputs={},
+            running_label=t("Pulling the roster from IMOS..."),
+        )
+    except (CloudJobFailed, CloudJobTimeout):
+        pass   # run_cloud_job already rendered the error/warning
+    else:
+        st.success(t("Roster pulled. Click Preview to see the diff."))
 
 if st.button(t("1 · Preview"), key="tf_preview_btn"):
     with st.spinner(t("Reading MISSION_ORG and TRANSFER_IMPORT...")):

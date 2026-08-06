@@ -1782,4 +1782,16 @@ ES: dict[str, str] = {
     "3 · Sync nightly + weekly form dropdowns":
         "3 · Sincronizar los menús de los formularios diario y semanal",
     "Syncing form dropdowns...": "Sincronizando los menús de los formularios...",
+
+    # ── 12_Traslados.py — cloud Pull button + app/components/cloud_job_ui.py
+    # (added 2026-08-05) ──────────────────────────────────────────────────
+    "0 · Pull roster from IMOS (cloud)":
+        "0 · Extraer organización desde IMOS (nube)",
+    "Pulling the roster from IMOS...": "Extrayendo la organización desde IMOS...",
+    "Roster pulled. Click Preview to see the diff.":
+        "Organización extraída. Haga clic en Previsualizar para ver los cambios.",
+    "Working...": "Trabajando...",
+    "Cloud job failed: {summary}": "El trabajo en la nube falló: {summary}",
+    "{error} — check the GitHub Actions tab; it may still finish.":
+        "{error} — revise la pestaña de GitHub Actions; podría terminar todavía.",
 }

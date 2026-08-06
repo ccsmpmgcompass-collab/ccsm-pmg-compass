@@ -1,0 +1,47 @@
+name: Transfer Roster Pull
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        required: true
+        type: string
+
+concurrency:
+  group: transfer-roster-pull
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.49.0-jammy
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: pip install --no-cache-dir -r requirements_cloud.txt
+
+      - name: Run roster pull (tracked)
+        working-directory: dashboard
+        env:
+          CCSM_IMOS_USERNAME: ${{ secrets.CCSM_IMOS_USERNAME }}
+          CCSM_IMOS_PASSWORD: ${{ secrets.CCSM_IMOS_PASSWORD }}
+          IMOS_HEADLESS: "true"
+          GOOGLE_SHEETS_CREDENTIALS_JSON: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON }}
+          COMPASS_SHEET_NAME: COMPASS_CCSM
+        run: >
+          python -m app.ingestion.cloud_job_wrapper
+          --job-id "${{ inputs.job_id }}" --job-type transfer_pull
+          -- python -m app.ingestion.imos_transfer_runner
+
+      - name: Upload debug screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: transfer-debug
+          path: dashboard/debug/*.png
+          if-no-files-found: ignore
+          retention-days: 7
