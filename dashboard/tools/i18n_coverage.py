@@ -7,10 +7,17 @@ from tools.extract_ui_strings import extract, extract_unwrapped
 
 
 def _targets() -> list[str]:
+    """Every .py file that can render UI text. Excludes venv/__pycache__/
+    tools/tests (never UI) and app/ingestion (backend automation — Playwright
+    scrapers and sheet-write scripts with no Streamlit runtime and no t()
+    calls of their own; their logger.info/.error/.warning calls collide with
+    UI_CALLS by attribute name alone, which is a false positive here, not
+    untranslated copy)."""
     root = Path(__file__).resolve().parent.parent
     return [str(p) for p in root.rglob("*.py")
             if "venv" not in p.parts and "__pycache__" not in p.parts
-            and "tools" not in p.parts and "tests" not in p.parts]
+            and "tools" not in p.parts and "tests" not in p.parts
+            and "ingestion" not in p.parts]
 
 
 def report() -> tuple[int, int, list[str]]:

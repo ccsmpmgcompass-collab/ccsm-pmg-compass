@@ -190,9 +190,4 @@ def _log(summary: dict, schedule_updated: bool, config_updated: bool) -> None:
             "applyTransfer (CCSM dashboard)", "OK", " | ".join(parts),
         ])
     except Exception as e:   # logging must never fail the apply
-        # Message built in a variable, not passed as a literal: the i18n
-        # scanner (tools/extract_ui_strings.py) flags any bare string handed
-        # to a call named "warning" as unwrapped UI text, matching st.warning
-        # by name alone — it can't tell this is a logger, not a widget.
-        warn_msg = "Could not append TRANSFER_LOG row: %s"
-        _logger.warning(warn_msg, e)
+        _logger.warning("Could not append TRANSFER_LOG row: %s", e)
