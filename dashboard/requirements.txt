@@ -16,8 +16,3 @@ pandas>=2.0.0
 plotly>=5.0.0
 python-dotenv>=1.0.0
 google-genai>=1.0.0
-# Pinned to match the mcr.microsoft.com/playwright/python:v1.49.0-jammy
-# container the transfer-roster-pull GitHub Actions workflow uses — a
-# version mismatch between this package and the container's baked-in
-# browsers causes install failures.
-playwright==1.49.0
