@@ -321,6 +321,7 @@ def _render_roster_tab() -> None:
         except (CloudJobFailed, CloudJobTimeout):
             pass   # run_cloud_job already rendered the error/warning
         else:
+            sc.read_values.clear()  # pull wrote directly to sheet; invalidate cache
             st.success(t("Roster pulled. Click Preview to see the diff."))
 
     if st.button(t("1 · Preview"), key="tf_preview_btn"):
