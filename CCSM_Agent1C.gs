@@ -589,6 +589,15 @@ function a1c_buildEmail(person, areas, summaries, weekEnd) {
           '<div style="font-size:12px;opacity:0.75;margin-top:4px;">Semana que termina el ' + a1c_esc(dateLabel) + '</div>' +
           '</div>';
 
+  // Gmail trim cue — Gmail's '⋯' button only ever hides a TAIL of the
+  // message, so this top-placed cue is always visible when the dots appear.
+  // Plain-spoken on purpose: many readers have never seen a trimmed email.
+  // (Parity gap vs Provo's docs/Agent1C.gs, closed here — see
+  // project-ccsm-aug10-launch-audit memory.)
+  html += '<div style="font-size:12px;color:#1e40af;background:#eff6ff;border-left:3px solid ' + C.blue + ';' +
+          'border-radius:0 6px 6px 0;padding:8px 12px;margin:10px 4px 0;">' +
+          '👇 ¿No ves todo? Toca los tres puntos (⋯) más abajo para expandir esta carta y ver todas tus estadísticas.</div>';
+
   // Personal area coaching section
   person.areas.forEach(function(areaName) {
     var area = areas[areaName];

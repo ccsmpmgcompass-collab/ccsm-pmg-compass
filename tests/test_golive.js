@@ -78,6 +78,27 @@ function activeCounts(ss, scope) {
   return { total: data.length - 1, active, leaders, activeNonLeaders };
 }
 
+// Reads MISSION_ORG.Active/Zone straight from the sheet — same idea as
+// activeCounts() above, but keyed by zone membership instead of leader flags,
+// since Step Zones isn't about leaders at all.
+function zoneActiveCounts(ss, zones) {
+  const org = ss.getSheetByName('MISSION_ORG');
+  const data = org.getDataRange().getValues();
+  const h = data[0];
+  const activeIdx = h.indexOf('Active');
+  const zoneIdx = h.indexOf('Zone');
+  const isTrue = (v) => v === true || String(v).trim().toUpperCase() === 'TRUE';
+  const zoneSet = new Set(zones.map((z) => z.toLowerCase()));
+  let activeInZones = 0, activeOutsideZones = 0, inZonesTotal = 0;
+  for (let i = 1; i < data.length; i++) {
+    const inZone = zoneSet.has(String(data[i][zoneIdx]).trim().toLowerCase());
+    const a = isTrue(data[i][activeIdx]);
+    if (inZone) { inZonesTotal++; if (a) activeInZones++; }
+    else if (a) activeOutsideZones++;
+  }
+  return { total: data.length - 1, inZonesTotal, activeInZones, activeOutsideZones };
+}
+
 // ---------------------------------------------------------------------------
 // 1. Dry run writes nothing at all.
 // ---------------------------------------------------------------------------
@@ -252,4 +273,77 @@ function activeCounts(ss, scope) {
     'a renamed Active column must throw, not silently no-op');
 }
 
-console.log('golive OK — dry run is inert, Step A is leaders-only, gates hold');
+// ---------------------------------------------------------------------------
+// 11. Step Zones activates exactly the 4 named zones and nothing else.
+// ---------------------------------------------------------------------------
+{
+  const { scope, ss } = setup({ relayUrl: GOOD_RELAY, relaySecret: 's3cret' });
+  const zones = scope.GOLIVE_ZONE_AUG10_ZONES;
+  const before = zoneActiveCounts(ss, zones);
+  assert.ok(before.inZonesTotal > 0, 'the live roster fixture must contain rows in these 4 zones');
+
+  const res = scope.goLiveApplyStepZones();
+  assert.strictEqual(res.applied, true, 'Step Zones must apply when the relay is ready');
+
+  const c = zoneActiveCounts(ss, zones);
+  assert.strictEqual(c.activeInZones, c.inZonesTotal,
+    'every row inside the 4 named zones must be active: ' + c.activeInZones + '/' + c.inZonesTotal);
+  assert.strictEqual(c.activeOutsideZones, 0,
+    'no row outside the 4 named zones may be active — got ' + c.activeOutsideZones);
+  assert.ok(c.inZonesTotal < c.total,
+    'sanity check: the 4 zones must be a strict subset of the roster, not all of it');
+
+  assert.strictEqual(configCell(ss, 'TEST_MODE'), 'FALSE');
+  assert.strictEqual(configCell(ss, 'SYSTEM_START_DATE'), '2026-08-10');
+}
+
+// ---------------------------------------------------------------------------
+// 12. Step Zones is idempotent, same as Steps A/B.
+// ---------------------------------------------------------------------------
+{
+  const { scope, ss } = setup({ relayUrl: GOOD_RELAY, relaySecret: 's3cret' });
+  scope.goLiveApplyStepZones();
+  const snapshot = JSON.stringify(ss.getSheetByName('MISSION_ORG').getDataRange().getValues());
+  const second = scope.goLiveApplyStepZones();
+  assert.strictEqual(second.applied, false, 'a second apply must be a no-op');
+  assert.strictEqual(second.changes.length, 0, 'a second apply must find no changes');
+  assert.strictEqual(
+    JSON.stringify(ss.getSheetByName('MISSION_ORG').getDataRange().getValues()), snapshot,
+    'a second apply must not touch the sheet'
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 13. A zone name that matches nothing (typo, wrong accent, English spelling)
+//     is refused rather than silently deactivating the whole roster.
+// ---------------------------------------------------------------------------
+{
+  const { scope } = setup({ relayUrl: GOOD_RELAY, relaySecret: 's3cret' });
+  const badStep = {
+    name: 'STEP ZONES — bad spelling', date: '2026-08-10', testMode: 'FALSE',
+    systemStartDate: '2026-08-10', activeScope: 'ZONES',
+    zones: ['Los Angeles North', 'Temuco Nielol'] // English spellings, not the sheet's Spanish ones
+  };
+  const res = scope.golive_run_(badStep, false);
+  assert.strictEqual(res.applied, false, 'a zone list matching 0 rows must be refused, not applied');
+  assert.ok(res.lines.join(' ').match(/0 rows matched/),
+    'the refusal must explain itself: ' + res.lines.join(' | '));
+}
+
+// ---------------------------------------------------------------------------
+// 14. Relay capacity check for Step Zones scopes to the 4 zones' recipients,
+//     not the full 98-row roster — a mission-wide count here would wrongly
+//     block (or wrongly clear) a phased rollout on the wrong math.
+// ---------------------------------------------------------------------------
+{
+  const { scope, ss } = setup({ relayUrl: '', relaySecret: '' });
+  const zoneRecipients = zoneActiveCounts(ss, scope.GOLIVE_ZONE_AUG10_ZONES).inZonesTotal;
+  const res = scope.goLiveApplyStepZones();
+  assert.strictEqual(res.applied, true,
+    'the 4-zone rollout (well under 90 recipients) must not be blocked for want of a relay');
+  assert.ok(res.lines.join(' ').match(new RegExp('~' + zoneRecipients + ' Agent1C recipient')),
+    'the capacity line must report the zone-scoped count (' + zoneRecipients +
+    '), not the full roster: ' + res.lines.join(' | '));
+}
+
+console.log('golive OK — dry run is inert, Step A is leaders-only, Step Zones is zone-scoped, gates hold');

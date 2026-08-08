@@ -4,7 +4,7 @@
 // sheet's Apps Script editor. The gspread service account behind the dashboard
 // has NO Forms API access, so form sync must run here.
 //
-// Ported from Utah Provo's docs/TransferWebApp.gs. Calls CCSM_TransferHelpers.gs
+// Ported from Provo's docs/TransferWebApp.gs. Calls CCSM_TransferHelpers.gs
 // (cct_getOrgZones_, cct_readFormStructure_, cct_repairFormRouting_,
 // cct_cloneItem_, cct_log_) — same Apps Script project = shared global scope.
 //

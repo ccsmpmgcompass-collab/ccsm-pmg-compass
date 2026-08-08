@@ -4,11 +4,15 @@
  * PMG Compass | Chile Concepción South Mission (CCSM)
  * ============================================================
  *
- * Two moments change what this system does to real people:
+ * Moments that change what this system does to real people:
  *
- *   STEP A — 2026-08-05, the leadership trial. Real mail starts, but only to
- *            leaders. 45 of the 98 MISSION_ORG rows carry a leader flag.
- *   STEP B — 2026-08-17, mission-wide launch. All 98 areas.
+ *   STEP A     — 2026-08-05, the leadership trial. Real mail starts, but only
+ *                to leaders. 45 of the 98 MISSION_ORG rows carry a leader flag.
+ *   STEP ZONES — 2026-08-10, a 4-zone phased rollout (San Pedro, Los Angeles
+ *                Norte, Angol, Temuco Ñielol — ~42 of 98 rows). Neither
+ *                LEADERS nor ALL fits a named subset of zones, so this scope
+ *                reads MISSION_ORG.Zone directly.
+ *   STEP B     — 2026-08-17, mission-wide launch. All 98 areas.
  *
  * WHY THIS IS A SCRIPT AND NOT A HAND EDIT
  * Step A sets 98 MISSION_ORG.Active booleans conditionally on five leader
@@ -31,13 +35,14 @@
  *   3. Run -> goLiveApplyStepA
  *   4. Run -> smokeTestPipeline  (CCSM_Setup.gs) to confirm the system is sane
  *
- * Same four steps for Step B on 2026-08-17.
+ * Same four steps for Step Zones (goLiveDryRunStepZones / goLiveApplyStepZones)
+ * on 2026-08-10, and for Step B on 2026-08-17.
  *
  * Every function here is zero-argument (Apps Script's Run menu cannot pass
  * arguments) and idempotent — running apply twice is a no-op the second time.
  */
 
-// ─── THE TWO STEPS, AS DATA ──────────────────────────────────────────────────
+// ─── THE STEPS, AS DATA ───────────────────────────────────────────────────────
 
 /** Leader flags in MISSION_ORG. A row is a "leader row" if ANY is TRUE. */
 var GOLIVE_LEADER_FLAGS = ['Is_DL', 'Is_ZL', 'Is_STL', 'Is_AP', 'Is_MP'];
@@ -62,6 +67,27 @@ var GOLIVE_STEP_A = {
 };
 
 /**
+ * Step Zones — 2026-08-10, phased rollout to 4 named zones only. The other 94
+ * rows are left/set inactive. SYSTEM_START_DATE re-baselines to 08-10 for the
+ * same reason Step A re-baselines to its own date: an area that only started
+ * reporting today must not be flagged for "missing" the days before it began.
+ *
+ * Zone names below are the exact live MISSION_ORG.Zone spelling (matches
+ * CCSM_MISSION_ORG_ROWS in CcsmData.gs) — Spanish, with the Ñ. Comparison is
+ * still case/whitespace-normalized in golive_isInZones_ as a defensive
+ * measure, not because these are expected to drift.
+ */
+var GOLIVE_ZONE_AUG10_ZONES = ['San Pedro', 'Los Angeles Norte', 'Angol', 'Temuco Ñielol'];
+var GOLIVE_STEP_ZONES_AUG10 = {
+  name:            'STEP ZONES — 4-zone Aug 10 rollout',
+  date:            '2026-08-10',
+  testMode:        'FALSE',
+  systemStartDate: '2026-08-10',
+  activeScope:     'ZONES',
+  zones:           GOLIVE_ZONE_AUG10_ZONES
+};
+
+/**
  * Step B — 2026-08-17, mission-wide launch. Re-baselines SYSTEM_START_DATE the
  * same way Step A did, so no area is flagged for gaps before the day it
  * actually started.
@@ -76,10 +102,12 @@ var GOLIVE_STEP_B = {
 
 // ─── PUBLIC ENTRY POINTS (zero-argument, for the Run menu) ───────────────────
 
-function goLiveDryRunStepA() { return golive_run_(GOLIVE_STEP_A, true); }
-function goLiveApplyStepA()  { return golive_run_(GOLIVE_STEP_A, false); }
-function goLiveDryRunStepB() { return golive_run_(GOLIVE_STEP_B, true); }
-function goLiveApplyStepB()  { return golive_run_(GOLIVE_STEP_B, false); }
+function goLiveDryRunStepA()     { return golive_run_(GOLIVE_STEP_A, true); }
+function goLiveApplyStepA()      { return golive_run_(GOLIVE_STEP_A, false); }
+function goLiveDryRunStepZones() { return golive_run_(GOLIVE_STEP_ZONES_AUG10, true); }
+function goLiveApplyStepZones()  { return golive_run_(GOLIVE_STEP_ZONES_AUG10, false); }
+function goLiveDryRunStepB()     { return golive_run_(GOLIVE_STEP_B, true); }
+function goLiveApplyStepB()      { return golive_run_(GOLIVE_STEP_B, false); }
 
 /**
  * Reports whether mail can actually be delivered, without sending anything.
@@ -111,8 +139,14 @@ function goLiveCheckRelay() {
  * capped at 100 recipients/day and Agent1C alone needs 97 for the full roster.
  * So this returns ok=true for a leaders-only trial with no relay (45 sends
  * fits), and ok=false for a mission-wide launch without one.
+ *
+ * @param {Object} [step] The step being checked (for its .activeScope/.zones),
+ *   so recipient count reflects the actual subset of the roster this step
+ *   would activate. Omitted (goLiveCheckRelay()'s standalone use) defaults to
+ *   the full-roster worst case.
  */
-function golive_relayReadiness_(scope) {
+function golive_relayReadiness_(step) {
+  var scope = step && step.activeScope;
   var lines = [];
   var problems = [];
 
@@ -151,11 +185,17 @@ function golive_relayReadiness_(scope) {
 
   // Capacity: how many sends does the roster imply, and does that fit?
   var org = golive_readMissionOrg_();
-  var leaderRows = org.rows.filter(function(r) { return golive_isLeader_(r, org.index); });
-  var recipients = (scope === 'LEADERS') ? golive_countAddresses_(leaderRows, org.index)
-                                         : golive_countAddresses_(org.rows, org.index);
+  var scopedRows;
+  if (scope === 'LEADERS') {
+    scopedRows = org.rows.filter(function(r) { return golive_isLeader_(r, org.index); });
+  } else if (scope === 'ZONES') {
+    scopedRows = org.rows.filter(function(r) { return golive_isInZones_(r, org.index, step.zones); });
+  } else {
+    scopedRows = org.rows;
+  }
+  var recipients = golive_countAddresses_(scopedRows, org.index);
   lines.push('  INFO  Roster implies ~' + recipients + ' Agent1C recipient(s) for scope ' +
-             (scope || 'ALL') + '.');
+             (scope || 'ALL') + (scope === 'ZONES' ? ' (' + step.zones.join(', ') + ')' : '') + '.');
 
   if (!relayLive && recipients > 90) {
     problems.push('No relay is configured and this scope needs ~' + recipients +
@@ -202,6 +242,18 @@ function golive_isTrue_(v) {
 function golive_isLeader_(row, index) {
   for (var i = 0; i < GOLIVE_LEADER_FLAGS.length; i++) {
     if (golive_isTrue_(row[index[GOLIVE_LEADER_FLAGS[i]]])) return true;
+  }
+  return false;
+}
+
+/** True if the row's Zone column matches one of the given zone names
+ *  (case/whitespace-normalized — the values themselves must still be the
+ *  live sheet's canonical Spanish spelling; see GOLIVE_ZONE_AUG10_ZONES). */
+function golive_isInZones_(row, index, zones) {
+  if (index['Zone'] === undefined) return false;
+  var rowZone = String(row[index['Zone']] || '').trim().toLowerCase();
+  for (var i = 0; i < zones.length; i++) {
+    if (rowZone === String(zones[i]).trim().toLowerCase()) return true;
   }
   return false;
 }
@@ -255,7 +307,7 @@ function golive_run_(step, dryRun) {
   var changes = [];
 
   // ── 1. Relay / capacity gate ───────────────────────────────────────────────
-  var readiness = golive_relayReadiness_(step.activeScope);
+  var readiness = golive_relayReadiness_(step);
   readiness.lines.forEach(say);
 
   if (!dryRun && !readiness.ok) {
@@ -295,7 +347,10 @@ function golive_run_(step, dryRun) {
   var flips = { on: [], off: [] };
 
   org.rows.forEach(function(r, i) {
-    var want = (step.activeScope === 'ALL') ? true : golive_isLeader_(r, org.index);
+    var want;
+    if (step.activeScope === 'ALL') want = true;
+    else if (step.activeScope === 'ZONES') want = golive_isInZones_(r, org.index, step.zones);
+    else want = golive_isLeader_(r, org.index);
     var got  = golive_isTrue_(r[org.index['Active']]);
     wantByRow.push([want]);
     if (want !== got) {
@@ -321,6 +376,15 @@ function golive_run_(step, dryRun) {
     say('  ERROR Scope is LEADERS but ' + wantTrue + ' of ' + org.rows.length +
         ' rows would be active. The leader flags are not being read as expected — ' +
         'check the ' + GOLIVE_LEADER_FLAGS.join('/') + ' columns. REFUSING.');
+    return { ok: false, applied: false, changes: changes, lines: lines };
+  }
+
+  // A zone-scoped step that matches 0 rows almost certainly has a Zone-column
+  // spelling mismatch (accents, "Norte" vs "North", a renamed zone). Refuse
+  // rather than silently deactivate the entire roster.
+  if (step.activeScope === 'ZONES' && wantTrue === 0) {
+    say('  ERROR Scope is ZONES (' + step.zones.join(', ') + ') but 0 rows matched. ' +
+        'Check MISSION_ORG\'s Zone column spelling against these names exactly. REFUSING.');
     return { ok: false, applied: false, changes: changes, lines: lines };
   }
 

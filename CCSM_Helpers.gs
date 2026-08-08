@@ -650,9 +650,20 @@ function saveTempData(key, value) {
   var json  = JSON.stringify(value);
   var props = PropertiesService.getScriptProperties();
 
-  // Clear any previous value/chunks for this key so stale chunks never linger
-  var oldChunks = parseInt(props.getProperty(key + '__chunks') || '0', 10);
-  for (var c = 0; c < oldChunks; c++) props.deleteProperty(key + '__' + c);
+  // Clear any previous value/chunks for this key by SCANNING for them, not by
+  // trusting the stored `__chunks` counter. If a prior call died mid-write
+  // (a thrown exception, or the script itself hitting the 500KB-wide storage
+  // quota while writing chunk N), `key + '__chunks'` was already deleted
+  // before the new chunks were written and never got rewritten — so the old
+  // counter no longer reflects what's actually stored, and that attempt's
+  // chunk properties become permanently invisible garbage eating into the
+  // shared budget forever. A prefix scan finds and removes them regardless of
+  // what any counter claims.
+  var allProps     = props.getProperties();
+  var chunkPattern = new RegExp('^' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '__\\d+$');
+  Object.keys(allProps).forEach(function(k) {
+    if (chunkPattern.test(k)) props.deleteProperty(k);
+  });
   props.deleteProperty(key + '__chunks');
   props.deleteProperty(key);
 
@@ -698,6 +709,33 @@ function loadTempData(key) {
     return null;
   }
   return JSON.parse(raw);
+}
+
+/**
+ * Manual diagnostic — run from the Apps Script editor to check how close
+ * Script Properties is to its 500KB script-wide storage quota. Logs total
+ * key count, approximate byte usage, and a breakdown by known key families
+ * (ESC_ escalation dedup, A1A_DATA/A1B_DATA coaching-chain chunks, everything
+ * else) so a quota error can be diagnosed without guessing. See
+ * ae_purgeOldKeys()'s header comment for the incident this is diagnosing.
+ */
+function ccsmPropertiesUsageReport() {
+  var all = PropertiesService.getScriptProperties().getProperties();
+  var keys = Object.keys(all);
+  var totalBytes = 0;
+  var buckets = { 'ESC_ escalation dedup': 0, 'A1A_DATA/A1B_DATA chunks': 0, 'other': 0 };
+  keys.forEach(function(k) {
+    var bytes = k.length + String(all[k]).length;
+    totalBytes += bytes;
+    if (/^ESC_[NW]_/.test(k)) buckets['ESC_ escalation dedup'] += bytes;
+    else if (/^A1[AB]_DATA/.test(k)) buckets['A1A_DATA/A1B_DATA chunks'] += bytes;
+    else buckets['other'] += bytes;
+  });
+  Logger.log('Script Properties usage: ' + keys.length + ' key(s), ~' +
+    Math.round(totalBytes / 1024) + 'KB of the 500KB script-wide quota.');
+  Object.keys(buckets).forEach(function(b) {
+    Logger.log('  ' + b + ': ~' + Math.round(buckets[b] / 1024) + 'KB');
+  });
 }
 
 /**

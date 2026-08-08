@@ -151,6 +151,7 @@ const body = testEmail.htmlBody || '';
 assert.ok(body.includes('Fortaleza'), 'body must contain "Fortaleza"');
 assert.ok(body.includes('Área de Crecimiento'), 'body must contain "Área de Crecimiento"');
 assert.ok(!/Growth Focus|Week ending|Mission Summary/.test(body), 'body must not leak English structural strings');
+assert.ok(body.includes('tres puntos'), 'expected the Gmail-trim warning banner (parity with Provo\'s docs/Agent1C.gs)');
 
 // Zone Leader path: Arauco 1's companion also gets a Zone Summary section
 // (Resumen de Zona — Arauco), rendered from the pre-generated (cached) zone
