@@ -1745,4 +1745,101 @@ ES: dict[str, str] = {
         "Encontradas, En Sacramental y Bautizadas provienen de los Indicadores "
         "Clave semanales, y Enseñadas de la exportación de Tableau; las barras "
         "provienen de reportes distintos y no son subconjuntos entre sí.",
+
+    # ── 12_Traslados.py — Apply a Transfer (added 2026-08-05) ────────────────
+    "Apply a Transfer": "Aplicar un Traslado",
+    "Applying a transfer is available to mission leadership only.":
+        "Aplicar un traslado está disponible solo para el liderazgo de la misión.",
+    "Pull the current roster from IMOS, preview what would change in "
+    "MISSION_ORG, then apply it. Each step needs a separate click — nothing "
+    "here runs automatically.":
+        "Extraiga la organización actual desde IMOS, previsualice qué "
+        "cambiaría en MISSION_ORG y luego apliquelo. Cada paso requiere un "
+        "clic por separado — nada aquí ocurre automáticamente.",
+    "TRANSFER_IMPORT is empty. Pull the roster first (below), or paste "
+    "it into the TRANSFER_IMPORT tab by hand.":
+        "TRANSFER_IMPORT está vacío. Extraiga primero la organización (abajo), "
+        "o péguela manualmente en la pestaña TRANSFER_IMPORT.",
+    "TRANSFER_IMPORT has {count} rows.": "TRANSFER_IMPORT tiene {count} filas.",
+    "1 · Preview": "1 · Previsualizar",
+    "Reading MISSION_ORG and TRANSFER_IMPORT...":
+        "Leyendo MISSION_ORG y TRANSFER_IMPORT...",
+    "{roster} roster rows vs {org} MISSION_ORG rows.":
+        "{roster} filas de organización vs {org} filas de MISSION_ORG.",
+    "New areas": "Áreas nuevas",
+    "Deactivating": "Desactivando",
+    "Changed": "Modificadas",
+    "Reactivating": "Reactivando",
+    "Override the deactivation guard (only if this many deactivations "
+    "is genuinely correct)":
+        "Anular el límite de desactivación (solo si esta cantidad de "
+        "desactivaciones es realmente correcta)",
+    "2 · Apply": "2 · Aplicar",
+    "Applying to MISSION_ORG...": "Aplicando a MISSION_ORG...",
+    "Applied.": "Aplicado.",
+    "New areas need an email address added by hand: {areas}":
+        "Las áreas nuevas necesitan que se agregue un correo manualmente: {areas}",
+    "3 · Sync nightly + weekly form dropdowns":
+        "3 · Sincronizar los menús de los formularios diario y semanal",
+    "Syncing form dropdowns...": "Sincronizando los menús de los formularios...",
+
+    # ── 12_Traslados.py — cloud Pull button + app/components/cloud_job_ui.py
+    # (added 2026-08-05) ──────────────────────────────────────────────────
+    "0 · Pull roster from IMOS (cloud)":
+        "0 · Extraer organización desde IMOS (nube)",
+    "Pulling the roster from IMOS...": "Extrayendo la organización desde IMOS...",
+    "Roster pulled. Click Preview to see the diff.":
+        "Organización extraída. Haga clic en Previsualizar para ver los cambios.",
+    "Working...": "Trabajando...",
+    "{status_text} ({elapsed} elapsed)": "{status_text} ({elapsed} transcurrido)",
+    "Cloud job failed: {summary}": "El trabajo en la nube falló: {summary}",
+    "{error} — check the GitHub Actions tab; it may still finish.":
+        "{error} — revise la pestaña de GitHub Actions; podría terminar todavía.",
+
+    # ── 12_Traslados.py — Schedule/Roster Update tabs + checklist +
+    # Emergency update (added 2026-08-06) ────────────────────────────────
+    "**Transfer day checklist**\n"
+    "1. **Pull roster from IMOS** — wait for the success message.\n"
+    "2. **Preview** — review New/Deactivating/Changed/Reactivating below; "
+    "tick the override box only if the guard blocks Apply and the number "
+    "of deactivations is genuinely correct for this transfer.\n"
+    "3. **Apply** — updates MISSION_ORG.\n"
+    "4. **Sync forms** — updates the nightly/weekly dropdowns; run this "
+    "after Apply.":
+        "**Lista de verificación del día de traslado**\n"
+        "1. **Extraer organización desde IMOS** — espere el mensaje de éxito.\n"
+        "2. **Previsualizar** — revise Áreas nuevas/Desactivando/Modificadas/"
+        "Reactivando abajo; marque la casilla de anulación solo si el "
+        "límite bloquea Aplicar y la cantidad de desactivaciones es "
+        "realmente correcta para este traslado.\n"
+        "3. **Aplicar** — actualiza MISSION_ORG.\n"
+        "4. **Sincronizar formularios** — actualiza los menús diario y "
+        "semanal; hágalo después de Aplicar.",
+    "4 · Emergency update (pull + apply)":
+        "4 · Actualización de emergencia (extraer + aplicar)",
+    "One click for a mid-cycle move: pulls the roster, then applies it "
+    "immediately — skipping the review step above. Run **3 · Sync forms** "
+    "separately afterward if the form dropdowns need updating.":
+        "Un clic para un cambio a mitad de ciclo: extrae la organización y "
+        "la aplica de inmediato — sin pasar por la revisión de arriba. "
+        "Ejecute **3 · Sincronizar formularios** por separado después si "
+        "los menús de los formularios necesitan actualizarse.",
+    "Tip: run 1 · Preview above first if you want to review the diff "
+    "before it's applied — this button applies right away, showing you "
+    "what changed only after the fact.":
+        "Consejo: ejecute primero 1 · Previsualizar arriba si desea "
+        "revisar los cambios antes de aplicarlos — este botón aplica de "
+        "inmediato y muestra lo que cambió recién después.",
+    "4 · Run emergency update": "4 · Ejecutar actualización de emergencia",
+    "Step 1/2 — pulling roster...": "Paso 1/2 — extrayendo la organización...",
+    "Pull failed — stopped before apply.\n\n{error}":
+        "La extracción falló — se detuvo antes de aplicar.\n\n{error}",
+    "Step 2/2 — applying transfer...": "Paso 2/2 — aplicando el traslado...",
+    "Apply blocked by the guard: {error}\n\nUse 1 · Preview and 2 · Apply "
+    "above to review and override.":
+        "Aplicar fue bloqueado por el límite: {error}\n\nUse 1 · "
+        "Previsualizar y 2 · Aplicar arriba para revisar y anular.",
+    "Emergency update failed after pull: {error}":
+        "La actualización de emergencia falló después de extraer: {error}",
+    "Emergency update complete.": "Actualización de emergencia completa.",
 }
