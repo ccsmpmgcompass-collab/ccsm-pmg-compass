@@ -651,10 +651,25 @@ function ae_getLastSunday(tz) {
   return Utilities.formatDate(new Date(now.getTime() - back * 86400000), tz, 'yyyy-MM-dd');
 }
 
+// Spanish weekday/month names — Utilities.formatDate's 'EEEE'/'MMMM' tokens
+// always render in English regardless of MISSION_LOCALE (same finding as
+// CCSM_Agent1C.gs's A1C_SPANISH_MONTHS, file header note #6, and
+// CCSM_Agent3.gs's A3_SPANISH_WEEKDAYS/A3_SPANISH_MONTHS). Index 0 = domingo,
+// matching JS Date#getDay().
+var AE_SPANISH_WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+var AE_SPANISH_MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
 /** Formats 'yyyy-MM-dd' as 'miércoles, 11 de junio' style for email bodies. */
 function ae_fmtDate(dateStr) {
-  try { return Utilities.formatDate(new Date(dateStr + 'T12:00:00'), getMissionTimezone(), 'EEEE, MMMM d'); }
-  catch (e) { return dateStr; }
+  try {
+    var d = new Date(dateStr + 'T12:00:00');
+    var tz = getMissionTimezone();
+    var weekday = AE_SPANISH_WEEKDAYS[d.getDay()];
+    var day = Utilities.formatDate(d, tz, 'd');
+    var month = AE_SPANISH_MONTHS[parseInt(Utilities.formatDate(d, tz, 'M'), 10) - 1];
+    return weekday + ', ' + day + ' de ' + month;
+  } catch (e) { return dateStr; }
 }
 
 function ae_escapeHtml(str) {
@@ -662,12 +677,24 @@ function ae_escapeHtml(str) {
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-/** Removes ESC_ keys older than 30 days to prevent PropertiesService bloat. */
+/**
+ * Removes ESC_ keys older than ESC_KEY_RETENTION_DAYS to prevent
+ * PropertiesService bloat. One key per (area, date) means 98 areas at 30 days
+ * of nightly-only retention alone approaches ~3,000 keys — a large enough
+ * slice of the script-wide 500KB Script Properties budget (shared with the
+ * A1A_DATA/A1B_DATA chunked coaching-chain payloads, 50KB+ each) that it was
+ * the likely cause of Agent1A's "exceeded the property storage quota" error
+ * on 2026-08-03, which killed that week's entire coaching chain before
+ * Agent1B/1C ever ran. Dedup only needs to survive MISSED_DAYS_LOOKBACK (3
+ * days) for nightly and one week for weekly escalation, so 10 days keeps a
+ * comfortable safety margin while cutting steady-state key count ~3x.
+ */
+var ESC_KEY_RETENTION_DAYS = 10;
 function ae_purgeOldKeys() {
   try {
     var tz      = getMissionTimezone();
     var cutoff  = Utilities.formatDate(
-      new Date(new Date().getTime() - 30 * 86400000), tz, 'yyyy-MM-dd');
+      new Date(new Date().getTime() - ESC_KEY_RETENTION_DAYS * 86400000), tz, 'yyyy-MM-dd');
     var props   = PropertiesService.getScriptProperties();
     var all     = props.getProperties();
     var deleted = 0;

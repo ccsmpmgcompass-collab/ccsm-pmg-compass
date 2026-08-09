@@ -60,6 +60,14 @@ var A3_FORM_DATE_COL = '¿Qué fecha está ingresando?'; // repeated once per zo
 // Note: the CCSM nightly form has no "extra push day" style checkbox
 // question — that entire concept from the Provo original is deleted here.
 
+// Spanish weekday/month names — Utilities.formatDate's 'EEEE'/'MMMM' tokens
+// always render in English regardless of MISSION_LOCALE (same finding as
+// CCSM_Agent1C.gs's A1C_SPANISH_MONTHS, file header note #6). Index 0 = domingo,
+// matching JS Date#getDay().
+var A3_SPANISH_WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+var A3_SPANISH_MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
 // ─── MAIN ENTRY POINT ────────────────────────────────────────────────────────
 
 /**
@@ -1217,12 +1225,22 @@ function a3_parseLocalDate(dateStr) {
 }
 
 /**
- * Formats a YYYY-MM-DD string as a human-readable date like "Monday, May 25".
- * Uses noon to avoid DST boundary edge cases shifting the date by one day.
+ * Formats a YYYY-MM-DD string as a human-readable Spanish date like
+ * "jueves, 6 de agosto". Uses noon to avoid DST boundary edge cases shifting
+ * the date by one day. Weekday/month come from A3_SPANISH_WEEKDAYS/
+ * A3_SPANISH_MONTHS, never Utilities.formatDate's 'EEEE'/'MMMM' tokens —
+ * those render in English regardless of MISSION_LOCALE (see A3_SPANISH_MONTHS
+ * comment). d.getDay() is read straight off the local Date object rather
+ * than through the mission timezone, matching the same noon-anchoring
+ * rationale already used for the day/month below.
  */
 function a3_formatReadableDate(dateStr) {
   var d = new Date(dateStr + 'T12:00:00');
-  return Utilities.formatDate(d, getMissionTimezone(), 'EEEE, MMMM d');
+  var tz = getMissionTimezone();
+  var weekday = A3_SPANISH_WEEKDAYS[d.getDay()];
+  var day = Utilities.formatDate(d, tz, 'd');
+  var month = A3_SPANISH_MONTHS[parseInt(Utilities.formatDate(d, tz, 'M'), 10) - 1];
+  return weekday + ', ' + day + ' de ' + month;
 }
 
 /**
