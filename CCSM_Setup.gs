@@ -28,7 +28,7 @@
  * ─────────────────────────────────────────────────────────────────────────
  *   runAgent3            Daily     6:00 AM   nightly refresh + missed-day alerts
  *   runAgent3Evening     Daily     9:00 PM   second daily refresh
- *   runAgent5A           Sunday   10:00 PM   dashboard summary + WEEKLY_KI
+ *   runAgent5A           Daily    12:00 PM   dashboard summary + WEEKLY_KI
  *   runAgent1A           Monday    9:15 PM   Monday coaching (chains 1B -> 1C)
  *   runAgent5B           Friday   12:00 PM   Friday encouragement (chains Agent6)
  *   runAgentReminder     Sunday    6:00 PM   NOTES reminders (+ weekly compliance, see below)
@@ -207,7 +207,7 @@
 var CCSM_TRIGGER_SCHEDULE = [
   { fn: 'runAgent3',          everyDays: 1,          hour: 6,                describe: 'Daily 6:00 AM' },
   { fn: 'runAgent3Evening',   everyDays: 1,          hour: 21,               describe: 'Daily 9:00 PM' },
-  { fn: 'runAgent5A',         weekDay: 'SUNDAY',     hour: 22,               describe: 'Sunday 10:00 PM' },
+  { fn: 'runAgent5A',         everyDays: 1,          hour: 12,               describe: 'Daily 12:00 PM' },
   { fn: 'runAgent1A',         weekDay: 'MONDAY',     hour: 21, minute: 30,   describe: 'Monday ~9:15-9:30 PM (chains 1B -> 1C)' },
   { fn: 'runAgent5B',         weekDay: 'FRIDAY',     hour: 12,               describe: 'Friday 12:00 PM (chains Agent6)' },
   { fn: 'runAgentReminder',   weekDay: 'SUNDAY',     hour: 18,               describe: 'Sunday 6:00 PM' },

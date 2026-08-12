@@ -16,7 +16,7 @@
  * values, not daily increments, so a5a_writeWeeklyKI is replaced wholesale
  * with a parser over WEEKLY_FORM_RAW instead of an aggregator over DAILY_LOG.
  *
- * SCHEDULE: Every Sunday at 10:00 PM (see CCSM_Setup.gs CCSM_TRIGGER_SCHEDULE)
+ * SCHEDULE: Every day at 12:00 PM (see CCSM_Setup.gs CCSM_TRIGGER_SCHEDULE)
  *           Run setupAllCcsmTriggers() to install it — setupAgent5ATrigger()
  *           below is a deprecated shim kept only for the editor's dropdown.
  *

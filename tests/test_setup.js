@@ -64,7 +64,7 @@ setConfig(env, ss, 'WEEKLY_FORM_LINK', 'https://forms.example/weekly');
 const EXPECTED_TRIGGERS = [
   { fn: 'runAgent3',          everyDays: 1,        atHour: 6 },
   { fn: 'runAgent3Evening',   everyDays: 1,        atHour: 21 },
-  { fn: 'runAgent5A',         onWeekDay: 'SUNDAY', atHour: 22 },
+  { fn: 'runAgent5A',         everyDays: 1,        atHour: 12 },
   { fn: 'runAgent1A',         onWeekDay: 'MONDAY', atHour: 21, nearMinute: 30 },
   { fn: 'runAgent5B',         onWeekDay: 'FRIDAY', atHour: 12 },
   { fn: 'runAgentReminder',   onWeekDay: 'SUNDAY', atHour: 18 },

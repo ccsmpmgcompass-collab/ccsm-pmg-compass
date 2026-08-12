@@ -199,7 +199,7 @@ The very first one replaces the starter `Code.gs`: paste `CcsmData.gs` into it a
 | 3 | `CCSM_AgentTestMode.gs` | `CCSM_AgentTestMode` | The TEST_MODE safety switch |
 | 4 | `CCSM_AgentValidation.gs` | `CCSM_AgentValidation` | Form-row validation |
 | 5 | `CCSM_Agent3.gs` | `CCSM_Agent3` | Nightly form → `DAILY_LOG`, missed-day alerts |
-| 6 | `CCSM_Agent5A.gs` | `CCSM_Agent5A` | Weekly dashboard + `WEEKLY_KI` |
+| 6 | `CCSM_Agent5A.gs` | `CCSM_Agent5A` | Daily dashboard + `WEEKLY_KI` |
 | 7 | `CCSM_Agent5B.gs` | `CCSM_Agent5B` | Friday encouragement qualifier |
 | 8 | `CCSM_Agent6.gs` | `CCSM_Agent6` | Friday encouragement emails |
 | 9 | `CCSM_Agent1A.gs` | `CCSM_Agent1A` | Monday coaching — metrics |
@@ -547,7 +547,7 @@ It installs 10 scheduled triggers plus the 2 form-submit triggers:
 | `runAgent5B` | Friday 12:00 PM | Friday encouragement (chains Agent6) |
 | `runAgentReminder` | Sunday 6:00 PM | NOTES reminders |
 | `runAgent1A` | Sunday 9:00 PM | Sunday coaching (chains 1B → 1C) |
-| `runAgent5A` | Sunday 10:00 PM | Dashboard summary + `WEEKLY_KI` |
+| `runAgent5A` | Daily 12:00 PM | Dashboard summary + `WEEKLY_KI` |
 | `runAgentScores` | Monday 12:05 AM | Weekly area scores |
 | `runAgent4` | Monday 7:00 AM | System health check + self-heal |
 | `onNightlyFormSubmit` | on submit | Validation + duplicate detection |
