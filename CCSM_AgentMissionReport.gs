@@ -71,7 +71,9 @@ function runAgentMissionReport() {
 
     var dailyTotals = amr_aggregateDailyLog(weekStart, weekEnd);
     var summary      = amr_buildSummary(dailyTotals, missionOrg);
-    var scores        = amr_loadScores();
+    // Scope the score summary to the areas actually in the rollout. See
+    // amr_loadScores()'s own header for what including everyone else did.
+    var scores        = amr_loadScores(missionOrg);
 
     var recipients = amr_collectApMpRecipients(missionOrg);
     if (recipients.length === 0) {
@@ -214,9 +216,34 @@ function amr_buildSummary(dailyTotals, missionOrg) {
  * fabricated zeros — see the "Sin datos de puntaje todavia" branch in
  * amr_buildEmail).
  */
-function amr_loadScores() {
+/**
+ * Mission score summary, scoped to the areas that are actually reporting.
+ *
+ * `activeOrg` is the loaded MISSION_ORG (already Active-filtered). Without it
+ * this walked the WHOLE SCORES tab and kept the newest row per area name —
+ * which meant every area ever scored stayed in, including the 57 areas that
+ * were scored before the phased rollout and have sat inactive since. Their
+ * stale 0 scores then (a) dragged the mission averages down over ~100 areas
+ * instead of 43 — Efectividad read 17.2 when the rollout's real figure was
+ * 40.0 — and (b) filled "Las 5 más bajas" entirely with non-rollout areas
+ * (Volcán 1, Pucón 2, MLS Pucón, Ancahual, Volcán 2), naming companionships
+ * to mission leadership as the mission's worst for not doing something they
+ * were never asked to do.
+ */
+function amr_loadScores(activeOrg) {
   var data = amr_getSheetData('SCORES');
   if (!data || data.length < 2) return null;
+
+  // Null/omitted => no filtering, preserving the old behaviour for any caller
+  // that has not been updated (and for the tests that call it bare).
+  var allowed = null;
+  if (activeOrg && activeOrg.length) {
+    allowed = {};
+    activeOrg.forEach(function(o) {
+      var n = String(o['Area_Name'] || '').trim();
+      if (n) allowed[n] = true;
+    });
+  }
 
   var headers = data[0].map(function(h) { return String(h).trim(); });
   var nameIdx = headers.indexOf('Area_Name');
@@ -233,6 +260,7 @@ function amr_loadScores() {
     var row  = data[i];
     var name = String(row[nameIdx] || '').trim();
     if (!name) continue;
+    if (allowed && !allowed[name]) continue;
     var wk = weekIdx >= 0 ? amr_toDateString(row[weekIdx]) : null;
     if (byArea[name] && byArea[name].week && wk && wk < byArea[name].week) continue;
     byArea[name] = {
@@ -305,7 +333,21 @@ function amr_buildEmail(weekEnd, summary, scores) {
   html += '<div style="margin:16px 4px;">';
   html += '<div style="font-size:12px;font-weight:700;color:' + C.header + ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Totales de la Misión</div>';
   html += '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>';
-  var tileKeys = Object.keys(m).filter(function(k) { return k !== 'total_areas' && k !== 'submitted' && typeof m[k] === 'number'; }).sort();
+  // AMR_TILE_SKIP mirrors the `claimed` set in CCSM_Agent1C.gs's scoreboard —
+  // these are DAILY_LOG columns that are not numeric metrics and must never be
+  // summed or shown. `effort` is a CHOICE column ('Todo'/'La mayor parte'/
+  // 'Algo') and `exchanges` is a YES/NO, so both sum to a meaningless 0; with
+  // no entry in AMR_METRIC_LABELS they then fell through to `|| key` and the
+  // Mission President's report carried tiles literally reading "0 effort" and
+  // "0 exchanges" — raw English keys in an otherwise all-Spanish report.
+  // Agent1C has had this exclusion for a while; this agent never got it.
+  var AMR_TILE_SKIP = {
+    total_areas: 1, submitted: 1, submissions: 1, exchanges: 1,
+    effort: 1, effort_all: 1, effort_most: 1, effort_some: 1, effort_total: 1
+  };
+  var tileKeys = Object.keys(m).filter(function(k) {
+    return !AMR_TILE_SKIP[k] && typeof m[k] === 'number';
+  }).sort();
   tileKeys.forEach(function(k, i) {
     if (i > 0 && i % 3 === 0) html += '</tr><tr>';
     html += '<td width="33%" style="padding:4px;"><div style="background:' + C.bgLight + ';border-radius:6px;padding:10px 6px;text-align:center;">' +

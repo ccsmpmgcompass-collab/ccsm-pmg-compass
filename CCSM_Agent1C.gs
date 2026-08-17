@@ -410,10 +410,34 @@ function runAgent1C() {
 
       var person = peopleMap[email];
       try {
+        // The personal coaching letter and the leader's zone/district report
+        // are two different documents for two different purposes, and stapling
+        // them into one message pushed leader mail to 92-242KB. Gmail clips
+        // anything over ~102KB behind a "[Message clipped]" link, so 19 of 42
+        // letters arrived truncated — the longest ones, to the people with the
+        // most to read. Sent separately, each lands whole: the personal half is
+        // ~58KB and the zone report ~90KB even for the largest 13-area zone.
         var subject = a1c_buildSubject(person, weekEnd);
         var body    = a1c_buildEmail(person, areas, summaries, weekEnd);
         sendEmail(email, subject, body, 'Agent1C');
         emailsSent++;
+
+        if (person.roles && person.roles.length) {
+          // Re-check the quota: this is a SECOND send for the same person, and
+          // the guard above only covered the first. Skipping that check would
+          // let each leader overshoot the cap by one — the same
+          // check-once-then-loop mistake the comment above warns about.
+          if (!usingRelay && MailApp.getRemainingDailyQuota() < 1) {
+            quotaSkipped++;
+          } else {
+            var leadSubject = a1c_buildLeaderSubject(person, weekEnd);
+            var leadBody    = a1c_buildLeaderEmail(person, areas, summaries, weekEnd);
+            if (leadBody) {
+              sendEmail(email, leadSubject, leadBody, 'Agent1C');
+              emailsSent++;
+            }
+          }
+        }
       } catch (mailErr) {
         emailErrors++;
         Logger.log('Agent1C: Failed to send to ' + email + ' — ' + mailErr.message);
@@ -516,8 +540,23 @@ function a1c_buildPeopleMap(fullOrgData) {
         people[email].areas.push(areaName);
       }
     }
+    // Dedupe roles the same way `areas` is deduped just above. addCompanion()
+    // runs once per companion column, and on CCSM's live roster 41 of 43
+    // active rows carry the SAME address in Companion1_Email and
+    // Companion2_Email — so a leader's role was pushed twice and the entire
+    // zone/district leadership summary rendered TWICE in one letter. That put
+    // 19 of 42 letters between 92KB and 242KB, every one of them over Gmail's
+    // ~102KB clipping threshold, so leaders hit "[Message clipped]" partway
+    // through their own report. sendEmail() already dedupes recipients, so
+    // this was never a double SEND — only a double RENDER, which is why it
+    // survived the earlier duplicate-address review.
     var role = a1c_getRoleFromRow(orgRow);
-    if (role) people[email].roles.push(role);
+    if (role) {
+      var already = people[email].roles.some(function(r) {
+        return r.type === role.type && r.zone === role.zone && r.district === role.district;
+      });
+      if (!already) people[email].roles.push(role);
+    }
   }
 
   fullOrgData.forEach(function(row) {
@@ -589,6 +628,15 @@ function a1c_buildEmail(person, areas, summaries, weekEnd) {
           '<div style="font-size:12px;opacity:0.75;margin-top:4px;">Semana que termina el ' + a1c_esc(dateLabel) + '</div>' +
           '</div>';
 
+  // Gmail trim cue — Gmail's '⋯' button only ever hides a TAIL of the
+  // message, so this top-placed cue is always visible when the dots appear.
+  // Plain-spoken on purpose: many readers have never seen a trimmed email.
+  // (Parity gap vs Provo's docs/Agent1C.gs, closed here — see
+  // project-ccsm-aug10-launch-audit memory.)
+  html += '<div style="font-size:12px;color:#1e40af;background:#eff6ff;border-left:3px solid ' + C.blue + ';' +
+          'border-radius:0 6px 6px 0;padding:8px 12px;margin:10px 4px 0;">' +
+          '👇 ¿No ves todo? Toca los tres puntos (⋯) más abajo para expandir esta carta y ver todas tus estadísticas.</div>';
+
   // Personal area coaching section
   person.areas.forEach(function(areaName) {
     var area = areas[areaName];
@@ -596,32 +644,14 @@ function a1c_buildEmail(person, areas, summaries, weekEnd) {
     html += a1c_buildAreaSection(areaName, area, weekEnd, C);
   });
 
-  // Leadership summary sections
-  person.roles.forEach(function(role) {
-    if (role.type === 'MP' || role.type === 'AP') {
-      html += a1c_buildLeadershipSection(
-        'Resumen de la Misión', summaries.mission, areas, 'mission', weekEnd, C
-      );
-      // Dashboard link — AP and MP only
-      var dashUrl = getConfig('STREAMLIT_URL');
-      if (dashUrl && dashUrl.trim()) {
-        html += '<div style="text-align:center;margin:20px 0;">' +
-                '<a href="' + dashUrl.trim() + '" style="display:inline-block;background:#1e3a5f;color:white;' +
-                'padding:10px 24px;border-radius:6px;font-size:13px;font-weight:700;text-decoration:none;">' +
-                'Ver el Panel de PMG Compass</a></div>';
-      }
-    } else if (role.type === 'ZL' || role.type === 'STL') {
-      var zoneData = summaries.zones && summaries.zones[role.zone];
-      html += a1c_buildLeadershipSection(
-        'Resumen de Zona — ' + role.zone, zoneData, areas, 'zone', weekEnd, C, role.zone
-      );
-    } else if (role.type === 'DL') {
-      var distData = summaries.districts && summaries.districts[role.district];
-      html += a1c_buildLeadershipSection(
-        'Resumen de Distrito — ' + role.district, distData, areas, 'district', weekEnd, C, null, role.district
-      );
-    }
-  });
+  // Leadership summaries are NOT here — they go out as their own email (see
+  // a1c_buildLeaderEmail below and the send loop's comment) so neither
+  // document gets clipped by Gmail. Leaders get a pointer instead.
+  if (person.roles && person.roles.length) {
+    html += '<div style="font-size:12px;color:#3730a3;background:#eef2ff;border-left:3px solid #6366f1;' +
+            'border-radius:0 6px 6px 0;padding:8px 12px;margin:14px 4px;">' +
+            '📋 Su resumen de liderazgo va en un correo aparte, enviado junto con este.</div>';
+  }
 
   // Glossary — every letter, at the very bottom of the body (covers the
   // personal area section(s) above and any leadership section below).
@@ -635,6 +665,88 @@ function a1c_buildEmail(person, areas, summaries, weekEnd) {
 
   html += '</div>';
   return html;
+}
+
+/**
+ * The leader's zone/district/mission report, as its own email.
+ *
+ * Split out of a1c_buildEmail() because the combined message ran 92-242KB and
+ * Gmail clips at roughly 102KB — so the readers with the most to read were the
+ * ones getting truncated. Same sections, same data, same order as before; only
+ * the envelope changed. Returns '' when the person holds no leadership role,
+ * which the send loop treats as "nothing to send".
+ */
+function a1c_buildLeaderEmail(person, areas, summaries, weekEnd) {
+  if (!person.roles || !person.roles.length) return '';
+
+  var dateLabel = weekEnd ? a1c_formatDate(weekEnd) : 'esta semana';
+  var C = {
+    header:  '#1e3a5f',
+    muted:   '#6b7280',
+    green:   '#16a34a',
+    blue:    '#2563eb',
+    border:  '#e5e7eb',
+    bgLight: '#f9fafb'
+  };
+
+  var html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:680px;margin:0 auto;color:#111;">';
+
+  html += '<div style="background:' + C.header + ';color:white;padding:20px 24px;border-radius:8px 8px 0 0;">' +
+          '<div style="font-size:18px;font-weight:700;">PMG Compass — Resumen de Liderazgo</div>' +
+          '<div style="font-size:12px;opacity:0.75;margin-top:4px;">Semana que termina el ' + a1c_esc(dateLabel) + '</div>' +
+          '</div>';
+
+  html += '<div style="font-size:12px;color:#1e40af;background:#eff6ff;border-left:3px solid ' + C.blue + ';' +
+          'border-radius:0 6px 6px 0;padding:8px 12px;margin:10px 4px 0;">' +
+          '👇 ¿No ves todo? Toca los tres puntos (⋯) más abajo para expandir este resumen.</div>';
+
+  var wrote = false;
+  person.roles.forEach(function(role) {
+    if (role.type === 'MP' || role.type === 'AP') {
+      html += a1c_buildLeadershipSection(
+        'Resumen de la Misión', summaries.mission, areas, 'mission', weekEnd, C
+      );
+      wrote = true;
+      // Dashboard link — AP and MP only
+      var dashUrl = getConfig('STREAMLIT_URL');
+      if (dashUrl && dashUrl.trim()) {
+        html += '<div style="text-align:center;margin:20px 0;">' +
+                '<a href="' + dashUrl.trim() + '" style="display:inline-block;background:#1e3a5f;color:white;' +
+                'padding:10px 24px;border-radius:6px;font-size:13px;font-weight:700;text-decoration:none;">' +
+                'Ver el Panel de PMG Compass</a></div>';
+      }
+    } else if (role.type === 'ZL' || role.type === 'STL') {
+      var zoneData = summaries.zones && summaries.zones[role.zone];
+      html += a1c_buildLeadershipSection(
+        'Resumen de Zona — ' + role.zone, zoneData, areas, 'zone', weekEnd, C, role.zone
+      );
+      wrote = true;
+    } else if (role.type === 'DL') {
+      var distData = summaries.districts && summaries.districts[role.district];
+      html += a1c_buildLeadershipSection(
+        'Resumen de Distrito — ' + role.district, distData, areas, 'district', weekEnd, C, null, role.district
+      );
+      wrote = true;
+    }
+  });
+
+  if (!wrote) return '';
+
+  html += a1c_buildGlossary_(C, weekEnd);
+
+  html += '<div style="margin-top:24px;padding:12px 16px;background:' + C.bgLight + ';border-radius:0 0 8px 8px;' +
+          'font-size:11px;color:' + C.muted + ';text-align:center;">' +
+          'PMG Compass — ' + a1c_esc(getMissionName()) +
+          '</div>';
+
+  html += '</div>';
+  return html;
+}
+
+/** Subject for the separate leadership report. */
+function a1c_buildLeaderSubject(person, weekEnd) {
+  var weekLabel = weekEnd ? a1c_formatDate(weekEnd) : 'esta semana';
+  return 'PMG Compass — Resumen de Liderazgo | ' + weekLabel;
 }
 
 /**
@@ -692,6 +804,37 @@ function a1c_buildGoalBar_(pick, C) {
   return html;
 }
 
+/**
+ * Shown in place of the strength/growth message blocks when an area filed no
+ * nightly report at all for the week. Deliberately carries no metric claims —
+ * there is no honest coaching to give from an empty week, and inventing some
+ * is what this replaces. Warm, not punitive: the missed-report nagging is
+ * AgentEscalation's job and it has already happened by Monday night.
+ */
+function a1c_buildNoReportNotice_(C) {
+  var formLink = getConfig('NIGHTLY_FORM_LINK') || '';
+  var html = '<div style="margin:10px 0;padding:12px 14px;background:#fffbeb;' +
+    'border-left:4px solid #f59e0b;border-radius:4px;">' +
+    '<div style="font-size:14px;font-weight:700;color:#92400e;margin-bottom:6px;">' +
+    'Esta semana no recibimos sus informes nocturnos</div>' +
+    '<div style="font-size:13px;color:#374151;line-height:1.5;">' +
+    'Por eso esta carta no incluye sus fortalezas ni su área de crecimiento: ' +
+    'sin informes no hay números que analizar, y preferimos no decirles algo ' +
+    'que no sabemos. Su trabajo de esta semana igual bendijo a alguien — solo ' +
+    'que no quedó registrado.<br><br>' +
+    'Enviar el informe toma menos de dos minutos y es lo que permite que la ' +
+    'próxima carta hable de <em>su</em> obra.' +
+    '</div>';
+  if (formLink) {
+    html += '<div style="margin-top:10px;">' +
+      '<a href="' + a1c_esc(formLink) + '" style="display:inline-block;padding:8px 14px;' +
+      'background:#2563eb;color:#ffffff;text-decoration:none;border-radius:4px;' +
+      'font-size:13px;font-weight:600;">Enviar informe nocturno</a></div>';
+  }
+  html += '</div>';
+  return html;
+}
+
 /** Area header: name + days-reported chip + streak (from area.derived.consistency). */
 function a1c_buildAreaHeader_(areaName, area, C) {
   var der  = area.derived;
@@ -701,8 +844,10 @@ function a1c_buildAreaHeader_(areaName, area, C) {
   if (cons) {
     var days = cons.daysReported;
     var col  = days >= 7 ? '#16a34a' : (days >= 5 ? '#b45309' : '#6b7280');
+    // A checkmark beside "0/7 días reportados" reads as approval of the zero.
+    var icon = days > 0 ? '✓' : '—';
     html += '<div style="font-size:11px;color:' + C.muted + ';margin-top:3px;">' +
-      '✓ <strong style="color:' + col + ';">' + days + '/7 días reportados</strong>';
+      icon + ' <strong style="color:' + col + ';">' + days + '/7 días reportados</strong>';
     if (cons.streak > 1) html += ' &nbsp;·&nbsp; 🔥 racha de ' + cons.streak + ' días de reporte nocturno';
     html += '</div>';
     if (days > 0 && days < 7) {
@@ -729,6 +874,16 @@ function a1c_buildAreaSection(areaName, area, weekEnd, C) {
 
   var html = '<div style="margin:16px 0;padding:0 4px;">';
   html += a1c_buildAreaHeader_(areaName, area, C);
+
+  // No nightly report at all this week. Agent1A deliberately leaves
+  // strength1/strength2/growth null in that case (see its `reported` flag), so
+  // the three message blocks below are skipped and we say the true thing
+  // instead. Without this the letter went out congratulating a companionship
+  // on a week they filed nothing for — the same night their District Leader
+  // was escalated about the missing reports.
+  if (!s && !s2 && !g) {
+    html += a1c_buildNoReportNotice_(C);
+  }
 
   if (s)  html += a1c_buildMessageBlock('💪 Fortaleza — ' + a1c_glossedDisplay_(s.key, s.display),  area.msg_strength1, C, C.green,
                                          a1c_statLine_(s, der, false) + a1c_buildGoalBar_(s, C));

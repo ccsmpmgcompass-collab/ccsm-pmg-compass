@@ -110,6 +110,14 @@ messageBank.appendRow([
 // Run the chain.
 // ---------------------------------------------------------------------------
 scope.runAgent1A();
+
+// Agent1B releases A1A_DATA before writing A1B_DATA, so anything asserted
+// about A1A_DATA's own contents must be read HERE, between the two runs.
+const a1aDataMidChain = scope.loadTempData('A1A_DATA');
+const a1aBytesMidChain = Object.entries(env.state.props.script || {})
+  .filter(([k]) => /^A1A_DATA/.test(k))
+  .reduce((n, [k, v]) => n + k.length + String(v).length, 0);
+
 scope.runAgent1B();
 
 // ---------------------------------------------------------------------------
@@ -124,12 +132,25 @@ function savedToProps(key) {
   const bucket = env.state.props.script || {};
   return Boolean(bucket[key] || bucket[key + '__chunks']);
 }
-assert.ok(savedToProps('A1A_DATA'), 'A1A_DATA must be saved to Script Properties');
+assert.ok(a1aBytesMidChain > 0, 'A1A_DATA must be saved to Script Properties by Agent1A');
 assert.ok(savedToProps('A1B_DATA'), 'A1B_DATA must be saved to Script Properties');
 
-const a1aData = scope.loadTempData('A1A_DATA');
-assert.strictEqual(a1aData.weekStart, weekStartStr);
-assert.strictEqual(a1aData.weekEnd, weekEndStr);
+assert.strictEqual(a1aDataMidChain.weekStart, weekStartStr);
+assert.strictEqual(a1aDataMidChain.weekEnd, weekEndStr);
+
+// QUOTA REGRESSION GUARD. Script Properties is capped at 500KB script-wide.
+// Against real 43-area data A1A_DATA is ~364KB and A1B_DATA ~426KB, so leaving
+// both resident blew the cap and Agent1B died with "You have exceeded the
+// property storage quota" — which is what killed the entire coaching chain on
+// 2026-08-03 and why Agent1C had never run once in production. Agent1B must
+// release A1A_DATA BEFORE writing A1B_DATA so only one payload is ever live.
+const a1aBytesAfter = Object.entries(env.state.props.script || {})
+  .filter(([k]) => /^A1A_DATA/.test(k))
+  .reduce((n, [k, v]) => n + k.length + String(v).length, 0);
+assert.ok(
+  a1aBytesAfter < a1aBytesMidChain,
+  `Agent1B must release A1A_DATA before saving A1B_DATA (was ${a1aBytesMidChain}B, still ${a1aBytesAfter}B)`
+);
 
 const a1bData = scope.loadTempData('A1B_DATA');
 const arauco1 = a1bData.areas['Arauco 1'];

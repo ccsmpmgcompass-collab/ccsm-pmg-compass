@@ -650,9 +650,20 @@ function saveTempData(key, value) {
   var json  = JSON.stringify(value);
   var props = PropertiesService.getScriptProperties();
 
-  // Clear any previous value/chunks for this key so stale chunks never linger
-  var oldChunks = parseInt(props.getProperty(key + '__chunks') || '0', 10);
-  for (var c = 0; c < oldChunks; c++) props.deleteProperty(key + '__' + c);
+  // Clear any previous value/chunks for this key by SCANNING for them, not by
+  // trusting the stored `__chunks` counter. If a prior call died mid-write
+  // (a thrown exception, or the script itself hitting the 500KB-wide storage
+  // quota while writing chunk N), `key + '__chunks'` was already deleted
+  // before the new chunks were written and never got rewritten — so the old
+  // counter no longer reflects what's actually stored, and that attempt's
+  // chunk properties become permanently invisible garbage eating into the
+  // shared budget forever. A prefix scan finds and removes them regardless of
+  // what any counter claims.
+  var allProps     = props.getProperties();
+  var chunkPattern = new RegExp('^' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '__\\d+$');
+  Object.keys(allProps).forEach(function(k) {
+    if (chunkPattern.test(k)) props.deleteProperty(k);
+  });
   props.deleteProperty(key + '__chunks');
   props.deleteProperty(key);
 
@@ -698,6 +709,96 @@ function loadTempData(key) {
     return null;
   }
   return JSON.parse(raw);
+}
+
+/**
+ * Manual diagnostic — run from the Apps Script editor to check how close
+ * Script Properties is to its 500KB script-wide storage quota. Logs total
+ * key count, approximate byte usage, and a breakdown by known key families
+ * (ESC_ escalation dedup, A1A_DATA/A1B_DATA coaching-chain chunks, everything
+ * else) so a quota error can be diagnosed without guessing. See
+ * ae_purgeOldKeys()'s header comment for the incident this is diagnosing.
+ */
+function ccsmPropertiesUsageReport() {
+  var all = PropertiesService.getScriptProperties().getProperties();
+  var keys = Object.keys(all);
+  var totalBytes = 0;
+  var buckets = { 'ESC_ escalation dedup': 0, 'A1A_DATA/A1B_DATA chunks': 0, 'other': 0 };
+  keys.forEach(function(k) {
+    var bytes = k.length + String(all[k]).length;
+    totalBytes += bytes;
+    if (/^ESC_[NW]_/.test(k)) buckets['ESC_ escalation dedup'] += bytes;
+    else if (/^A1[AB]_DATA/.test(k)) buckets['A1A_DATA/A1B_DATA chunks'] += bytes;
+    else buckets['other'] += bytes;
+  });
+  Logger.log('Script Properties usage: ' + keys.length + ' key(s), ~' +
+    Math.round(totalBytes / 1024) + 'KB of the 500KB script-wide quota.');
+  Object.keys(buckets).forEach(function(b) {
+    Logger.log('  ' + b + ': ~' + Math.round(buckets[b] / 1024) + 'KB');
+  });
+}
+
+/**
+ * Manual repair tool — frees Script Properties space without touching config.
+ *
+ * Run this from the Apps Script editor when any agent reports "You have
+ * exceeded the property storage quota". It deletes exactly two families of
+ * key, both of which are safe to lose:
+ *
+ *   - A1A_DATA / A1B_DATA and their numbered chunks. These are scratch
+ *     hand-off payloads between Agent1A -> 1B -> 1C, alive for about two
+ *     minutes on a Monday night. A crash mid-chain strands them, and because
+ *     only a LATER successful saveTempData() of the same key prefix-scans them
+ *     away, a chain that dies (as it did 2026-08-03) leaves ~370KB of the
+ *     500KB script-wide budget permanently occupied — which is why Agent5B and
+ *     AgentEscalation then started failing on unrelated days.
+ *   - ESC_N_* / ESC_W_* escalation dedup keys. Losing these can at worst
+ *     re-send one missed-report reminder; ae_purgeOldKeys() already expires
+ *     them on a 10-day window.
+ *
+ * It deliberately does NOT touch anything else — GEMINI_API_KEY in particular
+ * lives in this same store and deleting it would silently break AgentQA and
+ * the Agent1C leadership narrative. Never use deleteAllProperties() here.
+ *
+ * Pass true to preview without deleting.
+ */
+function ccsmPurgeScratchProperties(dryRun) {
+  var props = PropertiesService.getScriptProperties();
+  var all   = props.getProperties();
+  var keys  = Object.keys(all);
+
+  var doomed = keys.filter(function(k) {
+    return /^A1[AB]_DATA(__\d+|__chunks)?$/.test(k) || /^ESC_[NW]_/.test(k);
+  });
+
+  var freed = doomed.reduce(function(n, k) { return n + k.length + String(all[k]).length; }, 0);
+  var total = keys.reduce(function(n, k) { return n + k.length + String(all[k]).length; }, 0);
+
+  Logger.log('Script Properties: ' + keys.length + ' key(s), ~' + Math.round(total / 1024) +
+             'KB of the 500KB quota.');
+  Logger.log((dryRun ? 'WOULD DELETE ' : 'DELETING ') + doomed.length + ' scratch key(s), freeing ~' +
+             Math.round(freed / 1024) + 'KB.');
+
+  if (dryRun) {
+    Logger.log('Dry run — nothing was deleted. Run ccsmPurgeScratchProperties() to apply.');
+    return;
+  }
+
+  doomed.forEach(function(k) { props.deleteProperty(k); });
+  Logger.log('Done. ~' + Math.round((total - freed) / 1024) + 'KB still in use by ' +
+             (keys.length - doomed.length) + ' retained key(s) (config, GEMINI_API_KEY, etc).');
+}
+
+/**
+ * No-argument preview wrapper for ccsmPurgeScratchProperties().
+ *
+ * The Apps Script editor's Run dropdown cannot pass arguments, so selecting
+ * `ccsmPurgeScratchProperties` there runs it with `dryRun` undefined — which is
+ * falsy, so it would DELETE when the operator meant to preview. Run this one
+ * first, read the log, then run ccsmPurgeScratchProperties to apply.
+ */
+function ccsmPurgeScratchPropertiesDryRun() {
+  ccsmPurgeScratchProperties(true);
 }
 
 /**

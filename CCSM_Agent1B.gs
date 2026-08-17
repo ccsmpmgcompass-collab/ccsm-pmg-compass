@@ -86,6 +86,20 @@ function runAgent1B() {
 
     notes.push('Messages selected for ' + areaCount + ' areas (' + msgCount + ' messages)');
 
+    // Release A1A_DATA BEFORE writing A1B_DATA.
+    //
+    // `payload` is already fully in memory, so the stored copy is dead weight
+    // from here on — but saveTempData() only clears the key it is writing, so
+    // without this both payloads are resident at the moment A1B_DATA is
+    // written. Measured against real 43-area data that is 364KB + 426KB
+    // against Apps Script's script-wide 500KB Script Properties quota, and
+    // Agent1B died with "You have exceeded the property storage quota" every
+    // time — which is what killed the whole coaching chain on 2026-08-03 and
+    // why Agent1C had never once run. Clearing here keeps the peak at one
+    // payload instead of two. Agent1C still clears both at the end for the
+    // normal case.
+    saveTempData('A1A_DATA', '');
+
     saveTempData('A1B_DATA', payload);
     scheduleNext('runAgent1C', 1);
     notes.push('Agent1C scheduled in ~1 min');

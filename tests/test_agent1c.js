@@ -143,8 +143,13 @@ scope.runAgent1C();
 const emails = env.state.emails;
 assert.ok(emails.length >= 1, 'expected at least one email captured');
 
-const testEmail = emails.find((e) => e.to === 'CCSM.PMG.Compass@gmail.com');
-assert.ok(testEmail, 'expected an email addressed to the TEST_MODE inbox (CCSM.PMG.Compass@gmail.com)');
+// A leader now gets TWO messages: the personal coaching letter and a separate
+// leadership report. They were one message until the combined body ran past
+// Gmail's ~102KB clip threshold and started arriving truncated.
+const testEmail = emails.find(
+  (e) => e.to === 'CCSM.PMG.Compass@gmail.com' && /Entrenamiento Semanal/.test(e.subject)
+);
+assert.ok(testEmail, 'expected the personal coaching letter to the TEST_MODE inbox (CCSM.PMG.Compass@gmail.com)');
 assert.ok(/PMG Compass — Entrenamiento Semanal/.test(testEmail.subject), 'subject must start with the required Spanish subject: ' + testEmail.subject);
 
 const body = testEmail.htmlBody || '';
@@ -152,11 +157,23 @@ assert.ok(body.includes('Fortaleza'), 'body must contain "Fortaleza"');
 assert.ok(body.includes('Área de Crecimiento'), 'body must contain "Área de Crecimiento"');
 assert.ok(!/Growth Focus|Week ending|Mission Summary/.test(body), 'body must not leak English structural strings');
 
-// Zone Leader path: Arauco 1's companion also gets a Zone Summary section
-// (Resumen de Zona — Arauco), rendered from the pre-generated (cached) zone
-// narrative — no on-demand Gemini call needed for this test's only recipient.
-assert.ok(body.includes('Resumen de Zona — Arauco'), 'expected the ZL zone summary section');
 assert.ok(body.includes('Arauco 1'), 'expected the personal area section for Arauco 1');
+
+// Zone Leader path: Arauco 1's companion also gets a Zone Summary (Resumen de
+// Zona — Arauco), rendered from the pre-generated (cached) zone narrative — no
+// on-demand Gemini call needed for this test's only recipient. It now lives in
+// its OWN email rather than appended to the personal letter.
+const leaderEmail = emails.find(
+  (e) => e.to === 'CCSM.PMG.Compass@gmail.com' && /Resumen de Liderazgo/.test(e.subject)
+);
+assert.ok(leaderEmail, 'expected a SEPARATE leadership report email for the ZL');
+const leaderBody = leaderEmail.htmlBody || '';
+assert.ok(leaderBody.includes('Resumen de Zona — Arauco'), 'expected the ZL zone summary section in the leadership email');
+
+// The split is the whole point — the zone summary must NOT also be duplicated
+// back into the personal letter, or nothing was gained on message size.
+assert.ok(!body.includes('Resumen de Zona — Arauco'), 'zone summary must NOT remain in the personal coaching letter');
+assert.ok(body.includes('correo aparte'), 'personal letter must point the leader at the separate report');
 
 // No message TEXT was generated for the personal coaching messages — the
 // exact seeded subject lines must appear verbatim.

@@ -483,8 +483,18 @@ function ae_loadMissionOrg() {
     for (var i = 1; i < data.length; i++) {
       var obj = {};
       headers.forEach(function(h, j) { obj[h] = data[i][j]; });
-      // Skip explicitly inactive rows
-      if (String(obj['Active'] || '').toUpperCase() === 'FALSE') continue;
+      // Skip rows that are not explicitly active.
+      //
+      // MUST be an "is not TRUE" test, never "is FALSE". MISSION_ORG.Active is
+      // a real BOOLEAN in the live sheet, so getValues() hands back JS `false`
+      // — and `false || ''` collapses to '' because false is falsy, which is
+      // neither 'TRUE' nor 'FALSE'. The old `=== 'FALSE'` test therefore never
+      // fired, and every one of the 101 rows was treated as active: on
+      // 2026-08-16 this sent nightly missed-report reminders to 57 areas across
+      // 7 zones that were never part of the rollout and had never been told
+      // PMG Compass exists. Every other agent escaped this only because they
+      // test `!== 'TRUE'`, which the same coercion happens to satisfy.
+      if (String(obj['Active']).toUpperCase() !== 'TRUE') continue;
       rows.push(obj);
     }
     return rows;

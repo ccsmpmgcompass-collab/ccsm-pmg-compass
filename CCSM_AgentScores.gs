@@ -361,8 +361,16 @@ function asc_getAreaConfig(areaCode) {
         var metricKey = String(r[1] || '').trim();
         var component = String(r[2] || '').trim().toLowerCase();
         var weight    = parseFloat(r[3]) || 0;
-        var active    = String(r[4] || '').trim().toUpperCase();
-        if (active === 'FALSE') return;
+        // Treat only an explicit FALSE as disabled, but read it WITHOUT the
+        // `|| ''` idiom: SCORE_CONFIG.Active is a boolean checkbox, and
+        // `false || ''` collapses to '' (false is falsy), so the old
+        // `=== 'FALSE'` test could never fire and a row switched off in the
+        // sheet would still be scored. Same defect class that had
+        // AgentEscalation mailing all 101 MISSION_ORG rows. A blank cell keeps
+        // its historical meaning of "enabled".
+        var raw       = (r[4] === '' || r[4] == null) ? true : r[4];
+        var active    = String(raw).trim().toUpperCase();
+        if (active !== 'TRUE') return;
         if (component === 'effort')    config.fieldWeights.effort[metricKey] = weight;
         else if (component === 'skill') config.fieldWeights.skill[metricKey] = weight;
         else if (component === 'ki')    config.fieldWeights.ki[metricKey]    = weight;

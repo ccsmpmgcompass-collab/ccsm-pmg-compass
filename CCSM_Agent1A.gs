@@ -144,6 +144,21 @@ function runAgent1A() {
       var ranked = a1a_rankMetrics(stats, goals[name] || goalDefaults, rateTargets, (feedback[name] || {}).lastGrowthMetric);
       var growth = ranked[ranked.length - 1] || null;
 
+      // An area that submitted NOTHING has every metric at pct 0, so the
+      // descending sort in a1a_rankMetrics() is a no-op and ranked[0]/ranked[1]
+      // are just whichever metrics come first in A1A_METRICS order. Passing
+      // those through as "strengths" is how areas with 0/7 days reported were
+      // being told "su área se destacó esta semana" — fluent, confident praise
+      // for a week in which they filed no report at all, sent the same night
+      // their District Leader was escalated about the missing reports.
+      //
+      // There is nothing honest to say about metrics here, so say nothing:
+      // a1c_buildAreaSection() already guards each message block, so leaving
+      // these null drops the praise and Agent1C renders its no-report notice
+      // instead. Growth is nulled for the same reason — a "grow this metric"
+      // pick off zero data is just as invented as a strength.
+      var reported = (stats.submissions || 0) > 0;
+
       areaData[name] = {
         code:      areaObj['Area_Code']        || '',
         zone:      areaObj['Zone']             || '',
@@ -153,10 +168,22 @@ function runAgent1A() {
         name1:     areaObj['Companion1_Name']  || '',
         name2:     areaObj['Companion2_Name']  || '',
         stats:     stats,
-        ranked:    ranked, // full ranked metric list -- a1c_buildGoalGrid_ needs every goaled metric, not just the 3 picks below
-        strength1: ranked[0] || null,
-        strength2: ranked[1] || null,
-        growth:    growth,
+        reported:  reported,
+        // Full ranked metric list -- a1c_buildGoalGrid_ needs every goaled
+        // metric, not just the 3 picks below. Stripped of `pmg`/`scripture`:
+        // those are static per-METRIC text, identical for every area, and
+        // carrying them here duplicated ~25 chapter+scripture strings across
+        // all 43 areas for ~140KB of the payload against a 500KB script-wide
+        // Script Properties quota. The goal grid only reads key/display/
+        // actual/goal, and the three picks below keep their own copies for the
+        // message blocks that actually print them.
+        ranked:    ranked.map(function(p) {
+                     return { key: p.key, display: p.display,
+                              actual: p.actual, goal: p.goal, pct: p.pct };
+                   }),
+        strength1: reported ? (ranked[0] || null) : null,
+        strength2: reported ? (ranked[1] || null) : null,
+        growth:    reported ? growth : null,
         derived:   a1a_buildDerived(name, stats, growth, history, derivedWeeks, weekEnd, transferStart)
       };
     });
