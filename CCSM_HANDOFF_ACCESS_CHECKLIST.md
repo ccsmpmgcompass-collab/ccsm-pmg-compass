@@ -102,3 +102,47 @@ rule as `tools/probe_live.py`.
   but must be flipped public immediately before the next push or reboot, or
   Streamlit Cloud will fail with "Failed to download the sources for
   repository."
+
+## GCP detachment migration — decided 2026-08-18
+
+Discovered during handoff: the GCP project behind the dashboard's service
+account (`gen-lang-client-0214221824`) is **not owned by CCSM at all** — it's
+owned by `pmg.compass@gmail.com` (Provo's account). `ccsm.pmg.compass@gmail.com`
+has zero IAM access to it. Decision: **detach fully** rather than just grant
+cross-account access — CCSM gets its own project so it never again depends on
+a Provo-owned account for anything.
+
+**Do this while signed into `ccsm.pmg.compass@gmail.com`, in order:**
+
+1. **New GCP project.** console.cloud.google.com → create a new project
+   (e.g. `ccsm-pmg-compass`) — do NOT reuse `gen-lang-client-0214221824`.
+2. **Enable APIs** on the new project: Google Sheets API, Google Drive API.
+   (Generative Language API only if you also want the dashboard's Home-page
+   chatbot — `GEMINI_API_KEY` is currently blank/deliberately unused, so this
+   is optional, decide separately.)
+3. **Create a service account** (IAM & Admin → Service Accounts → Create),
+   e.g. `pmg-compass-dashboard`. Create a JSON key for it and download it.
+   **This key file must never be pasted into any chat, Claude or otherwise —
+   it goes straight from the download into the files in step 5.**
+4. **Share `COMPASS_CCSM` with the new service account's email**
+   (`...@ccsm-pmg-compass.iam.gserviceaccount.com` or similar) as Editor —
+   you already own the sheet outright so this is a normal Share click, no
+   API needed. Leave the OLD service account's access in place for now —
+   don't remove it until step 6 confirms the new one works.
+5. **Update the key in all 4 places it lives**, replacing the
+   `[gcp_service_account]` block's contents with the new key's fields
+   (`project_id`, `private_key_id`, `private_key`, `client_email`, etc. —
+   `COMPASS_SHEET_NAME` stays `COMPASS_CCSM`, unchanged):
+   - `dashboard/.streamlit/secrets.toml` (local)
+   - `dashboard/.env` → `GOOGLE_SHEETS_CREDENTIALS_JSON` (local, single-line JSON)
+   - GitHub repo → Settings → Secrets and variables → Actions →
+     `GOOGLE_SHEETS_CREDENTIALS_JSON`
+   - Streamlit Cloud app → Settings → Secrets → `[gcp_service_account]` block
+6. **Verify**: `cd dashboard && venv\Scripts\python.exe tools\check_handoff_access.py`
+   — the Sheet-read check should pass using the new key, and it prints which
+   `client_email` it authenticated as, so confirm it's the NEW one, not the
+   old `gen-lang-client-0214221824` account.
+7. **Decommission the old one, only after step 6 is green**: remove the old
+   service account's permission from the Sheet's Share list, and (optionally,
+   on the `pmg.compass@gmail.com` side) delete the old service account/key
+   from `gen-lang-client-0214221824` — full detachment complete.
