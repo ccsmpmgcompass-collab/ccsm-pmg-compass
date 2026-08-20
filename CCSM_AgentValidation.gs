@@ -36,13 +36,24 @@
  */
 
 // ── Numeric fields — derived from the single source of truth in CcsmData.gs ───
-var AV_NIGHTLY_NUMERIC_FIELDS = CCSM_NIGHTLY_QUESTIONS
-  .filter(function(q) { return q.type === 'NUMBER'; })
-  .map(function(q) { return q.headerEs; });
+// FUNCTIONS, not top-level vars: Apps Script concatenates every .gs file's
+// top-level code into one script and does not guarantee CcsmData.gs runs
+// before this file, so evaluating these eagerly at load time could hit
+// CCSM_NIGHTLY_QUESTIONS/CCSM_WEEKLY_QUESTIONS before they exist (same class
+// of TypeError confirmed live 2026-08-20 in CCSM_AgentScores.gs's analogous
+// top-level ASC_KI_WEIGHTS). Computing lazily on first call sidesteps
+// file-load order entirely.
+function av_nightlyNumericFields() {
+  return CCSM_NIGHTLY_QUESTIONS
+    .filter(function(q) { return q.type === 'NUMBER'; })
+    .map(function(q) { return q.headerEs; });
+}
 
-var AV_WEEKLY_NUMERIC_FIELDS = CCSM_WEEKLY_QUESTIONS
-  .filter(function(q) { return q.type === 'NUMBER'; })
-  .map(function(q) { return q.headerEs; });
+function av_weeklyNumericFields() {
+  return CCSM_WEEKLY_QUESTIONS
+    .filter(function(q) { return q.type === 'NUMBER'; })
+    .map(function(q) { return q.headerEs; });
+}
 
 
 /**
@@ -83,7 +94,7 @@ function av_validateFormRow(e, formType) {
     var sectionEnd    = (idxInAreaCols + 1 < areaCols.length) ? areaCols[idxInAreaCols + 1] : headers.length;
 
     // ── Validate every numeric field found within that section ────────────────
-    var numericFields = formType === 'weekly' ? AV_WEEKLY_NUMERIC_FIELDS : AV_NIGHTLY_NUMERIC_FIELDS;
+    var numericFields = formType === 'weekly' ? av_weeklyNumericFields() : av_nightlyNumericFields();
     var failures = []; // { field, value }
 
     numericFields.forEach(function(fieldName) {

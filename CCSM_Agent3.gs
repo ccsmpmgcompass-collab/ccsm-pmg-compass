@@ -28,6 +28,11 @@
  *   TRANSFER_START_DATE  — start of current transfer, format: YYYY-MM-DD
  *   NIGHTLY_FORM_LINK    — full URL of the nightly Google Form
  *   MISSED_DAYS_LOOKBACK — how many days back to scan for gaps (default: 14)
+ *   MAX_NEW_AREAS_PER_RUN — cold-start guard (default: 5). If a single run
+ *                          would send a first-ever MISSED_DAYS alert to more
+ *                          areas than this, all of them are blocked instead —
+ *                          see a3_checkMissedDays for the 2026-08-20 incident
+ *                          that motivated it.
  *
  * ASSUMED COLUMN NAMES — must match your actual sheet headers exactly:
  *   MISSION_ORG:       Area_Name | Zone | District | Companion1_Email | Companion2_Email | ...
@@ -48,6 +53,33 @@ function a3_getSheetData(tabName) {
   var sheet = getTab(tabName);
   if (!sheet || sheet.getLastRow() === 0) return [];
   return sheet.getDataRange().getValues();
+}
+
+/**
+ * Appends a row to AUDIT_LOG. Mirrors ar_logAudit (CCSM_AgentReminder.gs) /
+ * ae_logAudit (CCSM_AgentEscalation.gs) — same columns, so all three agents'
+ * audit rows read the same way in one tab. Agent3 previously had no AUDIT_LOG
+ * writer at all: an unrecognized area name (form dropdown drifted out of sync
+ * with MISSION_ORG — see the "Unrecognized area" call sites below) only ever
+ * reached Logger.log, which nobody sees until they go looking. That drop then
+ * silently feeds a false "you haven't submitted" reminder from both
+ * a3_checkMissedDays (this file) and CCSM_AgentEscalation.gs's System 1, since
+ * both key off whether the row made it into DAILY_LOG / the submission map.
+ */
+function a3_logAudit(action, area, notes) {
+  try {
+    var sheet = getTab('AUDIT_LOG');
+    if (!sheet) return;
+    if (sheet.getLastColumn() === 0 || sheet.getLastRow() === 0) {
+      sheet.appendRow(['Timestamp', 'Agent', 'Action', 'Rows_Affected', 'Area', 'Notes']);
+    }
+    sheet.appendRow([
+      Utilities.formatDate(new Date(), getMissionTimezone(), 'yyyy-MM-dd HH:mm:ss'),
+      'Agent3', action, 1, area, notes
+    ]);
+  } catch (e) {
+    Logger.log('a3_logAudit failed: ' + e.message);
+  }
 }
 
 // ─── FORM COLUMN CONSTANTS ──────────────────────────────────────────────────
@@ -387,7 +419,14 @@ function a3_buildDailyRecords(nightlyRaw, areaLookup, metrics) {
 
     var canonArea = areaLookup[rawArea.toLowerCase()];
     if (!canonArea) {
-      Logger.log('Agent3: Unrecognized area "' + rawArea + '" in row ' + (i + 1) + ' — skipped');
+      var unrecognizedMsg = 'Unrecognized area "' + rawArea + '" in NIGHTLY_FORM_RAW row ' + (i + 1) +
+        ' — no MISSION_ORG match, so this submission was NOT written to DAILY_LOG. This ' +
+        'companionship can now be falsely reminded/escalated as non-submitting by both ' +
+        'a3_checkMissedDays (this file) and CCSM_AgentEscalation.gs System 1. Likely cause: the ' +
+        'live form dropdown is out of sync with MISSION_ORG — run the Traslados page\'s ' +
+        '"Sync nightly + weekly form dropdowns", or check for an area rename/typo.';
+      Logger.log('Agent3: ' + unrecognizedMsg);
+      a3_logAudit('UNRECOGNIZED_AREA', rawArea, unrecognizedMsg);
       continue;
     }
 
@@ -659,6 +698,48 @@ function a3_checkMissedDays(missionOrg, nightlyRaw, areaLookup, lookbackDays, fo
   var quotaSkipped = 0;
   var nowStr = Utilities.formatDate(new Date(), getMissionTimezone(), 'yyyy-MM-dd HH:mm');
 
+  // ── Cold-start guard (2026-08-20 incident) ──────────────────────────────
+  // On 2026-08-19 night, MISSION_ORG.Active got set TRUE for areas across the
+  // whole mission (root cause outside this file — see AUDIT_LOG 'GoLive' rows
+  // and CCSM_GoLive.gs), and the very next scheduled run mailed real
+  // "you missed your report" alerts to dozens of companionships that had
+  // never used PMG Compass before — they don't even know the system exists.
+  // A routine night only ever touches a handful of areas that are already
+  // known repeat-offenders (they have prior MISSING_LOG rows); a run that
+  // suddenly wants to alert many areas with ZERO prior history is far more
+  // likely a bulk mis-activation than genuine simultaneous non-compliance
+  // across the mission. Block just the never-before-seen areas and keep
+  // routine day-to-day nagging of already-known areas working normally.
+  var maxNewAreas = parseInt(getConfig('MAX_NEW_AREAS_PER_RUN') || '5', 10);
+  var newAreaCandidates = [];
+  missionOrg.forEach(function(areaObj) {
+    var areaName = areaObj['Area_Name'];
+    if (a3_isLeadershipRow(areaObj)) return;
+    if (alreadyNotified.everSeen[areaName]) return;
+    // Only areas with a real companion email can ever actually receive a
+    // Tier-1 send (see the identical `if (email)` gate in the main loop
+    // below) — an area with no email configured yet is not a mail risk, so
+    // it must not count against the threshold.
+    var hasEmail = [areaObj['Companion1_Email'], areaObj['Companion2_Email']].some(function(e) {
+      if (!e || !e.trim()) return false;
+      var lower = e.toLowerCase();
+      return lower.indexOf('notreadyyet') < 0 && lower.indexOf('tbd@') < 0;
+    });
+    if (!hasEmail) return;
+    var missingDates = a3_getMissingDates(areaName, submittedDates, today, lookbackDays, transferStart);
+    if (missingDates.length > 0) newAreaCandidates.push(areaName);
+  });
+  var blockedAreas = {};
+  if (newAreaCandidates.length > maxNewAreas) {
+    newAreaCandidates.forEach(function(a) { blockedAreas[a] = true; });
+    var blockNote = 'Blocked ' + newAreaCandidates.length + ' area(s) never seen in ' +
+      'MISSING_LOG before (threshold ' + maxNewAreas + ', AGENT_CONFIG ' +
+      'MAX_NEW_AREAS_PER_RUN) — check MISSION_ORG.Active for a bulk-activation ' +
+      'mistake before raising the threshold. Areas: ' + newAreaCandidates.join(', ');
+    Logger.log('Agent3: ' + blockNote);
+    a3_logAudit('MASS_ACTIVATION_BLOCKED', newAreaCandidates.length + ' area(s)', blockNote);
+  }
+
   // ── Quota guard ──────────────────────────────────────────────────────────
   // This step fans out across every non-leadership area and can send two
   // emails per area (companionship reminder + District Leader escalation). On
@@ -693,6 +774,10 @@ function a3_checkMissedDays(missionOrg, nightlyRaw, areaLookup, lookbackDays, fo
     // Skip all leadership roles — ZLs/STLs/DLs have real zone names but don't submit
     // the nightly form as an area and should never receive missed-day alerts
     if (a3_isLeadershipRow(areaObj)) return;
+
+    // Cold-start guard tripped above — this area has never been notified
+    // before and the batch of first-timers this run was too large to trust.
+    if (blockedAreas[areaName]) return;
 
     // Companion emails — skip blanks and placeholder addresses (notreadyyet, TBD)
     var email = [areaObj['Companion1_Email'], areaObj['Companion2_Email']]
@@ -911,7 +996,14 @@ function a3_buildSubmissionDateMap(nightlyRaw, areaLookup) {
     if (!rawArea) continue;
 
     var canonArea = areaLookup[rawArea.toLowerCase()];
-    if (!canonArea) continue;
+    if (!canonArea) {
+      // Same drop as a3_buildDailyRecords, on the same raw rows — that function
+      // already writes the AUDIT_LOG row for it, so only log here (avoids a
+      // duplicate audit entry for the same unrecognized submission).
+      Logger.log('Agent3: Unrecognized area "' + rawArea + '" in NIGHTLY_FORM_RAW row ' + (i + 1) +
+        ' — excluded from the missed-day submission map.');
+      continue;
+    }
 
     var dateStr = a3_toDateString(row[filledStart + dateOffset]);
     if (!dateStr) continue;
@@ -924,17 +1016,23 @@ function a3_buildSubmissionDateMap(nightlyRaw, areaLookup) {
 }
 
 /**
- * Loads MISSING_LOG and returns two dedup sets of "Area|date1,date2,..." keys:
- *   { companionship: {...}, escalation: {...} }
+ * Loads MISSING_LOG and returns two dedup sets of "Area|date1,date2,..." keys,
+ * plus a third set of bare area names that have EVER appeared in MISSING_LOG:
+ *   { companionship: {...}, escalation: {...}, everSeen: {...} }
  *
  * companionship = gaps a reminder was already sent for (Alert_Status != ESCALATED_DL)
  * escalation    = situations already escalated to the District Leader (Alert_Status == ESCALATED_DL)
+ * everSeen      = area names with at least one MISSING_LOG row ever, regardless
+ *                 of which gap/status — the "has this area's compliance ever
+ *                 been checked before" signal a3_checkMissedDays' cold-start
+ *                 guard uses to tell a routine repeat-offender from an area
+ *                 that has never interacted with the system.
  *
  * Robust to column misalignment: the date list is located by CONTENT (a
  * YYYY-MM-DD[,YYYY-MM-DD...] pattern) rather than trusting one fixed column.
  */
 function a3_loadAlreadyNotified() {
-  var result = { companionship: {}, escalation: {} };
+  var result = { companionship: {}, escalation: {}, everSeen: {} };
   try {
     var data = a3_getSheetData('MISSING_LOG');
     if (!data || data.length < 2) return result;
@@ -951,6 +1049,7 @@ function a3_loadAlreadyNotified() {
       var row  = data[i];
       var area = String(row[areaCol] || '').trim();
       if (!area) continue;
+      result.everSeen[area] = true;
 
       // Prefer the named Missing_Dates column; if it doesn't hold a date list
       // (legacy misaligned rows), scan the row for the value that does.

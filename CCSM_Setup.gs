@@ -606,6 +606,78 @@ function smokeTestPipeline() {
     else warn('KNOWLEDGE_BASE is empty — run seedCcsmKnowledgeBase().');
   }
 
+  // ── 5b. Nightly/weekly form area dropdowns vs MISSION_ORG (drift detector) ──
+  // The live Google Form's area dropdowns are a COPY of MISSION_ORG baked in by
+  // CCSM_TransferWebApp.gs's formSync (cct_applyFormSync_) — they do NOT update
+  // themselves when MISSION_ORG changes (e.g. a transfer). If that sync step is
+  // forgotten, a missionary who picks a since-renamed/removed area is silently
+  // dropped by CCSM_Agent3.gs's a3_buildDailyRecords ("Unrecognized area", now
+  // also written to AUDIT_LOG) — and is then falsely told by
+  // CCSM_AgentEscalation.gs System 1 (and/or Agent3's own missed-day alert)
+  // that they never submitted. This check is read-only (FormApp.openById +
+  // getChoices() only) and safe against production, same contract as every
+  // other check in this function.
+  try {
+    if (typeof cct_getOrgZones_ !== 'function' || typeof cct_readFormStructure_ !== 'function') {
+      warn('CCSM_TransferHelpers.gs is not pasted into this project — cannot check the form ' +
+        'dropdowns against MISSION_ORG.');
+    } else if (typeof CCT_NIGHTLY_FORM_ID === 'undefined' || typeof CCT_WEEKLY_FORM_ID === 'undefined') {
+      warn('CCSM_TransferWebApp.gs is not pasted into this project — cannot check the form ' +
+        'dropdowns against MISSION_ORG.');
+    } else {
+      var orgZones = cct_getOrgZones_();
+      var orgAreas = {};
+      Object.keys(orgZones).forEach(function(z) {
+        orgZones[z].forEach(function(a) { orgAreas[a.toLowerCase()] = a; });
+      });
+      var orgAreaCount = Object.keys(orgAreas).length;
+
+      var formIdsToCheck = { nightly: CCT_NIGHTLY_FORM_ID, weekly: CCT_WEEKLY_FORM_ID };
+      Object.keys(formIdsToCheck).forEach(function(label) {
+        var formId = formIdsToCheck[label];
+        if (!formId || String(formId).indexOf('CHANGE_ME') === 0) {
+          warn('CCT_' + label.toUpperCase() + '_FORM_ID is not set (CCSM_TransferWebApp.gs) — ' +
+            'cannot check the ' + label + ' form dropdown against MISSION_ORG.');
+          return;
+        }
+        try {
+          var struct = cct_readFormStructure_(formId);
+          var formAreas = {};
+          struct.zoneSections.forEach(function(sec) {
+            if (!sec.areaItem) return;
+            sec.areaItem.getChoices().forEach(function(c) {
+              formAreas[String(c.getValue()).toLowerCase().trim()] = true;
+            });
+          });
+
+          var missingFromForm = Object.keys(orgAreas).filter(function(k) { return !formAreas[k]; })
+            .map(function(k) { return orgAreas[k]; });
+          var staleInForm = Object.keys(formAreas).filter(function(k) { return !orgAreas[k]; });
+
+          if (missingFromForm.length || staleInForm.length) {
+            var msg = label.toUpperCase() + ' form dropdown is OUT OF SYNC with MISSION_ORG.';
+            if (missingFromForm.length) {
+              msg += ' Active area(s) missing from the form (a missionary here cannot select their ' +
+                'area, or picks a near-miss that silently fails to match): ' + missingFromForm.join(', ') + '.';
+            }
+            if (staleInForm.length) {
+              msg += ' Stale choice(s) still in the form (renamed/removed in MISSION_ORG): ' +
+                staleInForm.join(', ') + '.';
+            }
+            msg += ' Fix: dashboard Traslados page -> "3 · Sync nightly + weekly form dropdowns".';
+            fail(msg);
+          } else {
+            ok(label.toUpperCase() + ' form dropdown matches MISSION_ORG (' + orgAreaCount + ' area(s)).');
+          }
+        } catch (e) {
+          warn('Could not read the ' + label + ' form (' + formId + ') to check its dropdown: ' + e.message);
+        }
+      });
+    }
+  } catch (e) {
+    warn('Form-dropdown drift check failed unexpectedly: ' + e.message);
+  }
+
   // ── 6. Trigger inventory ─────────────────────────────────────────────────
   var counts = {};
   ScriptApp.getProjectTriggers().forEach(function(t) {

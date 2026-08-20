@@ -87,6 +87,12 @@
  *   NIGHTLY_FORM_LINK    — full URL of the nightly Google Form
  *   WEEKLY_FORM_LINK     — full URL of the weekly Google Form
  *   MISSED_DAYS_LOOKBACK — days to scan back (default: 14)
+ *   MAX_NEW_AREAS_PER_RUN — cold-start guard (default: 5). If a single run
+ *                          of runNightlyEscalation would send a first-ever
+ *                          reminder to more areas than this (areas with no
+ *                          prior ESC_N_ stage key at all), all of them are
+ *                          blocked instead — see the 2026-08-20 incident note
+ *                          in runNightlyEscalation for what motivated this.
  */
 
 
@@ -164,12 +170,51 @@ function runNightlyEscalation() {
   var sent     = 0;
   var capHit   = false;
 
+  // ── Cold-start guard (2026-08-20 incident) ────────────────────────────────
+  // On 2026-08-19 night, MISSION_ORG.Active got set TRUE mission-wide (root
+  // cause outside this file — see AUDIT_LOG 'GoLive' rows), and the next run
+  // of this function sent 228 real reminder/escalation emails in one sweep to
+  // companionships that had never used PMG Compass before. An area that has
+  // NEVER had an ESC_N_ stage key before has never been through this chain —
+  // a routine night only ever adds a handful of such areas (a new transfer),
+  // never dozens at once. Block first-timers past the threshold; areas
+  // already mid-chain (have a prior key) keep advancing normally.
+  var maxNewAreas = parseInt(getConfig('MAX_NEW_AREAS_PER_RUN') || '5', 10);
+  var newAreaCandidates = [];
+  missionOrg.forEach(function(areaObj) {
+    if (ae_isNonSubmitting(areaObj)) return;
+    var areaName = String(areaObj['Area_Name'] || '').trim();
+    if (!areaName || !ae_getCompanionEmails(areaObj)) return;
+    var areaSubmitted = submitted[areaName] || {};
+    var hasPriorKey = false, hasMissing = false;
+    for (var d2 = 2; d2 <= lookback; d2++) {
+      var ms2 = todayMs - d2 * 86400000;
+      var date2 = Utilities.formatDate(new Date(ms2), tz, 'yyyy-MM-dd');
+      if (systemStart && date2 < systemStart) continue;
+      if (allProps['ESC_N_' + areaName + '_' + date2]) { hasPriorKey = true; break; }
+      if (!areaSubmitted[date2]) hasMissing = true;
+    }
+    if (!hasPriorKey && hasMissing) newAreaCandidates.push(areaName);
+  });
+  var blockedAreas = {};
+  if (newAreaCandidates.length > maxNewAreas) {
+    blockedAreas = newAreaCandidates.reduce(function(m, a) { m[a] = true; return m; }, {});
+    var blockNote = 'Blocked ' + newAreaCandidates.length + ' area(s) with no prior ' +
+      'ESC_N_ stage (threshold ' + maxNewAreas + ', AGENT_CONFIG MAX_NEW_AREAS_PER_RUN) ' +
+      '— check MISSION_ORG.Active for a bulk-activation mistake before raising the ' +
+      'threshold. Areas: ' + newAreaCandidates.join(', ');
+    Logger.log('AgentEscalation: ' + blockNote);
+    ae_logAudit('MASS_ACTIVATION_BLOCKED', newAreaCandidates.length + ' area(s)',
+      'threshold=' + maxNewAreas, newAreaCandidates.join(', '));
+  }
+
   try {
     missionOrg.forEach(function(areaObj) {
       if (capHit) return;                                   // MAX_SENDS reached — stop
       if (ae_isNonSubmitting(areaObj)) return;
-  
+
       var areaName   = String(areaObj['Area_Name'] || '').trim();
+      if (blockedAreas[areaName]) return;                    // cold-start guard tripped above
       if (TEST_AREA_ONLY && areaName !== TEST_AREA_ONLY) return;   // test: one area only
       var companions = ae_getCompanionEmails(areaObj);
       if (!areaName || !companions) return;
@@ -482,9 +527,29 @@ function ae_loadMissionOrg() {
     var rows = [];
     for (var i = 1; i < data.length; i++) {
       var obj = {};
-      headers.forEach(function(h, j) { obj[h] = data[i][j]; });
-      // Skip explicitly inactive rows
-      if (String(obj['Active'] || '').toUpperCase() === 'FALSE') continue;
+      // Stringify every cell up front, matching every other MISSION_ORG
+      // loader in this project (e.g. CCSM_Agent3.gs's a3_loadMissionOrg).
+      // MISSION_ORG.Active is a real Sheets checkbox column, so getValues()
+      // returns a native JS boolean here, not the text "TRUE"/"FALSE". The
+      // old code kept that raw boolean and filtered with
+      // `String(obj['Active'] || '') === 'FALSE'` -- for a real `false`,
+      // `false || ''` evaluates to '' BEFORE String() ever runs (false is
+      // falsy), so the comparison against 'FALSE' never matched and every
+      // row, active or not, passed through. Confirmed live 2026-08-20:
+      // previewNightlyEscalation evaluated 101 areas instead of the 43
+      // actually marked Active=TRUE. This is almost certainly the real,
+      // previously-unfound cause of the 2026-08-20 mass escalation incident
+      // (real mail to Gorbea/Volcán 1/Arauco Service) -- no external
+      // mass-activation event was likely needed; this bug alone was enough
+      // once TEST_MODE was ever FALSE.
+      headers.forEach(function(h, j) {
+        var v = data[i][j];
+        obj[h] = (v !== null && v !== undefined) ? String(v).trim() : '';
+      });
+      // Only keep rows explicitly marked active -- matches the whitelist
+      // convention every other MISSION_ORG loader in this project uses,
+      // so a blank/unset Active cell is NOT treated as active by default.
+      if (obj['Active'].toUpperCase() !== 'TRUE') continue;
       rows.push(obj);
     }
     return rows;
@@ -511,7 +576,19 @@ function ae_loadNightlySubmissions(lookbackDays) {
     var colArea = headers.indexOf('Area');
     if (colDate === -1 || colArea === -1) return map;
 
-    var cutoffMs = new Date().getTime() - lookbackDays * 86400000;
+    // Anchor the cutoff to the START of today (midnight), not the exact
+    // current instant. Using new Date().getTime() here meant the cutoff
+    // crept later every day by however late the trigger happened to run
+    // (e.g. 7:23 AM) -- so a DAILY_LOG row for exactly `lookbackDays` days
+    // ago, stamped at midnight, always landed a few hours BEFORE that
+    // moving cutoff and got silently dropped from the map even when the
+    // form genuinely was submitted. Since lookback is floored at 4
+    // (Math.max(4, MISSED_DAYS_LOOKBACK) below), this fired a false
+    // "Reminder 1" for the d=4 date every single run, for every area that
+    // had actually submitted on time -- confirmed 2026-08-20 against
+    // Los Huertos' own DAILY_LOG/NIGHTLY_FORM_RAW rows.
+    var todayStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+    var cutoffMs = new Date(todayStr + 'T00:00:00').getTime() - lookbackDays * 86400000;
 
     for (var i = 1; i < data.length; i++) {
       var raw = data[i][colDate];
@@ -823,6 +900,47 @@ function resetAreaEscalation() {
   Logger.log('resetAreaEscalation: cleared ' + deleted + ' stage key(s) for "' + AREA + '"' +
     (DATE_ONLY ? ' on ' + DATE_ONLY : ' (all dates)') + '.');
   Logger.log('Now run runNightlyEscalation (TEST_AREA_ONLY=' + AREA + ') to re-fire.');
+}
+
+/**
+ * Same as resetAreaEscalation() above, but clears EVERY area listed in AREAS
+ * in one run — for a form-dropdown desync (see CCSM_Agent3.gs "Unrecognized
+ * area" / AUDIT_LOG) that affected more than one area at once, so you don't
+ * have to edit-and-run resetAreaEscalation() once per area by hand.
+ *
+ * Always clears ALL missing-date stages for each listed area (no DATE_ONLY
+ * narrowing here — use resetAreaEscalation() instead if you need to spare one
+ * specific date for one area).
+ *
+ * Edit AREAS below to the exact Area_Name values from MISSION_ORG (one per
+ * line, in quotes, separated by commas), then Run. Affects only the areas
+ * listed — every other area's escalation state is untouched.
+ */
+function resetMultipleAreaEscalations() {
+  var AREAS = [
+    'Los Huertos',
+    'Cañete 1'
+  ];  // ← replace this list with your affected area names
+
+  var props = PropertiesService.getScriptProperties();
+  var all   = props.getProperties();
+  var totalDeleted = 0;
+
+  AREAS.forEach(function(AREA) {
+    var deleted = 0;
+    Object.keys(all).forEach(function(k) {
+      var isArea = (k.indexOf('ESC_N_' + AREA + '_') === 0 || k.indexOf('ESC_W_' + AREA + '_') === 0);
+      if (!isArea) return;
+      props.deleteProperty(k);
+      Logger.log('  deleted ' + k + ' (was ' + all[k] + ')');
+      deleted++;
+    });
+    Logger.log('resetMultipleAreaEscalations: cleared ' + deleted + ' stage key(s) for "' + AREA + '".');
+    totalDeleted += deleted;
+  });
+
+  Logger.log('resetMultipleAreaEscalations: DONE — ' + totalDeleted + ' total stage key(s) cleared across ' +
+    AREAS.length + ' area(s).');
 }
 
 

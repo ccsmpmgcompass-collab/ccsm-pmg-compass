@@ -77,13 +77,19 @@ var ASC_SKILL_WEIGHTS = {
 // ── KI component weights — equal weight over the 7 ki_*_real keys ─────────────
 // Built from CCSM_WEEKLY_QUESTIONS (CcsmData.gs) rather than hardcoded, so it
 // can never drift from the real WEEKLY_KI columns CCSM_Agent5A.gs writes.
-var ASC_KI_WEIGHTS = (function() {
+// A FUNCTION, not a top-level var: Apps Script concatenates every .gs file's
+// top-level code into one script and does not guarantee CcsmData.gs runs
+// before this file, so evaluating this eagerly at load time could hit
+// CCSM_WEEKLY_QUESTIONS before it exists (TypeError: reading 'forEach' of
+// undefined — confirmed live 2026-08-20). Computing it lazily, on first call
+// from inside a function, sidesteps file-load order entirely.
+function asc_kiWeights() {
   var w = {};
   CCSM_WEEKLY_QUESTIONS.forEach(function(q) {
     if (q.key.indexOf('ki_') === 0 && q.key.indexOf('_real') === q.key.length - 5) w[q.key] = 1;
   });
   return w;
-})();
+}
 
 // ── Default effectiveness sub-weights (CCSM design brief: 0.33/0.33/0.34) ─────
 var ASC_DEFAULT_EFFECTIVENESS = { effort: 0.33, skill: 0.33, ki: 0.34 };
@@ -157,8 +163,9 @@ function setupCcsmScoreConfig() {
   Object.keys(ASC_SKILL_WEIGHTS).forEach(function(k) {
     rows.push(['ALL', k, 'skill', ASC_SKILL_WEIGHTS[k], 'TRUE']);
   });
-  Object.keys(ASC_KI_WEIGHTS).forEach(function(k) {
-    rows.push(['ALL', k, 'ki', ASC_KI_WEIGHTS[k], 'TRUE']);
+  var kiWeights = asc_kiWeights();
+  Object.keys(kiWeights).forEach(function(k) {
+    rows.push(['ALL', k, 'ki', kiWeights[k], 'TRUE']);
   });
 
   rows.push(['', '', '', '', '']); // section separator
@@ -318,7 +325,7 @@ function asc_getAreaConfig(areaCode) {
     fieldWeights: {
       effort: asc_cloneObj(ASC_EFFORT_WEIGHTS),
       skill:  asc_cloneObj(ASC_SKILL_WEIGHTS),
-      ki:     asc_cloneObj(ASC_KI_WEIGHTS)
+      ki:     asc_cloneObj(asc_kiWeights())
     },
     effectivenessWeights: asc_cloneObj(ASC_DEFAULT_EFFECTIVENESS)
   };
@@ -661,7 +668,7 @@ function asc_loadAreaGoals(areaName, kiRow) {
   }
 
   // KI-component: this area's own Meta values for the scored week
-  Object.keys(ASC_KI_WEIGHTS).forEach(function(kiKey) {
+  Object.keys(asc_kiWeights()).forEach(function(kiKey) {
     var metaKey = kiKey.replace('_real', '_meta');
     var metaVal = kiRow ? parseFloat(kiRow[metaKey]) : NaN;
     goals[kiKey] = (!isNaN(metaVal) && metaVal > 0) ? metaVal : 1;
