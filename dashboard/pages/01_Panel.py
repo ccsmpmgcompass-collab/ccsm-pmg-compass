@@ -19,6 +19,7 @@ from app.components.design_system import (
 from app.config.flavor_loader import flavor, METRIC_LABELS
 from app.config.metric_catalog import key_indicator_metrics
 from app.i18n import t
+from app.i18n.formats import fmt_int, fmt_week_span
 from app.config.theme import CHART_COLORS
 from app.db.queries import (
     get_mission_totals,
@@ -27,6 +28,8 @@ from app.db.queries import (
     get_effort_by_area,
     get_weekly_ki_trends,
     get_weekly_ki_totals,
+    get_weekly_ki_reporting,
+    select_reporting_week,
     exclude_current_week,
     get_daily_summary,
     get_alltime_compliance,
@@ -105,11 +108,24 @@ def _mission_goal(metric_key: str) -> float:
     return float(app_goals.get(metric_key, 0) or 0)
 
 
+# ── Which week the Key Indicator tiles describe ───────────────────────────────
+# The tiles used to read ki_df.iloc[-1] — the newest week present, which from
+# Monday morning until the last area submits is the CURRENT, in-progress week.
+# Section 4's chart already called exclude_current_week(); the tiles did not, so
+# one page showed two different "latest weeks". See select_reporting_week() for
+# the full case and the rule it applies.
+_ki_row, _ki_week_end, _ki_is_partial = select_reporting_week(ki_df)
+_this_monday = date.today() - timedelta(days=date.today().weekday())
+
+_ki_reporting = get_weekly_ki_reporting()
+_active_areas = len(get_submitting_areas())
+
+
 def _ki_val(metric_key: str) -> float:
-    """Latest-week mission total for a weekly-form KI metric."""
-    if ki_df.empty or metric_key not in ki_df.columns:
+    """Mission total for a weekly-form KI metric, for the week the tiles name."""
+    if _ki_row is None or metric_key not in _ki_row.index:
         return 0.0
-    return float(ki_df.iloc[-1][metric_key])
+    return float(_ki_row[metric_key] or 0)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -131,7 +147,7 @@ else:
     ])
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 2. KEY INDICATOR TILES — weekly form, latest week
+# 2. KEY INDICATOR TILES — weekly form, latest COMPLETE week
 # ═══════════════════════════════════════════════════════════════════════════════
 # Was a fixed Pew / Date / Gate / Renew row: Utah Provo's four Key Indicators,
 # none of which is a column in CCSM's WEEKLY_KI. _ki_val returns 0.0 for a
@@ -141,11 +157,31 @@ else:
 # CCSM's KIs are the seven `ki_*_real` values the weekly form collects. `_real`
 # only: the matching `_meta` keys are that companionship's GOAL for the week and
 # belong beside a value as a target, never in a row of achieved results.
-ki_week = str(ki_df.iloc[-1]["week_end_date"]) if not ki_df.empty else ""
-render_section_label(
-    t("Key Indicators — Week Ending {week}", week=ki_week) if ki_week
-    else t("Key Indicators")
+_ki_span = (
+    fmt_week_span(_ki_week_end - timedelta(days=6), _ki_week_end)
+    if _ki_week_end is not None else ""
 )
+if not _ki_span:
+    render_section_label(t("Key Indicators"))
+elif _ki_is_partial:
+    render_section_label(
+        t("Key Indicators — Week of {span} (in progress)", span=_ki_span))
+else:
+    render_section_label(t("Key Indicators — Week of {span}", span=_ki_span))
+
+# The reporting denominator, stated on the page rather than left to be assumed.
+# A weekly total is a sum over whoever submitted; printing "31 de 43 áreas
+# informaron" is what stops a low week from being read as a bad week.
+_ki_reported = _ki_reporting.get(str(_ki_week_end), 0) if _ki_week_end else 0
+if _active_areas:
+    _ki_pct = round(_ki_reported / _active_areas * 100)
+    if _ki_is_partial:
+        st.caption(t("{n} of {total} areas have reported so far.",
+                     n=fmt_int(_ki_reported), total=fmt_int(_active_areas)))
+    else:
+        st.caption(t("{n} of {total} areas reported · {pct}%",
+                     n=fmt_int(_ki_reported), total=fmt_int(_active_areas),
+                     pct=fmt_int(_ki_pct)))
 
 _ki_metrics = key_indicator_metrics()
 if not _ki_metrics:
@@ -159,6 +195,18 @@ else:
         }
         for k, label in _ki_metrics.items()
     ])
+
+# The week now in progress gets one muted line rather than a tile: leadership
+# can see how far this week has filled in without any in-progress number sitting
+# at tile size next to a complete week's.
+if not _ki_is_partial and _active_areas:
+    _cur_end = _this_monday + timedelta(days=6)
+    st.caption(
+        t("Current week ({span}): {n} of {total} areas have reported.",
+          span=fmt_week_span(_this_monday, _cur_end),
+          n=fmt_int(_ki_reporting.get(str(_cur_end), 0)),
+          total=fmt_int(_active_areas))
+    )
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 3. ZONE LEADERBOARD — flavor-driven columns, ranked (last 7 days)

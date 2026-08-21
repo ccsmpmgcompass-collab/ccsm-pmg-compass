@@ -106,6 +106,16 @@ ES: dict[str, str] = {
     "Key Indicators": "Indicadores Clave",
     "Key Indicators — Week Ending {week}":
         "Indicadores Clave — Semana que Termina el {week}",
+    "Key Indicators — Week of {span}":
+        "Indicadores Clave — Semana del {span}",
+    "Key Indicators — Week of {span} (in progress)":
+        "Indicadores Clave — Semana del {span} (en curso)",
+    "{n} of {total} areas reported · {pct}%":
+        "{n} de {total} áreas informaron · {pct}%",
+    "{n} of {total} areas have reported so far.":
+        "{n} de {total} áreas han informado hasta ahora.",
+    "Current week ({span}): {n} of {total} areas have reported.":
+        "Semana en curso ({span}): {n} de {total} áreas han informado.",
     "Weekly Key Indicators — Last 7 Days":
         "Indicadores Clave Semanales — Últimos 7 Días",
     "Zone Leaderboard — Last 7 Days":

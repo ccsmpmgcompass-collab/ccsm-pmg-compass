@@ -210,3 +210,24 @@ def fmt_date_range(start, end) -> str:
     if a == b:
         return fmt_day_month(a, with_year=True)
     return f"{fmt_day_month(a)} – {fmt_day_month(b, with_year=True)}"
+
+
+def fmt_week_span(start, end) -> str:
+    """`10 al 16 de agosto` / `August 10–16` — one Mon–Sun reporting week.
+
+    fmt_date_range() names the month on both ends ("10 de ago – 16 de ago de
+    2026"), which reads as two separate dates that happen to be near each other.
+    A reporting week is a single span and almost always sits inside one month,
+    so the month is said once — which is also how a reader says it out loud, and
+    is what goes in a section heading after "Semana del ...".
+
+    Falls back to fmt_date_range() when the week crosses a month or year
+    boundary, where the month genuinely has to be repeated, and for a missing
+    end of the range.
+    """
+    a, b = _as_date(start), _as_date(end)
+    if a is None or b is None or a.year != b.year or a.month != b.month:
+        return fmt_date_range(start, end)
+    if get_lang() == "es":
+        return f"{a.day} al {b.day} de {_MONTHS_ES[a.month - 1]}"
+    return f"{_MONTHS_EN[a.month - 1]} {a.day}–{b.day}"

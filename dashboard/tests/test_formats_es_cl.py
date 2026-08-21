@@ -113,6 +113,26 @@ def test_date_range_english(en):
     assert f.fmt_date_range("2026-08-05", "2026-08-11") == "Aug 5 – Aug 11, 2026"
 
 
+def test_week_span_names_the_month_once(es):
+    """A Mon-Sun reporting week is one span, not two dates. Heading text reads
+    'Semana del 10 al 16 de agosto', so the month is said once and spelled out."""
+    assert f.fmt_week_span("2026-08-10", "2026-08-16") == "10 al 16 de agosto"
+
+
+def test_week_span_english(en):
+    assert f.fmt_week_span("2026-08-10", "2026-08-16") == "August 10–16"
+
+
+def test_week_span_falls_back_when_the_week_crosses_a_month(es):
+    """Say the month twice only when it genuinely changes mid-week."""
+    assert f.fmt_week_span("2026-08-31", "2026-09-06") == "31 de ago – 6 de sep de 2026"
+    assert f.fmt_week_span("2026-12-28", "2027-01-03") == "28 de dic – 3 de ene de 2027"
+
+
+def test_week_span_missing_end_is_not_invented(es):
+    assert f.fmt_week_span(None, None) == f.NA
+
+
 def test_unparseable_date_reads_as_missing_not_as_today(es):
     assert f.fmt_date("not a date") == f.NA
     assert f.fmt_date(None) == f.NA

@@ -304,6 +304,51 @@ def exclude_current_week(df: pd.DataFrame, date_col: str = "week_end_date") -> p
     return kept if not kept.empty else df
 
 
+def select_reporting_week(
+    df: pd.DataFrame,
+    date_col: str = "week_end_date",
+    today: "date | None" = None,
+) -> tuple:
+    """Pick the week a SNAPSHOT of weekly totals should describe.
+
+    Returns ``(row, week_end_date, is_partial)`` — the chosen row as a Series,
+    its end date as a ``date``, and whether that week is still in progress.
+    ``(None, None, True)`` when there is nothing to choose from.
+
+    Snapshot tiles used to take ``df.iloc[-1]``, the newest week present. From
+    Monday morning until the last area submits, that is the CURRENT week, whose
+    totals are a sum over however few areas have reported so far. On 2026-08-20
+    the Panel's Key Indicator tiles read 2 of 43 areas while the chart directly
+    below them, which already called exclude_current_week(), read 31 of 43 — the
+    same page showing two different "latest weeks", the tiles understating the
+    mission roughly 13x.
+
+    Prefer the newest COMPLETE week; weeks end Sunday, so a week is complete
+    once this week's Monday has passed. When only the in-progress week exists —
+    a mission in its first week — return it rather than an empty page, but say
+    so via ``is_partial`` so the caller can label it. Never return a partial
+    week silently, which is what exclude_current_week()'s own fallback does and
+    why completeness is recomputed here instead of inferred from it.
+    """
+    if df is None or df.empty or date_col not in df.columns:
+        return None, None, True
+
+    ordered = df.sort_values(date_col)
+    ends = pd.to_datetime(ordered[date_col], errors="coerce")
+    ordered = ordered[ends.notna()]
+    if ordered.empty:
+        return None, None, True
+    ends = ends[ends.notna()]
+
+    ref = today or datetime.today().date()
+    monday = ref - timedelta(days=ref.weekday())
+
+    complete = ordered[ends.dt.date < monday]
+    chosen = complete.iloc[-1] if not complete.empty else ordered.iloc[-1]
+    week_end = pd.to_datetime(chosen[date_col]).date()
+    return chosen, week_end, week_end >= monday
+
+
 def get_weekly_ki_by_zone() -> pd.DataFrame:
     """Weekly totals grouped by zone + week_end_date."""
     df = get_weekly_ki()
@@ -633,6 +678,27 @@ def get_weekly_ki_totals(n_weeks: int = 52) -> pd.DataFrame:
         return pd.DataFrame()
     grouped = df.groupby("week_end_date")[keys].sum().reset_index()
     return grouped.sort_values("week_end_date").tail(n_weeks)
+
+
+def get_weekly_ki_reporting() -> dict:
+    """How many distinct areas submitted the weekly form, per week:
+    ``{week_end_date: area_count}``.
+
+    The denominator for those counts is len(get_submitting_areas()) — the
+    mission's active teaching areas. A weekly total is a sum over whoever
+    reported, so without this the same tile reads identically whether the
+    mission did little or simply hasn't reported yet. Mid-week that gap is
+    enormous: on 2026-08-21 the newest week held 2 of 43 areas, so its totals
+    ran about 13x under the last complete week's.
+
+    Counted from get_weekly_form_data(), which is already deduplicated on
+    (week_end_date, area), so an area that submits twice counts once.
+    """
+    df = get_weekly_form_data()
+    if df.empty or "week_end_date" not in df.columns or "area" not in df.columns:
+        return {}
+    counts = df.groupby("week_end_date")["area"].nunique()
+    return {str(week): int(n) for week, n in counts.items()}
 
 
 def get_nightly_weekly_trends(n_weeks: int = 52) -> pd.DataFrame:
