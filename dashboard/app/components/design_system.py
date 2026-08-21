@@ -750,6 +750,42 @@ def render_section_label(text: str, *, emphasis: bool = False) -> None:
     )
 
 
+def render_verdict_banner(context: str, verdict: str) -> None:
+    """The one-line summary a page opens with: dim context, then the verdict.
+
+    Built for the Panel's audit item 8 ("verdict line at top"), and deliberately
+    presentation-only so any other tab can open with the same shape — the page
+    decides what the two sentences say, this decides how they look.
+
+    ``context`` is the qualifier (how much of the mission is in these numbers)
+    and renders small and grey; ``verdict`` is the message and renders large and
+    bright. That hierarchy was the user's call: the reader should come away with
+    the finding, framed by the coverage, not the other way round.
+
+    The accent bar is always the app's indigo — never graded by severity. Also
+    the user's call: the banner marks where the page begins, and a bar that
+    turned red would put an alarm colour above every section on the page whether
+    or not the reader has looked at anything yet. The judgement lives in the
+    numbers inside the sentence, and in the goal bars further down that already
+    carry the four-tier colour rule.
+    """
+    st.markdown(
+        f'<div style="display:flex;gap:1rem;align-items:stretch;'
+        f'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);'
+        f'border-radius:12px;padding:1rem 1.25rem;margin:0.25rem 0 1.5rem 0;">'
+        f'<span style="width:4px;border-radius:2px;flex:none;'
+        f'background:linear-gradient(180deg,#6366f1,#8b5cf6);"></span>'
+        f'<div>'
+        f'<div style="font-size:0.72rem;font-weight:600;letter-spacing:0.06em;'
+        f'color:#9ca3af;text-transform:lowercase;margin-bottom:0.35rem;">'
+        f'{_html.escape(context)}</div>'
+        f'<div style="font-size:1.05rem;font-weight:600;color:#f4f4f8;'
+        f'line-height:1.45;">{_html.escape(verdict)}</div>'
+        f'</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_table(data, *, index: bool = False, align_first_left: bool = True) -> None:
     """Render a DataFrame or pandas Styler as a themed HTML table.
 

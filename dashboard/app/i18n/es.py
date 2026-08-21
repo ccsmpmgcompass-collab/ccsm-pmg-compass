@@ -157,6 +157,26 @@ ES: dict[str, str] = {
         "{pct}% · {actual} vs {goal} por área",
     "Weekly Key Indicators — Last 7 Days":
         "Indicadores Clave Semanales — Últimos 7 Días",
+    # ── Panel §0: the verdict banner (audit item 8) ───────────────────────────
+    # Lower-case on purpose in both languages — the context line is set in a
+    # small grey style above the verdict and reads as a caption, not a sentence.
+    "reports: {n}/{total} nightly ({pct}%)":
+        "informes: {n}/{total} nocturno ({pct}%)",
+    "reports: {n}/{total} nightly ({pct}%) · {wn}/{total} weekly ({wpct}%)":
+        "informes: {n}/{total} nocturno ({pct}%) · {wn}/{total} semanal ({wpct}%)",
+    "reports: no active areas on record":
+        "informes: no hay áreas activas registradas",
+    "Not enough nightly data yet to read the conversion rates.":
+        "Aún no hay suficientes datos nocturnos para leer las tasas de conversión.",
+    "Weakest point: {name} — {value} against a target of {target}":
+        "El punto más débil: {name} — {value} contra una meta de {target}",
+    "{name}, {pct}% of its target": "{name}, {pct}% de su meta",
+    "All four conversion rates are at target — the tightest: {tightest}.":
+        "Las cuatro tasas de conversión están en meta — la más justa: {tightest}.",
+    "Every conversion rate that can be read is at target — "
+    "the tightest: {tightest}.":
+        "Todas las tasas de conversión que se pueden leer están en meta — "
+        "la más justa: {tightest}.",
     # ── Panel §1b: the four conversion rates (audit H2) ───────────────────────
     # Card labels drop the "Tasa de" that the section heading has just said.
     # "Significativas" follows CCSM_Agent1C.gs's own coaching-email wording

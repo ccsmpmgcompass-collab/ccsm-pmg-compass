@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 from app.auth.auth import require_auth
 from app.components.design_system import (
     inject_global_css, render_page_header, render_sidebar,
-    render_section_label, render_kpi_row, render_table,
+    render_section_label, render_kpi_row, render_table, render_verdict_banner,
 )
 from app.config.flavor_loader import flavor, METRIC_LABELS
 from app.config.metric_catalog import key_indicator_metrics
@@ -56,7 +56,7 @@ from app.analytics.period_delta import (
     reporting_dates, window_pair, window_totals, window_areas, days_in_window,
     period_delta, MIN_COMPARABLE_DAYS, WINDOW_DAYS,
 )
-from app.analytics.rate_metrics import rate_rows
+from app.analytics.rate_metrics import rate_rows, worst_rate, RATE_METRICS
 from app.utils.area_helpers import (
     compliance_anchor_date, build_calendar_data,
     latest_due_sunday, weekly_due_weeks,
@@ -269,6 +269,106 @@ _VS_PRIOR_WEEK = t("vs prior 7 days")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# 0. VERDICT — the one line the page opens with (audit item 8)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Nine sections of numbers, and until now nothing on the page said what any of
+# them added up to. The banner answers two questions in the order a president
+# asks them: how much of the mission is in these figures, and where is the
+# mission weakest.
+#
+# Numbered 0 for the same reason §1b is numbered 1b — the audit report and the
+# build queue refer to this page's sections by number, and renumbering to make
+# room would invalidate every one of those references.
+#
+# Card labels for the four rates. The §1b heading already says these are rates,
+# so repeating "Tasa de" on all four cards spends the widest line of the card on
+# a word the reader has just read. Same trimming rule as _KI_SHORT_LABELS, and
+# the same reason: the catalogue's names are built to be unambiguous in a metric
+# picker, not to fit a 200px card. Defined here rather than at §1b because the
+# verdict names a rate before §1b draws one.
+#
+# "Significativas" is not an invention — it is how CCSM_Agent1C.gs already says
+# it in the coaching email (A1C_METRIC_LABELS: 'Tasa de Significativas'; the
+# leadership KPI tile: 'Signif.'), so email and dashboard agree.
+_RATE_SHORT_LABELS = {
+    "contact_rate": "Contact",
+    "mc_rate":      "Meaningful Conversations",
+    "lesson_rate":  "Lessons",
+    "close_rate":   "Baptismal Invitation",
+}
+
+# Computed once and read twice: here for the verdict, at §1b for the cards. When
+# there is no reporting anchor the window totals are empty, every rate is
+# unreadable rather than zero, and worst_rate returns None — which is the case
+# the "not enough data" sentence below exists for.
+_rate_rows = rate_rows(_cur_totals, _prev_totals, get_agent_config(),
+                       current_days=_cur_days, prior_days=_prev_days)
+
+# ── The context line: how much of the mission is actually in these numbers ────
+# Both reporting rates, because this page mixes both sources and they disagree —
+# an area can file every night and still miss the weekly form. Live on
+# 2026-08-21 that is 40 of 43 nightly against 31 of 43 weekly, and a reader
+# looking at §1 and §2 without this line would assume one denominator.
+_night_areas = (window_areas(_daily_log, _cur_start, _cur_end)
+                if _night_anchor is not None else 0)
+
+if _active_areas:
+    _night_pct = round(_night_areas / _active_areas * 100)
+    # The weekly clause is dropped entirely while the newest week is still in
+    # progress (user's call). A percentage of a half-finished week reads as a
+    # failure that has not happened yet, and marking it "in progress" inside a
+    # line this dense costs more than leaving it out until the week closes.
+    if _ki_is_partial or not _ki_week_end:
+        _verdict_context = t("reports: {n}/{total} nightly ({pct}%)",
+                             n=fmt_int(_night_areas),
+                             total=fmt_int(_active_areas),
+                             pct=fmt_int(_night_pct))
+    else:
+        _wk_reported = _ki_reporting.get(str(_ki_week_end), 0)
+        _verdict_context = t(
+            "reports: {n}/{total} nightly ({pct}%) · "
+            "{wn}/{total} weekly ({wpct}%)",
+            n=fmt_int(_night_areas), total=fmt_int(_active_areas),
+            pct=fmt_int(_night_pct), wn=fmt_int(_wk_reported),
+            wpct=fmt_int(round(_wk_reported / _active_areas * 100)))
+else:
+    _verdict_context = t("reports: no active areas on record")
+
+# ── The verdict line: the single weakest of the four conversion rates ─────────
+# Only the four rates are eligible. The Key Indicators and the nightly tiles
+# have goals too, but §1's are the uncalibrated AGENT_CONFIG set (24%, 31% and
+# 15% of goal live) and a KI's goal comes off the previous week's form, so
+# widening the field would hand the verdict to a bad goal most weeks rather than
+# to bad work. The rates are agent-owned, targeted, and size-neutral.
+_worst = worst_rate(_rate_rows)
+_readable = [r for r in _rate_rows if r.get("pct_of_target") is not None]
+
+if _worst is None:
+    _verdict = t("Not enough nightly data yet to read the conversion rates.")
+elif _worst["pct_of_target"] < 100:
+    _verdict = t("Weakest point: {name} — {value} against a target of {target}",
+                 name=t(_RATE_SHORT_LABELS.get(_worst["key"], _worst["key"])),
+                 value=fmt_percent(_worst["value"], 1),
+                 target=fmt_percent(_worst["target"], 0))
+else:
+    # worst_rate returns the minimum, so a minimum at or above target means
+    # every readable rate is. Which sentence says so depends on whether all four
+    # were readable — claiming "all four" when one had no denominator would be
+    # the first false thing on the page.
+    _tight = t("{name}, {pct}% of its target",
+               name=t(_RATE_SHORT_LABELS.get(_worst["key"], _worst["key"])),
+               pct=fmt_int(round(_worst["pct_of_target"])))
+    if len(_readable) == len(RATE_METRICS):
+        _verdict = t("All four conversion rates are at target — the tightest: "
+                     "{tightest}.", tightest=_tight)
+    else:
+        _verdict = t("Every conversion rate that can be read is at target — "
+                     "the tightest: {tightest}.", tightest=_tight)
+
+render_verdict_banner(_verdict_context, _verdict)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # 1. NIGHTLY ACTIVITY — mission totals, last 7 days
 # ═══════════════════════════════════════════════════════════════════════════════
 render_section_label(t("Nightly Activity — Last 7 Days"))
@@ -361,29 +461,12 @@ else:
 # arithmetic is shown here instead, in an expander. Revisit once Tableau syncs.
 render_section_label(t("Conversion Rates — Last 7 Days"))
 
-# Card labels. The section heading already says these are rates, so repeating
-# "Tasa de" on all four cards spends the widest line of the card on a word the
-# reader has just read. Same trimming rule as _KI_SHORT_LABELS, and the same
-# reason: the catalogue's names are built to be unambiguous in a metric picker,
-# not to fit a 200px card.
-#
-# "Significativas" is not an invention — it is how CCSM_Agent1C.gs already says
-# it in the coaching email (A1C_METRIC_LABELS: 'Tasa de Significativas'; the
-# leadership KPI tile: 'Signif.'), so email and dashboard agree.
-_RATE_SHORT_LABELS = {
-    "contact_rate": "Contact",
-    "mc_rate":      "Meaningful Conversations",
-    "lesson_rate":  "Lessons",
-    "close_rate":   "Baptismal Invitation",
-}
-
 if _night_anchor is None:
     st.info(t("No nightly reports yet — DAILY_LOG has no day on which at least "
               "half the mission's areas filed."))
 else:
-    _rate_rows = rate_rows(_cur_totals, _prev_totals, get_agent_config(),
-                           current_days=_cur_days, prior_days=_prev_days)
-
+    # _rate_rows is computed once, in §0 above — the verdict banner names the
+    # weakest of these four, so both sections must be reading the same figures.
     # unit/decimals: one decimal, matching the zone table's fmt_number(v, 1).
     # A whole number would print close_rate's 9,7% and 10,4% identically, which
     # on the mission's weakest conversion is exactly where resolution matters.
