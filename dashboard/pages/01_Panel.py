@@ -19,7 +19,7 @@ from app.components.design_system import (
 from app.config.flavor_loader import flavor, METRIC_LABELS
 from app.config.metric_catalog import key_indicator_metrics
 from app.i18n import t
-from app.i18n.formats import fmt_int, fmt_week_span, fmt_day_month
+from app.i18n.formats import fmt_int, fmt_number, fmt_week_span, fmt_day_month
 from app.config.theme import CHART_COLORS
 from app.db.queries import (
     get_mission_totals,
@@ -39,9 +39,15 @@ from app.db.queries import (
     get_week_to_date_totals,
     get_week_to_date_areas,
     get_submitting_areas,
+    get_scores,
+    get_scored_weeks,
     get_daily_log,
     get_weekly_submission_data,
     get_config_value,
+)
+from app.analytics.zone_comparison import (
+    zone_per_area_table, effectiveness_is_rankable, ki_scored_area_count,
+    EFFECTIVENESS as ZONE_EFFECTIVENESS,
 )
 from app.utils.area_helpers import (
     compliance_anchor_date, build_calendar_data,
@@ -409,36 +415,107 @@ else:
     ])
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 3. ZONE LEADERBOARD — flavor-driven columns, ranked (last 7 days)
+# 3. ZONES — PER-AREA AVERAGE ACROSS THE FINDING FUNNEL (last 7 days)
 # ═══════════════════════════════════════════════════════════════════════════════
-render_section_label(t("Zone Leaderboard — Last 7 Days"))
+# Every figure here is divided by the zone's active area count, never shown raw:
+# zones run 8 to 13 areas, so a raw total ranks by size (audit finding C2). The
+# arithmetic — and the reason the divisor is ALL active areas rather than the
+# ones that reported — lives in app/analytics/zone_comparison.py.
 
-if (zone_df.empty or "metric_key" not in zone_df.columns
-        or "zone" not in zone_df.columns or not flavor.nightly_highlights):
-    st.info(_EMPTY_MSG)
+#: The funnel, in the order a contact travels it. Fixed here rather than read
+#: from flavor.nightly_highlights: that property is sourced from SCORE_CONFIG's
+#: *effort* weights, which exist to weight the effort score, not to choose what
+#: a president compares zones on. It yields contacts_attempted, roleplays and
+#: member_contacts — two of the three are inputs, not outcomes (audit H1).
+_ZONE_FUNNEL_KEYS = [
+    "contacts_attempted",
+    "contacts_made",
+    "friend_lessons",
+    "baptismal_invitations",
+]
+
+#: Column headers, trimmed to keep eight columns readable on one line. Trimmed
+#: phrases, never initialisms — same style as _KI_SHORT_LABELS above.
+_ZONE_SHORT_LABELS = {
+    "contacts_attempted":    "Attempts",
+    "contacts_made":         "Contacts",
+    "friend_lessons":        "Lessons w/ Friends",
+    "baptismal_invitations": "Baptismal Invitations",
+}
+
+#: Where the sort falls back to while Effectiveness is still missing its Key
+#: Indicator third (see effectiveness_is_rankable). An outcome, complete today,
+#: and hard to inflate.
+_ZONE_FALLBACK_SORT = "friend_lessons"
+
+render_section_label(t("Zones — Per-Area Average (7 Days)"))
+
+# Effectiveness comes from SCORES' newest scored week — the one column on a
+# different clock from the rolling 7 days, which is why its header names its
+# week rather than leaving the difference to a caption.
+_zone_eff_week = None
+_zone_scores = pd.DataFrame()
+_zone_scored_weeks = get_scored_weeks()
+if _zone_scored_weeks:
+    _zone_eff_week = _zone_scored_weeks[0]
+    _zone_scores = get_scores(_zone_eff_week)
+
+_zone_num = zone_per_area_table(
+    zone_df, get_submitting_areas(), _ZONE_FUNNEL_KEYS, _zone_scores)
+
+_zone_cols = [(k, t(_ZONE_SHORT_LABELS[k])) for k in _ZONE_FUNNEL_KEYS]
+if ZONE_EFFECTIVENESS in _zone_num.columns:
+    _eff_when = fmt_day_month(_zone_eff_week)
+    _zone_cols.append((
+        ZONE_EFFECTIVENESS,
+        t("Effectiveness ({when})", when=_eff_when) if _eff_when
+        else t("Effectiveness"),
+    ))
+
+_zone_eff_ready = (
+    ZONE_EFFECTIVENESS in _zone_num.columns
+    and effectiveness_is_rankable(_zone_scores, _active_areas)
+)
+_zone_default_key = (ZONE_EFFECTIVENESS if _zone_eff_ready
+                     else _ZONE_FALLBACK_SORT)
+
+if _zone_num.empty:
+    st.info(t("No zone totals yet — MISSION_ORG lists no active areas, or the "
+              "nightly agent has not written DASHBOARD_SUMMARY."))
 else:
-    _kpi_keys = flavor.nightly_highlights
-    zone_rows = []
-    for zone_name, grp in zone_df.groupby("zone"):
-        row: dict = {"Zone": zone_name}
-        for key in _kpi_keys:
-            mrow = grp[grp["metric_key"] == key]
-            row[key] = float(mrow.iloc[0]["val_7d"]) if not mrow.empty else 0.0
-        zone_rows.append(row)
+    _zone_keys   = [k for k, _ in _zone_cols]
+    _zone_labels = [lbl for _, lbl in _zone_cols]
+    _zone_idx    = (_zone_keys.index(_zone_default_key)
+                    if _zone_default_key in _zone_keys else 0)
 
-    if not zone_rows:
-        st.info(_EMPTY_MSG)
-    else:
-        rename_map = {k: METRIC_LABELS.get(k, k) for k in _kpi_keys}
-        zone_tbl = pd.DataFrame(zone_rows).rename(columns=rename_map)
-        display_cols = [METRIC_LABELS.get(k, k) for k in _kpi_keys]
-        for col in display_cols:
-            zone_tbl[col] = zone_tbl[col].astype(int)
-        sort_col = display_cols[0]
-        zone_tbl = zone_tbl.sort_values(sort_col, ascending=False).reset_index(drop=True)
-        zone_tbl.insert(0, "Rank", range(1, len(zone_tbl) + 1))
-        zone_tbl = zone_tbl[["Rank", "Zone"] + display_cols]
-        render_table(zone_tbl)
+    _sort_col, _ = st.columns([1, 2])
+    with _sort_col:
+        _zone_sort_label = st.selectbox(
+            t("Sort by"), _zone_labels, index=_zone_idx, key="panel_zone_sort")
+    _zone_sort_key = _zone_keys[_zone_labels.index(_zone_sort_label)]
+
+    _zone_num = (_zone_num.sort_values(_zone_sort_key, ascending=False)
+                          .reset_index(drop=True))
+
+    # The Areas column is the divisor, printed so the arithmetic is checkable
+    # without leaving the page — and so a low average reads as "spread across
+    # 13 areas" rather than as a mystery.
+    _zone_tbl = pd.DataFrame({
+        t("Rank"):  [str(i) for i in range(1, len(_zone_num) + 1)],
+        t("Zone"):  _zone_num["zone"],
+        t("Areas"): _zone_num["areas"].map(fmt_int),
+    })
+    for _k, _lbl in _zone_cols:
+        _zone_tbl[_lbl] = _zone_num[_k].map(lambda v: fmt_number(v, 1))
+    render_table(_zone_tbl)
+
+    if _zone_eff_week and not _zone_eff_ready:
+        st.caption(t(
+            "Effectiveness does not lead the ranking yet: its Key Indicator "
+            "component is still 0 for most areas ({n} of {total} scored), "
+            "because a week's KI goals are set on the previous week's form.",
+            n=fmt_int(ki_scored_area_count(_zone_scores)),
+            total=fmt_int(_active_areas)))
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 4. EIGHT-WEEK TRENDS (mission totals)

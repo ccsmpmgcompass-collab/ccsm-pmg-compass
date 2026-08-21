@@ -157,8 +157,35 @@ ES: dict[str, str] = {
         "{pct}% · {actual} vs {goal} por área",
     "Weekly Key Indicators — Last 7 Days":
         "Indicadores Clave Semanales — Últimos 7 Días",
-    "Zone Leaderboard — Last 7 Days":
-        "Tabla de Posiciones por Zona — Últimos 7 Días",
+    # ── Panel §3: zones, compared per area ────────────────────────────────────
+    # The heading leads with "promedio por área" on purpose: it is the fact that
+    # makes the ranking trustworthy. A zone total ranks by how many areas the
+    # zone has (8 to 13 here), which is what the old heading silently did.
+    "Zones — Per-Area Average (7 Days)":
+        "Zonas — promedio por área (7 días)",
+    "Sort by": "Ordenar por",
+    "Rank": "Posición",
+    # Column headers, trimmed to keep the table readable across eight columns.
+    # Trimmed phrases, not initialisms — same rule as the Key Indicator labels.
+    "Attempts": "Intentos",
+    "Contacts": "Contactos",
+    "Lessons w/ Friends": "Lecciones c/ Amigos",
+    "Baptismal Invitations": "Invitaciones",
+    # Effectiveness is weekly while the rest of the table is a rolling 7 days,
+    # so its own header carries the week it describes.
+    "Effectiveness ({when})": "Efectividad ({when})",
+    "Effectiveness does not lead the ranking yet: its Key Indicator "
+    "component is still 0 for most areas ({n} of {total} scored), "
+    "because a week's KI goals are set on the previous week's form.":
+        "La Efectividad aún no encabeza el orden: su componente de Indicadores "
+        "Clave sigue en 0 para casi todas las áreas ({n} de {total} con "
+        "puntaje), porque las metas de IC de una semana se fijan en el "
+        "formulario de la semana anterior.",
+    "No zone totals yet — MISSION_ORG lists no active areas, or the "
+    "nightly agent has not written DASHBOARD_SUMMARY.":
+        "Aún no hay totales por zona — MISSION_ORG no lista áreas activas, o el "
+        "agente nocturno todavía no ha escrito DASHBOARD_SUMMARY.",
+
     "8-Week Trend — Mission Totals":
         "Tendencia de 8 Semanas — Totales de la Misión",
     "Daily NM Lessons — Last 7 Days":

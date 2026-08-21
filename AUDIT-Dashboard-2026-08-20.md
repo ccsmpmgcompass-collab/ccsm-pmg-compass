@@ -49,7 +49,7 @@ Understates the mission by ~13×.
 explicitly, and print the reporting denominator ("31 de 43 áreas informaron")
 so a partial week can never again read as a collapse.
 
-### C2. Zone leaderboard ranks by zone size
+### C2. Zone leaderboard ranks by zone size — **DONE, item 3**
 
 Raw 7-day totals, no normalization.
 
@@ -63,6 +63,7 @@ Raw 7-day totals, no normalization.
 Also sorts on `contacts_attempted`, the most inflatable field on the form.
 
 **Fix:** divide by active area count; rank on an outcome, not an input.
+**Built 2026-08-21 — see “Item 3 as built” below.**
 
 ### C3. No KPI tile has a goal, though 19 are configured
 
@@ -175,7 +176,7 @@ Chile Concepción South Mission          Semana del 11–16 de agosto
 |---|---|---|---|
 | 1 | ~~KI tiles → last complete week + denominator footnote~~ | 🔴 bug | C1 — **DONE `dcb3012`** |
 | 2 | ~~Goal bars from `AGENT_CONFIG.GOAL_*` × active areas~~ | 🔴 bug | C3 — **DONE**, see below |
-| 3 | Zone leaderboard → per-area average | 🔴 bug | C2 |
+| 3 | ~~Zone leaderboard → per-area average~~ | 🔴 bug | C2 — **DONE**, see below |
 | 4 | Add `delta` (7d vs prior 7d) to every tile | 🟠 | H3 |
 | 5 | Headline row → 7 Key Indicators | 🟠 | H1 — decided |
 | 6 | Nightly row → 6 outcome metrics, not effort inputs | 🟠 | H1 |
@@ -268,6 +269,86 @@ Not adopted as the KI goal even once history exists, because:
 
 It **is** the right tool for the stale nightly `GOAL_*` numbers (`member_contacts`
 runs at 196% of goal, `roleplays` at 33%). Revisit ~20 Sept, via Agent2.
+
+---
+
+## Item 3 as built (2026-08-21)
+
+C2's fix was one line of arithmetic. The section around it was rebuilt to make
+that arithmetic legible, on the user's calls.
+
+**Where the logic lives.** `dashboard/app/analytics/zone_comparison.py` — a pure
+module, no Streamlit, no sheet. `zone_per_area_table()` takes the ZONE frame,
+MISSION_ORG's submitting areas and one week of SCORES and returns unformatted
+floats; the page ranks and formats. That split is what let item 3 ship with
+twelve unit tests instead of an AppTest fixture (`tests/test_zone_per_area.py`).
+
+**The table, as decided with the user:**
+
+| Decision | Chosen | Why |
+|---|---|---|
+| Columns | The funnel, in travel order: Intentos → Contactos → Lecciones c/ Amigos → Invitaciones | Shows *where* a zone leaks, not just how loud it is |
+| Rank | User-switchable, any visible column | The president compares different things on different weeks |
+| Default rank | Efectividad, with an automatic fallback | See below |
+| Divisor | **All** active areas in the zone | Same rule as the goal bars. A zone with silent areas ranks lower on purpose |
+| Window | Rolling 7 days, said so in the heading | No new plumbing; the difference from §2 is now explicit |
+| Format | One decimal + an Áreas column | The divisor prints, so the arithmetic is checkable on the page |
+| Rates | None | The rate story is item 7, mission-wide. Not duplicated here |
+
+**Live effect (2026-08-21):**
+
+| Zona | Áreas | Intentos | Contactos | Lecciones | Invitaciones | Efectividad |
+|---|---|---|---|---|---|---|
+| Angol | 8 | 160,1 | 79,4 | 26,1 | 3,2 | 48,5 |
+| Los Angeles Norte | 11 | 113,5 | 47,8 | 16,1 | 0,8 | 35,3 |
+| Temuco Ñielol | 13 | 88,2 | 38,2 | 15,5 | 1,6 | 43,7 |
+| San Pedro | 11 | 38,9 | 22,4 | 7,7 | 0,8 | 38,7 |
+
+The sort genuinely re-ranks: by Invitaciones, Temuco moves to 2nd; by
+Efectividad, Los Angeles Norte falls from 2nd to 4th.
+
+### ⚠️ What this uncovered — Effectiveness is missing a third of itself
+
+`Effectiveness_Score` is a weighted composite of Effort, Skill and KI. For the
+last complete week (2026-08-16) **exactly one area of 43 has a non-zero
+`KI_Score`** — Vilcun, at 56.67. Every other area scores 0 on the KI third, so
+every zone's Efectividad is depressed by roughly a third and the number ranks on
+two components while claiming to rank on three.
+
+Cause, and it is the same offset item 2 found: `KI_Score` grades an area's
+`ki_*_real` against its own `ki_*_meta` goals, and **a week's goals are written
+on the previous week's form**. `WEEKLY_KI` holds 31 rows for week 08-16 but only
+**1 row for 08-09** — so for 42 of 43 areas the goal denominator simply does not
+exist. It should self-heal as consecutive weeks accumulate.
+
+Until it does, the section refuses to rank on it silently. `effectiveness_is_rankable()`
+requires a non-zero `KI_Score` on at least **half the mission's active areas**
+(`DEFAULT_KI_MIN_SHARE = 0.5`); below that the default sort falls back to
+Lecciones c/ Amigos and the table prints why. Efectividad stays selectable
+throughout — the fallback governs the default, not the option.
+
+### Smaller decisions worth not re-deriving
+
+- **A zone with no `DASHBOARD_SUMMARY` row renders an em dash, not 0.0.** "Not
+  written yet" and "did nothing this week" are different claims, and a 0 would
+  also sort above a genuinely idle zone.
+- **Effectiveness is summed per zone and divided by the active area count**, not
+  averaged over the SCORES rows that exist. Averaging would reward a zone for
+  its missing rows.
+- **Zone names are stripped on both sides** before matching. MISSION_ORG and
+  DASHBOARD_SUMMARY are written by different agents; one trailing space would
+  have blanked a real zone's entire row.
+- **The column set is hardcoded, not `flavor.nightly_highlights`.** That property
+  reads SCORE_CONFIG's *effort* weights — it yields `contacts_attempted`,
+  `roleplays`, `member_contacts`, two of which are inputs. Same root cause as H1.
+- **Efectividad carries its week in its own column header** (`Efectividad (16 de
+  ago)`) because it is the one column on a different clock from the heading's
+  rolling 7 days.
+- Column headers are trimmed phrases in the `_KI_SHORT_LABELS` style: *Intentos,
+  Contactos, Lecciones c/ Amigos, Invitaciones*. Eleven new strings in `es.py`;
+  the retired `"Zone Leaderboard — Last 7 Days"` key was deleted.
+
+**Tests:** 356 passing, the same 5 pre-existing failures as at `8960af0`.
 
 ---
 
