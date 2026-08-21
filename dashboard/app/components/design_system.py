@@ -7,6 +7,18 @@ import plotly.io as pio
 import plotly.graph_objects as go
 from app.i18n import t
 from app.i18n.formats import fmt_int, fmt_number
+from app.analytics import period_delta as _pd
+
+
+def _delta_direction(pct: float) -> int:
+    """Direction for a caller that passed a bare percentage, not a change dict.
+
+    Applies the same neutral band period_delta does, so the two entry points
+    cannot disagree about whether a 3% move is a trend.
+    """
+    if abs(pct) < _pd.NEUTRAL_BAND_PCT:
+        return _pd.FLAT
+    return _pd.UP if pct > 0 else _pd.DOWN
 
 PALETTE = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"]
 
@@ -464,7 +476,10 @@ def render_kpi_row(metrics: list[dict]) -> None:
     """
     Render a horizontal row of glass KPI cards using a single st.markdown HTML block.
 
-    Each dict keys: label (str), value (int|float|str), delta (optional int/float pct),
+    Each dict keys: label (str), value (int|float|str), change (optional dict from
+    app/analytics/period_delta.period_delta — the preferred form, it has already
+    decided percent vs absolute and passed the move through the neutral band),
+    delta (optional int/float pct — the older, simpler form, still supported),
     delta_label (optional str), goal (optional int/float — shows a progress bar,
     color-graded green/indigo/amber by how close value is to it), expectation
     (optional int/float — shows a SECOND progress bar underneath the goal one, for
@@ -473,7 +488,9 @@ def render_kpi_row(metrics: list[dict]) -> None:
     two must read as clearly different things, not two goal bars) — fixed violet
     #8b5cf6 rather than performance-graded, and its caption says "expectation" not
     "goal", so the difference doesn't rely on color alone.
-    Delta colors: green >0, amber -10..0, red <=-10.
+
+    Change colors: green above +5%, grey inside ±5% ("no trend, just noise"),
+    amber -5 to -15%, red below -15%. The thresholds live in period_delta.
     """
     cards = ""
     for m in metrics:
@@ -484,18 +501,45 @@ def render_kpi_row(metrics: list[dict]) -> None:
         goal = m.get("goal")
         expectation = m.get("expectation")
 
+        # "change" is app/analytics/period_delta.py's description of a change --
+        # it has already decided percent vs absolute, and has already passed the
+        # change through the neutral band. "delta" is the older, simpler form:
+        # a bare percentage. Both are supported; a caller passing "change" wins.
+        change = m.get("change")
+        if change is None and delta is not None:
+            change = {"pct": float(delta), "change": None,
+                      "show": _pd.PERCENT,
+                      "direction": _delta_direction(float(delta))}
+
         delta_html = ""
-        if delta is not None:
-            if delta > 0:
+        if change is not None:
+            direction = int(change.get("direction", _pd.FLAT))
+            pct = change.get("pct")
+            if direction > 0:
                 color, arrow = "#22c55e", "↑"
-            elif delta > -10:
-                color, arrow = "#f59e0b", "↓"
-            else:
+            elif direction == 0:
+                # A wobble inside the neutral band is not a trend. Colouring it
+                # amber, as this did for every drop of 0 to -10%, taught the
+                # reader that the colours mean nothing.
+                color, arrow = "#6b7280", "→"
+            elif pct is not None and pct < _pd.SEVERE_DROP_PCT:
                 color, arrow = "#ef4444", "↓"
-            delta_html = (
-                f'<div style="font-size:0.78rem;color:{color};font-weight:600;'
-                f'margin-top:4px;">{arrow} {abs(delta)}% {delta_label}</div>'
-            )
+            else:
+                color, arrow = "#f59e0b", "↓"
+
+            if change.get("show") == _pd.ABSOLUTE and change.get("change") is not None:
+                n = round(float(change["change"]))
+                text = f"{'+' if n > 0 else ''}{fmt_int(n)}"
+            elif pct is not None:
+                text = f"{fmt_int(abs(pct))}%"
+            else:
+                text = ""
+
+            if text:
+                delta_html = (
+                    f'<div style="font-size:0.78rem;color:{color};font-weight:600;'
+                    f'margin-top:4px;">{arrow} {_html.escape(text)} {delta_label}</div>'
+                )
 
         goal_html = ""
         if goal is not None and float(goal) > 0:

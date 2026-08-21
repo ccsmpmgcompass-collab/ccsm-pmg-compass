@@ -21,7 +21,7 @@ from streamlit.source_util import get_pages
 from app.config import metric_catalog as mc
 from tests.test_renders_ccsm_with_data import (  # reuse the realistic fixtures
     _daily_log, _dashboard_summary, _questions_config, _weekly_ki,
-    MISSION_ORG, SCORE_CONFIG,
+    MISSION_ORG, SCORE_CONFIG, _NUMERIC_NIGHTLY, _DATES,
 )
 
 DASHBOARD = Path(__file__).resolve().parent.parent
@@ -148,16 +148,38 @@ def _big_number_summary() -> pd.DataFrame:
     would leave no trace on it at all."""
     df = _dashboard_summary()
     mission = df["record_type"] == "MISSION"
-    df.loc[mission, "val_7d"] = "12345"
     df.loc[mission, "goal_weekly"] = "20000"
+    return df
+
+
+#: Per-row nightly value for the big-number fixture, and the mission total it
+#: adds up to across the whole DAILY_LOG fixture (5 dates x 2 areas). The Panel's
+#: nightly tiles sum DAILY_LOG over the seven days ending on the newest reporting
+#: date, and every fixture date falls inside that window, so the tile shows the
+#: whole fixture. It used to be enough to write a big val_7d into
+#: DASHBOARD_SUMMARY, but the tiles no longer read it: the value and the change
+#: printed under it have to describe the same window, and val_7d's is a day wider
+#: (see app/analytics/period_delta.py).
+_BIG_PER_ROW = 2469
+_BIG_TOTAL = _BIG_PER_ROW * len(_DATES) * 2      # 24690
+
+
+def _big_number_daily_log() -> pd.DataFrame:
+    """DAILY_LOG whose values are large enough to exercise thousands grouping.
+    The shared fixture tops out in the tens, so a separator bug would leave no
+    trace on it at all."""
+    df = _daily_log()
+    for key in _NUMERIC_NIGHTLY:
+        df[key] = str(_BIG_PER_ROW)
     return df
 
 
 def test_kpi_numbers_use_chilean_separators():
     """render_kpi_row hardcoded f"{int(value):,}". A Chilean reader parses
-    "12,345" as twelve point three four five — off by a factor of a thousand,
+    "24,690" as twenty-four point six nine — off by a factor of a thousand,
     and it looks like a perfectly ordinary number."""
     _TABS["DASHBOARD_SUMMARY"] = _big_number_summary()
+    _TABS["DAILY_LOG"] = _big_number_daily_log()
 
     at = AppTest.from_file("pages/01_Panel.py", default_timeout=120)
     at.session_state["pmg_lang"] = "es"
@@ -165,9 +187,10 @@ def test_kpi_numbers_use_chilean_separators():
     assert not at.exception, at.exception
 
     text = _visible_text(at)
-    assert "12.345" in text, (
-        "the Chilean form of 12345 is not on the page; visible text was:\n"
-        + text[:2000]
+    expected = f"{_BIG_TOTAL // 1000}.{_BIG_TOTAL % 1000:03d}"
+    assert expected in text, (
+        f"the Chilean form of {_BIG_TOTAL} is not on the page; visible text "
+        "was:\n" + text[:2000]
     )
     anglo = re.findall(r"\b\d{1,3},\d{3}\b", text)
     assert anglo == [], f"anglo thousands separators reached the screen: {anglo}"
@@ -176,12 +199,14 @@ def test_kpi_numbers_use_chilean_separators():
 def test_kpi_numbers_stay_anglo_in_english():
     """The switch is real, not a one-way rewrite."""
     _TABS["DASHBOARD_SUMMARY"] = _big_number_summary()
+    _TABS["DAILY_LOG"] = _big_number_daily_log()
 
     at = AppTest.from_file("pages/01_Panel.py", default_timeout=120)
     at.session_state["pmg_lang"] = "en"
     at.run()
     assert not at.exception, at.exception
-    assert "12,345" in _visible_text(at)
+    expected = f"{_BIG_TOTAL // 1000},{_BIG_TOTAL % 1000:03d}"
+    assert expected in _visible_text(at)
 
 
 def test_language_defaults_to_spanish_from_agent_config():

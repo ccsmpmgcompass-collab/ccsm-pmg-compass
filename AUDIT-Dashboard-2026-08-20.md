@@ -108,11 +108,15 @@ Preach My Gospel page reference and a scripture:
 baptismal invitations. That is the single most actionable fact in the dataset
 and the Panel does not mention it.
 
-### H3. No time comparison anywhere
+### H3. No time comparison anywhere — **DONE, item 4**
 
 `DASHBOARD_SUMMARY` already carries `val_7d`, `val_14d`, `val_28d`,
 `val_transfer`. The Panel reads only `val_7d`. `render_kpi_row` already accepts
 a `delta`. Cheapest high-value fix available — data is computed and unused.
+
+⚠️ **The last sentence is wrong.** Built out as written it puts +134% to +236%
+on nearly every tile, because the prior window holds five days of data against
+the current seven. See "Item 4 as built" below.
 
 ### H4. Cannot answer "who needs help?" — IN SCOPE, positive framing only
 
@@ -177,7 +181,7 @@ Chile Concepción South Mission          Semana del 11–16 de agosto
 | 1 | ~~KI tiles → last complete week + denominator footnote~~ | 🔴 bug | C1 — **DONE `dcb3012`** |
 | 2 | ~~Goal bars from `AGENT_CONFIG.GOAL_*` × active areas~~ | 🔴 bug | C3 — **DONE**, see below |
 | 3 | ~~Zone leaderboard → per-area average~~ | 🔴 bug | C2 — **DONE**, see below |
-| 4 | Add `delta` (7d vs prior 7d) to every tile | 🟠 | H3 |
+| 4 | ~~Add `delta` (7d vs prior 7d) to every tile~~ | 🟠 | H3 — **DONE**, see below. H3's premise did not survive contact with the data |
 | 5 | Headline row → 7 Key Indicators | 🟠 | H1 — decided |
 | 6 | Nightly row → 6 outcome metrics, not effort inputs | 🟠 | H1 |
 | 7 | Rate-vs-target strip + Embudo link | 🟠 | H2 — decided |
@@ -374,6 +378,112 @@ throughout — the fallback governs the default, not the option.
   the retired `"Zone Leaderboard — Last 7 Days"` key was deleted.
 
 **Tests:** 360 passing, the same 5 pre-existing failures as at `8960af0`.
+
+---
+
+## Item 4 as built (2026-08-21) — and why H3 was wrong
+
+H3 called a delta "the cheapest high-value fix available — data is computed and
+unused." The arithmetic is right (`prior_7d = val_14d − val_7d`, the windows are
+cumulative trailing sums, `CCSM_Agent3.gs:571`) and the conclusion was wrong.
+
+Run against live data on 2026-08-21 it produces:
+
+| metric | 7d | prior 7d | delta |
+|---|---|---|---|
+| contacts_attempted | 4.104 | 1.757 | **+134%** |
+| new_people_found | 283 | 112 | **+153%** |
+| church_invites | 928 | 276 | **+236%** |
+| baptismal_invitations | 65 | 23 | **+183%** |
+| roleplays | 104 | 164 | −37% |
+
+Every one of those is an artefact. `DAILY_LOG` begins 2026-08-10, so the "prior
+seven days" holds **five** days of data against the current seven. Shipping H3
+as written would have put a large green arrow on almost every tile on the page.
+
+**Two further findings:**
+
+- **A permanent ±1-day skew.** `cut7d = today − 7` with `date >= cut7d` spans
+  **eight** calendar dates; the prior window implied by `val_14d − val_7d` spans
+  seven. Deltas therefore inflate ~14% each evening as the eighth day's reports
+  land, and settle back at the next nightly rebuild.
+- **There is no history tab.** `DASHBOARD_SUMMARY` is overwritten nightly and
+  `WEEKLY_BREAKDOWNS` is empty (0 rows — `CCSM_AgentScores.gs:11` notes no CCSM
+  agent writes it). `DAILY_LOG` and the window arithmetic are the only nightly
+  history that exists.
+
+### What was built
+
+**`dashboard/app/analytics/period_delta.py`** — pure, no Streamlit, no sheet,
+28 unit tests in `tests/test_period_delta.py`. Two rules:
+
+1. **A date only counts as a day of data when at least half the active areas
+   filed that night** (`REPORTING_MIN_SHARE = 0.5`, the same share
+   `zone_comparison.DEFAULT_KI_MIN_SHARE` uses). This is not hypothetical:
+   2026-08-09 holds a single row from one area out of 43, and counted naively it
+   is a full seventh of a week. A window needs `MIN_COMPARABLE_DAYS = 5` real
+   days before it may be compared at all; below that the arrow is suppressed and
+   the section says why.
+2. **Normalize the prior side onto the current side's basis, then compare in the
+   tile's own units.** The basis is *days* for a nightly window and *reporting
+   areas* for a weekly one. The change printed under a tile is therefore in the
+   same units as the number above it — never a per-day rate under a total.
+
+Windows are computed here, from `DAILY_LOG`, rather than reused from
+`DASHBOARD_SUMMARY`, and are anchored on the **most recent reporting day** — not
+on today. The nightly agent runs before every area has filed, so anchoring on
+today averages seven days over a six-day sample and dips every morning.
+
+**Consequence: §1's tile VALUE also moved to `DAILY_LOG`.** A value from
+`val_7d` (8 dates) under an arrow computed on 7 would have described two
+different spans on one card. The numbers are unchanged today only because the
+8th date is empty until tonight's reports arrive.
+
+### Decisions made with the user
+
+| Question | Decision |
+|---|---|
+| Deltas are +80…+236% today | **Hide the arrow, say why.** Appears on its own once the data supports it |
+| Which blocks | §1 nightly, §2a current week, §2b last complete week. **Not §7 compliance** — those are percentages, so their change is in percentage *points* and would mean something different under the same arrow |
+| Percent or absolute | **Absolute when the prior value is under 25**, percent above. Baptisms 3→5 is "+2", not "+67%" |
+| The ±1-day skew | **Fixed in Python**, not in Apps Script — `cut7d` is read by other agents and pages |
+| Gate | **≥5 of 7 reporting days, scaled per day** below 7 |
+| What is a reporting day | **≥ half the active areas filed.** Without this the gate passes today on a window containing a 1-area day |
+| Prior = 0, current > 0 | **Green absolute, no percentage.** 0→5 baptisms is the best news the page can carry; a division by zero should not swallow it |
+| Where the notice goes | **One caption per section**, not per tile |
+
+### Colour thresholds changed for the whole app
+
+`render_kpi_row` coloured any drop of 0 to −10% amber. Week-to-week noise across
+43 areas is comfortably 3–4%, so that painted wobbles as warnings. Now: green
+above +5%, **grey inside ±5%** ("no trend, just noise"), amber −5 to −15%, red
+below −15%. The thresholds live in `period_delta` so the two entry points cannot
+disagree.
+
+⚠️ **This affects `app/breakdowns_engine.py:1086`**, the only other `delta`
+caller, where `delta` means *percent vs goal* rather than *vs prior period*. A
+metric sitting within 5% of its goal now renders grey there instead of green.
+Judged an improvement, but it is a behaviour change on a page nobody asked
+about. The old bare-percentage form is still supported; the new `change` key
+(a dict from `period_delta`) takes precedence when both are present.
+
+### Live, on the page
+
+- §1: no arrows — *"14 de ago–20 de ago · 7 días con informe. Aún no hay
+  comparación: los 7 días previos tienen 4 días en que informó al menos la mitad
+  de las áreas, y se necesitan 5."* The 08-09 row was correctly rejected.
+- §2a: `Nuevas Personas ↑ 27%`, `Lecciones c/ Miembro → 0%` (neutral band),
+  `Calendarios Bautismales ↓ -3` (absolute, small count).
+- §2b: *"Sin comparación con la semana anterior: 1 de 43 áreas entregaron el
+  informe semanal de 3 al 9 de agosto, y se necesitan al menos 22."*
+
+The §1 arrows should first appear on **2026-08-22** (prior window gains its 5th
+reporting day, scaled ×7/5) and become unscaled on **2026-08-24**.
+
+**Tests:** 388 passing, the same 5 pre-existing failures. Two tests in
+`test_nav_and_locale_rendered.py` needed their fixture moved from
+`DASHBOARD_SUMMARY.val_7d` to `DAILY_LOG`, which is the §1 change landing, not a
+regression.
 
 ---
 

@@ -49,6 +49,10 @@ from app.analytics.zone_comparison import (
     zone_comparison_table, effectiveness_is_rankable, ki_scored_area_count,
     EFFECTIVENESS as ZONE_EFFECTIVENESS,
 )
+from app.analytics.period_delta import (
+    reporting_dates, window_pair, window_totals, window_areas, days_in_window,
+    period_delta, MIN_COMPARABLE_DAYS, WINDOW_DAYS,
+)
 from app.utils.area_helpers import (
     compliance_anchor_date, build_calendar_data,
     latest_due_sunday, weekly_due_weeks,
@@ -183,6 +187,19 @@ def _ki_val(metric_key: str) -> float:
     return float(_ki_row[metric_key] or 0)
 
 
+def _ki_row_for_week(week_end):
+    """The weekly-totals row for a given week end, or None if that week is
+    absent. Looked up BY DATE rather than by taking the row before the chosen
+    one: weeks with no submissions at all have no row, so "the previous row" and
+    "the previous week" are not the same thing — the same trap
+    get_ki_goals_for_week already avoids for goals."""
+    if ki_df.empty or week_end is None or "week_end_date" not in ki_df.columns:
+        return None
+    ends = pd.to_datetime(ki_df["week_end_date"], errors="coerce").dt.date
+    match = ki_df[ends == week_end]
+    return match.iloc[0] if not match.empty else None
+
+
 # ── Key Indicator goals ───────────────────────────────────────────────────────
 # A week's goals are written on the PREVIOUS week's form -- the weekly form asks
 # for results "de la semana pasada" and goals "para la semana siguiente" in its
@@ -218,6 +235,35 @@ _wtd_areas = get_week_to_date_areas(_this_monday, _today)
 _wtd_days = (_today - _this_monday).days + 1
 
 
+# ── The two windows every "vs. before" on this page is measured across ─────────
+# One DAILY_LOG read, shared by §1 (rolling 7 days) and §2a (the week so far).
+# 30 days is enough for both and for the prior side of each.
+#
+# The windows are computed here rather than taken from DASHBOARD_SUMMARY's
+# val_7d / val_14d. Those exist and the audit called using them the cheapest fix
+# on the board (H3) -- but CCSM_Agent3.gs cuts at `date >= today - 7`, which is
+# EIGHT calendar dates, while the prior window implied by val_14d - val_7d is
+# seven. See app/analytics/period_delta.py for what that does to the arrows, and
+# for why a date only counts once half the mission has filed on it.
+_daily_log = get_daily_log(30)
+_report_dates = reporting_dates(_daily_log, _active_areas)
+_night_anchor = _report_dates[-1] if _report_dates else None
+
+if _night_anchor is not None:
+    _cur_start, _cur_end, _prev_start, _prev_end = window_pair(_night_anchor)
+    _cur_days = days_in_window(_report_dates, _cur_start, _cur_end)
+    _prev_days = days_in_window(_report_dates, _prev_start, _prev_end)
+    _cur_totals = window_totals(_daily_log, _cur_start, _cur_end)
+    _prev_totals = window_totals(_daily_log, _prev_start, _prev_end)
+else:
+    _cur_start = _cur_end = _prev_start = _prev_end = None
+    _cur_days = _prev_days = 0
+    _cur_totals = _prev_totals = {}
+
+#: Label under every arrow on this page's rolling-7-day tiles.
+_VS_PRIOR_WEEK = t("vs prior 7 days")
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1. NIGHTLY ACTIVITY — mission totals, last 7 days
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -226,16 +272,45 @@ render_section_label(t("Nightly Activity — Last 7 Days"))
 _nightly_keys = flavor.nightly_highlights
 if not _nightly_keys:
     st.info(_EMPTY_MSG)
+elif _night_anchor is None:
+    st.info(t("No nightly reports yet — DAILY_LOG has no day on which at least "
+              "half the mission's areas filed."))
 else:
+    # The value comes from the same window as the arrow beneath it. It used to
+    # be DASHBOARD_SUMMARY's val_7d, whose window is one day wider, which would
+    # have put a number and a change describing different spans on one card.
     render_kpi_row([
         {
             "label": METRIC_LABELS.get(k, k),
-            "value": int(_mission_val(k)),
+            "value": int(_cur_totals.get(k, 0)),
             "goal":  _mission_goal(k),
             "goal_note": _mission_goal_note(k),
+            "change": period_delta(
+                _cur_totals.get(k, 0), _prev_totals.get(k, 0),
+                current_basis=_cur_days, prior_basis=_prev_days),
+            "delta_label": _VS_PRIOR_WEEK,
         }
         for k in _nightly_keys
     ])
+
+    # The window is stated, and so is the reason there is no comparison yet.
+    # A silently missing arrow is the audit's own M7 finding (empty states that
+    # never say why) reintroduced one section higher up.
+    _win_note = t("{start}–{end} · {n} reporting days",
+                  start=fmt_day_month(_cur_start), end=fmt_day_month(_cur_end),
+                  n=fmt_int(_cur_days))
+    if _prev_days < MIN_COMPARABLE_DAYS:
+        st.caption(t(
+            "{window}. No comparison yet: the previous 7 days hold {n} days on "
+            "which at least half the areas reported, and {need} are needed.",
+            window=_win_note, n=fmt_int(_prev_days),
+            need=fmt_int(MIN_COMPARABLE_DAYS)))
+    elif _prev_days < WINDOW_DAYS:
+        st.caption(t(
+            "{window}. Compared against {n} reporting days in the previous 7, "
+            "scaled per day.", window=_win_note, n=fmt_int(_prev_days)))
+    else:
+        st.caption(t("{window}, against the 7 days before.", window=_win_note))
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 2. KEY INDICATORS — the week in progress, then the last complete week
@@ -338,6 +413,16 @@ else:
           areas=fmt_int(_cur_goal_areas))
     )
 
+    # Same days of last week, never last week's full total: on a Wednesday that
+    # would set four days against seven and print a collapse the mission has not
+    # had, then a recovery on Sunday. The basis is reporting AREAS rather than
+    # days here -- the two spans are the same length by construction, so what
+    # differs between them is who filed.
+    _lw_start, _lw_end = _this_monday - timedelta(days=7), _today - timedelta(days=7)
+    _lw_totals = window_totals(_daily_log, _lw_start, _lw_end)
+    _lw_areas = window_areas(_daily_log, _lw_start, _lw_end)
+    _wtd_min_areas = max(1, round(_active_areas * 0.5)) if _active_areas else 1
+
     _cur_cards = []
     for k, label in _ki_metrics.items():
         source = _KI_NIGHTLY_SOURCE.get(k)
@@ -360,6 +445,11 @@ else:
             # are different sets, so the percentage is computed per area.
             "value_basis": _wtd_areas,
             "goal_basis":  _cur_goal_set_by.get(k, 0),
+            "change": period_delta(
+                _wtd_totals.get(source, 0), _lw_totals.get(source, 0),
+                current_basis=_wtd_areas, prior_basis=_lw_areas,
+                min_basis=_wtd_min_areas) if measured else None,
+            "delta_label": t("vs same days last week"),
         })
     render_kpi_row(_cur_cards)
 
@@ -368,6 +458,11 @@ else:
           "four arrive with the weekly form. Pace: {pct}% of the week elapsed.",
           pct=fmt_int(_pace_pct))
     )
+
+    if _lw_areas < _wtd_min_areas:
+        st.caption(t(
+            "No comparison with last week: only {n} areas filed a nightly "
+            "report over the same days a week ago.", n=fmt_int(_lw_areas)))
 
 # ── 2b. The last complete week ─────────────────────────────────────────────────
 _ki_span = (
@@ -396,6 +491,26 @@ if _active_areas:
                      n=fmt_int(_ki_reported), total=fmt_int(_active_areas),
                      pct=fmt_int(_ki_pct)))
 
+# ── The week before it, for the arrows ────────────────────────────────────────
+# A weekly total is a sum over whoever submitted, so two weeks can only be
+# compared once both are reduced to a per-area rate — the same rule the goal
+# bars follow. Live on 2026-08-21 that is 31 areas (08-16) against 1 (08-09),
+# which is why the ≥ half-the-mission gate below matters: without it the row
+# would compare the mission to a single companionship and call it a trend.
+_prev_week_end = (_ki_week_end - timedelta(days=7)
+                  if _ki_week_end is not None else None)
+_prev_ki_row = _ki_row_for_week(_prev_week_end)
+_prev_ki_reported = (_ki_reporting.get(str(_prev_week_end), 0)
+                     if _prev_week_end is not None else 0)
+_ki_min_areas = max(1, round(_active_areas * 0.5)) if _active_areas else 1
+
+
+def _prev_ki_val(metric_key: str) -> float:
+    if _prev_ki_row is None or metric_key not in _prev_ki_row.index:
+        return 0.0
+    return float(_prev_ki_row[metric_key] or 0)
+
+
 if not _ki_metrics:
     st.info(_EMPTY_MSG)
 else:
@@ -404,6 +519,11 @@ else:
             "label": _ki_label(k, label),
             "value": int(_ki_val(k)),
             "goal":  _past_goals.get(k, 0),
+            "change": period_delta(
+                _ki_val(k), _prev_ki_val(k),
+                current_basis=_ki_reported, prior_basis=_prev_ki_reported,
+                min_basis=_ki_min_areas),
+            "delta_label": t("vs prior week"),
             # Denominator is who reported RESULTS this week, not who set the
             # goals — see _ki_goal_note. Without that, the 1-of-33 case is
             # silent and the bar reads 2040% unexplained.
@@ -413,6 +533,22 @@ else:
         }
         for k, label in _ki_metrics.items()
     ])
+
+    if _prev_ki_reported < _ki_min_areas:
+        _prev_span = (fmt_week_span(_prev_week_end - timedelta(days=6),
+                                    _prev_week_end)
+                      if _prev_week_end is not None else "")
+        st.caption(t(
+            "No comparison with the previous week: {n} of {total} areas "
+            "submitted the weekly form for {span}, and at least {need} are "
+            "needed for a mission-level comparison.",
+            n=fmt_int(_prev_ki_reported), total=fmt_int(_active_areas),
+            span=_prev_span, need=fmt_int(_ki_min_areas)))
+    elif _prev_ki_reported != _ki_reported:
+        st.caption(t(
+            "Compared against the previous week per area — {prev} areas "
+            "reported then, {now} now.",
+            prev=fmt_int(_prev_ki_reported), now=fmt_int(_ki_reported)))
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 3. ZONES — PER-AREA AVERAGE ACROSS THE FINDING FUNNEL (last 7 days)

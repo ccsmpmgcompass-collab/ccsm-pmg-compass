@@ -157,6 +157,43 @@ ES: dict[str, str] = {
         "{pct}% · {actual} vs {goal} por área",
     "Weekly Key Indicators — Last 7 Days":
         "Indicadores Clave Semanales — Últimos 7 Días",
+    # ── Panel: change over time (audit H3) ────────────────────────────────────
+    # Each label names the window the arrow compares against, because the three
+    # rows on this page compare against three different things: a rolling seven
+    # days, the same days a week ago, and a whole reporting week.
+    "vs prior 7 days": "vs. 7 días previos",
+    "vs same days last week": "vs. los mismos días la semana pasada",
+    "vs prior week": "vs. semana anterior",
+    "{start}–{end} · {n} reporting days":
+        "{start}–{end} · {n} días con informe",
+    "{window}, against the 7 days before.":
+        "{window}, comparado con los 7 días anteriores.",
+    "{window}. Compared against {n} reporting days in the previous 7, "
+    "scaled per day.":
+        "{window}. Comparado con {n} días con informe de los 7 previos, "
+        "ajustado por día.",
+    "{window}. No comparison yet: the previous 7 days hold {n} days on "
+    "which at least half the areas reported, and {need} are needed.":
+        "{window}. Aún no hay comparación: los 7 días previos tienen {n} días "
+        "en que informó al menos la mitad de las áreas, y se necesitan {need}.",
+    "No nightly reports yet — DAILY_LOG has no day on which at least "
+    "half the mission's areas filed.":
+        "Aún no hay informes nocturnos — DAILY_LOG no tiene ningún día en que "
+        "haya informado al menos la mitad de las áreas de la misión.",
+    "No comparison with last week: only {n} areas filed a nightly "
+    "report over the same days a week ago.":
+        "Sin comparación con la semana pasada: solo {n} áreas entregaron "
+        "informe nocturno en los mismos días de hace una semana.",
+    "No comparison with the previous week: {n} of {total} areas "
+    "submitted the weekly form for {span}, and at least {need} are "
+    "needed for a mission-level comparison.":
+        "Sin comparación con la semana anterior: {n} de {total} áreas "
+        "entregaron el informe semanal de {span}, y se necesitan al menos "
+        "{need} para una comparación a nivel de misión.",
+    "Compared against the previous week per area — {prev} areas "
+    "reported then, {now} now.":
+        "Comparado con la semana anterior por área — informaron {prev} áreas "
+        "entonces y {now} ahora.",
     # ── Panel §3: zones, compared per area ────────────────────────────────────
     # The heading leads with "promedio por área" on purpose: it is the fact that
     # makes the ranking trustworthy. A zone total ranks by how many areas the
