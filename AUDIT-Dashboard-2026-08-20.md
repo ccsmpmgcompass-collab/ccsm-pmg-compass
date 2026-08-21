@@ -281,31 +281,59 @@ that arithmetic legible, on the user's calls.
 module, no Streamlit, no sheet. `zone_per_area_table()` takes the ZONE frame,
 MISSION_ORG's submitting areas and one week of SCORES and returns unformatted
 floats; the page ranks and formats. That split is what let item 3 ship with
-twelve unit tests instead of an AppTest fixture (`tests/test_zone_per_area.py`).
+sixteen unit tests instead of an AppTest fixture (`tests/test_zone_per_area.py`).
 
 **The table, as decided with the user:**
 
 | Decision | Chosen | Why |
 |---|---|---|
-| Columns | The funnel, in travel order: Intentos → Contactos → Lecciones c/ Amigos → Invitaciones | Shows *where* a zone leaks, not just how loud it is |
+| Columns | The funnel, in travel order: Intentos → Contactos → Lecciones c/ Amigos → Inv. al Bautismo | Shows *where* a zone leaks, not just how loud it is |
 | Rank | User-switchable, any visible column | The president compares different things on different weeks |
 | Default rank | Efectividad, with an automatic fallback | See below |
 | Divisor | **All** active areas in the zone | Same rule as the goal bars. A zone with silent areas ranks lower on purpose |
 | Window | Rolling 7 days, said so in the heading | No new plumbing; the difference from §2 is now explicit |
 | Format | One decimal + an Áreas column | The divisor prints, so the arithmetic is checkable on the page |
+| Reading | A **Mostrar** switch: promedio por área (default) or total de la zona | Follow-up, same session. Totals are the president's volume reading; they rank by size, so they are never the default |
 | Rates | None | The rate story is item 7, mission-wide. Not duplicated here |
 
 **Live effect (2026-08-21):**
 
-| Zona | Áreas | Intentos | Contactos | Lecciones | Invitaciones | Efectividad |
+| Zona | Áreas | Intentos | Contactos | Lecciones | Inv. al Bautismo | Efectividad |
 |---|---|---|---|---|---|---|
 | Angol | 8 | 160,1 | 79,4 | 26,1 | 3,2 | 48,5 |
 | Los Angeles Norte | 11 | 113,5 | 47,8 | 16,1 | 0,8 | 35,3 |
 | Temuco Ñielol | 13 | 88,2 | 38,2 | 15,5 | 1,6 | 43,7 |
 | San Pedro | 11 | 38,9 | 22,4 | 7,7 | 0,8 | 38,7 |
 
-The sort genuinely re-ranks: by Invitaciones, Temuco moves to 2nd; by
-Efectividad, Los Angeles Norte falls from 2nd to 4th.
+The sort genuinely re-ranks: by Inv. al Bautismo, Temuco moves to 2nd; by
+Efectividad, Los Angeles Norte falls from 2nd to 4th. Flipping **Mostrar** to
+*Total de la zona* re-ranks again — Temuco to 2nd, Los Angeles Norte to 3rd —
+which is the size bias, visible and opt-in rather than silent and default.
+
+### The follow-up pass (same session)
+
+Three changes on the user's call, after seeing it live:
+
+- **`Invitaciones` → `Inv. al Bautismo`.** The short form collided with
+  `church_invites` (*Invitaciones a la Iglesia*). The one abbreviation among the
+  column headers, chosen over the unabbreviated *Invitaciones al Bautismo*
+  because that wraps the column — naming the wrong metric is the worse failure.
+- **The week came out of the Efectividad header,** and was not moved anywhere
+  else — the user's explicit choice. The column reads *Efectividad*; nothing on
+  screen now states that it describes a completed week while its neighbours are
+  a rolling 7 days.
+- **A `Mostrar` radio switches every count between per-area and raw zone total.**
+  Counts lose their decimal in totals mode. **Effectiveness ignores the switch
+  and stays a per-area average in both** — it is a 0-100 score, so summing it
+  gives an uninterpretable number (388) and puts the size bias back into the one
+  column that is supposed to be size-neutral. Totals mode prints a caption
+  naming the range of zone sizes, so the bias is stated where it applies.
+
+`zone_per_area_table()` became `zone_comparison_table(..., per_area=True)`; the
+old name would have been a lie in half its calls. Both Panel controls key on
+stable identifiers with a `format_func` rather than on the translated label —
+a mid-session language switch would otherwise leave a stored Spanish string in a
+widget whose options had turned English.
 
 ### ⚠️ What this uncovered — Effectiveness is missing a third of itself
 
@@ -341,14 +369,11 @@ throughout — the fallback governs the default, not the option.
 - **The column set is hardcoded, not `flavor.nightly_highlights`.** That property
   reads SCORE_CONFIG's *effort* weights — it yields `contacts_attempted`,
   `roleplays`, `member_contacts`, two of which are inputs. Same root cause as H1.
-- **Efectividad carries its week in its own column header** (`Efectividad (16 de
-  ago)`) because it is the one column on a different clock from the heading's
-  rolling 7 days.
 - Column headers are trimmed phrases in the `_KI_SHORT_LABELS` style: *Intentos,
   Contactos, Lecciones c/ Amigos, Invitaciones*. Eleven new strings in `es.py`;
   the retired `"Zone Leaderboard — Last 7 Days"` key was deleted.
 
-**Tests:** 356 passing, the same 5 pre-existing failures as at `8960af0`.
+**Tests:** 360 passing, the same 5 pre-existing failures as at `8960af0`.
 
 ---
 

@@ -46,7 +46,7 @@ from app.db.queries import (
     get_config_value,
 )
 from app.analytics.zone_comparison import (
-    zone_per_area_table, effectiveness_is_rankable, ki_scored_area_count,
+    zone_comparison_table, effectiveness_is_rankable, ki_scored_area_count,
     EFFECTIVENESS as ZONE_EFFECTIVENESS,
 )
 from app.utils.area_helpers import (
@@ -435,12 +435,15 @@ _ZONE_FUNNEL_KEYS = [
 ]
 
 #: Column headers, trimmed to keep eight columns readable on one line. Trimmed
-#: phrases, never initialisms — same style as _KI_SHORT_LABELS above.
+#: phrases in the _KI_SHORT_LABELS style, with one deliberate abbreviation:
+#: "Invitaciones" alone is ambiguous against church_invites ("Invitaciones a la
+#: Iglesia"), and the unabbreviated "Invitaciones al Bautismo" is wide enough to
+#: wrap the column. Naming the wrong thing is the worse failure of the two.
 _ZONE_SHORT_LABELS = {
     "contacts_attempted":    "Attempts",
     "contacts_made":         "Contacts",
     "friend_lessons":        "Lessons w/ Friends",
-    "baptismal_invitations": "Baptismal Invitations",
+    "baptismal_invitations": "Bapt. Invitations",
 }
 
 #: Where the sort falls back to while Effectiveness is still missing its Key
@@ -448,11 +451,30 @@ _ZONE_SHORT_LABELS = {
 #: and hard to inflate.
 _ZONE_FALLBACK_SORT = "friend_lessons"
 
-render_section_label(t("Zones — Per-Area Average (7 Days)"))
+#: Per-area average or raw zone total. Stored in session_state as these stable
+#: keys rather than as the translated label: a language switch mid-session would
+#: leave a Spanish label sitting in a widget whose options had become English.
+_ZONE_MODE_PER_AREA = "per_area"
+_ZONE_MODE_TOTAL    = "total"
 
-# Effectiveness comes from SCORES' newest scored week — the one column on a
-# different clock from the rolling 7 days, which is why its header names its
-# week rather than leaving the difference to a caption.
+
+def _zone_mode_label(mode: str) -> str:
+    return (t("Per area") if mode == _ZONE_MODE_PER_AREA
+            else t("Zone total"))
+
+
+# The heading names the reading, so it has to be decided BEFORE the radio that
+# sets it is drawn — Streamlit renders in source order. Reading session_state
+# first is what lets the control sit under its own heading rather than above it.
+_zone_mode = st.session_state.get("panel_zone_mode", _ZONE_MODE_PER_AREA)
+_zone_per_area = _zone_mode != _ZONE_MODE_TOTAL
+
+render_section_label(t("Zones — Per-Area Average (7 Days)") if _zone_per_area
+                     else t("Zones — Zone Totals (7 Days)"))
+
+# Effectiveness comes from SCORES' newest scored week. It is the one column on
+# a different clock from the rolling 7 days, and the one column the per-area /
+# total switch does not apply to — see zone_comparison_table.
 _zone_eff_week = None
 _zone_scores = pd.DataFrame()
 _zone_scored_weeks = get_scored_weeks()
@@ -460,17 +482,13 @@ if _zone_scored_weeks:
     _zone_eff_week = _zone_scored_weeks[0]
     _zone_scores = get_scores(_zone_eff_week)
 
-_zone_num = zone_per_area_table(
-    zone_df, get_submitting_areas(), _ZONE_FUNNEL_KEYS, _zone_scores)
+_zone_num = zone_comparison_table(
+    zone_df, get_submitting_areas(), _ZONE_FUNNEL_KEYS, _zone_scores,
+    per_area=_zone_per_area)
 
 _zone_cols = [(k, t(_ZONE_SHORT_LABELS[k])) for k in _ZONE_FUNNEL_KEYS]
 if ZONE_EFFECTIVENESS in _zone_num.columns:
-    _eff_when = fmt_day_month(_zone_eff_week)
-    _zone_cols.append((
-        ZONE_EFFECTIVENESS,
-        t("Effectiveness ({when})", when=_eff_when) if _eff_when
-        else t("Effectiveness"),
-    ))
+    _zone_cols.append((ZONE_EFFECTIVENESS, t("Effectiveness")))
 
 _zone_eff_ready = (
     ZONE_EFFECTIVENESS in _zone_num.columns
@@ -483,31 +501,50 @@ if _zone_num.empty:
     st.info(t("No zone totals yet — MISSION_ORG lists no active areas, or the "
               "nightly agent has not written DASHBOARD_SUMMARY."))
 else:
-    _zone_keys   = [k for k, _ in _zone_cols]
-    _zone_labels = [lbl for _, lbl in _zone_cols]
-    _zone_idx    = (_zone_keys.index(_zone_default_key)
-                    if _zone_default_key in _zone_keys else 0)
+    _zone_keys = [k for k, _ in _zone_cols]
+    _zone_lbl  = dict(_zone_cols)
+    _zone_idx  = (_zone_keys.index(_zone_default_key)
+                  if _zone_default_key in _zone_keys else 0)
 
-    _sort_col, _ = st.columns([1, 2])
+    # Both controls key on stable identifiers with a format_func, never on the
+    # translated label — a mid-session language switch would otherwise leave a
+    # stored Spanish string in a widget whose options had turned English.
+    _sort_col, _mode_col, _ = st.columns([1, 1, 1])
     with _sort_col:
-        _zone_sort_label = st.selectbox(
-            t("Sort by"), _zone_labels, index=_zone_idx, key="panel_zone_sort")
-    _zone_sort_key = _zone_keys[_zone_labels.index(_zone_sort_label)]
+        _zone_sort_key = st.selectbox(
+            t("Sort by"), _zone_keys, index=_zone_idx,
+            format_func=lambda k: _zone_lbl[k], key="panel_zone_sort")
+    with _mode_col:
+        st.radio(
+            t("Show"), [_ZONE_MODE_PER_AREA, _ZONE_MODE_TOTAL],
+            format_func=_zone_mode_label, horizontal=True,
+            key="panel_zone_mode")
 
     _zone_num = (_zone_num.sort_values(_zone_sort_key, ascending=False)
                           .reset_index(drop=True))
 
-    # The Areas column is the divisor, printed so the arithmetic is checkable
-    # without leaving the page — and so a low average reads as "spread across
-    # 13 areas" rather than as a mystery.
+    # The Areas column is shown in BOTH modes: per area it is the divisor, so
+    # the arithmetic is checkable without leaving the page; on totals it is the
+    # reason one zone outranks another, which is the whole of finding C2.
     _zone_tbl = pd.DataFrame({
         t("Rank"):  [str(i) for i in range(1, len(_zone_num) + 1)],
         t("Zone"):  _zone_num["zone"],
         t("Areas"): _zone_num["areas"].map(fmt_int),
     })
     for _k, _lbl in _zone_cols:
-        _zone_tbl[_lbl] = _zone_num[_k].map(lambda v: fmt_number(v, 1))
+        # Counts follow the switch; Effectiveness is a 0-100 score and keeps its
+        # decimal in both modes.
+        _places = 1 if (_zone_per_area or _k == ZONE_EFFECTIVENESS) else 0
+        _zone_tbl[_lbl] = _zone_num[_k].map(
+            lambda v, p=_places: fmt_number(v, p))
     render_table(_zone_tbl)
+
+    if not _zone_per_area:
+        st.caption(t("Zone totals rank by zone size — these zones run "
+                     "{low} to {high} areas."
+                     " Effectiveness stays a per-area average.",
+                     low=fmt_int(_zone_num["areas"].min()),
+                     high=fmt_int(_zone_num["areas"].max())))
 
     if _zone_eff_week and not _zone_eff_ready:
         st.caption(t(

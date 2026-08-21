@@ -110,20 +110,31 @@ def effectiveness_is_rankable(
     return ki_scored_area_count(scores_df) >= active_areas * min_share
 
 
-def zone_per_area_table(
+def zone_comparison_table(
     zone_df: pd.DataFrame,
     areas_df: pd.DataFrame,
     metric_keys: list,
     scores_df: pd.DataFrame = None,
+    per_area: bool = True,
     value_col: str = "val_7d",
 ) -> pd.DataFrame:
-    """One row per zone, every metric divided by the zone's active area count.
+    """One row per zone: ``zone``, ``areas``, one column per metric key, and
+    ``EFFECTIVENESS`` when ``scores_df`` is given.
 
-    Columns: ``zone``, ``areas``, one per entry in ``metric_keys``, and
-    ``EFFECTIVENESS`` when ``scores_df`` is given. Values are floats, unsorted
-    and unformatted — ranking and locale formatting belong to the caller.
+    ``per_area=True`` (the default, and the reading the page opens on) divides
+    each metric by the zone's active area count. ``per_area=False`` returns the
+    zone's raw total — the reading a president sometimes wants for a sense of
+    absolute volume, and the one that ranks by zone size, which is why it is
+    never the default and why the Areas column is shown in both modes.
 
-    A metric the zone has no row for is NaN, not 0 (see the module docstring).
+    **Effectiveness ignores the switch and is always a per-area average.** It is
+    a 0-100 score, not a count: summing it produces a number like 388 that means
+    nothing, and would re-introduce the size bias into the one column that is
+    supposed to be size-neutral.
+
+    Values are floats, unsorted and unformatted — ranking and locale formatting
+    belong to the caller. A metric the zone has no row for is NaN, not 0 (see
+    the module docstring).
     """
     counts  = active_areas_by_zone(areas_df)
     totals  = _zone_metric_totals(zone_df, value_col)
@@ -137,8 +148,11 @@ def zone_per_area_table(
         zone_totals = totals.get(zone)
         row = {"zone": zone, "areas": n_areas}
         for key in metric_keys:
-            row[key] = (float(zone_totals.get(key, 0.0)) / n_areas
-                        if zone_totals is not None else float("nan"))
+            if zone_totals is None:
+                row[key] = float("nan")
+                continue
+            total = float(zone_totals.get(key, 0.0))
+            row[key] = total / n_areas if per_area else total
         if with_eff:
             row[EFFECTIVENESS] = (float(effect[zone]) / n_areas
                                   if zone in effect else float("nan"))

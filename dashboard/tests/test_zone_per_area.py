@@ -17,7 +17,7 @@ from app.analytics.zone_comparison import (
     active_areas_by_zone,
     effectiveness_is_rankable,
     ki_scored_area_count,
-    zone_per_area_table,
+    zone_comparison_table,
 )
 
 FUNNEL = ["contacts_attempted", "contacts_made", "friend_lessons",
@@ -69,7 +69,7 @@ def _ranked(table: pd.DataFrame, by: str) -> list:
 
 def test_a_bigger_zone_does_not_outrank_a_harder_working_smaller_one():
     """The live 2026-08-20 case, to scale: 11 areas x 117 vs 8 areas x 158."""
-    table = zone_per_area_table(
+    table = zone_comparison_table(
         _summary(("Los Angeles Norte", {"contacts_attempted": 1289}),
                  ("Angol",             {"contacts_attempted": 1266})),
         _areas(("Los Angeles Norte", 11), ("Angol", 8)),
@@ -90,7 +90,7 @@ def test_the_divisor_is_every_active_area_not_the_ones_that_reported():
     many areas contributed — so dividing by "who reported" would let 4 working
     areas out of 13 carry a zone to the top with nothing on screen saying so.
     """
-    table = zone_per_area_table(
+    table = zone_comparison_table(
         _summary(("Temuco", {"friend_lessons": 130})),
         _areas(("Temuco", 13)),
         FUNNEL,
@@ -107,7 +107,7 @@ def test_a_zone_with_no_summary_row_is_blank_not_zero():
     missing row — and a zero sorts above nothing, so it would also outrank a
     genuinely idle zone.
     """
-    table = zone_per_area_table(
+    table = zone_comparison_table(
         _summary(("Angol", {"friend_lessons": 80})),
         _areas(("Angol", 8), ("San Pedro", 11)),
         FUNNEL,
@@ -136,8 +136,60 @@ def test_zone_names_match_across_tabs_despite_stray_spaces():
     trailing space in one would silently blank a real zone's whole row."""
     summary = _summary(("Angol ", {"contacts_attempted": 800}))
     areas = _areas(("Angol", 8))
-    table = zone_per_area_table(summary, areas, FUNNEL)
+    table = zone_comparison_table(summary, areas, FUNNEL)
     assert table.iloc[0]["contacts_attempted"] == 100.0
+
+
+# ── The raw / per-area switch ─────────────────────────────────────────────────
+
+def test_totals_mode_returns_the_zones_raw_numbers():
+    """per_area=False is the president's "how much did this zone actually do"
+    reading. It is never the default — it ranks by zone size, which is the
+    finding this whole item exists to fix."""
+    args = (_summary(("Los Angeles Norte", {"contacts_attempted": 1289}),
+                     ("Angol",             {"contacts_attempted": 1266})),
+            _areas(("Los Angeles Norte", 11), ("Angol", 8)),
+            FUNNEL)
+
+    totals = zone_comparison_table(*args, per_area=False)
+    assert totals.set_index("zone")["contacts_attempted"].to_dict() == {
+        "Los Angeles Norte": 1289.0, "Angol": 1266.0}
+    assert _ranked(totals, "contacts_attempted")[0] == "Los Angeles Norte"
+
+    # The same data, the other way round — the switch is the only difference.
+    assert _ranked(zone_comparison_table(*args, per_area=True),
+                   "contacts_attempted")[0] == "Angol"
+
+
+def test_the_area_count_is_present_in_totals_mode_too():
+    """In totals mode the divisor isn't being used, but the area count is the
+    reason one zone outranks another — it has to stay on screen."""
+    totals = zone_comparison_table(
+        _summary(("Temuco", {"friend_lessons": 130})),
+        _areas(("Temuco", 13)), FUNNEL, per_area=False)
+    assert totals.iloc[0]["areas"] == 13
+
+
+def test_effectiveness_ignores_the_switch_and_stays_a_per_area_average():
+    """It is a 0-100 score, not a count. Summing it gives a meaningless number
+    and re-introduces the size bias into the one size-neutral column."""
+    args = (_summary(("Angol", {"friend_lessons": 80})),
+            _areas(("Angol", 8)), FUNNEL,
+            _scores(("Angol", [(80.0, 50.0)] * 8)))
+
+    per_area = zone_comparison_table(*args, per_area=True).iloc[0]
+    totals   = zone_comparison_table(*args, per_area=False).iloc[0]
+
+    assert per_area[EFFECTIVENESS] == 80.0
+    assert totals[EFFECTIVENESS] == 80.0, "summed the score instead (640)"
+    assert totals["friend_lessons"] == 80.0, "the counts must still flip"
+
+
+def test_a_missing_summary_row_is_still_blank_in_totals_mode():
+    totals = zone_comparison_table(
+        _summary(("Angol", {"friend_lessons": 80})),
+        _areas(("Angol", 8), ("San Pedro", 11)), FUNNEL, per_area=False)
+    assert pd.isna(totals[totals["zone"] == "San Pedro"].iloc[0]["friend_lessons"])
 
 
 # ── Effectiveness: a weekly score, and only when it is whole ──────────────────
@@ -146,7 +198,7 @@ def test_effectiveness_is_averaged_over_active_areas_not_scored_rows():
     """An area the scoring agent wrote no row for counts as a zero, exactly
     like an area that reported nothing to the nightly form. Averaging over
     present rows instead would reward a zone for its missing rows."""
-    table = zone_per_area_table(
+    table = zone_comparison_table(
         _summary(("Angol", {"friend_lessons": 80})),
         _areas(("Angol", 8)),
         FUNNEL,
@@ -183,7 +235,7 @@ def test_the_threshold_is_a_share_of_active_areas_not_of_scored_rows():
 def test_no_effectiveness_column_when_no_week_has_been_scored():
     """SCORES is empty before the first Monday run. The column is dropped
     rather than filled with zeros, so nothing can be sorted by it."""
-    table = zone_per_area_table(
+    table = zone_comparison_table(
         _summary(("Angol", {"friend_lessons": 80})),
         _areas(("Angol", 8)),
         FUNNEL,
@@ -196,7 +248,7 @@ def test_no_effectiveness_column_when_no_week_has_been_scored():
 # ── Degenerate inputs ─────────────────────────────────────────────────────────
 
 def test_no_active_areas_yields_an_empty_table_not_a_division_by_zero():
-    table = zone_per_area_table(
+    table = zone_comparison_table(
         _summary(("Angol", {"friend_lessons": 80})), pd.DataFrame(), FUNNEL)
     assert table.empty
     assert list(table.columns) == ["zone", "areas"] + FUNNEL
@@ -205,7 +257,7 @@ def test_no_active_areas_yields_an_empty_table_not_a_division_by_zero():
 def test_a_metric_missing_from_one_zones_rows_is_zero_not_absent():
     """The zone reported, this metric just never came up — different from the
     zone having no row at all, and it must stay a comparable number."""
-    table = zone_per_area_table(
+    table = zone_comparison_table(
         _summary(("Angol", {"friend_lessons": 80})),
         _areas(("Angol", 8)),
         FUNNEL,

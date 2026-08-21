@@ -163,17 +163,26 @@ ES: dict[str, str] = {
     # zone has (8 to 13 here), which is what the old heading silently did.
     "Zones — Per-Area Average (7 Days)":
         "Zonas — promedio por área (7 días)",
+    "Zones — Zone Totals (7 Days)":
+        "Zonas — totales por zona (7 días)",
     "Sort by": "Ordenar por",
     "Rank": "Posición",
+    # Which reading the table shows. Counts follow the switch; Effectiveness is
+    # a 0-100 score and stays a per-area average in both.
+    "Per area": "Promedio por área",
+    "Zone total": "Total de la zona",
+    "Zone totals rank by zone size — these zones run {low} to {high} areas."
+    " Effectiveness stays a per-area average.":
+        "Los totales por zona ordenan por tamaño — estas zonas tienen entre "
+        "{low} y {high} áreas. La Efectividad sigue siendo un promedio por área.",
     # Column headers, trimmed to keep the table readable across eight columns.
     # Trimmed phrases, not initialisms — same rule as the Key Indicator labels.
+    # "Inv. al Bautismo" is the one abbreviation, and it is deliberate: plain
+    # "Invitaciones" collides with church_invites ("Invitaciones a la Iglesia").
     "Attempts": "Intentos",
     "Contacts": "Contactos",
     "Lessons w/ Friends": "Lecciones c/ Amigos",
-    "Baptismal Invitations": "Invitaciones",
-    # Effectiveness is weekly while the rest of the table is a rolling 7 days,
-    # so its own header carries the week it describes.
-    "Effectiveness ({when})": "Efectividad ({when})",
+    "Bapt. Invitations": "Inv. al Bautismo",
     "Effectiveness does not lead the ranking yet: its Key Indicator "
     "component is still 0 for most areas ({n} of {total} scored), "
     "because a week's KI goals are set on the previous week's form.":
