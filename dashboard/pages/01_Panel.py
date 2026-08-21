@@ -46,8 +46,8 @@ from app.db.queries import (
     get_config_value,
 )
 from app.analytics.zone_comparison import (
-    zone_comparison_table, effectiveness_is_rankable, ki_scored_area_count,
-    EFFECTIVENESS as ZONE_EFFECTIVENESS,
+    zone_comparison_table, mission_summary_row, effectiveness_is_rankable,
+    ki_scored_area_count, EFFECTIVENESS as ZONE_EFFECTIVENESS,
 )
 from app.analytics.period_delta import (
     reporting_dates, window_pair, window_totals, window_areas, days_in_window,
@@ -269,7 +269,22 @@ _VS_PRIOR_WEEK = t("vs prior 7 days")
 # ═══════════════════════════════════════════════════════════════════════════════
 render_section_label(t("Nightly Activity — Last 7 Days"))
 
-_nightly_keys = flavor.nightly_highlights
+#: The three tiles the page opens with. Fixed here, not read from
+#: flavor.nightly_highlights: that property derives from SCORE_CONFIG's *effort*
+#: weights, which exist to weight the effort score, not to choose what a
+#: president sees first. It yielded contacts_attempted, roleplays and
+#: member_contacts — two of the three are inputs rather than outcomes, and
+#: contacts_attempted then appeared three times on one page (audit H1).
+#:
+#: These three are the end of the finding funnel: what was actually placed,
+#: invited and offered. Order is the mission's own, chosen by the user.
+_PANEL_HIGHLIGHT_KEYS = [
+    "bom_shared",
+    "church_invites",
+    "baptismal_invitations",
+]
+
+_nightly_keys = _PANEL_HIGHLIGHT_KEYS
 if not _nightly_keys:
     st.info(_EMPTY_MSG)
 elif _night_anchor is None:
@@ -392,9 +407,13 @@ def _ki_goal_note(key: str, set_by: dict, areas: int) -> str:
 
 
 # ── 2a. The week in progress ───────────────────────────────────────────────────
+# emphasis=True on both Key Indicator headings: these are the page's primary
+# grouping. The seven KIs are what the mission is judged on, and without the
+# stronger tier they sat at exactly the same weight as "Daily Effort Breakdown".
 render_section_label(
     t("Key Indicators — Current Week ({span})",
-      span=fmt_week_span(_this_monday, _this_sunday))
+      span=fmt_week_span(_this_monday, _this_sunday)),
+    emphasis=True,
 )
 
 if not _ki_metrics:
@@ -470,12 +489,14 @@ _ki_span = (
     if _ki_week_end is not None else ""
 )
 if not _ki_span:
-    render_section_label(t("Key Indicators — Last Complete Week"))
+    render_section_label(t("Key Indicators — Last Complete Week"), emphasis=True)
 elif _ki_is_partial:
     render_section_label(
-        t("Key Indicators — Week of {span} (in progress)", span=_ki_span))
+        t("Key Indicators — Week of {span} (in progress)", span=_ki_span),
+        emphasis=True)
 else:
-    render_section_label(t("Key Indicators — Week of {span}", span=_ki_span))
+    render_section_label(t("Key Indicators — Week of {span}", span=_ki_span),
+                         emphasis=True)
 
 # The reporting denominator, stated on the page rather than left to be assumed.
 # A weekly total is a sum over whoever submitted; printing "31 de 43 áreas
@@ -673,7 +694,35 @@ else:
         _places = 1 if (_zone_per_area or _k == ZONE_EFFECTIVENESS) else 0
         _zone_tbl[_lbl] = _zone_num[_k].map(
             lambda v, p=_places: fmt_number(v, p))
-    render_table(_zone_tbl)
+
+    # ── The mission, as a final row ───────────────────────────────────────────
+    # Recomputed from the raw totals, never summed or averaged from the rows
+    # above it: averaging four zone averages weights an 8-area zone the same as
+    # a 13-area one, so it would not equal the mission's own per-area figure.
+    # It carries no rank — it is the thing the ranked rows are parts of.
+    _mission_row = mission_summary_row(
+        zone_df, get_submitting_areas(), _ZONE_FUNNEL_KEYS, _zone_scores,
+        per_area=_zone_per_area)
+    _mission_cells = {
+        t("Rank"):  "",
+        t("Zone"):  t("Mission"),
+        t("Areas"): fmt_int(_mission_row["areas"]),
+    }
+    for _k, _lbl in _zone_cols:
+        _places = 1 if (_zone_per_area or _k == ZONE_EFFECTIVENESS) else 0
+        _mission_cells[_lbl] = fmt_number(_mission_row.get(_k), _places)
+    _zone_tbl = pd.concat(
+        [_zone_tbl, pd.DataFrame([_mission_cells])], ignore_index=True)
+
+    # Styled rather than rendered plain so the summary reads as a total and not
+    # as a fifth zone. render_table hides a Styler's index, so the row is
+    # addressed by position.
+    _last = len(_zone_tbl) - 1
+    _styled = _zone_tbl.style.apply(
+        lambda row: (["font-weight:700;border-top:2px solid rgba(255,255,255,0.22);"]
+                     * len(row)) if row.name == _last else [""] * len(row),
+        axis=1)
+    render_table(_styled)
 
     if not _zone_per_area:
         st.caption(t("Zone totals rank by zone size — these zones run "

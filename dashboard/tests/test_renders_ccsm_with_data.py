@@ -36,6 +36,8 @@ _NIGHTLY = [
     ("new_people_found", "Nuevas Personas Encontradas", "NUMBER"),
     ("member_contacts", "Contactos con Miembros", "NUMBER"),
     ("bom_shared", "Libros de Mormón Entregados", "NUMBER"),
+    ("church_invites", "Invitaciones a la Iglesia", "NUMBER"),
+    ("baptismal_invitations", "Invitaciones al Bautismo", "NUMBER"),
     ("effort", "Nivel de Esfuerzo", "CHOICE"),
 ]
 
@@ -422,14 +424,19 @@ def test_dashboard_ki_tiles_drop_the_forms_real_suffix():
     assert "(Real)" not in body
 
 
-def test_dashboard_nightly_row_shows_scored_metrics():
-    """The nightly KPI row and zone leaderboard come from SCORE_CONFIG's effort
-    component. `effort` itself is CHOICE and must NOT be offered as a countable
-    tile."""
+def test_dashboard_headline_row_shows_outcomes_not_effort_inputs():
+    """The headline row used to be flavor.nightly_highlights, which derives from
+    SCORE_CONFIG's *effort* weights — contacts_attempted, roleplays and
+    member_contacts. Those weights exist to score effort, not to choose what a
+    president sees first, and two of the three are inputs rather than outcomes
+    (audit H1). The row is now three outcomes, fixed in the page."""
     body = _text(_run("pages/01_Panel.py"))
-    for label in ("Intentos de Contacto", "Prácticas de Enseñanza",
-                  "Contactos con Miembros"):
-        assert label in body, f"{label!r} missing from the Dashboard"
+    for label in ("Libros de Mormón Entregados", "Invitaciones a la Iglesia",
+                  "Invitaciones al Bautismo"):
+        assert label in body, f"{label!r} missing from the headline row"
+    # roleplays reached the Panel only through that row. Nothing else on the
+    # page has a reason to name a practice count.
+    assert "Prácticas de Enseñanza" not in body
 
 
 def test_daily_activity_totals_every_nightly_metric():
@@ -544,3 +551,31 @@ def test_empty_catalogue_renders_nothing_rather_than_a_default():
     assert flavor.kpi_highlights == []
     assert flavor.nightly_metrics == []
     assert flavor.nightly_highlights == []
+
+
+def test_key_indicator_headings_carry_the_emphasis_treatment():
+    """The seven KIs are what the mission is judged on. Without
+    render_section_label(emphasis=True) they sat at exactly the same visual
+    weight as "Desglose Diario de Esfuerzo" — audit H1's second half. The
+    emphasis tier is identifiable by its indigo accent bar, which the plain
+    tier does not draw."""
+    at = _run("pages/01_Panel.py")
+    accent = "linear-gradient(180deg,#6366f1,#8b5cf6)"
+    emphasized = [
+        m.value for m in at.markdown
+        if accent in str(m.value) and "INDICADORES CLAVE" in str(m.value).upper()
+    ]
+    assert len(emphasized) == 2, (
+        "Both Key Indicator headings (current week, last complete week) must "
+        f"use the emphasis tier; found {len(emphasized)}"
+    )
+
+
+def test_the_zone_table_ends_with_a_mission_row():
+    """The ranked zones are parts of a whole, and the whole was not on the page.
+    It carries no rank — it is not a fifth zone."""
+    at = _run("pages/01_Panel.py")
+    tables = [str(m.value) for m in at.markdown if "pmg-tbl" in str(m.value)]
+    zone_tbl = next((h for h in tables if "POSICIÓN" in h.upper()), None)
+    assert zone_tbl is not None, "zone table did not render"
+    assert "Misión" in zone_tbl

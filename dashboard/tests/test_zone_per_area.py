@@ -11,12 +11,14 @@ fixture where the big zone also wins per area would pass against the old code.
 """
 
 import pandas as pd
+import pytest
 
 from app.analytics.zone_comparison import (
     EFFECTIVENESS,
     active_areas_by_zone,
     effectiveness_is_rankable,
     ki_scored_area_count,
+    mission_summary_row,
     zone_comparison_table,
 )
 
@@ -263,3 +265,68 @@ def test_a_metric_missing_from_one_zones_rows_is_zero_not_absent():
         FUNNEL,
     )
     assert table.iloc[0]["baptismal_invitations"] == 0.0
+
+
+# ── The mission summary row ───────────────────────────────────────────────────
+# Item 6. The Panel prints the whole mission as a final row under the ranked
+# zones, following the same per-area / totals switch.
+
+def test_the_mission_row_is_not_an_average_of_the_zone_averages():
+    """Averaging four zone averages weights an 8-area zone the same as a
+    13-area one, so it does not equal the mission's own per-area figure. The
+    row must be recomputed from the raw totals.
+
+    Here: 160/8 = 20.0 and 130/13 = 10.0, whose mean is 15.0 — but the mission
+    ran 290 lessons across 21 areas, which is 13.81.
+    """
+    args = (_summary(("Angol", {"friend_lessons": 160}),
+                     ("Temuco", {"friend_lessons": 130})),
+            _areas(("Angol", 8), ("Temuco", 13)),
+            FUNNEL)
+    table = zone_comparison_table(*args)
+    row = mission_summary_row(*args)
+
+    assert table["friend_lessons"].mean() == 15.0
+    assert row["friend_lessons"] == pytest.approx(290 / 21)
+    assert row["areas"] == 21
+
+
+def test_the_mission_row_follows_the_totals_switch():
+    args = (_summary(("Angol", {"friend_lessons": 160}),
+                     ("Temuco", {"friend_lessons": 130})),
+            _areas(("Angol", 8), ("Temuco", 13)),
+            FUNNEL)
+    assert mission_summary_row(*args, per_area=False)["friend_lessons"] == 290.0
+
+
+def test_a_zone_with_no_summary_row_is_left_out_of_both_sides():
+    """"Not written yet" is not "did nothing" — the module's rule, one level up.
+    Counting Temuco's 13 areas in the divisor would charge the mission for an
+    agent that has not run."""
+    row = mission_summary_row(
+        _summary(("Angol", {"friend_lessons": 160})),
+        _areas(("Angol", 8), ("Temuco", 13)),
+        FUNNEL,
+    )
+    assert row["friend_lessons"] == 20.0
+    assert row["areas"] == 8
+
+
+def test_mission_effectiveness_ignores_the_switch_and_stays_per_area():
+    """Same reason it does per zone: a 0-100 score summed across 21 areas is a
+    number like 1,400 that means nothing."""
+    args = (_summary(("Angol", {"friend_lessons": 160})),
+            _areas(("Angol", 4)),
+            FUNNEL,
+            _scores(("Angol", [(80, 10), (60, 10), (40, 10), (20, 10)])))
+    per_area = mission_summary_row(*args, per_area=True)[EFFECTIVENESS]
+    totals   = mission_summary_row(*args, per_area=False)[EFFECTIVENESS]
+    assert per_area == 50.0
+    assert totals == 50.0
+
+
+def test_no_active_areas_yields_nan_not_a_division_by_zero():
+    row = mission_summary_row(
+        _summary(("Angol", {"friend_lessons": 80})), pd.DataFrame(), FUNNEL)
+    assert row["areas"] == 0
+    assert pd.isna(row["friend_lessons"])

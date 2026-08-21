@@ -162,3 +162,52 @@ def zone_comparison_table(
     if not rows:
         return pd.DataFrame(columns=cols)
     return pd.DataFrame(rows)[cols]
+
+
+def mission_summary_row(
+    zone_df: pd.DataFrame,
+    areas_df: pd.DataFrame,
+    metric_keys: list,
+    scores_df: pd.DataFrame = None,
+    per_area: bool = True,
+    value_col: str = "val_7d",
+) -> dict:
+    """The whole mission as one row, in the same shape a zone row has.
+
+    Recomputed from the raw totals rather than aggregated from
+    ``zone_comparison_table``'s output, so a per-area reading is not an average
+    of averages — that would weight an 8-area zone equally with a 13-area one.
+
+    ``per_area`` follows the caller's switch for the counts. Effectiveness
+    ignores it and stays a per-area average in both modes, for the same reason
+    it does per zone: it is a 0-100 score, not a count.
+
+    A zone with no summary row is left out of BOTH sides of that column's
+    division, and ``areas`` reports the divisor actually used. Counting its
+    areas in the denominator would charge the mission for an agent that has not
+    written yet — the module's "not written" vs "did nothing" rule, applied one
+    level up.
+    """
+    counts = active_areas_by_zone(areas_df)
+    totals = _zone_metric_totals(zone_df, value_col)
+    effect = _zone_effectiveness_totals(scores_df)
+    with_eff = scores_df is not None and not getattr(scores_df, "empty", True)
+
+    present = [z for z, n in counts.items() if n and z in totals]
+    divisor = sum(counts[z] for z in present)
+
+    row = {"zone": "", "areas": divisor}
+    for key in metric_keys:
+        if not divisor:
+            row[key] = float("nan")
+            continue
+        total = sum(float(totals[z].get(key, 0.0)) for z in present)
+        row[key] = total / divisor if per_area else total
+    if with_eff:
+        scored = [z for z, n in counts.items() if n and z in effect]
+        eff_div = sum(counts[z] for z in scored)
+        row[EFFECTIVENESS] = (
+            sum(float(effect[z]) for z in scored) / eff_div
+            if eff_div else float("nan")
+        )
+    return row

@@ -80,7 +80,7 @@ mission-level bars.
 
 ## 🟠 High — wrong emphasis
 
-### H1. Headline row is 3 metrics, chosen by accident
+### H1. Headline row is 3 metrics, chosen by accident — **DONE, items 5 + 6**
 
 `nightly_highlights` derives from `SCORE_CONFIG`'s `effort` weights →
 `contacts_attempted`, `roleplays`, `member_contacts` (`effort` dropped, it's a
@@ -182,8 +182,8 @@ Chile Concepción South Mission          Semana del 11–16 de agosto
 | 2 | ~~Goal bars from `AGENT_CONFIG.GOAL_*` × active areas~~ | 🔴 bug | C3 — **DONE**, see below |
 | 3 | ~~Zone leaderboard → per-area average~~ | 🔴 bug | C2 — **DONE**, see below |
 | 4 | ~~Add `delta` (7d vs prior 7d) to every tile~~ | 🟠 | H3 — **DONE**, see below. H3's premise did not survive contact with the data |
-| 5 | Headline row → 7 Key Indicators | 🟠 | H1 — decided |
-| 6 | Nightly row → 6 outcome metrics, not effort inputs | 🟠 | H1 |
+| 5 | ~~Headline row → 7 Key Indicators~~ | 🟠 | H1 — **DONE**, see below. Reorder declined by the user; became the emphasis treatment |
+| 6 | ~~Nightly row → outcome metrics, not effort inputs~~ | 🟠 | H1 — **DONE**, see below. Three outcomes + a mission row on the zone table |
 | 7 | Rate-vs-target strip + Embudo link | 🟠 | H2 — decided |
 | 8 | Verdict line at top | 🟠 | new |
 | 9 | Effort denominator → all active areas | 🟡 | M3 |
@@ -484,6 +484,122 @@ reporting day, scaled ×7/5) and become unscaled on **2026-08-24**.
 `test_nav_and_locale_rendered.py` needed their fixture moved from
 `DASHBOARD_SUMMARY.val_7d` to `DAILY_LOG`, which is the §1 change landing, not a
 regression.
+
+---
+
+## Items 5 + 6 as built (2026-08-21) — H1, both halves
+
+H1 had two halves and they were built together, because the user's decisions
+made them one change: the headline row's *metrics* were wrong (item 6) and the
+Key Indicators were not visually the page's lead (item 5).
+
+### What the user decided, and what it overrode
+
+The queue said *"Headline row → 7 Key Indicators"*, i.e. move the KI block to
+the top of the page. **The user declined the reorder** — the section order
+stays as it is. So item 5 reduced to the emphasis treatment, and the substance
+of H1 moved into item 6.
+
+- **Item 5 → `render_section_label(emphasis=True)` on both KI headings.** That
+  tier (indigo accent bar, 1.05rem, brighter text) already existed for Goals >
+  Area Expectation Settings and had exactly one caller. Position was left
+  alone; weight now carries the ranking instead. Both headings, not one —
+  current week and last complete week are one block.
+- **Item 5's sub-order confirmed unchanged**: current (in-progress) week still
+  leads, last complete week below it. Item 2's reasoning stands.
+
+### The headline row — item 6
+
+`flavor.nightly_highlights` is gone from §1, replaced by a page-local
+`_PANEL_HIGHLIGHT_KEYS`. Same precedent item 3 set for `_ZONE_FUNNEL_KEYS`:
+that property derives from `SCORE_CONFIG`'s **effort** weights, which exist to
+weight the effort score, not to choose what a president sees first.
+
+**The three tiles, chosen by the user, in the user's order:**
+
+| # | Key | Label | Per-area goal |
+|---|---|---|---|
+| 1 | `bom_shared` | Libros de Mormón Entregados | 7 |
+| 2 | `church_invites` | Invitaciones a la Iglesia | 70 |
+| 3 | `baptismal_invitations` | Invitaciones al Bautismo | 10 |
+
+All three have a seeded `GOAL_*` in `AGENT_CONFIG`, so all three draw a goal
+bar. Live 2026-08-21: 72 / 24% of 301 · 928 / 31% of 3.010 · 65 / 15% of 430.
+
+⚠️ **§4's 8-week trend chart and §5's daily bar still read
+`flavor.nightly_highlights`** — deliberately out of scope, they are queue items
+12/13. So `roleplays` and `member_contacts` still reach the page through
+plotly traces; only the headline row changed. The new test asserts
+`Prácticas de Enseñanza` is absent from the *rendered text*, which passes
+because §4 currently has no data to draw. **That assertion will start failing
+once the trend chart has 2+ weeks of history** — when it does, the fix is item
+12, not deleting the assertion.
+
+### The mission row — a mid-item change of direction
+
+Originally scoped (and approved) as a fourth section: a four-tile
+mission-funnel row placed above the zone table, mirroring its columns. The user
+then changed their mind mid-build: **put it at the bottom of the existing zone
+table as a summary row instead.** That is what shipped, and it is the better
+shape — the ranked zones and their total are one table, not two blocks
+repeating each other's numbers.
+
+New pure function **`zone_comparison.mission_summary_row()`** (5 tests in
+`tests/test_zone_per_area.py`). Three rules, none of them free:
+
+1. **Recomputed from the raw totals, never aggregated from the zone rows
+   above it.** Averaging four zone averages weights an 8-area zone the same as
+   a 13-area one. Live: the four per-area lesson figures average to 16.4, but
+   the mission ran 673 lessons across 43 areas, which is **15.7**. The row
+   prints 15.7.
+2. **It follows the per-area / total switch** for the counts — and
+   **Effectiveness ignores the switch and stays a per-area average in both
+   modes**, exactly as it does per zone. Same reason: a 0–100 score summed
+   across 43 areas is a number like 1.771 that means nothing.
+3. **A zone with no `DASHBOARD_SUMMARY` row is dropped from BOTH sides of the
+   division**, and the `Áreas` cell reports the divisor actually used.
+   Counting its areas in the denominator would charge the mission for an agent
+   that has not written yet — the module's "not written" ≠ "did nothing" rule,
+   applied one level up.
+
+It carries **no rank** (blank cell) and is appended *after* sorting, so it is
+never a fifth zone. Styled via a pandas `Styler` — bold, 2px top border —
+because `render_table` hides a Styler's index, so the row is addressed by
+position (`len - 1`).
+
+### Live, on the page
+
+```
+POSICIÓN  ZONA                ÁREAS  INTENTOS  CONTACTOS  LECC. C/ AMIGOS  INV. BAUT.  EFECTIVIDAD
+1         Angol                   8     160,1       79,4             26,1         3,2         48,5
+2         Los Angeles Norte      11     113,5       47,8             16,1         0,8         35,3
+3         Temuco Ñielol          13      88,2       38,2             15,5         1,6         43,7
+4         San Pedro              11      38,9       22,4              7,7         0,8         38,7
+          Misión                 43      95,4       44,3             15,7         1,5         41,2
+```
+
+Totals mode gives `4.104 / 1.903 / 673 / 65` — identical to
+`DASHBOARD_SUMMARY`'s MISSION `val_7d` rows, confirming the arithmetic ties out
+against the source the zone rows come from. Effectiveness holds at 41,2 in both
+modes.
+
+### Tests
+
+**395 passing, the same 5 pre-existing failures** (was 388). One existing test,
+`test_dashboard_nightly_row_shows_scored_metrics`, asserted the *old* behaviour
+— that the headline row shows SCORE_CONFIG's effort metrics — and was rewritten
+rather than deleted, as
+`test_dashboard_headline_row_shows_outcomes_not_effort_inputs`. Its fixture's
+`_NIGHTLY` gained `church_invites` and `baptismal_invitations`, which the live
+sheet has always had.
+
+⚠️ **Browser verification note**: on this machine the Browser pane's
+`screenshot`, `read_page` and `javascript_tool` all fail or return a different
+document than `get_page_text` for the Streamlit app — only `get_page_text`
+reflects the real page. Visual assertions (the emphasis accent bar, the mission
+row) were verified through `AppTest` markdown instead, which is why
+`test_key_indicator_headings_carry_the_emphasis_treatment` asserts on the
+gradient string. Don't burn time re-trying the screenshot path.
 
 ---
 
