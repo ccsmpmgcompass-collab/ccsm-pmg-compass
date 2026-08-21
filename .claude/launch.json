@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ccsm-dashboard",
+      "runtimeExecutable": "dashboard/venv/Scripts/streamlit.exe",
+      "runtimeArgs": ["run", "Home.py", "--server.port", "8502", "--server.headless", "true"],
+      "cwd": "dashboard",
+      "port": 8502
+    }
+  ]
+}

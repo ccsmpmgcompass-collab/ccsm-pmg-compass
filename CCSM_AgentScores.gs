@@ -217,9 +217,15 @@ function runAgentScores() {
     var dailyTotals = asc_loadDailyLogWeek(weekRange.monday, weekRange.sunday);
     var kiByArea    = asc_loadKIForWeek(weekRange.sunday);
 
+    // The GOALS for this week were written on LAST week's form, so they come
+    // from a second lookup one week back — see asc_loadAreaGoals' header for
+    // the form wording this follows and the bug it fixes.
+    var goalKiByArea = asc_loadKIForWeek(asc_previousWeekEnd(weekRange.sunday));
+
     Logger.log('AgentScores: ' + areas.length + ' active area(s), ' +
       Object.keys(dailyTotals).length + ' area(s) with DAILY_LOG activity, ' +
-      Object.keys(kiByArea).length + ' area(s) with WEEKLY_KI data.');
+      Object.keys(kiByArea).length + ' area(s) with WEEKLY_KI data, ' +
+      Object.keys(goalKiByArea).length + ' area(s) with a prior-week goal row.');
 
     asc_clearScoresForWeek_(scoresSheet, weekRange.sunday);
 
@@ -245,7 +251,7 @@ function runAgentScores() {
         var kiActuals = {};
         Object.keys(config.fieldWeights.ki).forEach(function(k) { kiActuals[k] = kiRow[k] || 0; });
 
-        var goals = asc_loadAreaGoals(area.areaName, kiRow);
+        var goals = asc_loadAreaGoals(area.areaName, goalKiByArea[aLower] || {});
 
         var effortScore = asc_computeScore(effortActuals, goals, config.fieldWeights.effort);
         var skillScore  = asc_computeScore(skillActuals,  goals, config.fieldWeights.skill);
@@ -605,22 +611,60 @@ function asc_loadKIForWeek(weekEndStr) {
 
 
 /**
- * asc_loadAreaGoals(areaName, kiRow)
+ * asc_previousWeekEnd(weekEndStr)
+ * The Sunday one week before weekEndStr, as 'yyyy-MM-dd'. Used to find the form
+ * on which a week's GOALS were written (see asc_loadAreaGoals).
+ */
+function asc_previousWeekEnd(weekEndStr) {
+  var iso = asc_toDateString(weekEndStr);
+  if (!iso) return null;
+  // Built from the parts rather than Date.parse: 'YYYY-MM-DD' parses as UTC,
+  // which in a UTC-4 mission lands on the previous calendar day before the
+  // subtraction even starts. The same reason a5a_parseLocalDate exists.
+  var p = iso.split('-');
+  var prev = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]) - 7);
+  return asc_toDateString(prev);
+}
+
+
+/**
+ * asc_loadAreaGoals(areaName, goalKiRow)
  * Builds the full goals object for one area/week, combining:
  *   - Effort-component counts: AGENT_CONFIG GOAL_<key> override, else
  *     ASC_DEFAULT_GOALS, else a per-area GOALS_CONFIG (wide table: Area +
  *     one column per metric key) override if present.
  *   - Skill-component rates: AGENT_CONFIG *_RATE_TARGET (same keys
  *     CCSM_Agent1A.gs reads), else ASC_RATE_METRICS' defaultTarget.
- *   - KI-component: the area's OWN self-reported ki_*_meta value for this
- *     week (from kiRow) — no separate goal source needed. Falls back to 1
- *     (never 0) if missing, matching asc_computeScore's own goal<=0 guard.
+ *   - KI-component: the area's OWN self-reported ki_*_meta value, taken from
+ *     the PREVIOUS week's row. Falls back to 1 (never 0) if missing, matching
+ *     asc_computeScore's own goal<=0 guard.
+ *
+ * ── THE KI GOAL IS ONE WEEK BEHIND THE KI RESULT ─────────────────────────────
+ * The weekly form asks for two sets of seven numbers, and its own section help
+ * (WeeklyReportForm_ES.gs) says which week each one describes:
+ *
+ *   Real — "los resultados obtenidos durante la semana pasada"
+ *   Meta — "las metas que usted estableció durante la planificación semanal
+ *           para la SEMANA SIGUIENTE"
+ *
+ * So one WEEKLY_KI row carries week W's results beside week W+1's goals, and
+ * the goal belonging to W sits on the row for W-1. This function used to be
+ * passed the SAME row the actuals came from, which graded every area against
+ * the target they set for the week AFTER the one being scored. Callers must
+ * pass a row loaded at asc_previousWeekEnd(scoredWeek); the parameter is named
+ * goalKiRow rather than kiRow so a future caller cannot pass the wrong one
+ * without noticing.
+ *
+ * An area with no prior-week row keeps the fallback of 1 — the same behaviour
+ * as before for a missing goal, not a new failure mode.
  *
  * @param {string} areaName
- * @param {Object} kiRow - this area's WEEKLY_KI row for the scored week
+ * @param {Object} goalKiRow - this area's WEEKLY_KI row for the week BEFORE the
+ *                             scored week, whose ki_*_meta values are the
+ *                             scored week's goals
  * @returns {Object} { metricKey: goalValue, ... }
  */
-function asc_loadAreaGoals(areaName, kiRow) {
+function asc_loadAreaGoals(areaName, goalKiRow) {
   var goals = asc_cloneObj(ASC_DEFAULT_GOALS);
 
   // Effort-component AGENT_CONFIG overrides
@@ -667,10 +711,11 @@ function asc_loadAreaGoals(areaName, kiRow) {
     Logger.log('AgentScores asc_loadAreaGoals ERROR: ' + err.message);
   }
 
-  // KI-component: this area's own Meta values for the scored week
+  // KI-component: this area's own Meta values, written on the PREVIOUS week's
+  // form — those are the goals for the week being scored (see header).
   Object.keys(asc_kiWeights()).forEach(function(kiKey) {
     var metaKey = kiKey.replace('_real', '_meta');
-    var metaVal = kiRow ? parseFloat(kiRow[metaKey]) : NaN;
+    var metaVal = goalKiRow ? parseFloat(goalKiRow[metaKey]) : NaN;
     goals[kiKey] = (!isNaN(metaVal) && metaVal > 0) ? metaVal : 1;
   });
 

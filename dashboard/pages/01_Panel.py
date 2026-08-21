@@ -19,7 +19,7 @@ from app.components.design_system import (
 from app.config.flavor_loader import flavor, METRIC_LABELS
 from app.config.metric_catalog import key_indicator_metrics
 from app.i18n import t
-from app.i18n.formats import fmt_int, fmt_week_span
+from app.i18n.formats import fmt_int, fmt_week_span, fmt_day_month
 from app.config.theme import CHART_COLORS
 from app.db.queries import (
     get_mission_totals,
@@ -34,6 +34,10 @@ from app.db.queries import (
     get_daily_summary,
     get_alltime_compliance,
     get_mission_goals,
+    get_area_weekly_goals,
+    get_ki_goals_for_week,
+    get_week_to_date_totals,
+    get_week_to_date_areas,
     get_submitting_areas,
     get_daily_log,
     get_weekly_submission_data,
@@ -101,11 +105,53 @@ def _mission_val(metric_key: str, col: str = "val_7d") -> float:
 
 
 def _mission_goal(metric_key: str) -> float:
+    """Mission-wide weekly goal for a NIGHTLY metric.
+
+    Three sources, most-specific first. DASHBOARD_SUMMARY.goal_weekly and
+    GOALS_CONFIG (via app_goals) are both blank across the whole mission today —
+    goal_weekly on all 23 MISSION rows, and GOALS_CONFIG is an empty tab — which
+    is why no KPI tile has ever shown a bar. They are kept ahead of AGENT_CONFIG
+    rather than deleted: populating either is how the mission overrides the
+    configured default, and the Goals page edits GOALS_CONFIG inline.
+
+    AGENT_CONFIG's GOAL_* rows are the fallback that actually fires. They are
+    PER AREA PER WEEK (get_area_weekly_goals), so a mission-wide bar is that
+    number times the active area count -- all 43 active teaching areas, not just
+    the ones that reported. A non-submitting area counts as a zero here on
+    purpose: this bar answers what the whole mission should have produced.
+    """
     if not mission_df.empty and "metric_key" in mission_df.columns:
         row = mission_df[mission_df["metric_key"] == metric_key]
         if not row.empty and float(row.iloc[0].get("goal_weekly", 0) or 0) > 0:
             return float(row.iloc[0]["goal_weekly"])
-    return float(app_goals.get(metric_key, 0) or 0)
+    configured = float(app_goals.get(metric_key, 0) or 0)
+    if configured > 0:
+        return configured
+    per_area = float(_area_goals.get(metric_key, 0) or 0)
+    return per_area * _active_areas if per_area > 0 and _active_areas else 0.0
+
+
+def _mission_goal_note(metric_key: str) -> str:
+    """The arithmetic behind a derived mission goal, for the tile's small print.
+
+    A bar reading "48% of 8.600" is unreadable without it: 8.600 is
+    GOAL_contacts_attempted (200) x 43 active areas, and nothing else on the
+    page says so. Only returned for the AGENT_CONFIG-derived case -- an entered
+    goal is its own explanation.
+    """
+    if _mission_goal(metric_key) <= 0:
+        return ""
+    per_area = float(_area_goals.get(metric_key, 0) or 0)
+    if per_area <= 0 or not _active_areas:
+        return ""
+    if float(app_goals.get(metric_key, 0) or 0) > 0:
+        return ""
+    if not mission_df.empty and "metric_key" in mission_df.columns:
+        row = mission_df[mission_df["metric_key"] == metric_key]
+        if not row.empty and float(row.iloc[0].get("goal_weekly", 0) or 0) > 0:
+            return ""
+    return t("{per_area} per area x {n}",
+             per_area=fmt_int(per_area), n=fmt_int(_active_areas))
 
 
 # ── Which week the Key Indicator tiles describe ───────────────────────────────
@@ -115,10 +161,13 @@ def _mission_goal(metric_key: str) -> float:
 # one page showed two different "latest weeks". See select_reporting_week() for
 # the full case and the rule it applies.
 _ki_row, _ki_week_end, _ki_is_partial = select_reporting_week(ki_df)
-_this_monday = date.today() - timedelta(days=date.today().weekday())
+_today = date.today()
+_this_monday = _today - timedelta(days=_today.weekday())
+_this_sunday = _this_monday + timedelta(days=6)
 
 _ki_reporting = get_weekly_ki_reporting()
 _active_areas = len(get_submitting_areas())
+_area_goals = get_area_weekly_goals()
 
 
 def _ki_val(metric_key: str) -> float:
@@ -126,6 +175,41 @@ def _ki_val(metric_key: str) -> float:
     if _ki_row is None or metric_key not in _ki_row.index:
         return 0.0
     return float(_ki_row[metric_key] or 0)
+
+
+# ── Key Indicator goals ───────────────────────────────────────────────────────
+# A week's goals are written on the PREVIOUS week's form -- the weekly form asks
+# for results "de la semana pasada" and goals "para la semana siguiente" in its
+# own section help. get_ki_goals_for_week does that offset; both rows below get
+# their goals from it, so neither can drift onto the wrong week.
+_cur_goals, _cur_goal_set_by, _cur_goal_src, _cur_goal_areas = \
+    get_ki_goals_for_week(_this_sunday)
+_past_goals, _past_goal_set_by, _past_goal_src, _past_goal_areas = \
+    get_ki_goals_for_week(_ki_week_end)
+
+# ── What the current week can be measured by before its weekly form arrives ────
+# The weekly form is submitted once, at the end of the week, so for a week in
+# progress there is no ki_*_real to show. Three of the seven Key Indicators are
+# also collected nightly and can be totalled Monday-to-today; the other four
+# have no nightly equivalent and show their goal with no value rather than a
+# zero (see render_kpi_row -- a zero would report a failure, an em dash reports
+# an absence).
+#
+# ki_baptismal_date counts friends who currently HAVE a date -- a standing
+# count. Its nightly stand-in, baptismal_calendars, counts calendars handed out
+# -- a flow. They are close but not the same question, so the in-progress tile
+# is RELABELLED to what it actually measures instead of borrowing the KI's name.
+_KI_NIGHTLY_SOURCE = {
+    "ki_new_people_real":     "new_people_found",
+    "ki_member_lessons_real": "lessons_member_present",
+    "ki_baptismal_date_real": "baptismal_calendars",
+}
+_KI_NIGHTLY_RELABEL = {
+    "ki_baptismal_date_real": t("Baptismal Calendars Handed Out"),
+}
+_wtd_totals = get_week_to_date_totals(_this_monday, _today)
+_wtd_areas = get_week_to_date_areas(_this_monday, _today)
+_wtd_days = (_today - _this_monday).days + 1
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -142,12 +226,13 @@ else:
             "label": METRIC_LABELS.get(k, k),
             "value": int(_mission_val(k)),
             "goal":  _mission_goal(k),
+            "goal_note": _mission_goal_note(k),
         }
         for k in _nightly_keys
     ])
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 2. KEY INDICATOR TILES — weekly form, latest COMPLETE week
+# 2. KEY INDICATORS — the week in progress, then the last complete week
 # ═══════════════════════════════════════════════════════════════════════════════
 # Was a fixed Pew / Date / Gate / Renew row: Utah Provo's four Key Indicators,
 # none of which is a column in CCSM's WEEKLY_KI. _ki_val returns 0.0 for a
@@ -155,14 +240,136 @@ else:
 # every week the mission ever reported — a plausible screen, not an error.
 #
 # CCSM's KIs are the seven `ki_*_real` values the weekly form collects. `_real`
-# only: the matching `_meta` keys are that companionship's GOAL for the week and
-# belong beside a value as a target, never in a row of achieved results.
+# only: the matching `_meta` keys are a GOAL, and belong beside a value as a
+# target, never in a row of achieved results.
+#
+# The current week leads because it is the week leadership can still act on; the
+# completed week sits below it as the confirmed record. That ordering is only
+# honest because the in-progress row states its own window and pace — see below.
+_ki_metrics = key_indicator_metrics()
+
+
+# Tile labels for the seven Key Indicators, short enough for a phone-width card.
+#
+# The catalogue's names are the FORM's question wording, which is right on a
+# form and wrong on a tile: "Amigos en la Iglesia (Primera Semana) (Real)" wraps
+# to three lines in a 200px card and pushes the number it labels off screen.
+#
+# Trimmed phrases rather than initialisms (NP / LM / FB), on purpose: a
+# president glancing at the page should not have to decode it. "CR" is the one
+# exception and only because Conversos Recientes is already said that way in the
+# mission. Keys are English and translated like every other string, so the row
+# does not silently become Spanish-only.
+#
+# The "(Real)" suffix goes with them. It exists to tell the Real column apart
+# from the Meta column ON THE FORM, where both are asked; a tile has no such
+# twin, and on the in-progress row it is wrong as well — those values come from
+# the nightly form, not the weekly form's Real column.
+_KI_SHORT_LABELS = {
+    "ki_new_people_real":        "New People",
+    "ki_member_lessons_real":    "Lessons w/ Member",
+    "ki_friends_sacrament_real": "Friends at Sacrament",
+    "ki_friends_first_week_real": "Friends · First Week",
+    "ki_baptismal_date_real":    "On Baptismal Date",
+    "ki_baptized_confirmed_real": "Baptized",
+    "ki_rc_at_church_real":      "RC at Church",
+}
+
+
+def _ki_label(key: str, fallback: str) -> str:
+    """A Key Indicator's tile label: the short form, or the catalogue name with
+    the form's "(Real)"/"(Meta)" suffix stripped if no short form exists."""
+    short = _KI_SHORT_LABELS.get(key)
+    if short:
+        return t(short)
+    label = METRIC_LABELS.get(key, fallback)
+    for suffix in (" (Real)", " (Meta)"):
+        if label.endswith(suffix):
+            return label[: -len(suffix)]
+    return label
+
+
+def _ki_goal_note(key: str, set_by: dict, areas: int) -> str:
+    """Small print under a KI goal bar when not every area set one.
+
+    A blank meta counts as zero — an area that wrote down no goal committed to
+    nothing — so a mission goal can rest on a handful of areas and look exactly
+    like one every area signed up to. ki_baptized_confirmed is the live case: 6
+    of 33 areas set a goal there while all 33 reported results.
+
+    ``areas`` MUST be the number of areas behind the VALUE being shown, not the
+    number behind the goal. Comparing the goal's setters against their own week
+    is always n of n and can never fire — which on 2026-08-21 left the last
+    complete week reading "204, 2040% of goal 10" with nothing to explain it:
+    33 areas reported results for the week ending 08-16, but its goals were
+    written on the 08-09 form, which exactly one area submitted.
+    """
+    n = int(set_by.get(key, 0) or 0)
+    if not n or not areas or n >= areas:
+        return ""
+    return t("{n} of {total} areas set a goal", n=fmt_int(n), total=fmt_int(areas))
+
+
+# ── 2a. The week in progress ───────────────────────────────────────────────────
+render_section_label(
+    t("Key Indicators — Current Week ({span})",
+      span=fmt_week_span(_this_monday, _this_sunday))
+)
+
+if not _ki_metrics:
+    st.info(_EMPTY_MSG)
+else:
+    # Monday-to-today, not the rolling val_7d the rest of the page uses: a
+    # rolling seven days straddles two reporting weeks and cannot be compared
+    # against a Monday–Sunday goal. It does mean an early-week total looks small
+    # against a full week's goal, which is what the pace line below is for.
+    _pace_pct = round(_wtd_days / 7 * 100)
+    st.caption(
+        t("Day {n} of 7 · nightly reports through {day} · goals set by "
+          "{areas} areas on last week's form.",
+          n=fmt_int(_wtd_days),
+          day=fmt_day_month(_today),
+          areas=fmt_int(_cur_goal_areas))
+    )
+
+    _cur_cards = []
+    for k, label in _ki_metrics.items():
+        source = _KI_NIGHTLY_SOURCE.get(k)
+        measured = source is not None and source in _wtd_totals
+        # A relabelled tile shows no goal bar. The relabel is not cosmetic —
+        # baptismal_calendars counts calendars handed out this week, a flow,
+        # while ki_baptismal_date's goal counts friends who hold a date, a
+        # standing total. Charting one against the other put a permanent ~20%
+        # on screen that measured nothing. A tile that is honest about being a
+        # different quantity does not inherit the other quantity's target.
+        borrowed = k in _KI_NIGHTLY_RELABEL
+        _cur_cards.append({
+            "label": _KI_NIGHTLY_RELABEL.get(k, _ki_label(k, label)),
+            "value": int(_wtd_totals.get(source, 0)) if measured else "—",
+            "goal":  0 if borrowed else _cur_goals.get(k, 0),
+            "goal_note": "" if borrowed
+                         else _ki_goal_note(k, _cur_goal_set_by, _cur_goal_areas),
+            # Nightly totals come from however many areas filed a report this
+            # week; the goal from however many wrote one down last week. Those
+            # are different sets, so the percentage is computed per area.
+            "value_basis": _wtd_areas,
+            "goal_basis":  _cur_goal_set_by.get(k, 0),
+        })
+    render_kpi_row(_cur_cards)
+
+    st.caption(
+        t("Three indicators are counted live from the nightly form; the other "
+          "four arrive with the weekly form. Pace: {pct}% of the week elapsed.",
+          pct=fmt_int(_pace_pct))
+    )
+
+# ── 2b. The last complete week ─────────────────────────────────────────────────
 _ki_span = (
     fmt_week_span(_ki_week_end - timedelta(days=6), _ki_week_end)
     if _ki_week_end is not None else ""
 )
 if not _ki_span:
-    render_section_label(t("Key Indicators"))
+    render_section_label(t("Key Indicators — Last Complete Week"))
 elif _ki_is_partial:
     render_section_label(
         t("Key Indicators — Week of {span} (in progress)", span=_ki_span))
@@ -183,30 +390,23 @@ if _active_areas:
                      n=fmt_int(_ki_reported), total=fmt_int(_active_areas),
                      pct=fmt_int(_ki_pct)))
 
-_ki_metrics = key_indicator_metrics()
 if not _ki_metrics:
     st.info(_EMPTY_MSG)
 else:
     render_kpi_row([
         {
-            "label": METRIC_LABELS.get(k, label),
+            "label": _ki_label(k, label),
             "value": int(_ki_val(k)),
-            "goal":  _mission_goal(k),
+            "goal":  _past_goals.get(k, 0),
+            # Denominator is who reported RESULTS this week, not who set the
+            # goals — see _ki_goal_note. Without that, the 1-of-33 case is
+            # silent and the bar reads 2040% unexplained.
+            "goal_note": _ki_goal_note(k, _past_goal_set_by, _ki_reported),
+            "value_basis": _ki_reported,
+            "goal_basis":  _past_goal_set_by.get(k, 0),
         }
         for k, label in _ki_metrics.items()
     ])
-
-# The week now in progress gets one muted line rather than a tile: leadership
-# can see how far this week has filled in without any in-progress number sitting
-# at tile size next to a complete week's.
-if not _ki_is_partial and _active_areas:
-    _cur_end = _this_monday + timedelta(days=6)
-    st.caption(
-        t("Current week ({span}): {n} of {total} areas have reported.",
-          span=fmt_week_span(_this_monday, _cur_end),
-          n=fmt_int(_ki_reporting.get(str(_cur_end), 0)),
-          total=fmt_int(_active_areas))
-    )
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 3. ZONE LEADERBOARD — flavor-driven columns, ranked (last 7 days)

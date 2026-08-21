@@ -116,6 +116,45 @@ ES: dict[str, str] = {
         "{n} de {total} áreas han informado hasta ahora.",
     "Current week ({span}): {n} of {total} areas have reported.":
         "Semana en curso ({span}): {n} de {total} áreas han informado.",
+    # ── Panel §2: the in-progress week, measured from the nightly form ─────────
+    # The weekly form arrives once, at the end of the week. Until it does, three
+    # of the seven Key Indicators can be counted from the nightly form and four
+    # cannot. "Calendarios Bautismales Entregados" is deliberately NOT the
+    # ki_baptismal_date label: it is a different question (calendars handed out,
+    # not friends holding a date) standing in for it mid-week.
+    "Key Indicators — Current Week ({span})":
+        "Indicadores Clave — Semana en Curso ({span})",
+    "Key Indicators — Last Complete Week":
+        "Indicadores Clave — Última Semana Completa",
+    "Baptismal Calendars Handed Out":
+        "Calendarios Bautismales Entregados",
+    # Short Key Indicator tile labels — the catalogue's names are the FORM's
+    # question wording and wrap to three lines in a phone-width card.
+    "New People":            "Nuevas Personas",
+    "Lessons w/ Member":     "Lecciones c/ Miembro",
+    "Friends at Sacrament":  "Amigos en Sacramental",
+    "Friends · First Week":  "Amigos · 1ª Semana",
+    "On Baptismal Date":     "Con Fecha Bautismal",
+    "Baptized":              "Bautizados",
+    "RC at Church":          "CR en la Iglesia",
+    "Day {n} of 7 · nightly reports through {day} · goals set by "
+    "{areas} areas on last week's form.":
+        "Día {n} de 7 · informes nocturnos hasta el {day} · metas fijadas por "
+        "{areas} áreas en el formulario de la semana pasada.",
+    "Three indicators are counted live from the nightly form; the other "
+    "four arrive with the weekly form. Pace: {pct}% of the week elapsed.":
+        "Tres indicadores se cuentan en vivo desde el informe nocturno; los "
+        "otros cuatro llegan con el informe semanal. Ritmo: {pct}% de la "
+        "semana transcurrida.",
+    "{n} of {total} areas set a goal":
+        "{n} de {total} áreas fijaron meta",
+    "{per_area} per area x {n}":
+        "{per_area} por área × {n}",
+    "Goal: {goal}": "Meta: {goal}",
+    # Per-area comparison — used when the number of areas behind the value and
+    # behind the goal differ, so a total-over-total ratio would be meaningless.
+    "{pct}% · {actual} vs {goal} per area":
+        "{pct}% · {actual} vs {goal} por área",
     "Weekly Key Indicators — Last 7 Days":
         "Indicadores Clave Semanales — Últimos 7 Días",
     "Zone Leaderboard — Last 7 Days":

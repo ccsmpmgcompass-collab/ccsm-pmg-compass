@@ -6,7 +6,7 @@ import streamlit as st
 import plotly.io as pio
 import plotly.graph_objects as go
 from app.i18n import t
-from app.i18n.formats import fmt_int
+from app.i18n.formats import fmt_int, fmt_number
 
 PALETTE = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"]
 
@@ -499,20 +499,72 @@ def render_kpi_row(metrics: list[dict]) -> None:
 
         goal_html = ""
         if goal is not None and float(goal) > 0:
+            # pct is the TRUE ratio and can exceed 100; only the bar's width is
+            # clamped. Capping the caption too made a goal set far too low read
+            # exactly like one that was met precisely -- member_contacts sat at
+            # 196% of its configured goal and displayed "100%", so nothing on
+            # screen suggested the number needed recalibrating.
+            # A non-numeric value is a metric with no reading yet (the weekly
+            # form has not arrived), NOT a metric sitting at zero. Those tiles
+            # show the goal on its own: "0% of 104" would report a failure the
+            # mission has not had the chance to have.
+            measured = isinstance(value, (int, float))
+
+            # value_basis / goal_basis: how many areas are behind each side.
+            # When they differ, a total-over-total ratio is meaningless — on
+            # 2026-08-21 the week ending 08-16 had 33 areas' results (204 new
+            # people) over 1 area's goal (10), and the tile read 2.040%. Reduce
+            # both to a per-area rate first and the mismatched denominators
+            # cancel: 6.2 against 10, i.e. 62%. Same rule the audit already sets
+            # for zones, for the same reason. In the steady state the two bases
+            # are equal and this is identical to the plain ratio, so it costs
+            # nothing and only ever rescues the mismatched case.
+            v_basis = m.get("value_basis")
+            g_basis = m.get("goal_basis")
+            per_area = bool(v_basis) and bool(g_basis) and measured
             try:
-                pct = min(100, round(float(value) / float(goal) * 100))
+                if per_area:
+                    v_rate = float(value) / float(v_basis)
+                    g_rate = float(goal) / float(g_basis)
+                    pct = round(v_rate / g_rate * 100)
+                elif measured:
+                    pct = round(float(value) / float(goal) * 100)
+                else:
+                    pct = 0
             except (TypeError, ZeroDivisionError, ValueError):
-                pct = 0
+                measured, per_area, pct = False, False, 0
+            width = max(0, min(100, pct)) if measured else 0
             bar = "#22c55e" if pct >= 90 else "#6366f1" if pct >= 60 else "#f59e0b"
+            if not measured:
+                caption = t("Goal: {goal}", goal=fmt_int(goal))
+            elif per_area:
+                # The per-area pair is printed, not just the percentage: the
+                # tile's own big number is a mission TOTAL, so without these two
+                # figures the percentage has no visible arithmetic behind it.
+                caption = t("{pct}% · {actual} vs {goal} per area",
+                            pct=fmt_int(pct),
+                            actual=fmt_number(v_rate, 1),
+                            goal=fmt_number(g_rate, 1))
+            else:
+                caption = t("{pct}% of {goal} goal",
+                            pct=fmt_int(pct), goal=fmt_int(goal))
+            # Where a goal is derived rather than entered -- a per-area weekly
+            # target multiplied by the active area count -- the total alone is
+            # unexplainable on screen; goal_note carries the arithmetic.
+            note = _html.escape(m.get("goal_note", ""))
+            note_html = (
+                f'<div style="font-size:0.6rem;color:#4b5563;margin-top:1px;">{note}</div>'
+                if note else ""
+            )
             goal_html = (
                 f'<div style="margin-top:8px;">'
                 f'<div style="height:3px;background:rgba(255,255,255,0.08);'
                 f'border-radius:2px;overflow:hidden;">'
-                f'<div style="height:100%;width:{pct}%;background:{bar};'
+                f'<div style="height:100%;width:{width}%;background:{bar};'
                 f'border-radius:2px;transition:width 0.4s ease;"></div></div>'
                 f'<div style="font-size:0.65rem;color:#4b5563;margin-top:3px;">'
-                f'{_html.escape(t("{pct}% of {goal} goal", pct=fmt_int(pct), goal=fmt_int(goal)))}'
-                f'</div></div>'
+                f'{_html.escape(caption)}'
+                f'</div>{note_html}</div>'
             )
 
         expectation_html = ""

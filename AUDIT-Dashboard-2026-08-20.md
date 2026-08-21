@@ -173,8 +173,8 @@ Chile Concepción South Mission          Semana del 11–16 de agosto
 
 | # | Item | Type | Notes |
 |---|---|---|---|
-| 1 | KI tiles → last complete week + denominator footnote | 🔴 bug | C1 |
-| 2 | Goal bars from `AGENT_CONFIG.GOAL_*` × active areas | 🔴 bug | C3 |
+| 1 | ~~KI tiles → last complete week + denominator footnote~~ | 🔴 bug | C1 — **DONE `dcb3012`** |
+| 2 | ~~Goal bars from `AGENT_CONFIG.GOAL_*` × active areas~~ | 🔴 bug | C3 — **DONE**, see below |
 | 3 | Zone leaderboard → per-area average | 🔴 bug | C2 |
 | 4 | Add `delta` (7d vs prior 7d) to every tile | 🟠 | H3 |
 | 5 | Headline row → 7 Key Indicators | 🟠 | H1 — decided |
@@ -188,6 +188,86 @@ Chile Concepción South Mission          Semana del 11–16 de agosto
 | 13 | "Building history" state for the trend | 🟡 | M1 |
 | 14 | Empty states that say *why*; drop `title=` tooltips | 🟡 | M7 |
 | 15 | Top 5 areas by Effectiveness score, near ⑤ Zonas — positive-only, no bottom list | 🟠 | H4 |
+
+---
+
+## Item 2 as built (2026-08-21) — and what it uncovered
+
+C3 assumed one fix: read `GOAL_*` and multiply by active areas. Against live
+data it turned out to be two problems, and the audit only knew about one.
+
+**The Key Indicators have no `GOAL_*` row at all.** All 19 are *nightly* metric
+keys (`GOAL_contacts_attempted=200`); none is a `ki_*_real`. So the configured
+route gives the seven headline tiles nothing.
+
+**A week's KI goals are written on the PREVIOUS week's form.** This is stated in
+the form's own section help (`WeeklyReportForm_ES.gs:113-118`):
+
+> Real — *"los resultados obtenidos durante la **semana pasada**"*
+> Meta — *"las metas que usted estableció durante la planificación semanal para
+> la **semana siguiente**"*
+
+So one `WEEKLY_KI` row carries week W's results beside week W+1's goals.
+
+### 🔴 A live bug this uncovered — `CCSM_AgentScores.gs`
+
+`asc_loadAreaGoals()` read the meta off the **same** row as the actuals, so
+every area's KI score — and therefore every `Effectiveness_Score` in `SCORES`,
+the tab item 15 is built on — was graded against the target set for the week
+*after* the one being scored. Fixed by loading a second KI map at
+`asc_previousWeekEnd()`. **Not yet pasted into the live Apps Script editor**, and
+existing `SCORES` rows keep their old values until recomputed.
+
+### Decisions made with the user
+
+| Question | Answer |
+|---|---|
+| KI goal source | Sum the `_meta` column from the previous week's forms |
+| Nightly multiplier | All 43 active areas — a non-submitter counts as a zero |
+| Over 100% | Show the true percentage; only the bar's width is capped |
+| Dead sources | Keep `goal_weekly` / `GOALS_CONFIG` ahead of `AGENT_CONFIG` |
+| Blank `_meta` | Counts as zero, with a footnote naming how many areas set one |
+| Layout | Current week leads; last complete week below |
+| Current-week values | 3 KIs counted live from the nightly form, Mon→today, with pace |
+| The other 4 | Shown with their goal and an em dash, never a zero |
+| Baptismal tile | Relabelled *Calendarios Bautismales Entregados* — and given **no goal bar**, because calendars handed out (a flow) is not friends holding a date (a standing count) |
+| Tile labels | Shortened; the form's `(Real)` suffix dropped |
+
+### The 2.040% problem, and the permanent fix
+
+Week 08-16 had 33 areas' results (204 new people) over 1 area's goal (10) —
+the only prior week predates launch. Total-over-total read **2.040%**.
+
+The mismatch is structural, not transitional: the set of areas that submitted
+last week is never exactly the set that submits this week, and transfers make it
+worse. **Both sides are now reduced to a per-area rate before the ratio is
+taken** — 6.2 against 10.0, i.e. 62%. This is the same rule this audit already
+sets for zone comparison, for the same reason. Where the two bases are equal it
+is identical to a plain ratio, so it costs nothing in the steady state.
+
+It also corrected the *current* week: 39 areas file nightly reports while 33 set
+goals, so Nuevas Personas moved 64% → 54%. The old figure flattered by 10 points.
+
+### Rejected: a computed goal (avg of prior weeks + 10%)
+
+Considered at the user's suggestion. **The mechanism already exists** —
+`CCSM_Agent2.gs` (Transfer Goal Recalibration) computes per-area weekly averages
+and suggests `avg × 1.05` when beating goal / `avg × 1.10` when below, capped at
+`current × 1.5`, writing to `GOAL_RECALIBRATION` for leadership to approve. It
+has **never run** (that tab holds only its header row) and cannot yet: it needs
+transfer-length history, and `DAILY_LOG` holds 12 days.
+
+Not adopted as the KI goal even once history exists, because:
+1. the `_meta` column already *is* the goal — set by the companionship in weekly
+   planning, which is what PMG asks; computing one removes the missionary from
+   their own goal;
+2. a baseline ratchets — a strong week raises the bar, a slump lowers it, so the
+   percentage ends up describing variance rather than performance;
+3. a self-referential goal can never report under-performance against a standard
+   — `close_rate` at 42% of target would read "on track".
+
+It **is** the right tool for the stale nightly `GOAL_*` numbers (`member_contacts`
+runs at 196% of goal, `roleplays` at 33%). Revisit ~20 Sept, via Agent2.
 
 ---
 

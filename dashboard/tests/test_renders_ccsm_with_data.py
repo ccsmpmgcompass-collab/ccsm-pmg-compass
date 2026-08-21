@@ -389,12 +389,37 @@ def test_no_provo_key_or_label_reaches_a_populated_page(page):
     assert leaked == [], f"{page} displays Provo vocabulary: {leaked}"
 
 
+# What the Panel's KI tiles are LABELLED, which is no longer the form's own
+# question wording. The catalogue names are the weekly form's column headers —
+# right on a form, wrong on a 200px tile, where "Amigos en la Iglesia (Primera
+# Semana) (Real)" wraps to three lines and pushes its number off screen. The
+# Panel shortens them (_KI_SHORT_LABELS in 01_Panel.py); _KI_BASES still drives
+# the synthetic QUESTIONS_CONFIG above, so the two must stay separate.
+_KI_PANEL_LABELS = [
+    "Nuevas Personas",
+    "Lecciones c/ Miembro",
+    "Amigos en Sacramental",
+    "Amigos · 1ª Semana",
+    "Con Fecha Bautismal",
+    "Bautizados",
+    "CR en la Iglesia",
+]
+
+
 def test_dashboard_shows_ccsms_key_indicators():
     """The KI row was a fixed Pew / Date / Gate / Renew, all reading 0. Every
     one of CCSM's seven must be named instead."""
     body = _text(_run("pages/01_Panel.py"))
-    missing = [label for _, label in _KI_BASES if label not in body]
+    missing = [label for label in _KI_PANEL_LABELS if label not in body]
     assert missing == [], f"Key Indicators absent from the Dashboard: {missing}"
+
+
+def test_dashboard_ki_tiles_drop_the_forms_real_suffix():
+    """"(Real)" distinguishes a form column from its "(Meta)" twin. A tile has
+    no twin, and on the in-progress row the values come from the nightly form,
+    so the suffix would be wrong as well as noisy."""
+    body = _text(_run("pages/01_Panel.py"))
+    assert "(Real)" not in body
 
 
 def test_dashboard_nightly_row_shows_scored_metrics():

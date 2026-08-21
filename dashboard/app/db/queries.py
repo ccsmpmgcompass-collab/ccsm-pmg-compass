@@ -701,6 +701,144 @@ def get_weekly_ki_reporting() -> dict:
     return {str(week): int(n) for week, n in counts.items()}
 
 
+def get_area_weekly_goals() -> dict:
+    """AGENT_CONFIG's ``GOAL_<metric_key>`` rows as ``{metric_key: weekly_goal}``.
+
+    Every GOAL_* in AGENT_CONFIG is a WEEKLY PER-AREA target — the same reading
+    _area_type_indicator_defaults() and CCSM_AgentScores.gs's asc_loadAreaGoals
+    both apply, and the reason a mission-wide bar is ``goal x active areas``
+    rather than the raw number. CcsmData.gs seeds these keys in lowercase,
+    matching Metric_Key's real casing (GOAL_new_people_found, not
+    GOAL_NEW_PEOPLE_FOUND); no case transform is applied here for that reason.
+
+    A blank or non-positive value is dropped rather than returned as 0: a goal
+    of zero is not a bar, and a caller drawing a progress bar against it would
+    show a metric as fully met the moment it recorded anything at all.
+    """
+    out: dict = {}
+    for key, raw in get_agent_config().items():
+        if not str(key).startswith("GOAL_"):
+            continue
+        metric = str(key)[len("GOAL_"):].strip()
+        if not metric:
+            continue
+        try:
+            value = float(str(raw).strip())
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            out[metric] = value
+    return out
+
+
+def get_ki_goals_for_week(week_end) -> tuple:
+    """Mission-wide Key Indicator goals for the week ending ``week_end``.
+
+    Returns ``(goals, set_by, source_week, source_areas)``:
+    ``goals`` maps a ``ki_*_real`` key to the summed goal, ``set_by`` maps the
+    same key to how many areas actually entered one, ``source_week`` is the week
+    those goals were written on, and ``source_areas`` is how many areas
+    submitted that week.
+
+    THE GOALS FOR A WEEK ARE WRITTEN ON THE PREVIOUS WEEK'S FORM. The weekly
+    form asks each companionship for two sets of seven numbers, and its own
+    section help (WeeklyReportForm_ES.gs) states which week each describes:
+
+      Real — "los resultados obtenidos durante la semana pasada"
+      Meta — "las metas que usted estableció durante la planificación semanal
+              para la SEMANA SIGUIENTE"
+
+    So a WEEKLY_KI row for week W carries W's results beside W+1's goals, and
+    the goal belonging to W lives on the row for W-1. Reading the meta off the
+    same row — which is what CCSM_AgentScores.gs did until this was found —
+    grades a week against the target set for the week after it.
+
+    The source week is looked up by DATE (week_end - 7), never by taking the
+    previous row: a week no area submitted would otherwise silently donate a
+    two-week-old goal to the current one.
+
+    Goals are summed across every area that submitted the source week, not only
+    those that went on to report results, because a goal written down is a
+    commitment whether or not the follow-up form arrives. A blank meta counts as
+    zero — an area that set no goal committed to nothing — which is why
+    ``set_by`` is returned alongside: a total resting on 5 areas' goals must not
+    read the same as one resting on all 31.
+    """
+    empty: tuple = ({}, {}, None, 0)
+    if week_end is None:
+        return empty
+
+    df = get_weekly_form_data()
+    if df.empty or "week_end_date" not in df.columns:
+        return empty
+
+    source_week = pd.to_datetime(week_end).date() - timedelta(days=7)
+    rows = df[df["week_end_date"].astype(str) == str(source_week)]
+    if rows.empty:
+        return {}, {}, source_week, 0
+
+    goals: dict = {}
+    set_by: dict = {}
+    for col in rows.columns:
+        if not str(col).endswith("_meta"):
+            continue
+        real_key = str(col)[: -len("_meta")] + "_real"
+        values = pd.to_numeric(rows[col], errors="coerce").fillna(0.0)
+        total = float(values.sum())
+        if total <= 0:
+            continue
+        goals[real_key] = total
+        set_by[real_key] = int((values > 0).sum())
+
+    areas = int(rows["area"].nunique()) if "area" in rows.columns else len(rows)
+    return goals, set_by, source_week, areas
+
+
+def get_week_to_date_totals(start, end) -> dict:
+    """Mission-wide NIGHTLY totals for the days ``start``..``end`` inclusive.
+
+    Used for the week now in progress, where the weekly form has not been
+    submitted yet but the nightly form has been filled in every night. The
+    window is deliberately Monday-to-today rather than the rolling ``val_7d``
+    the rest of the page uses: a rolling seven days spans two reporting weeks,
+    so it cannot honestly be compared against a Monday-Sunday weekly goal.
+    """
+    if start is None or end is None or end < start:
+        return {}
+    span = (date.today() - start).days + 14
+    df = get_daily_summary(max(span, 14))
+    if df.empty or "Date" not in df.columns:
+        return {}
+    d = pd.to_datetime(df["Date"], errors="coerce").dt.date
+    window = df[(d >= start) & (d <= end)]
+    if window.empty:
+        return {}
+    metric_cols = [c for c in window.columns if c != "Date"]
+    totals = window[metric_cols].apply(pd.to_numeric, errors="coerce").sum()
+    return {k: float(v) for k, v in totals.items() if pd.notna(v)}
+
+
+def get_week_to_date_areas(start, end) -> int:
+    """How many distinct areas filed a nightly report in ``start``..``end``.
+
+    The denominator for get_week_to_date_totals. A mission total is a sum over
+    whoever reported, so it can only be compared against a goal once both sides
+    are reduced to a per-area rate — see the Panel's goal bars, and the audit's
+    standing rule that zones are compared per area and never by raw total.
+    """
+    if start is None or end is None or end < start:
+        return 0
+    span = (date.today() - start).days + 14
+    df = get_daily_log(max(span, 14))
+    if df.empty or "Date" not in df.columns or "Area" not in df.columns:
+        return 0
+    d = pd.to_datetime(df["Date"], errors="coerce").dt.date
+    window = df[(d >= start) & (d <= end)]
+    if window.empty:
+        return 0
+    return int(window["Area"].nunique())
+
+
 def get_nightly_weekly_trends(n_weeks: int = 52) -> pd.DataFrame:
     """Mission-wide weekly totals for the NIGHTLY metrics, from DAILY_LOG.
 
