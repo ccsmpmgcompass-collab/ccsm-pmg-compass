@@ -439,6 +439,36 @@ def test_dashboard_headline_row_shows_outcomes_not_effort_inputs():
     assert "Prácticas de Enseñanza" not in body
 
 
+def test_dashboard_shows_the_four_conversion_rates():
+    """Audit H2: CCSM_Agent1A.gs computes four rates against configured targets
+    and not one of them appeared anywhere in the dashboard. They are derived on
+    the page from DAILY_LOG, because the agent keeps them in Script Properties
+    and never writes them to a tab."""
+    body = _text(_run("pages/01_Panel.py"))
+    assert "Tasas de Conversión" in body
+    for label in ("Contacto", "Significativas", "Lecciones",
+                  "Invitación Bautismal"):
+        assert label in body, f"{label!r} missing from the rate strip"
+
+
+def test_rate_targets_fall_back_to_the_agents_own_defaults():
+    """This fixture's AGENT_CONFIG has no *_RATE_TARGET row, which is the state
+    a new mission starts in. The targets must come from CCSM_Agent1A.gs's
+    declared defaults — never from zero, which would paint every rate as
+    comfortably met."""
+    body = _text(_run("pages/01_Panel.py"))
+    # contact_rate and mc_rate both default to 0.50.
+    assert "de la meta de 50%" in body
+
+
+def test_a_rate_with_no_denominator_shows_its_target_not_a_zero():
+    """friend_lessons is absent from this fixture, so the baptismal-invitation
+    rate divides by nothing. The card must show the target on its own rather
+    than report a 0,0% the mission never had the chance to avoid."""
+    body = _text(_run("pages/01_Panel.py"))
+    assert "Meta: 25%" in body
+
+
 def test_daily_activity_totals_every_nightly_metric():
     """Daily Activity's five hardcoded Provo groups are replaced by the
     catalogue. Every numeric nightly metric must get a Mission Totals tile.

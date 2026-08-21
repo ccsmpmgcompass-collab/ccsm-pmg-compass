@@ -157,6 +157,41 @@ ES: dict[str, str] = {
         "{pct}% · {actual} vs {goal} por área",
     "Weekly Key Indicators — Last 7 Days":
         "Indicadores Clave Semanales — Últimos 7 Días",
+    # ── Panel §1b: the four conversion rates (audit H2) ───────────────────────
+    # Card labels drop the "Tasa de" that the section heading has just said.
+    # "Significativas" follows CCSM_Agent1C.gs's own coaching-email wording
+    # rather than inventing a shorter phrase for the dashboard alone.
+    "Conversion Rates — Last 7 Days": "Tasas de Conversión — Últimos 7 Días",
+    "Contact": "Contacto",
+    "Meaningful Conversations": "Significativas",
+    "Baptismal Invitation": "Invitación Bautismal",
+    # "Lessons" -> "Lecciones" is already in this file (the Breakdowns block) and
+    # is not repeated here: a duplicate key in a dict literal is silently
+    # overwritten by the later one, so two entries for one string is a place for
+    # a future divergence to hide rather than a helpful restatement. Same for
+    # "Rate" and "Target" below.
+    # "pp" is percentage points in both languages — the unit that keeps a rate's
+    # movement honest. See period_delta.point_delta.
+    "{n} pp": "{n} pp",
+    "{window}, against the 7 days before, in percentage points.":
+        "{window}, comparado con los 7 días anteriores, en puntos porcentuales.",
+    "{window}. Change is shown in percentage points once the previous 7 "
+    "days hold {need} reporting days; they hold {n}.":
+        "{window}. El cambio se muestra en puntos porcentuales cuando los 7 "
+        "días previos tengan {need} días con informe; tienen {n}.",
+    "How each rate is calculated": "Cómo se calcula cada tasa",
+    "Calculation": "Cálculo",
+    "Figures": "Cifras",
+    "Actual": "Real",
+    "Each rate is the ratio of the mission's totals, not the average of "
+    "the areas' own rates — averaging lets a few low-volume areas with "
+    "favourable ratios carry the mission figure. Targets come from "
+    "AGENT_CONFIG and are the same ones CCSM_Agent1A.gs coaches against.":
+        "Cada tasa es la razón de los totales de la misión, no el promedio de "
+        "las tasas de cada área — promediar permite que unas pocas áreas de "
+        "bajo volumen con razones favorables carguen la cifra de la misión. "
+        "Las metas provienen de AGENT_CONFIG y son las mismas con que "
+        "CCSM_Agent1A.gs entrega su asesoramiento.",
     # ── Panel: change over time (audit H3) ────────────────────────────────────
     # Each label names the window the arrow compares against, because the three
     # rows on this page compare against three different things: a rolling seven

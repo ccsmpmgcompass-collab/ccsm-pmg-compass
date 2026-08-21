@@ -184,7 +184,7 @@ Chile Concepción South Mission          Semana del 11–16 de agosto
 | 4 | ~~Add `delta` (7d vs prior 7d) to every tile~~ | 🟠 | H3 — **DONE**, see below. H3's premise did not survive contact with the data |
 | 5 | ~~Headline row → 7 Key Indicators~~ | 🟠 | H1 — **DONE**, see below. Reorder declined by the user; became the emphasis treatment |
 | 6 | ~~Nightly row → outcome metrics, not effort inputs~~ | 🟠 | H1 — **DONE**, see below. Three outcomes + a mission row on the zone table |
-| 7 | Rate-vs-target strip + Embudo link | 🟠 | H2 — decided |
+| 7 | ~~Rate-vs-target strip + Embudo link~~ | 🟠 | H2 — **DONE**, see below. The Embudo half was dropped: that page has no data and measures a different ratio |
 | 8 | Verdict line at top | 🟠 | new |
 | 9 | Effort denominator → all active areas | 🟡 | M3 |
 | 10 | Translate every hardcoded string | 🟡 | M4 |
@@ -601,6 +601,154 @@ row) were verified through `AppTest` markdown instead, which is why
 `test_key_indicator_headings_carry_the_emphasis_treatment` asserts on the
 gradient string. Don't burn time re-trying the screenshot path.
 
+---
+
+## Item 7 as built (2026-08-21) — H2, and why the Embudo link was dropped
+
+The four rate metrics now sit in a new block directly under §1's nightly
+activity, as **§1b Tasas de Conversión**. Live on the day it shipped:
+
+| Rate | Actual | Target | % of target | Bar |
+|---|---|---|---|---|
+| Contacto | 46,4% | 50% | 93% | green |
+| Significativas | 51,4% | 50% | 103% | green |
+| Lecciones | 16,4% | 20% | 82% | indigo |
+| **Invitación Bautismal** | **9,7%** | 25% | **39%** | **red** |
+
+4.104 intentos → 1.903 contactos → 673 lecciones → **65 invitaciones**. H2 holds
+up: the mission teaches well and does not invite.
+
+They sit under §1 because both are computed on the same rolling seven-day
+`DAILY_LOG` window — §1 says how much was done, §1b says how well — so the
+reader does not re-learn the timeframe between them.
+
+### The Embudo link was a wrong premise, and is not built
+
+H2 said to link to `07_Embudo_de_Búsqueda.py` because it "already has Finding
+Pipeline / Contact Performance and must not be duplicated". None of that
+survived checking:
+
+- The Embudo page runs entirely on **uploaded Tableau exports**, not `DAILY_LOG`
+  — a different data universe from the nightly form.
+- `TABLEAU_RANKING` and `TABLEAU_DETAIL` both hold **0 rows**, so the page
+  `st.stop()`s on "No finding data yet". A link would land on an empty screen.
+- Its "Contact to Friend" rate is `attempted ÷ found`, a **different ratio that
+  happens to share a name** with `contact_rate` (`made ÷ attempted`). Putting a
+  link between them would have actively confused the two.
+
+So there was nothing to duplicate and nowhere to send anyone. The arithmetic is
+printed on the Panel instead, in a **"Cómo se calcula cada tasa"** expander:
+
+| Tasa | Cálculo | Cifras | Real | Meta |
+|---|---|---|---|---|
+| Tasa de Contacto | Contactos ÷ Intentos de Contacto | 1.903 ÷ 4.104 | 46,4% | 50% |
+| Tasa de Conversaciones Significativas | Conversaciones Significativas ÷ Contactos | 978 ÷ 1.903 | 51,4% | 50% |
+| Tasa de Lecciones | Lecciones con Amigos ÷ Intentos de Contacto | 673 ÷ 4.104 | 16,4% | 20% |
+| Tasa de Invitación Bautismal | Invitaciones al Bautismo ÷ Lecciones con Amigos | 65 ÷ 673 | 9,7% | 25% |
+
+Printing the words as well as the numbers matters more than it looks: **three of
+the four rates do not divide by the stage above them.** `lesson_rate` is lessons
+÷ *attempts*, not lessons ÷ contacts. A reader who assumes one clean chain
+misreads all four. Revisit an Embudo link once Tableau sync is live.
+
+### New module: `dashboard/app/analytics/rate_metrics.py`
+
+Pure — no Streamlit, no sheet — with 32 tests in `tests/test_rate_metrics.py`.
+**Reuse it for these four rates anywhere** rather than re-deriving them.
+`worst_rate()` is already in it for **item 8**, the verdict line.
+
+`CCSM_Agent1A.gs` computes the rates in memory, saves them to Script Properties
+for the coaching emails, and **never writes them to a tab**. So the dashboard
+derives them itself. A drift test parses `A1A_RATE_METRICS` out of the agent and
+holds the Python numerators, denominators, config keys and default targets to
+it — the same guard `tests/test_metric_catalog.py` already applies to the
+display names.
+
+Three decisions are baked into the module:
+
+1. ⚠️ **A mission rate is the RATIO OF MISSION TOTALS, not the average of the
+   areas' own rates.** Both were computed live and they disagree in a way that
+   changes the story: ratio-of-totals gives 46,4 / 51,4 / 16,4 / 9,7; averaging
+   the 40 reporting areas gives **50,6 / 60,0 / 20,4 / 12,4** and flips
+   `contact_rate` and `lesson_rate` from *under target* to *on target*. The area
+   medians — 47,5 / 55,7 / 16,2 / 6,7 — sit far below those means, which is the
+   tell: low-volume areas with lucky ratios drag an unweighted average up.
+   This does **not** contradict `metric_catalog.is_rate_metric()`, which says
+   rates are averaged and never summed: that rule governs a column that already
+   holds per-area rates. Here the input is raw counts and the ratio is taken
+   once, at the top.
+2. **Change is measured in percentage POINTS.** A rate is already basis-free, so
+   `period_delta`'s day-scaling has nothing to normalize; and a percent change
+   of a percentage is the classic overstatement — `close_rate` going 7,4% → 9,7%
+   is "+31%", which reads as a mission transformed and means about two more
+   invitations per hundred lessons. Same reasoning that kept §7's compliance
+   percentages out of item 4.
+3. **A zero denominator is NO READING, not zero percent.** A window with no
+   lessons has no baptismal-invitation rate; `0,0%` would report a failure the
+   mission never had the chance to have. The card shows its target alone.
+
+### `period_delta.point_delta()` — the ratio counterpart
+
+Lives in `period_delta.py` so there is still exactly one home for "may I say
+this changed?". It **gates** on the same `MIN_COMPARABLE_DAYS = 5` reporting
+days as `period_delta`, but **scales nothing**.
+
+- `NEUTRAL_BAND_POINTS = 2.0`, chosen off the live data rather than guessed:
+  `contact_rate` moved 47,5 → 46,4, and at a one-point band that **1,1-point
+  wobble drew an amber down-arrow on the mission's contacting**. Same argument
+  as `NEUTRAL_BAND_PCT`'s 5%. ⚠️ **Provisional** — `DAILY_LOG` starts
+  2026-08-10, so the real week-to-week variance of these four is not yet
+  measurable. Revisit at 6–8 weeks of history.
+- `SEVERE_DROP_POINTS = -5.0` for red.
+- On the live pair the band leaves only `close_rate` (+2,24 pts) showing an
+  arrow; `mc_rate` at **−1,96** misses the band by four hundredths. Both are
+  pinned in the tests, because they straddle the threshold from either side.
+- Arrows are suppressed on the page today regardless: the prior window holds
+  **4** reporting days and needs 5. Expect them from **2026-08-23**, and the
+  caption says exactly that in the meantime.
+
+### `render_kpi_row` gained two things, app-wide
+
+- **`unit` + `decimals`.** The first non-integer card: `46,4%` over
+  `93% de la meta de 50%`. Both default to the plain integer the row has always
+  drawn, so every existing caller is untouched. A goal renders at zero decimals
+  when it is a whole number, so a 50% target does not print `50,0%`.
+- ⚠️ **A fourth goal-bar tier: red below 50% of goal.** Green ≥90, indigo ≥60,
+  amber ≥50, red below. It was three tiers with amber running all the way to
+  zero, so `close_rate` at 39% of target would have drawn the same colour as a
+  metric at 55%. **This changes six other bars on the Panel**, all of which
+  genuinely are below half their goal: §1's Libros de Mormón (24%), Invitaciones
+  a la Iglesia (31%) and Invitaciones al Bautismo (15%); §2a's Lecciones c/
+  Miembro (49%); §2b's Amigos · 1ª Semana (21%), Con Fecha Bautismal (39%) and
+  CR en la Iglesia (41%). The user was shown that list and **kept the rule
+  app-wide**. Note §1's three are graded against the `AGENT_CONFIG GOAL_*` set
+  item 2 already flagged as uncalibrated (`member_contacts` reads 196%) — red is
+  arguably the signal that forces the September recalibration rather than a
+  reason to soften the rule. A tile with **no reading** also computes as red,
+  but its bar has zero width, so nothing is drawn.
+
+### Not a bug — checked anyway
+
+`a1a_buildSummaries` sums *every* numeric stat key across areas, including the
+already-computed per-area rates, so `summaries.mission.contact_rate` is the sum
+of 40 rates (≈18,6, which `a1c_formatMetricValue` would render as `1.856%`).
+Every call site in `CCSM_Agent1C.gs` was checked: all of them read **per-area**
+stats (`a.stats`), and the mission / zone / district paths use counts only. The
+summed rates are dead, not wrong. Worth deleting one day; not touched here.
+
+### Section numbering
+
+The new block is **§1b**, not §2. This report and the build queue refer to the
+page's sections by number, and renumbering six of them to insert one would have
+silently invalidated every reference in items 8–15.
+
+### Suite
+
+**395 → 430 passing**, same 5 pre-existing failures. Three of the new tests are
+`AppTest` renders of the Panel; the rest are pure. On this run the Browser
+pane's `javascript_tool` **did** work against the Streamlit app, contrary to the
+note above — that is how the goal-bar colours were read straight out of the DOM.
+`screenshot` was not retried.
 ---
 
 ## Side findings (not Panel work)

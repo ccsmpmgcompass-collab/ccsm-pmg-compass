@@ -19,7 +19,9 @@ from app.components.design_system import (
 from app.config.flavor_loader import flavor, METRIC_LABELS
 from app.config.metric_catalog import key_indicator_metrics
 from app.i18n import t
-from app.i18n.formats import fmt_int, fmt_number, fmt_week_span, fmt_day_month
+from app.i18n.formats import (
+    fmt_int, fmt_number, fmt_percent, fmt_week_span, fmt_day_month,
+)
 from app.config.theme import CHART_COLORS
 from app.db.queries import (
     get_mission_totals,
@@ -44,6 +46,7 @@ from app.db.queries import (
     get_daily_log,
     get_weekly_submission_data,
     get_config_value,
+    get_agent_config,
 )
 from app.analytics.zone_comparison import (
     zone_comparison_table, mission_summary_row, effectiveness_is_rankable,
@@ -53,6 +56,7 @@ from app.analytics.period_delta import (
     reporting_dates, window_pair, window_totals, window_areas, days_in_window,
     period_delta, MIN_COMPARABLE_DAYS, WINDOW_DAYS,
 )
+from app.analytics.rate_metrics import rate_rows
 from app.utils.area_helpers import (
     compliance_anchor_date, build_calendar_data,
     latest_due_sunday, weekly_due_weeks,
@@ -326,6 +330,126 @@ else:
             "scaled per day.", window=_win_note, n=fmt_int(_prev_days)))
     else:
         st.caption(t("{window}, against the 7 days before.", window=_win_note))
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 1b. CONVERSION RATES — how well, against §1's how much (audit H2)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Numbered 1b rather than 2 on purpose: the audit report and the build queue
+# refer to this page's sections by number, and renumbering six of them to insert
+# one would silently invalidate every one of those references.
+#
+# CCSM_Agent1A.gs computes four conversion rates every Monday, each with a target
+# in AGENT_CONFIG, a Preach My Gospel page and a scripture — and until now not
+# one of them appeared anywhere in the dashboard (audit H2). They are the
+# sharpest thing in the dataset: live on 2026-08-21, 4.104 attempts became 673
+# lessons and 65 baptismal invitations. The mission teaches well and does not
+# invite, and no other section on this page can say so.
+#
+# The agent keeps the rates in Script Properties for the coaching emails and
+# never writes them to a tab, so they are derived here from the same DAILY_LOG
+# window §1 uses. That shared window is why this sits directly under §1: the
+# tiles above say how much was done, these say how well, and the reader does not
+# have to re-learn the timeframe between them.
+#
+# The audit's plan also called for a link to 07_Embudo_de_Búsqueda.py, on the
+# grounds that it already carries "Finding Pipeline" and "Contact Performance"
+# and must not be duplicated. That premise did not survive checking: the Embudo
+# page runs entirely on uploaded Tableau exports, its TABLEAU_RANKING and
+# TABLEAU_DETAIL tabs are empty so the page stops on "No finding data yet", and
+# its "contact rate" is attempted ÷ found — a different ratio that happens to
+# share a name. There is nothing to duplicate and nowhere to send anyone, so the
+# arithmetic is shown here instead, in an expander. Revisit once Tableau syncs.
+render_section_label(t("Conversion Rates — Last 7 Days"))
+
+# Card labels. The section heading already says these are rates, so repeating
+# "Tasa de" on all four cards spends the widest line of the card on a word the
+# reader has just read. Same trimming rule as _KI_SHORT_LABELS, and the same
+# reason: the catalogue's names are built to be unambiguous in a metric picker,
+# not to fit a 200px card.
+#
+# "Significativas" is not an invention — it is how CCSM_Agent1C.gs already says
+# it in the coaching email (A1C_METRIC_LABELS: 'Tasa de Significativas'; the
+# leadership KPI tile: 'Signif.'), so email and dashboard agree.
+_RATE_SHORT_LABELS = {
+    "contact_rate": "Contact",
+    "mc_rate":      "Meaningful Conversations",
+    "lesson_rate":  "Lessons",
+    "close_rate":   "Baptismal Invitation",
+}
+
+if _night_anchor is None:
+    st.info(t("No nightly reports yet — DAILY_LOG has no day on which at least "
+              "half the mission's areas filed."))
+else:
+    _rate_rows = rate_rows(_cur_totals, _prev_totals, get_agent_config(),
+                           current_days=_cur_days, prior_days=_prev_days)
+
+    # unit/decimals: one decimal, matching the zone table's fmt_number(v, 1).
+    # A whole number would print close_rate's 9,7% and 10,4% identically, which
+    # on the mission's weakest conversion is exactly where resolution matters.
+    #
+    # The goal bar's percentage is value ÷ target, so a rate at 39% of its target
+    # draws red under the four-tier grading — see render_kpi_row. No value_basis
+    # or goal_basis here: a ratio is already size-neutral, so there is no
+    # mismatched denominator for the per-area rescue to fix.
+    render_kpi_row([
+        {
+            "label": t(_RATE_SHORT_LABELS.get(r["key"], r["key"])),
+            # None, not 0, when the denominator is empty. render_kpi_row treats
+            # a non-numeric value as "no reading yet" and shows the target on
+            # its own, rather than reporting a 0% the mission never had the
+            # chance to avoid.
+            "value": r["value"] if r["value"] is not None else "—",
+            "goal": r["target"],
+            "unit": "%",
+            "decimals": 1,
+            "change": r["change"],
+            "delta_label": _VS_PRIOR_WEEK,
+        }
+        for r in _rate_rows
+    ])
+
+    _rate_win = t("{start}–{end} · {n} reporting days",
+                  start=fmt_day_month(_cur_start), end=fmt_day_month(_cur_end),
+                  n=fmt_int(_cur_days))
+    if _prev_days < MIN_COMPARABLE_DAYS:
+        # Same honesty rule as §1: a missing arrow says why it is missing.
+        # Unlike §1 there is no scaled middle case — a rate does not grow with
+        # the days behind it, so a short prior window cannot be corrected for,
+        # only refused. See period_delta.point_delta.
+        st.caption(t(
+            "{window}. Change is shown in percentage points once the previous 7 "
+            "days hold {need} reporting days; they hold {n}.",
+            window=_rate_win, n=fmt_int(_prev_days),
+            need=fmt_int(MIN_COMPARABLE_DAYS)))
+    else:
+        st.caption(t("{window}, against the 7 days before, in percentage points.",
+                     window=_rate_win))
+
+    # The arithmetic, in full. This is what the Embudo link was meant to be for.
+    # Printing both the words and the numbers matters more than it looks: three
+    # of the four rates divide by something other than the stage immediately
+    # above them — lesson_rate is lessons ÷ ATTEMPTS, not lessons ÷ contacts —
+    # and a reader who assumes a single chain will misread every one of them.
+    with st.expander(t("How each rate is calculated")):
+        render_table(pd.DataFrame([
+            {
+                t("Rate"): METRIC_LABELS.get(r["key"], r["key"]),
+                t("Calculation"): "{} ÷ {}".format(
+                    METRIC_LABELS.get(r["metric"].numerator, r["metric"].numerator),
+                    METRIC_LABELS.get(r["metric"].denominator, r["metric"].denominator)),
+                t("Figures"): "{} ÷ {}".format(fmt_int(r["numerator"]),
+                                               fmt_int(r["denominator"])),
+                t("Actual"): fmt_percent(r["value"], 1) if r["value"] is not None else "—",
+                t("Target"): fmt_percent(r["target"], 0),
+            }
+            for r in _rate_rows
+        ]))
+        st.caption(t(
+            "Each rate is the ratio of the mission's totals, not the average of "
+            "the areas' own rates — averaging lets a few low-volume areas with "
+            "favourable ratios carry the mission figure. Targets come from "
+            "AGENT_CONFIG and are the same ones CCSM_Agent1A.gs coaches against."))
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 2. KEY INDICATORS — the week in progress, then the last complete week

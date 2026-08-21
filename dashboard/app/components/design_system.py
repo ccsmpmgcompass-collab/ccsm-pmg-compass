@@ -489,8 +489,18 @@ def render_kpi_row(metrics: list[dict]) -> None:
     #8b5cf6 rather than performance-graded, and its caption says "expectation" not
     "goal", so the difference doesn't rely on color alone.
 
+    unit (optional str) and decimals (optional int) change how the card writes its
+    numbers — the value, and the goal in the caption. unit="%" with decimals=1
+    gives "46,4%" over "93% of 50% goal". Both default to the plain integer this
+    row has always drawn, so existing callers are unaffected.
+
     Change colors: green above +5%, grey inside ±5% ("no trend, just noise"),
-    amber -5 to -15%, red below -15%. The thresholds live in period_delta.
+    amber -5 to -15%, red below -15%. A change measured in percentage POINTS
+    (period_delta.point_delta, for rates) uses its own thresholds: ±1 point for
+    the neutral band, -5 points for red. All of them live in period_delta.
+
+    Goal bar colors: green at 90% of goal or better, indigo down to 60%, amber to
+    50%, red below half.
     """
     cards = ""
     for m in metrics:
@@ -500,6 +510,19 @@ def render_kpi_row(metrics: list[dict]) -> None:
         delta_label = _html.escape(m.get("delta_label", ""))
         goal = m.get("goal")
         expectation = m.get("expectation")
+
+        # "unit" and "decimals" let a card carry something that is not a whole
+        # count. The Panel's conversion rates are the first: 46,4% has to render
+        # with its sign and its decimal, and so does the 50% target beneath it,
+        # or the goal caption reads "93% of 50 goal" and leaves the reader to
+        # guess 50 what. Both default to the plain integer this row has always
+        # drawn, so every existing caller is untouched.
+        unit = str(m.get("unit", ""))
+        decimals = int(m.get("decimals", 0) or 0)
+
+        def _card_number(n, places=None, _unit=unit, _decimals=decimals) -> str:
+            """A number written the way THIS card writes numbers."""
+            return f"{fmt_number(n, _decimals if places is None else places)}{_unit}"
 
         # "change" is app/analytics/period_delta.py's description of a change --
         # it has already decided percent vs absolute, and has already passed the
@@ -515,6 +538,18 @@ def render_kpi_row(metrics: list[dict]) -> None:
         if change is not None:
             direction = int(change.get("direction", _pd.FLAT))
             pct = change.get("pct")
+            points = change.get("points")
+            show = change.get("show")
+
+            # Whether a fall counts as severe is judged in the unit the change
+            # is stated in. -15% off a total and -5 points off a conversion
+            # rate are two different thresholds, and testing either against the
+            # other's number would be meaningless.
+            if show == _pd.POINTS:
+                severe = points is not None and points < _pd.SEVERE_DROP_POINTS
+            else:
+                severe = pct is not None and pct < _pd.SEVERE_DROP_PCT
+
             if direction > 0:
                 color, arrow = "#22c55e", "↑"
             elif direction == 0:
@@ -522,12 +557,19 @@ def render_kpi_row(metrics: list[dict]) -> None:
                 # amber, as this did for every drop of 0 to -10%, taught the
                 # reader that the colours mean nothing.
                 color, arrow = "#6b7280", "→"
-            elif pct is not None and pct < _pd.SEVERE_DROP_PCT:
+            elif severe:
                 color, arrow = "#ef4444", "↓"
             else:
                 color, arrow = "#f59e0b", "↓"
 
-            if change.get("show") == _pd.ABSOLUTE and change.get("change") is not None:
+            if show == _pd.POINTS and points is not None:
+                # Percentage POINTS, and the card says so. The alternative -- a
+                # percent change of a percentage -- turns close_rate moving
+                # 7,4% to 9,7% into "+31%", which reads as a mission
+                # transformed and means about two more invitations per hundred
+                # lessons. See period_delta.point_delta.
+                text = t("{n} pp", n=fmt_number(abs(points), 1))
+            elif show == _pd.ABSOLUTE and change.get("change") is not None:
                 n = round(float(change["change"]))
                 text = f"{'+' if n > 0 else ''}{fmt_int(n)}"
             elif pct is not None:
@@ -578,9 +620,26 @@ def render_kpi_row(metrics: list[dict]) -> None:
             except (TypeError, ZeroDivisionError, ValueError):
                 measured, per_area, pct = False, False, 0
             width = max(0, min(100, pct)) if measured else 0
-            bar = "#22c55e" if pct >= 90 else "#6366f1" if pct >= 60 else "#f59e0b"
+
+            # Four tiers, not three. Amber used to run all the way down from 60%
+            # to nothing, so the mission's worst number -- baptismal invitation
+            # at 39% of its target, the single most actionable fact the audit
+            # found (H2) -- drew the same colour as a metric sitting at 55%.
+            # Red below half the goal says the difference out loud, and matches
+            # the change arrow above it, which has had a red tier all along.
+            bar = ("#22c55e" if pct >= 90 else "#6366f1" if pct >= 60
+                   else "#f59e0b" if pct >= 50 else "#ef4444")
+
+            # A goal is normally a whole number even on a card that prints
+            # decimals -- the rate targets are 50, 20, 25 -- and "50,0%" under
+            # "46,4%" is a decimal that carries no information.
+            try:
+                goal_places = 0 if float(goal) == int(float(goal)) else decimals
+            except (TypeError, ValueError):
+                goal_places = decimals
+
             if not measured:
-                caption = t("Goal: {goal}", goal=fmt_int(goal))
+                caption = t("Goal: {goal}", goal=_card_number(goal, goal_places))
             elif per_area:
                 # The per-area pair is printed, not just the percentage: the
                 # tile's own big number is a mission TOTAL, so without these two
@@ -591,7 +650,7 @@ def render_kpi_row(metrics: list[dict]) -> None:
                             goal=fmt_number(g_rate, 1))
             else:
                 caption = t("{pct}% of {goal} goal",
-                            pct=fmt_int(pct), goal=fmt_int(goal))
+                            pct=fmt_int(pct), goal=_card_number(goal, goal_places))
             # Where a goal is derived rather than entered -- a per-area weekly
             # target multiplied by the active area count -- the total alone is
             # unexplainable on screen; goal_note carries the arithmetic.
@@ -634,7 +693,7 @@ def render_kpi_row(metrics: list[dict]) -> None:
         # Chilean reader "1,234" is one point two three four, not one thousand.
         # int() also truncated floats, and a None value rendered as the literal
         # text "None"; fmt_int rounds and renders None as an em dash.
-        fmt = (fmt_int(value) if isinstance(value, (int, float))
+        fmt = (_card_number(value) if isinstance(value, (int, float))
                else _html.escape(str(value)))
         cards += (
             f'<div style="background:rgba(255,255,255,0.04);'

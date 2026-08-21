@@ -71,10 +71,31 @@ NEUTRAL_BAND_PCT = 5.0
 #: Below this a fall is red rather than amber.
 SEVERE_DROP_PCT = -15.0
 
+#: A rate that moves less than this many percentage points reads as flat.
+#:
+#: Two, not one, and the live data is why: contact_rate went 47,5% to 46,4%
+#: between the two windows either side of 2026-08-20, and at a one-point band
+#: that 1,1-point wobble would have drawn an amber down-arrow on the mission's
+#: contacting. Same reasoning as NEUTRAL_BAND_PCT's five percent — a colour
+#: spent on noise teaches the reader to stop believing the colours. It still
+#: lets through everything that moved for a reason: mc_rate's -2,0 and
+#: close_rate's +2,3 both register.
+#:
+#: This is a provisional figure. DAILY_LOG began 2026-08-10, so there is not yet
+#: enough history to measure how much these four rates actually vary week to
+#: week; revisit once six to eight weeks are in.
+NEUTRAL_BAND_POINTS = 2.0
+
+#: Below this a fall in a rate is red rather than amber. Five points off a
+#: conversion rate is a different order of event from five percent off a count:
+#: contact_rate going 46 -> 41 means a tenth of the mission's contacting stopped
+#: landing.
+SEVERE_DROP_POINTS = -5.0
+
 UP, FLAT, DOWN = 1, 0, -1
 
-#: What `period_delta` puts in "show".
-PERCENT, ABSOLUTE = "percent", "absolute"
+#: What `period_delta` puts in "show". POINTS is `point_delta`'s.
+PERCENT, ABSOLUTE, POINTS = "percent", "absolute", "points"
 
 
 def _dates(df: pd.DataFrame) -> pd.Series:
@@ -233,3 +254,56 @@ def period_delta(current, prior, *, current_basis, prior_basis,
 
     return {"pct": pct, "change": change, "show": show,
             "direction": direction, "prior_adjusted": prior_adjusted}
+
+
+def point_delta(current, prior, *, current_basis, prior_basis,
+                min_basis: int = MIN_COMPARABLE_DAYS,
+                neutral_band: float = NEUTRAL_BAND_POINTS) -> dict | None:
+    """How a RATE moved, in percentage points. The ratio counterpart of `period_delta`.
+
+    Both arguments are already on the 0-100 scale. The result carries ``points``
+    where `period_delta` carries ``change``, and its ``show`` is always
+    ``POINTS``.
+
+    Two things are deliberately different from `period_delta`:
+
+      * **Nothing is scaled.** A rate is a ratio, so it does not grow with the
+        number of days behind it the way a total does; normalizing the prior
+        side onto the current basis would be arithmetic with no meaning. The
+        bases are still required, and still gate — a rate computed over four
+        days of reporting is as unreliable a baseline as a total is — but they
+        only decide whether the comparison may be made, never what it says.
+
+      * **The change is not expressed as a percentage.** A percent change of a
+        percentage is the most reliable way to overstate a small movement:
+        close_rate going 7,4% to 9,7% is "+31%", which reads as a mission
+        transformed and means it invited about two more people per hundred
+        lessons. The honest unit is the point.
+
+    Returns None when either side is unreadable (a window with no denominator
+    has no rate to compare) or either basis is below ``min_basis``.
+    """
+    if current is None or prior is None:
+        return None
+    try:
+        current = float(current)
+        prior = float(prior)
+        current_basis = float(current_basis)
+        prior_basis = float(prior_basis)
+    except (TypeError, ValueError):
+        return None
+    if current != current or prior != prior:  # NaN
+        return None
+    if current_basis < min_basis or prior_basis < min_basis:
+        return None
+
+    points = current - prior
+    if abs(points) < neutral_band:
+        direction = FLAT
+    elif points > 0:
+        direction = UP
+    else:
+        direction = DOWN
+
+    return {"pct": None, "change": None, "points": points, "show": POINTS,
+            "direction": direction, "prior_adjusted": prior}
