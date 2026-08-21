@@ -185,7 +185,7 @@ Chile Concepción South Mission          Semana del 11–16 de agosto
 | 5 | ~~Headline row → 7 Key Indicators~~ | 🟠 | H1 — **DONE**, see below. Reorder declined by the user; became the emphasis treatment |
 | 6 | ~~Nightly row → outcome metrics, not effort inputs~~ | 🟠 | H1 — **DONE**, see below. Three outcomes + a mission row on the zone table |
 | 7 | ~~Rate-vs-target strip + Embudo link~~ | 🟠 | H2 — **DONE**, see below. The Embudo half was dropped: that page has no data and measures a different ratio |
-| 8 | ~~Verdict line at top~~ | 🟠 | new — **DONE**, see below |
+| 8 | Verdict line at top | 🟠 | new — tried 2026-08-21 as a bordered banner, **user didn't like it and it was reverted**. Still open; a plainer treatment could be tried later |
 | 9 | Effort denominator → all active areas | 🟡 | M3 |
 | 10 | Translate every hardcoded string | 🟡 | M4 |
 | 11 | Collapse compliance to one number + one calendar | 🟡 | M5 |
@@ -749,74 +749,6 @@ silently invalidated every reference in items 8–15.
 pane's `javascript_tool` **did** work against the Streamlit app, contrary to the
 note above — that is how the goal-bar colours were read straight out of the DOM.
 `screenshot` was not retried.
----
-
-## Item 8 as built (2026-08-21) — the verdict line
-
-The page had nine sections of numbers and nothing that said what they added up
-to. It now opens with a banner above §1 — a dim context line, then the verdict:
-
-```
-informes: 40/43 nocturno (93%) · 33/43 semanal (77%)
-El punto más débil: Invitación Bautismal — 9,7% contra una meta de 25%
-```
-
-New presentation-only component **`design_system.render_verdict_banner(context,
-verdict)`** — glass card, indigo accent bar, small grey context over a large
-bright verdict. Any other tab can open with the same shape; the page decides
-what the two sentences say.
-
-### Decisions made with the user
-
-- **Content = reporting rate + the single weakest point.** No bright spot, no
-  overall traffic-light grade. One frame, one finding.
-- **The accent bar is always indigo, never graded by severity.** A bar that
-  turned red would put an alarm colour above every section on the page before
-  the reader has looked at anything. The judgement lives inside the sentence,
-  and in the goal bars further down that already carry the four-tier rule.
-- **Hierarchy: the verdict is loud, the reporting clause is dim.** The reader
-  should come away with the finding, framed by the coverage — not the reverse.
-- **Both reporting denominators, in one compact clause.** This page mixes both
-  sources and they disagree (40 nightly vs 33 weekly): an area can file every
-  night and still miss the weekly form, and a reader looking at §1 and §2
-  without this line would assume one denominator.
-- **No dates in the banner.** §1 and §2 each print their own window immediately
-  below it.
-- **Only the four conversion rates are eligible to be "the weakest point".**
-  The KIs and the nightly tiles have goals too, but §1's are the uncalibrated
-  `AGENT_CONFIG` set (24%, 31%, 15% of goal live) and a KI's goal comes off the
-  previous week's form. Widening the field would hand the verdict to a bad goal
-  most weeks rather than to bad work. `rate_metrics.worst_rate()`, written for
-  this item during item 7, is the ranking — the page does not re-derive it.
-
-### Three cases the sentence has to survive
-
-1. **Nothing readable** (no reporting anchor, or no denominators) — "Aún no hay
-   suficientes datos nocturnos para leer las tasas de conversión." Never a zero.
-2. **Everything at target** — worst_rate returns the minimum, so a minimum at or
-   above target means every readable rate is. The sentence then names the
-   tightest instead: *"Las cuatro tasas están en meta — la más justa: X, 102% de
-   su meta."* If fewer than four were readable it says "todas las tasas que se
-   pueden leer", because claiming "all four" when one had no denominator would
-   be the first false thing on the page.
-3. **The newest week is still in progress** — the weekly half of the context
-   clause is **dropped entirely** until a week closes (user's call). A
-   percentage of a half-finished week reads as a failure that has not happened
-   yet; §2 already follows the same rule with "have reported so far".
-
-### Structural notes
-
-- Numbered **§0**, for the same reason §1b is numbered 1b: the report and the
-  build queue address this page's sections by number.
-- `_rate_rows` and `_RATE_SHORT_LABELS` moved **up** out of §1b — the verdict
-  names a rate before §1b draws one, and both must read the same figures.
-- Four new tests in `tests/test_renders_ccsm_with_data.py`, including one that
-  asserts the banner renders **before** §1 (a summary reached after everything
-  else is not a verdict) and one that adds `friend_lessons` to the fixture to
-  exercise the weakest-point branch — the shared fixture deliberately omits it,
-  which is what makes the "never name a rate it cannot read" test meaningful.
-- Suite **430 → 434 passing**, same 5 pre-existing failures.
-
 ---
 
 ## Side findings (not Panel work)
