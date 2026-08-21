@@ -57,11 +57,14 @@ from app.analytics.period_delta import (
     period_delta, MIN_COMPARABLE_DAYS, WINDOW_DAYS,
 )
 from app.analytics.rate_metrics import rate_rows
+from app.analytics import compliance_rankings as cr
+from app.components.scope_selector import render_scope_selectors, ANY as scope_ANY
 from app.utils.area_helpers import (
     compliance_anchor_date, build_calendar_data,
     latest_due_sunday, weekly_due_weeks,
 )
 from datetime import date, timedelta
+from html import escape as _html_escape
 
 st.set_page_config(
     page_title="CCSM · Dashboard — PMG Compass",
@@ -1233,69 +1236,220 @@ if _nightly_avg is not None and _weekly_avg is not None:
         unsafe_allow_html=True,
     )
 
-# ── Per-area submission detail (folded in from the old Submissions page) ───────
-with st.expander(t("Area Submission Detail — all-time compliance per area")):
-    if comp_df.empty:
-        st.info(t("No per-area submission data available yet."))
+# ── Compliance rankings (replaced the all-time per-area expander) ─────────────
+# Was an expander holding a plain table of every area's all-time compliance,
+# sorted worst-first with a "Behind only" filter. It answered one question over
+# one window and hid the answer behind a click.
+#
+# This is a ranked leaderboard over any of five periods, for areas or zones,
+# graded on the nightly form, the weekly form, or both. Built to a reference
+# design from a sibling mission's dashboard; the arithmetic that reference
+# implies -- and it is not the obvious arithmetic -- lives in
+# app/analytics/compliance_rankings.py with the numbers from those screenshots
+# pinned as tests. Two rules in particular are easy to "simplify" wrongly:
+# an area averages its two rounded percentages instead of pooling its counts,
+# and a zone averages its areas instead of pooling theirs.
+#
+# Naming every area, including the worst, is a deliberate exception to this
+# page's positive-only rule for per-area callouts (the rule exists because the
+# missionaries named can read the page). The user's reasoning: compliance is
+# "did you turn the form in", a behaviour an area controls outright, not a
+# judgement of how well they teach. The rule still stands for performance.
+render_section_label(t("Compliance Rankings"))
+
+# The scope switch reads as two real tabs rather than the small pills
+# st.segmented_control draws by default -- same treatment, and the same reason,
+# as the section switcher on the Maintenance page.
+st.markdown(
+    """
+    <style>
+    div[class*="st-key-panel_rank_scope"] button {
+        font-size: 0.95rem !important;
+        padding: 0.55rem 1.1rem !important;
+        border-radius: 10px !important;
+    }
+    div[class*="st-key-panel_rank_scope"] button p {
+        font-size: 0.95rem !important; font-weight: 600 !important;
+    }
+    div[class*="st-key-panel_rank_scope"] { margin-bottom: 0.75rem; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# Options are stable ids with a format_func, never the translated label: a
+# mid-session language switch would otherwise strand a Spanish string in an
+# English options list. Same pattern as the zone table's per-area/totals switch.
+_SCOPE_AREA, _SCOPE_ZONE = "area", "zone"
+_scope_labels = {
+    _SCOPE_AREA: t("Area Rankings"),
+    _SCOPE_ZONE: t("Zone Rankings"),
+}
+if hasattr(st, "segmented_control"):
+    _rank_scope = st.segmented_control(
+        t("Rankings scope"), [_SCOPE_AREA, _SCOPE_ZONE],
+        format_func=lambda k: _scope_labels[k],
+        key="panel_rank_scope", default=_SCOPE_AREA,
+        label_visibility="collapsed",
+    )
+else:  # Streamlit < 1.40
+    _rank_scope = st.radio(
+        t("Rankings scope"), [_SCOPE_AREA, _SCOPE_ZONE],
+        format_func=lambda k: _scope_labels[k],
+        horizontal=True, key="panel_rank_scope", label_visibility="collapsed",
+    )
+_rank_scope = _rank_scope or _SCOPE_AREA
+
+# Zone / District / Area / missionary, for the area view only -- a zone ranking
+# filtered to one zone is a single row. This is the same component the
+# Breakdowns page uses, under its own prefix so the two pages' selections stay
+# independent.
+_rk_zone = _rk_district = _rk_area = scope_ANY
+if _rank_scope == _SCOPE_AREA:
+    _rk_zone, _rk_district, _rk_area, _ = render_scope_selectors(
+        get_submitting_areas(), prefix="panel_rank")
+
+_ct_labels = {
+    cr.OVERALL: t("Overall (Daily + Weekly)"),
+    cr.NIGHTLY: t("Daily only"),
+    cr.WEEKLY:  t("Weekly only"),
+}
+_view_labels = {
+    "best":  t("Best → Worst"),
+    "worst": t("Worst → Best"),
+    "name":  t("By name (A–Z)"),
+}
+_period_labels = {p: t(p) for p in cr.PERIODS}
+
+_rc1, _rc2, _rc3 = st.columns(3)
+with _rc1:
+    _rk_type = st.selectbox(
+        t("Compliance Type"), list(_ct_labels),
+        format_func=lambda k: _ct_labels[k], key="panel_rank_type")
+with _rc2:
+    _rk_period = st.selectbox(
+        t("Period"), list(cr.PERIODS), format_func=lambda k: _period_labels[k],
+        index=list(cr.PERIODS).index("This Month So Far"), key="panel_rank_period")
+with _rc3:
+    _rk_view = st.selectbox(
+        t("View"), list(_view_labels),
+        format_func=lambda k: _view_labels[k], key="panel_rank_view")
+
+# ── The window, and the floors that keep it honest ────────────────────────────
+# start/end come from the period; the floor is when this mission began logging
+# and the anchor is the last night whose deadline has passed. Without the floor,
+# "This Month So Far" charges every area for the nine days of August before
+# tracking existed; without the anchor, tonight's not-yet-due form reads as a
+# miss from the moment the page loads.
+_rk_sys_start = get_config_value("SYSTEM_START_DATE", "2026-06-08")[:10]
+_rk_transfer_start = get_config_value("TRANSFER_START_DATE", _rk_sys_start)[:10]
+_rk_start, _rk_end = cr.period_bounds(_rk_period, date.today())
+_rk_floor = date.fromisoformat(_rk_sys_start)
+_rk_anchor = compliance_anchor_date()
+_rk_lo, _rk_hi = cr.clip_window(_rk_start, _rk_end, _rk_floor, _rk_anchor)
+
+_rank_rows = cr.build_area_windows(
+    get_submitting_areas(), get_daily_log(400), get_weekly_submission_data(),
+    start=_rk_start, end=_rk_end,
+    system_start=_rk_floor,
+    transfer_start=date.fromisoformat(_rk_transfer_start),
+    anchor=_rk_anchor,
+)
+
+# Filters apply to areas before any rollup, so a zone ranking always describes
+# the whole zone.
+if _rank_scope == _SCOPE_AREA:
+    if _rk_zone != scope_ANY:
+        _rank_rows = [r for r in _rank_rows if r.zone == _rk_zone]
+    if _rk_district != scope_ANY:
+        _rank_rows = [r for r in _rank_rows if r.district == _rk_district]
+    if _rk_area != scope_ANY:
+        _rank_rows = [r for r in _rank_rows if r.area == _rk_area]
+    _display_rows = _rank_rows
+else:
+    _display_rows = cr.build_zone_windows(_rank_rows, _rk_type)
+
+_display_rows = cr.rank(_display_rows, _rk_type,
+                        worst_first=(_rk_view == "worst"),
+                        by_name=(_rk_view == "name"))
+
+#: Row colours. The bands are compliance_rankings.GREEN_MIN / AMBER_MIN, which
+#: are the same >=85 / 70-84 / <70 the two calendars above legend -- one number
+#: must not be green on a calendar and amber in the ranking beneath it.
+_RANK_COLORS = {
+    "green": ("rgba(34,197,94,0.10)",  "#22c55e", "#4ade80"),
+    "amber": ("rgba(245,158,11,0.10)", "#f59e0b", "#fbbf24"),
+    "red":   ("rgba(239,68,68,0.10)",  "#ef4444", "#f87171"),
+    "none":  ("rgba(255,255,255,0.03)", "#4b5563", "#9ca3af"),
+}
+
+
+def _rank_row_html(i: int, name: str, detail: str, pct, status: str) -> str:
+    bg, dot, fg = _RANK_COLORS[status]
+    shown = f"{pct}%" if pct is not None else "—"
+    return (
+        f'<div style="display:flex;align-items:center;gap:0.85rem;'
+        f'background:{bg};border-radius:8px;padding:0.7rem 1rem;'
+        f'margin-bottom:0.35rem;">'
+        f'<span style="width:1.6rem;flex:none;text-align:right;color:#6b7280;'
+        f'font-size:0.8rem;">{i}</span>'
+        f'<span style="width:0.6rem;height:0.6rem;flex:none;border-radius:50%;'
+        f'background:{dot};"></span>'
+        f'<span style="flex:1 1 40%;color:#f4f4f8;font-weight:600;'
+        f'font-size:0.95rem;">{_html_escape(name)}</span>'
+        f'<span style="flex:1 1 30%;color:#9ca3af;font-size:0.82rem;">'
+        f'{_html_escape(detail)}</span>'
+        f'<span style="flex:none;color:{fg};font-weight:700;font-size:0.95rem;'
+        f'text-align:right;min-width:3.2rem;">{shown}</span>'
+        f'</div>'
+    )
+
+
+def _rank_detail(row) -> str:
+    """"16/20 días · 3/3 semanas" — both halves, because the two together are
+    what the Overall figure averages.
+
+    The weekly half is dropped when no weekly report has come due in the window
+    (a Mon–Wed "This Week" contains no Sunday). Printing "0/0 semanas" there
+    reads as a failure at a glance, and it is the one case where the Overall
+    figure is the nightly figure alone — see AreaWindow.overall_pct."""
+    days = t("{ds}/{dp} days", ds=fmt_int(row.days_submitted),
+             dp=fmt_int(row.days_possible))
+    if not row.weeks_possible:
+        return days
+    return t("{days} · {ws}/{wp} weeks", days=days,
+             ws=fmt_int(row.weeks_submitted), wp=fmt_int(row.weeks_possible))
+
+
+if _rk_lo is None:
+    # The period is entirely before this mission started logging. Saying so
+    # beats a screen of areas at 0%, which reads as mass failure rather than as
+    # an absence of data (audit M7: an empty state must say why).
+    st.info(t(
+        "No data for this period — compliance tracking began on {start}.",
+        start=fmt_day_month(_rk_floor)))
+elif not _display_rows:
+    st.info(t("No areas match the current filter."))
+else:
+    st.markdown("".join(
+        _rank_row_html(
+            i,
+            getattr(r, "area", None) or getattr(r, "zone", ""),
+            _rank_detail(r),
+            r.pct(_rk_type),
+            cr.status_of(r.pct(_rk_type)),
+        )
+        for i, r in enumerate(_display_rows, start=1)
+    ), unsafe_allow_html=True)
+
+    # The window actually graded, not the window asked for. On "This Month So
+    # Far" those differ by nine days right now, and the row counts would look
+    # arbitrary without it.
+    _rk_span = t("{start}–{end}", start=fmt_day_month(_rk_lo),
+                 end=fmt_day_month(_rk_hi))
+    if _rank_scope == _SCOPE_AREA:
+        st.caption(t("{n} area(s) shown · {span}",
+                     n=fmt_int(len(_display_rows)), span=_rk_span))
     else:
-        detail = comp_df.copy()
-
-        def _sub_status(pct: float) -> str:
-            if pct >= 90:
-                return "On Track"
-            if pct >= 50:
-                return "Partial"
-            return "Behind"
-
-        detail["Status"] = detail["pct"].apply(_sub_status)
-
-        f1, f2 = st.columns([2, 2])
-        # Sentinel is translated for display but compared against the same
-        # t() call below, never against a bare English literal.
-        _all_zones = t("All Zones")
-        zone_opts = [_all_zones] + sorted(detail["zone"].dropna().astype(str).unique().tolist())
-        with f1:
-            zsel = st.selectbox(t("Zone"), zone_opts, key="dash_sub_zone")
-        with f2:
-            # Translated label -> English value. Only the label is shown; every
-            # comparison below still runs on the English value, so filtering
-            # behaves identically in either language.
-            _show_opts = {
-                t("All"): "All",
-                t("Behind only"): "Behind only",
-                t("On Track only"): "On Track only",
-            }
-            ssel = _show_opts[st.radio(
-                t("Show"), list(_show_opts),
-                horizontal=True, key="dash_sub_show",
-            )]
-
-        view = detail
-        if zsel != _all_zones:
-            view = view[view["zone"] == zsel]
-        if ssel == "Behind only":
-            view = view[view["Status"] == "Behind"]
-        elif ssel == "On Track only":
-            view = view[view["Status"] == "On Track"]
-
-        view = view.sort_values(["pct", "area"], ascending=[True, True])
-
-        # Headers are translated only at the point of display, after every
-        # filter and sort above has run on the English column names.
-        _cols = {
-            "area": t("Area"), "zone": t("Zone"), "district": t("District"),
-            "days_submitted": t("Days Submitted"),
-            "days_possible": t("Days Possible"),
-            "pct": t("Compliance %"), "last_date": t("Last Submitted"),
-            "Status": t("Status"),
-        }
-        disp = view.rename(columns=_cols)[list(_cols.values())]
-        # detail["Status"] stays English so the filters above keep working;
-        # translate the cell values for display only.
-        disp[t("Status")] = disp[t("Status")].map(lambda s: t(s))
-
-        st.caption(t("{n} area(s) shown — worst first", n=len(disp)))
-        if disp.empty:
-            st.info(t("No areas match the current filter."))
-        else:
-            render_table(disp)
+        st.caption(t("{n} zone(s) shown · {span}",
+                     n=fmt_int(len(_display_rows)), span=_rk_span))

@@ -732,6 +732,34 @@ ES: dict[str, str] = {
         "Su sesión ha expirado. Por favor inicie sesión nuevamente.",
 
     # ── Breakdowns engine ────────────────────────────────────────────────────
+    # ── Panel §7: compliance rankings ─────────────────────────────────────────
+    # The five period labels are shared with the Breakdowns page's KPI cards,
+    # which until now rendered them in English on a Spanish-default dashboard.
+    "Compliance Rankings": "Rankings de Cumplimiento",
+    "Rankings scope": "Alcance del ranking",
+    "Area Rankings": "Ranking por Área",
+    "Zone Rankings": "Ranking por Zona",
+    "Compliance Type": "Tipo de Cumplimiento",
+    "Overall (Daily + Weekly)": "General (Diario + Semanal)",
+    "Daily only": "Solo diario",
+    "Weekly only": "Solo semanal",
+    "This Week": "Esta semana",
+    "Last Week": "Semana pasada",
+    "This Month So Far": "Este mes hasta hoy",
+    "Last Month": "Mes pasado",
+    "All Time": "Desde el inicio",
+    "View": "Vista",
+    "Best → Worst": "Mejor → Peor",
+    "Worst → Best": "Peor → Mejor",
+    "By name (A–Z)": "Por nombre (A–Z)",
+    "{ds}/{dp} days": "{ds}/{dp} días",
+    "{days} · {ws}/{wp} weeks": "{days} · {ws}/{wp} semanas",
+    "{n} area(s) shown · {span}": "{n} área(s) mostrada(s) · {span}",
+    "{n} zone(s) shown · {span}": "{n} zona(s) mostrada(s) · {span}",
+    "{start}–{end}": "{start}–{end}",
+    "No data for this period — compliance tracking began on {start}.":
+        "Sin datos para este período — el seguimiento de cumplimiento comenzó "
+        "el {start}.",
     "Period": "Período",
     "X-Axis": "Eje X",
     "Reset Graph ↻": "Restablecer Gráfico ↻",
