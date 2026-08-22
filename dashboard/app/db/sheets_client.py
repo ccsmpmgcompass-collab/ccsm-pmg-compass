@@ -298,28 +298,94 @@ def get_last_row_number(tab_name: str) -> int:
     return ws.row_count if ws.row_count else 1
 
 
+# One ws.update() puts its whole payload in a single JSON request body, and
+# the Sheets API caps that. Measured against the real Tableau Detail export
+# (89,824 rows x 14 cols = 1,257,536 cells): one call is a 17.4 MB body. At
+# 10,000 rows a call it is 1.94 MB across 9 calls — comfortably inside both the
+# request cap and the 60-writes-per-minute-per-user quota.
+WRITE_CHUNK_ROWS = 10_000
+
+
+def _col_letter(n: int) -> str:
+    """1-based column index -> A1 letters ('A', 'Z', 'AA', 'AB')."""
+    out = ""
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        out = chr(65 + rem) + out
+    return out
+
+
+def plan_write_chunks(n_rows: int, n_cols: int, chunk_size: int = WRITE_CHUNK_ROWS,
+                      start_row: int = 1) -> list:
+    """[(a1_range, lo, hi)] slicing n_rows into writable chunks, where rows[lo:hi]
+    is the slice and a1_range is exactly where it lands.
+
+    Pure, and separated out so the arithmetic can be tested without a network:
+    an A1 range off by one silently shifts every row beneath it, which is the
+    kind of corruption nobody notices until a number looks wrong months later.
+    """
+    if n_rows <= 0 or n_cols <= 0:
+        return []
+    last = _col_letter(n_cols)
+    step = max(1, chunk_size)
+    plan = []
+    for lo in range(0, n_rows, step):
+        hi = min(lo + step, n_rows)
+        plan.append((f"A{start_row + lo}:{last}{start_row + hi - 1}", lo, hi))
+    return plan
+
+
 def save_dataframe(tab_name: str, df: pd.DataFrame, uploaded_by: str = "") -> None:
     """
     Overwrite a tab completely with a DataFrame.
-    Writes header row + all data rows. Clears read cache after.
-    Used for Tableau CSV persistence — stores the last upload for all users.
+    Writes header row + all data rows, chunked. Clears read cache after.
+    Used for Tableau export persistence — stores the last upload for all users.
+
+    Chunked because this used to be one ws.update() of the entire frame, which
+    the real Tableau Detail export blows straight past (17.4 MB in one body).
+    The grid is also resized to fit: a tab created at the old default of
+    5000x50 cannot hold 89,826 rows, and leaving it 50 columns wide would have
+    burned 4.5M of the spreadsheet's 10M-cell budget on empty columns.
     """
     try:
-        try:
-            ws = _get_worksheet(tab_name)
-        except gspread.exceptions.WorksheetNotFound:
-            ws = _get_spreadsheet().add_worksheet(title=tab_name, rows=5000, cols=50)
-
-        ws.clear()
+        n_cols = len(df.columns)
+        if n_cols == 0:
+            raise ValueError("refusing to write a frame with no columns")
 
         # Add metadata row at top for "last uploaded by / when"
         from datetime import datetime, timezone
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        meta = [f"_uploaded_by:{uploaded_by}", f"_uploaded_at:{ts}"] + [""] * max(0, len(df.columns) - 2)
+        meta = [f"_uploaded_by:{uploaded_by}", f"_uploaded_at:{ts}"] + [""] * max(0, n_cols - 2)
         # Header row first so read_tab() returns df.columns = real column names;
         # meta row becomes df.iloc[0] so get_tableau_*() can extract uploaded_by/at.
-        rows = [df.columns.tolist(), meta[:len(df.columns)]] + df.values.tolist()
-        ws.update(rows, value_input_option="USER_ENTERED")
+        rows = [df.columns.tolist(), meta[:n_cols]] + df.values.tolist()
+
+        try:
+            ws = _get_worksheet(tab_name)
+        except gspread.exceptions.WorksheetNotFound:
+            ws = _get_spreadsheet().add_worksheet(
+                title=tab_name, rows=max(len(rows), 100), cols=n_cols)
+
+        ws.clear()
+        # Exactly, not at-least: the grid counts toward the 10M-cell cap whether
+        # or not the cells hold anything.
+        if ws.row_count != len(rows) or ws.col_count != n_cols:
+            ws.resize(rows=max(len(rows), 1), cols=n_cols)
+
+        # Read the module constant at call time rather than leaning on the
+        # default argument, which binds once at import and cannot be tuned.
+        plan = plan_write_chunks(len(rows), n_cols, WRITE_CHUNK_ROWS)
+        for i, (rng, lo, hi) in enumerate(plan, 1):
+            try:
+                ws.update(rows[lo:hi], rng, value_input_option="USER_ENTERED")
+            except Exception as e:
+                # Say WHERE it stopped. A chunked write that fails partway
+                # leaves the tab half-populated, and "could not save" alone
+                # gives no way to tell that from nothing having been written.
+                raise RuntimeError(
+                    f"chunk {i} of {len(plan)} (rows {lo + 1}-{hi}) failed: {e}"
+                ) from e
+
         read_tab.clear()
         read_values.clear()
     except Exception as e:
