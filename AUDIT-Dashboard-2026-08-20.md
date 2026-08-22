@@ -145,7 +145,12 @@ list. See build queue item 15.
 
 ---
 
-## Proposed structure
+## Proposed structure — as it stood 2026-08-20 (superseded)
+
+The mockup below was the audit's first guess at a target shape. It is kept for
+history but should not be read as a to-do list any more: seven items (1-7, 9,
+12) shipped and none of them built exactly this. **See "Current structure"
+below for what is actually on screen, and "Build order" for the real remainder.**
 
 ```
 PMG Compass · Panel Ejecutivo
@@ -170,31 +175,78 @@ Chile Concepción South Mission          Semana del 11–16 de agosto
 ────────────────────────────────────────────────────────────────
 ⑥ TENDENCIA — 8 semanas (or "construyendo historial")        [M1]
 ────────────────────────────────────────────────────────────────
-⑦ CUMPLIMIENTO — one number, one calendar               [M5, M3]
+⑦ CUMPLIMIENTO — one número, one calendario               [M5, M3]
    └ expander: per-area detail, effort breakdown        [M2, M6]
 ```
 
+## Current structure (verified live, 2026-08-22)
+
+What is actually on screen, in order. Section numbers below are the ones every
+"as built" writeup and every remaining item references — they are load-bearing,
+not decorative (see item 9's note on why §1b is "1b" and not "2").
+
+```
+PMG Compass · Panel Ejecutivo
+Chile Concepción South Mission
+────────────────────────────────────────────────────────────────
+§1  ACTIVIDAD DIARIA — últimos 7 días            3 outcome tiles + delta + goal
+§1b TASAS DE CONVERSIÓN — últimos 7 días         4 rates, delta, goal, "cómo se calcula"
+§2  INDICADORES CLAVE — semana en curso          + semana completa anterior, both below
+§3  ZONAS — promedio por área (7 días)           sort + Mostrar switch, mission summary row
+                                                  ⚠ no Top 5 áreas block yet          [15]
+§4  TENDENCIA DE 8 SEMANAS                       "Aún no hay datos" — generic, not honest [13]
+§5  {MÉTRICA} POR DÍA — últimos 7 días           selector over 21 nightly metrics
+§6  NIVEL DE ESFUERZO — últimos 7 días           3 answer shares + score, per-day stack,
+                                                  per-area ranked expander
+§7  CUMPLIMIENTO DE ENVÍOS                       4 tiles (2 English labels) + 2 calendars
+                                                  (Mon/Tue/Wed English) + compliance rankings
+                                                  ⚠ 4 numbers, no single verdict         [11]
+────────────────────────────────────────────────────────────────
+```
+
+No §0/Veredicto exists — item 8 was built as a banner above §1, reverted the
+same day, and nothing replaced it. No Top-5 block sits under §3. §4 still reads
+the same generic empty message every other blank section does.
+
 ## Build order
 
-| # | Item | Type | Notes |
-|---|---|---|---|
-| 1 | ~~KI tiles → last complete week + denominator footnote~~ | 🔴 bug | C1 — **DONE `dcb3012`** |
-| 2 | ~~Goal bars from `AGENT_CONFIG.GOAL_*` × active areas~~ | 🔴 bug | C3 — **DONE**, see below |
-| 3 | ~~Zone leaderboard → per-area average~~ | 🔴 bug | C2 — **DONE**, see below |
-| 4 | ~~Add `delta` (7d vs prior 7d) to every tile~~ | 🟠 | H3 — **DONE**, see below. H3's premise did not survive contact with the data |
-| 5 | ~~Headline row → 7 Key Indicators~~ | 🟠 | H1 — **DONE**, see below. Reorder declined by the user; became the emphasis treatment |
-| 6 | ~~Nightly row → outcome metrics, not effort inputs~~ | 🟠 | H1 — **DONE**, see below. Three outcomes + a mission row on the zone table |
-| 7 | ~~Rate-vs-target strip + Embudo link~~ | 🟠 | H2 — **DONE**, see below. The Embudo half was dropped: that page has no data and measures a different ratio |
-| 8 | Verdict line at top | 🟠 | new — tried 2026-08-21 as a bordered banner, **user didn't like it and it was reverted**. Still open; a plainer treatment could be tried later |
-| 9 | ~~Effort denominator → all active areas~~ | 🟡 | M3 — **DONE**, see below. Built with item 12; the source moved to `DAILY_LOG` |
-| 10 | Translate every hardcoded string | 🟡 | M4 |
-| 11 | Collapse compliance to one number + one calendar | 🟡 | M5 |
-| 12 | ~~Merge effort chart/tiles into expander~~ | 🟡 | M2, M6 — **DONE**, see below. Not an expander: the chart became a per-day stacked bar, and §5 became a metric selector |
-| 13 | "Building history" state for the trend | 🟡 | M1 |
-| 14 | Empty states that say *why*; drop `title=` tooltips | 🟡 | M7 |
-| 15 | Top 5 areas by Effectiveness score, near ⑤ Zonas — positive-only, no bottom list | 🟠 | H4 |
+**Shipped (7 of 15 — one commit each, pre-authorized):**
 
----
+| # | Item | Commit |
+|---|---|---|
+| 1 | KI tiles → last complete week + denominator footnote (C1) | `dcb3012` |
+| 2 | Goal bars from `AGENT_CONFIG.GOAL_*` × active areas (C3) | `8960af0` |
+| 3 | Zone leaderboard → per-area average (C2) | `531bafc` + `62bf05b` |
+| 4 | `delta` vs prior 7 days on every tile (H3) | `18c8b66` |
+| 5+6 | Headline row emphasis + outcome metrics, not effort inputs (H1) | `3ab1407` |
+| 7 | Rate-vs-target strip, Embudo link dropped (H2) | `20ea56d` |
+| 9+12 | Effort denominator → all active areas; chart/tiles reworked (M3, M2, M6) | `cac0b4b` |
+
+Each has a full "as built" section below — read the relevant one before touching
+goal, score, KI, zone, delta, rate, or effort code; several overturned the
+audit's own assumption once checked against live data (item 2's KI goal-week
+offset, item 4's H3, item 7's Embudo premise).
+
+**Reverted, still open:**
+
+| # | Item | Status |
+|---|---|---|
+| 8 | Verdict line at top | Built `e15eff2` as a bordered banner above §1, **reverted `7b1673b`** same day — user disliked the design language itself, not the wording. A plainer treatment (inline text? part of the header?) is the way back in |
+
+**Remaining (rescoped 2026-08-22 against what's actually on screen — see
+"Current structure" above):**
+
+| # | Item | Scope now |
+|---|---|---|
+| 10 | Translate hardcoded strings (M4) | **Narrower than the original audit.** Items 9+12 already translated the effort section's share of this (All/Most/Some, the effort chart title) as a side effect. What's left is entirely **§7**: the 4 compliance tile labels ("Total Forms Submitted", "Compliance All-Time", "Days Tracked", "Areas at 100%"), the `Mon/Tue/Wed…` calendar headers, two "Each box is the share…" captions, and the "Combined submission compliance…" strip |
+| 11 | Collapse compliance to one number + one calendar (M5) | Unchanged — §7 still shows all-time %, a 30-day nightly calendar, a weekly calendar, and the compliance-rankings table side by side, no single verdict tying them together. **Do this together with item 10** — both touch the same section, and item 11 will delete some of the strings item 10 would otherwise translate |
+| 13 | "Building history" state for the trend (M1) | Unchanged — §4 still prints the same generic `_EMPTY_MSG` as every other blank section, not an honest "semana 2 de 8" |
+| 14 | Empty states say *why*; drop `title=` tooltips (M7) | **Do this together with item 13** — both are about §4 specifically once 13 lands (13 gives §4 an honest message, 14 is the pattern for the rest), plus the two remaining `title=` attributes in §7's calendars (item 10/11 territory) |
+| 15 | Top 5 areas by Effectiveness, near §3 Zonas — positive-only (H4) | Unchanged — no such block exists. Depends on `Effectiveness_Score` continuing to fill in as more weeks of `WEEKLY_KI` accumulate (item 3's known gap) |
+
+Five items, two natural pairs (10+11 on §7, 13+14 on §4) and one standalone
+(15). **Next: ask the user which pair or item 8's retry to take first** —
+nothing left has a forced order.
 
 ## Item 2 as built (2026-08-21) — and what it uncovered
 
