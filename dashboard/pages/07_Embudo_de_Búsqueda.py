@@ -11,7 +11,13 @@ from app.components.design_system import (
     render_table, render_kpi_row, PALETTE,
 )
 from app.db.queries import get_tableau_detail, get_tableau_ranking
-from app.db.sheets_client import save_dataframe
+from app.db.sheets_client import read_tab, save_dataframe
+from app.ingestion.tableau_detail_transform import clean_detail
+from app.ingestion.tableau_summary_parser import baptisms_rows, parse_summary_pdf
+from app.ingestion.tableau_upload import (
+    describe_replacement, merge_baptism_rows, read_tabular, summarize_months,
+    upload_token,
+)
 from app.analytics.finding_funnel import (
     DEFAULT_PRESET, FUNNEL_STAGES, PRESETS, REFERRED_STAGE, build_area_rankings,
     compute_funnel_stage_counts, data_date_bounds, filter_by_range, preset_range,
@@ -28,7 +34,11 @@ render_sidebar(user)
 
 render_page_header(
     t("Finding Funnel"),
-    t("Mission finding & teaching pipeline — auto-synced daily from Tableau"),
+    # No daily sync exists — the tab is loaded from a manual Tableau export.
+    # (The scheduled job is Phase 3.4; until it runs, saying "auto-synced daily"
+    # made a stale tab look fresh.) _source_caption still says "Auto-synced"
+    # when the row was written by a job, so this stays honest either way.
+    t("Mission finding & teaching pipeline — from the Tableau export"),
     icon="",
 )
 
@@ -77,13 +87,29 @@ def _fmt_dur(hours: float) -> str:
 
 
 def _process_upload(uploaded, tab_name: str) -> tuple:
+    """Read a Ranking export and persist it. Detail goes through
+    _process_detail_upload instead — it needs cleaning and a replace guard."""
     try:
-        df = pd.read_csv(uploaded)
-        df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+        df = read_tabular(uploaded, getattr(uploaded, "name", ""))
         save_dataframe(tab_name, df, uploaded_by=user.get("email", ""))
         return df, None
     except Exception as e:
         return pd.DataFrame(), str(e)
+
+
+def _already_handled(slot: str, uploaded) -> bool:
+    """True when this exact file was already processed on an earlier rerun.
+
+    Streamlit keeps an uploaded file in session_state for the life of the
+    session, and this page acted on whatever was sitting there — so changing
+    the date preset re-parsed and re-wrote the export. For Detail that is nine
+    Sheets API calls per click.
+    """
+    token = upload_token(uploaded)
+    if st.session_state.get(f"_tok_{slot}") == token:
+        return True
+    st.session_state[f"_tok_{slot}"] = token
+    return False
 
 
 def _source_caption(by: str, at: str) -> str:
@@ -117,27 +143,117 @@ detail_file  = st.session_state.get("detail")
 ranking_file = st.session_state.get("ranking")
 summary_file = st.session_state.get("summary")
 
-if ranking_file is not None:
+if ranking_file is not None and not _already_handled("ranking", ranking_file):
     rank_df, err = _process_upload(ranking_file, "TABLEAU_RANKING")
     if err:
-        st.error(t("Could not parse Ranking CSV: {err}", err=err))
+        st.error(t("Could not read the Ranking export: {err}", err=err))
         rank_df = pd.DataFrame()
+    st.session_state["_df_ranking"] = rank_df
+    rank_by, rank_at = user.get("email", ""), "just now"
+elif ranking_file is not None:
+    rank_df = st.session_state.get("_df_ranking", pd.DataFrame())
     rank_by, rank_at = user.get("email", ""), "just now"
 else:
     rank_df, rank_by, rank_at = get_tableau_ranking()
 
+# ── Detail: read → clean → guard → save ───────────────────────────────────────
+# The clean step is not optional. It is what drops the investigators' names and
+# person ids (the privacy decision recorded in tableau_detail_transform), drops
+# Tableau's 2,705 artifact rows — which otherwise inflate "Found" and rank as
+# an "Unknown" area at the top of the mission — and prunes 24 columns to the 14
+# the app reads, taking the write from 2.2M cells to 1.26M.
+det_by, det_at = "", ""
 if detail_file is not None:
-    det_df, err = _process_upload(detail_file, "TABLEAU_DETAIL")
-    if err:
-        st.error(t("Could not parse Detail CSV: {err}", err=err))
-        det_df = pd.DataFrame()
+    if not _already_handled("detail", detail_file):
+        try:
+            raw = read_tabular(detail_file, getattr(detail_file, "name", ""))
+            clean, stats = clean_detail(raw)
+            stored, _, _ = get_tableau_detail()
+            plan = describe_replacement(stored, clean)
+            st.session_state["_df_detail"] = clean
+            st.session_state["_detail_stats"] = stats
+            st.session_state["_detail_plan"] = plan
+            # A Detail upload REPLACES the tab — it cannot merge, because the
+            # only stable per-person key is the person_id we deliberately drop.
+            # So a narrower export silently destroys history; hold it for
+            # confirmation instead of writing it.
+            st.session_state["_detail_saved"] = not plan["narrower"]
+            if not plan["narrower"]:
+                save_dataframe("TABLEAU_DETAIL", clean, uploaded_by=user.get("email", ""))
+        except Exception as e:
+            st.error(t("Could not read the Detail export: {err}", err=e))
+            st.session_state["_df_detail"] = pd.DataFrame()
+            st.session_state["_detail_stats"] = None
+            st.session_state["_detail_plan"] = None
+            st.session_state["_detail_saved"] = True
+
+    det_df = st.session_state.get("_df_detail", pd.DataFrame())
     det_by, det_at = user.get("email", ""), "just now"
+
+    _plan = st.session_state.get("_detail_plan")
+    if _plan and _plan["narrower"] and not st.session_state.get("_detail_saved"):
+        _o1, _o2 = _plan["existing_span"]
+        _n1, _n2 = _plan["incoming_span"]
+        st.warning(t(
+            "**Not saved.** This export covers {new_from} → {new_to} "
+            "({new_rows} people), but the stored data covers {old_from} → "
+            "{old_to} ({old_rows} people). Saving would replace the history, "
+            "not add to it — a Detail export cannot be merged. Re-export the "
+            "full view, or replace anyway if that is what you intend.",
+            new_from=_n1, new_to=_n2, new_rows=fmt_int(_plan["incoming_rows"]),
+            old_from=_o1, old_to=_o2, old_rows=fmt_int(_plan["existing_rows"])))
+        if st.button(t("Replace anyway"), key="ff_force_detail"):
+            save_dataframe("TABLEAU_DETAIL", det_df, uploaded_by=user.get("email", ""))
+            st.session_state["_detail_saved"] = True
+            st.rerun()
+    elif st.session_state.get("_detail_stats"):
+        _s = st.session_state["_detail_stats"]
+        st.success(t(
+            "Detail export saved · {rows} people ({dropped} Tableau artifact "
+            "rows dropped) · names and person ids removed",
+            rows=fmt_int(_s.get("rows_out", 0)),
+            dropped=fmt_int(_s.get("artifact_rows_dropped", 0))))
+        if _s.get("dropped_unknown"):
+            st.info(t("New columns in this export, not stored: {cols}",
+                      cols=", ".join(_s["dropped_unknown"])))
 else:
     det_df, det_by, det_at = get_tableau_detail()
 
+# ── Summary PDFs → TABLEAU_BAPTISMS ───────────────────────────────────────────
+# Merged by month, never replaced: the mission's history is 31 monthly PDFs and
+# uploading next month's must not wipe the previous thirty. This is what makes
+# get_baptisms_actual() return a real number, so Metas stops falling back to
+# the weekly-form gate proxy that under-counts roughly two to one.
+if summary_file:
+    _files = summary_file if isinstance(summary_file, list) else [summary_file]
+    _tok = "|".join(upload_token(f) for f in _files)
+    if st.session_state.get("_tok_summary") != _tok:
+        st.session_state["_tok_summary"] = _tok
+        parsed, failed = [], []
+        for f in _files:
+            try:
+                f.seek(0)
+                parsed.append(parse_summary_pdf(f))
+            except Exception as e:
+                failed.append(f"{getattr(f, 'name', '?')}: {e}")
+        if parsed:
+            try:
+                merged = merge_baptism_rows(read_tab("TABLEAU_BAPTISMS"),
+                                            baptisms_rows(parsed))
+                save_dataframe("TABLEAU_BAPTISMS", merged,
+                               uploaded_by=user.get("email", ""))
+                st.success(t("{n} summary PDFs parsed · TABLEAU_BAPTISMS now "
+                             "holds {total} months · {span}",
+                             n=len(parsed), total=len(merged),
+                             span=summarize_months(merged["month"])))
+            except Exception as e:
+                st.error(t("Could not save baptism counts: {err}", err=e))
+        for msg in failed:
+            st.error(t("Could not parse {msg}", msg=msg))
+
 if rank_df.empty and det_df.empty:
-    st.info(t("No finding data yet. It syncs automatically each morning, or upload a "
-              "Tableau export in **Manual upload** below."))
+    st.info(t("No finding data yet. Export the Mission Finding Summary view from "
+              "Tableau and upload it in **Manual upload** below."))
     st.stop()
 
 sync_note = _source_caption(rank_by, rank_at) or _source_caption(det_by, det_at)
@@ -509,27 +625,42 @@ with st.expander(t("Raw Tableau export (all columns)"), expanded=False):
                          n=len(det_df)))
 
 # ── Finding Summary PDF ───────────────────────────────────────────────────────
+# Only ever previews the LAST file: uploading 31 at once for a backfill should
+# not try to render 31 embedded viewers.
 with st.expander(t("Finding Summary PDF"), expanded=False):
-    if summary_file is None:
+    _pdfs = ([] if not summary_file
+             else summary_file if isinstance(summary_file, list) else [summary_file])
+    if not _pdfs:
         st.caption(t("Upload the Finding Summary PDF in Manual upload below to view it here."))
     else:
-        pdf_bytes = summary_file.read()
-        st.caption(t('{name} · {value:.1f} KB', name=summary_file.name, value=len(pdf_bytes) / 1024))
+        _pdf = _pdfs[-1]
+        if len(_pdfs) > 1:
+            st.caption(t("{n} PDFs uploaded — previewing the last.", n=len(_pdfs)))
+        _pdf.seek(0)
+        pdf_bytes = _pdf.read()
+        st.caption(t('{name} · {value:.1f} KB', name=_pdf.name, value=len(pdf_bytes) / 1024))
         st.download_button(t("Download Summary PDF"), data=pdf_bytes,
-                           file_name=summary_file.name, mime="application/pdf")
+                           file_name=_pdf.name, mime="application/pdf")
         b64 = base64.b64encode(pdf_bytes).decode("utf-8")
         st.components.v1.html(
             f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="800px" '
             f'type="application/pdf" sandbox="allow-same-origin"></iframe>', height=820)
 
 # ── Manual upload / re-sync ───────────────────────────────────────────────────
-with st.expander(t("Manual upload / re-sync (optional)"), expanded=False):
-    st.caption(t("Tableau exports sync automatically every morning. Upload here only "
-                 "to override with a fresh export."))
+with st.expander(t("Manual upload / re-sync"), expanded=False):
+    st.caption(t("Export the Mission Finding Summary view from Tableau and drop the "
+                 "files here. The Detail export REPLACES the stored data, so export "
+                 "the full view, not a recent slice. Summary PDFs merge by month — "
+                 "upload as many as you like at once."))
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.file_uploader(t("Detail CSV"), type=["csv"], key="detail")
+        # .xlsx first: that is what the real export is. This uploader was
+        # pd.read_csv only, so the actual file could never be loaded.
+        st.file_uploader(t("Detail export (.xlsx or .csv)"),
+                         type=["xlsx", "xlsm", "xls", "csv"], key="detail")
     with c2:
-        st.file_uploader(t("Ranking CSV"), type=["csv"], key="ranking")
+        st.file_uploader(t("Ranking export (.xlsx or .csv)"),
+                         type=["xlsx", "xlsm", "xls", "csv"], key="ranking")
     with c3:
-        st.file_uploader(t("Summary PDF"), type=["pdf"], key="summary")
+        st.file_uploader(t("Summary PDFs (one per month)"), type=["pdf"],
+                         key="summary", accept_multiple_files=True)

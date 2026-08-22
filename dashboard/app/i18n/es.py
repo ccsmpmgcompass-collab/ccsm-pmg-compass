@@ -436,6 +436,57 @@ ES: dict[str, str] = {
     "Findings by Zone": "Hallazgos por Zona",
     "Findings per Day": "Hallazgos por Día",
     "Findings per Month": "Hallazgos por Mes",
+    # ── Tableau upload path (Embudo) ──────────────────────────────────────────
+    "Mission finding & teaching pipeline — from the Tableau export":
+        "Búsqueda y enseñanza de la misión — desde la exportación de Tableau",
+    "No finding data yet. Export the Mission Finding Summary view from "
+    "Tableau and upload it in **Manual upload** below.":
+        "Aún no hay datos de búsqueda. Exporta la vista Mission Finding Summary "
+        "desde Tableau y súbela en **Carga manual** abajo.",
+    "Manual upload / re-sync": "Carga manual / resincronización",
+    "Export the Mission Finding Summary view from Tableau and drop the "
+    "files here. The Detail export REPLACES the stored data, so export "
+    "the full view, not a recent slice. Summary PDFs merge by month — "
+    "upload as many as you like at once.":
+        "Exporta la vista Mission Finding Summary desde Tableau y suelta los "
+        "archivos aquí. La exportación de Detalle REEMPLAZA los datos guardados, "
+        "así que exporta la vista completa, no un tramo reciente. Los PDF de "
+        "resumen se combinan por mes — sube todos los que quieras a la vez.",
+    "Detail export (.xlsx or .csv)": "Exportación de Detalle (.xlsx o .csv)",
+    "Ranking export (.xlsx or .csv)": "Exportación de Ranking (.xlsx o .csv)",
+    "Summary PDFs (one per month)": "PDF de resumen (uno por mes)",
+    "Detail export saved · {rows} people ({dropped} Tableau artifact "
+    "rows dropped) · names and person ids removed":
+        "Exportación de Detalle guardada · {rows} personas ({dropped} filas "
+        "artificiales de Tableau descartadas) · nombres e identificadores "
+        "eliminados",
+    "New columns in this export, not stored: {cols}":
+        "Columnas nuevas en esta exportación, no guardadas: {cols}",
+    "**Not saved.** This export covers {new_from} → {new_to} "
+    "({new_rows} people), but the stored data covers {old_from} → "
+    "{old_to} ({old_rows} people). Saving would replace the history, "
+    "not add to it — a Detail export cannot be merged. Re-export the "
+    "full view, or replace anyway if that is what you intend.":
+        "**No se guardó.** Esta exportación cubre {new_from} → {new_to} "
+        "({new_rows} personas), pero los datos guardados cubren {old_from} → "
+        "{old_to} ({old_rows} personas). Guardar reemplazaría el historial en vez "
+        "de agregarse a él — una exportación de Detalle no se puede combinar. "
+        "Vuelve a exportar la vista completa, o reemplaza de todos modos si eso "
+        "es lo que quieres.",
+    "Replace anyway": "Reemplazar de todos modos",
+    "{n} summary PDFs parsed · TABLEAU_BAPTISMS now "
+    "holds {total} months · {span}":
+        "{n} PDF de resumen procesados · TABLEAU_BAPTISMS ahora tiene "
+        "{total} meses · {span}",
+    "{n} PDFs uploaded — previewing the last.":
+        "{n} PDF subidos — mostrando el último.",
+    "Could not read the Detail export: {err}":
+        "No se pudo leer la exportación de Detalle: {err}",
+    "Could not read the Ranking export: {err}":
+        "No se pudo leer la exportación de Ranking: {err}",
+    "Could not save baptism counts: {err}":
+        "No se pudieron guardar los bautismos: {err}",
+    "Could not parse {msg}": "No se pudo procesar {msg}",
     "Detailed Data": "Datos Detallados",
     "Area Rankings (per-area table)":
         "Clasificación de Áreas (tabla por área)",

@@ -16,3 +16,9 @@ pandas>=2.0.0
 plotly>=5.0.0
 python-dotenv>=1.0.0
 google-genai>=1.0.0
+# Tableau ingestion. The Mission Finding Summary view exports as .xlsx (pandas
+# needs openpyxl to read it) and its monthly summary is a PDF, and both are
+# uploaded through the Finding Funnel page — so they are runtime dependencies
+# of the deployed app, not dev-only tools.
+openpyxl>=3.1.0
+pypdf>=4.0.0
