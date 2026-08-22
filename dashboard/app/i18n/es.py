@@ -433,6 +433,7 @@ ES: dict[str, str] = {
     "Top Finding Sources": "Principales Fuentes de Hallazgo",
     "Findings by Zone": "Hallazgos por Zona",
     "Findings per Day": "Hallazgos por Día",
+    "Findings per Month": "Hallazgos por Mes",
     "Detailed Data": "Datos Detallados",
     "Area Rankings (per-area table)":
         "Clasificación de Áreas (tabla por área)",

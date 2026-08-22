@@ -13,7 +13,9 @@ from app.components.design_system import (
 from app.db.queries import get_tableau_detail, get_tableau_ranking
 from app.db.sheets_client import save_dataframe
 from app.analytics.finding_funnel import (
-    PRESETS, data_date_bounds, preset_range, filter_by_range, build_area_rankings,
+    DEFAULT_PRESET, FUNNEL_STAGES, PRESETS, REFERRED_STAGE, build_area_rankings,
+    compute_funnel_stage_counts, data_date_bounds, filter_by_range, preset_range,
+    trend_series,
 )
 from app.i18n import t
 from app.i18n.formats import NA, fmt_date_range, fmt_day_month, fmt_int, fmt_percent
@@ -145,11 +147,17 @@ _lo, _hi = data_date_bounds(det_df)
 # Translated label -> English preset key. The key is what preset_range() looks
 # up in PRESETS, so it must stay English; only the label is translated.
 _opt_labels = {t(k): k for k in list(PRESETS.keys()) + ["Custom"]}
+# Open on DEFAULT_PRESET rather than whatever sits first. The page used to open
+# on "All", which was a harmless ~3-week window only because DATA_FLOOR was
+# wrongly clamping the data to May 2026; with the real 2.6 years visible, "All"
+# as an opening view is 89,800 people and ~950 daily bars.
+_keys = list(_opt_labels.values())
+_default_idx = _keys.index(DEFAULT_PRESET) if DEFAULT_PRESET in _keys else 0
 _pc, _cc = st.columns([3, 2])
 with _pc:
-    _preset = _opt_labels[st.radio(t("Date range"), list(_opt_labels), index=0,
-                                   horizontal=True, key="ff_preset",
-                                   label_visibility="collapsed")]
+    _preset = _opt_labels[st.radio(t("Date range"), list(_opt_labels),
+                                   index=_default_idx, horizontal=True,
+                                   key="ff_preset", label_visibility="collapsed")]
 if _preset == "Custom":
     with _cc:
         _d1, _d2 = st.columns(2)
@@ -195,30 +203,22 @@ elif sync_note:
 
 # ── Mission-wide reference numbers — now sourced from filtered Detail so they
 #    honor the active date window (Ranking export has no dates to slice by) ────
-referred = int(_date(det_df, "first_referral_event_date").notna().sum()) \
+#    Referred is NOT a funnel stage — see REFERRED_STAGE in finding_funnel.py.
+referred = int(_date(det_df, REFERRED_STAGE[1]).notna().sum()) \
     if not det_df.empty else 0
 
 # ── Detail event milestones — the true finding-to-progress funnel ─────────────
-# Each stage counts people (found in range) who reached that milestone. Ordered
-# so the funnel is monotonic: every later stage is a subset of the earlier one.
-# Labels are display-only (chart axis text); the second element is the Detail
-# column name and must never be translated.
-FUNNEL = [
-    (t("Found"),                  None),
-    (t("Contact Attempted"),      "first_contact_attempt_event_date"),
-    (t("Successfully Contacted"), "first_successful_contact_attempt_event_date"),
-    (t("Being Taught"),           "first_new_person_being_taught_date"),
-    (t("Attended Church"),        "first_sacrament_date"),
-    (t("Baptism Date Set"),       "first_baptism_goal_date_set"),
-]
+# The stage list lives in app/analytics/finding_funnel.py and is imported, not
+# restated: this page kept its own 6-stage copy while the per-area table below
+# used a 7-stage one, so the chart silently omitted every baptism.
+#
+# stage_counts is keyed by the ENGLISH label. It used to be keyed by t(label)
+# and then read back with English literals four lines later — on the Spanish
+# interface (the mission default) every one of those lookups missed, so the
+# KPI row and the whole Contact Performance section reported 0.
+stage_counts = compute_funnel_stage_counts(det_df)
 
 found = len(det_df)
-
-stage_counts = {}
-if not det_df.empty:
-    for label, datecol in FUNNEL:
-        stage_counts[label] = found if datecol is None else int(_date(det_df, datecol).notna().sum())
-
 attempted = stage_counts.get("Contact Attempted", 0)
 contacted = stage_counts.get("Successfully Contacted", 0)
 teaching  = stage_counts.get("Being Taught", 0)
@@ -266,8 +266,9 @@ fcol, dcol = st.columns([3, 2])
 with fcol:
     render_section_label(t("Finding Pipeline"))
     if stage_counts:
-        labels = [l for l, _ in FUNNEL]
-        values = [stage_counts[l] for l in labels]
+        # Translate for the axis only; the counts stay keyed in English.
+        labels = [t(l) for l, _ in FUNNEL_STAGES]
+        values = [stage_counts[l] for l, _ in FUNNEL_STAGES]
         # Labels OUTSIDE each bar in white: readable on every slice color and
         # on the thin lower stages. Widen the x-range so the full-width "Found"
         # bar's label isn't clipped at the right edge.
@@ -277,11 +278,14 @@ with fcol:
             textposition="outside", textinfo="value+percent initial",
             textfont=dict(color="#ffffff", size=13),
             outsidetextfont=dict(color="#ffffff", size=13),
+            # Seventh colour is gold — Baptized is the outcome the whole funnel
+            # exists for, and it was the stage this chart used to leave out.
             marker=dict(color=["#6366f1", "#22c55e", "#06b6d4", "#f59e0b",
-                               "#ec4899", "#ef4444"], line=dict(width=0)),
+                               "#ec4899", "#ef4444", "#facc15"],
+                        line=dict(width=0)),
             connector=dict(line=dict(color="rgba(255,255,255,0.10)", width=1)),
         ))
-        fig.update_layout(height=380, margin=dict(l=140, r=20, t=10, b=10),
+        fig.update_layout(height=430, margin=dict(l=140, r=20, t=10, b=10),
                           template="pmg_dark", paper_bgcolor="rgba(0,0,0,0)",
                           xaxis=dict(visible=False, range=[-_fmax * 0.05, _fmax * 1.35]))
         st.plotly_chart(fig, use_container_width=True, theme=None,
@@ -385,19 +389,21 @@ if not det_df.empty:
             st.plotly_chart(zbar, use_container_width=True, theme=None,
                             config={"displayModeBar": False})
 
-    # Daily finding trend
-    ev_dates = _date(det_df, "event_date_selected").dt.date.dropna()
-    if not ev_dates.empty:
-        render_section_label(t("Findings per Day"))
-        per_day = ev_dates.value_counts().sort_index()
+    # Finding trend. Buckets by month once the window is long — with the bogus
+    # DATA_FLOOR gone, "All" spans 2.6 years and a per-day chart is ~950 bars
+    # of illegible labels. trend_series() decides and says which it drew.
+    _tlabels, _tvalues, _tgran = trend_series(det_df)
+    if _tlabels:
+        render_section_label(t("Findings per Month") if _tgran == "month"
+                             else t("Findings per Day"))
         tbar = go.Figure(go.Bar(
-            x=[str(d) for d in per_day.index], y=per_day.values.tolist(),
-            marker=dict(color="#8b5cf6"), text=per_day.values.tolist(),
+            x=_tlabels, y=_tvalues,
+            marker=dict(color="#8b5cf6"), text=_tvalues,
             textposition="outside", cliponaxis=False,
             textfont=dict(color="#ffffff", size=12)))
         tbar.update_layout(
             height=240, margin=dict(l=10, r=10, t=26, b=10), template="pmg_dark",
-            yaxis=dict(visible=False, range=[0, int(per_day.max()) * 1.2]))
+            yaxis=dict(visible=False, range=[0, max(_tvalues) * 1.2]))
         st.plotly_chart(tbar, use_container_width=True, theme=None,
                         config={"displayModeBar": False})
 
