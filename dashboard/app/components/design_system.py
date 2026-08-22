@@ -489,6 +489,16 @@ def render_kpi_row(metrics: list[dict]) -> None:
     #8b5cf6 rather than performance-graded, and its caption says "expectation" not
     "goal", so the difference doesn't rely on color alone.
 
+    note (optional str) prints a small caption directly under the value — for a
+    card whose big number is a share and whose count would otherwise be lost
+    ("143 de 301 días-área"). goal_note, below, is a different thing: it only
+    ever renders beneath a goal bar and explains the goal.
+
+    points_unit (optional str, default "pp") is the suffix on a POINTS change.
+    Percentage points are the default because rates were the first caller; a
+    card measuring something else in unscaled points (the 1-3 effort score)
+    passes "" and gets the bare number in the card's own decimals.
+
     unit (optional str) and decimals (optional int) change how the card writes its
     numbers — the value, and the goal in the caption. unit="%" with decimals=1
     gives "46,4%" over "93% of 50% goal". Both default to the plain integer this
@@ -568,7 +578,16 @@ def render_kpi_row(metrics: list[dict]) -> None:
                 # 7,4% to 9,7% into "+31%", which reads as a mission
                 # transformed and means about two more invitations per hundred
                 # lessons. See period_delta.point_delta.
-                text = t("{n} pp", n=fmt_number(abs(points), 1))
+                # "pp" is right for a rate on the 0-100 scale and wrong for
+                # anything else measured in unscaled points — the effort score
+                # moves on a 1-3 scale, where "0,2 pp" would claim a percentage
+                # nobody computed. points_unit lets such a card drop the suffix
+                # and print the move in the card's own decimals.
+                points_unit = m.get("points_unit", "pp")
+                if points_unit == "pp":
+                    text = t("{n} pp", n=fmt_number(abs(points), 1))
+                else:
+                    text = f"{fmt_number(abs(points), decimals)}{points_unit}"
             elif show == _pd.ABSOLUTE and change.get("change") is not None:
                 n = round(float(change["change"]))
                 text = f"{'+' if n > 0 else ''}{fmt_int(n)}"
@@ -582,6 +601,17 @@ def render_kpi_row(metrics: list[dict]) -> None:
                     f'<div style="font-size:0.78rem;color:{color};font-weight:600;'
                     f'margin-top:4px;">{arrow} {_html.escape(text)} {delta_label}</div>'
                 )
+
+        # "note" is a caption in the card's own right, for a card with no goal
+        # bar to hang one under. The effort section's cards are percentages of
+        # all possible area-days, and the count they came from ("143 de 301")
+        # is what stops a share reading as a total. Distinct from "goal_note",
+        # which explains a goal and only ever renders beneath its bar.
+        note_text = _html.escape(m.get("note", ""))
+        card_note_html = (
+            f'<div style="font-size:0.65rem;color:#4b5563;margin-top:4px;">{note_text}</div>'
+            if note_text else ""
+        )
 
         goal_html = ""
         if goal is not None and float(goal) > 0:
@@ -704,7 +734,7 @@ def render_kpi_row(metrics: list[dict]) -> None:
             f'color:#6b7280;text-transform:uppercase;margin-bottom:6px;">{label}</div>'
             f'<div style="font-size:2rem;font-weight:800;color:#f4f4f8;'
             f'letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums;">'
-            f'{fmt}</div>{delta_html}{goal_html}{expectation_html}</div>'
+            f'{fmt}</div>{delta_html}{card_note_html}{goal_html}{expectation_html}</div>'
         )
 
     st.markdown(

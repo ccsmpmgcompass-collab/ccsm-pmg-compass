@@ -186,10 +186,10 @@ Chile Concepción South Mission          Semana del 11–16 de agosto
 | 6 | ~~Nightly row → outcome metrics, not effort inputs~~ | 🟠 | H1 — **DONE**, see below. Three outcomes + a mission row on the zone table |
 | 7 | ~~Rate-vs-target strip + Embudo link~~ | 🟠 | H2 — **DONE**, see below. The Embudo half was dropped: that page has no data and measures a different ratio |
 | 8 | Verdict line at top | 🟠 | new — tried 2026-08-21 as a bordered banner, **user didn't like it and it was reverted**. Still open; a plainer treatment could be tried later |
-| 9 | Effort denominator → all active areas | 🟡 | M3 |
+| 9 | ~~Effort denominator → all active areas~~ | 🟡 | M3 — **DONE**, see below. Built with item 12; the source moved to `DAILY_LOG` |
 | 10 | Translate every hardcoded string | 🟡 | M4 |
 | 11 | Collapse compliance to one number + one calendar | 🟡 | M5 |
-| 12 | Merge effort chart/tiles into expander | 🟡 | M2, M6 |
+| 12 | ~~Merge effort chart/tiles into expander~~ | 🟡 | M2, M6 — **DONE**, see below. Not an expander: the chart became a per-day stacked bar, and §5 became a metric selector |
 | 13 | "Building history" state for the trend | 🟡 | M1 |
 | 14 | Empty states that say *why*; drop `title=` tooltips | 🟡 | M7 |
 | 15 | Top 5 areas by Effectiveness score, near ⑤ Zonas — positive-only, no bottom list | 🟠 | H4 |
@@ -749,6 +749,162 @@ silently invalidated every reference in items 8–15.
 pane's `javascript_tool` **did** work against the Streamlit app, contrary to the
 note above — that is how the goal-bar colours were read straight out of the DOM.
 `screenshot` was not retried.
+---
+
+## Items 9 + 12 as built (2026-08-22) — M3, M2 and M6
+
+Built together at the user's call: item 12 rewrites the same section item 9
+fixes, and doing them separately would have restyled §6 twice.
+
+### The number that was wrong
+
+§6 summed `DASHBOARD_SUMMARY`'s EFFORT rows and printed **146 Todo · 83 La mayor
+parte · 13 Algo** — 242 answers, presented as the mission. 43 active areas over
+7 days is **301** chances to answer; 59 area-days went unfiled and were
+invisible. `total_areas` on those rows is *how many areas submitted*, so
+nothing on screen carried the real denominator. Every share was silently a
+share of the submitters.
+
+### The source changed, and that matters more than the arithmetic
+
+The section now reads **`DAILY_LOG`**, not `DASHBOARD_SUMMARY`. Three reasons,
+in order of weight:
+
+1. `CCSM_Agent3.gs` appends one **deduplicated** row per area per date and
+   backfills late arrivals. `CCSM_Agent5A.gs` re-tallies `NIGHTLY_FORM_RAW` and
+   counts a re-submission twice. Live on 2026-08-22 the two disagreed on 2 of 7
+   dates — 08-21 read **26 areas in `DAILY_LOG` and 33 in EFFORT**.
+2. §7's compliance calendar already counts `DAILY_LOG`. One page may not hold
+   two different answers to "how many areas reported that night"; the calendar
+   shows 08-21 at 60% and §6 now agrees.
+3. `DAILY_LOG` is per area *and* per date, which is what the per-day chart and
+   the per-area gap column need, and it holds 12 days, which is what makes a
+   prior-window comparison possible at all. The EFFORT rows only ever hold 7.
+
+⚠️ `get_daily_log()` runs `_num()` over every metric column, which turns "Todo"
+into 0. The new **`get_daily_effort_log()`** keeps it as text; both now share
+`_daily_log_frame()`, which does the read, the renames and the date cut without
+coercing anything.
+
+### New module: `dashboard/app/analytics/effort_breakdown.py`
+
+53 tests in `tests/test_effort_breakdown.py`. Pure — no Streamlit, no sheet, no
+i18n, same split as `zone_comparison` / `period_delta` / `rate_metrics` /
+`compliance_rankings`. **Reuse it for any effort question anywhere.**
+
+The shape of the fix: **the denominator is built from the active areas and the
+days, and the answers are placed into it.** What is missing is a number, not an
+absence. `build_window()` returns an `EffortWindow` carrying a `DayEffort` per
+date (including nights nobody filed) and an `AreaEffort` per active area
+(including areas that filed nothing).
+
+Rules worth not re-deriving:
+
+- **The score is over the areas that answered, and only them.** A missing form
+  is a compliance failure — §7 grades it by name — not evidence that a
+  companionship worked badly. Live: **2,55** among the 236 area-days that
+  answered; scoring the silence as zero effort would print **2,00**, which is a
+  different claim about different people. Both figures are pinned in
+  `TestLiveShape`.
+- **`score_of` returns `None`, never 0, when nothing was answered.** Zero is a
+  score; this is the absence of one. The per-area table prints an em dash.
+- **Possible days floor per area**, reusing `compliance_rankings.area_floor`
+  rather than reimplementing it, so an area's denominator here and in the
+  compliance rankings cannot drift apart. A blank `Area_ID` floors at
+  `TRANSFER_START_DATE`, and the log overrules the flag when it disagrees.
+- **Rows for areas outside `MISSION_ORG` are dropped**, or a closed area's old
+  rows land in a numerator whose denominator no longer counts it and a day
+  reads over 100%.
+- **`MIN_RANKABLE_ANSWERS = 4`** (`rank_areas`). Yumbel answered twice, said
+  Todo both times, and led the mission at 3,00 above every area that filed all
+  seven nights. Areas below the threshold keep their score and sink to the
+  bottom — nothing is hidden, same instinct as `period_delta`'s
+  `MIN_COMPARABLE_DAYS`. The user was shown the live row and chose this over
+  sorting by nights-answered first.
+- `LEVEL_WEIGHTS` matches `ccsmEffortScore` in `CCSM_Helpers.gs` exactly, and
+  `score_target()` reads `EFFORT_SCORE_TARGET` **plainly** (2.75) rather than as
+  the 0-1 fraction the rate targets use.
+
+### The window, shared with §5
+
+Both sections said "last 7 days" and meant different things — §5 read
+`get_daily_summary(7)` (`today - 7`, eight dates every evening) and §6 read
+Agent5A's identical cut. `_night_anchor` / `_night_start` / `_night_end` are now
+computed once, on `compliance_anchor_date()` — the same anchor §7 grades
+compliance against. Live that is **15 de ago–21 de ago**, exactly 7 days.
+
+### What §6 looks like now
+
+Four cards, decided with the user before anything was written:
+
+| | |
+|---|---|
+| TODO | **47,5%** · 143 de 301 días-área |
+| LA MAYOR PARTE | **26,2%** · 79 de 301 días-área |
+| ALGO | **4,7%** · 14 de 301 días-área |
+| PUNTAJE DE ESFUERZO | **2,55** ↑ 0,24 vs. 7 días previos · 93% de la meta de 2,75 |
+
+Caption: *43 áreas activas × 7 días = 301 respuestas posibles. 65 nunca se
+enviaron (22%).*
+
+- **Percentages of all 301, not a fourth "Sin informe" card.** The user chose
+  this shape twice — once before the build and once after seeing it live. The
+  gap is carried by the caption and by the chart's grey segment.
+- **The chart is per day now (M2).** It used to be three bars holding the same
+  three numbers as the tiles beside it. A 100% stacked bar per date — Todo /
+  La mayor parte / Algo / Sin informar — is the only thing on the page that
+  shows whether a Sunday collapses, and it draws the unfiled share rather than
+  describing it. Verified live: 08-15 = 41,9 / 39,5 / 2,3 / 16,3, summing to 100.
+- **The score's arrow is `point_delta`, with its own neutral band.** `pp` is the
+  unit of a rate on a 0-100 scale; this score lives on 1-3, so
+  `_EFFORT_NEUTRAL_POINTS = 0,10` (about one area in ten moving up a whole
+  answer) and `render_kpi_row` gained **`points_unit`** so the card can print
+  "↑ 0,24" instead of "↑ 0,2 pp". Provisional in the same way
+  `period_delta.NEUTRAL_BAND_POINTS` is — revisit at 6-8 weeks of history.
+- `render_kpi_row` also gained **`note`**, a caption under the value for a card
+  with no goal bar to hang one under. Distinct from `goal_note`, which only ever
+  renders beneath a bar. Both additions are backward compatible; no existing
+  caller changes.
+- The per-area expander survives with a **Sin informar** column (out of 7) and
+  the ranking rule above. Every area is still named — this is the same
+  behaviour it had, and the user kept it.
+
+### §5 — M6
+
+The daily chart was hardcoded to `nm_lessons`, a metric CCSM's nightly form does
+not ask, so it drew nothing for months; it was then repointed at
+`flavor.nightly_highlights[0]` = `contacts_attempted`, the number §1b already
+divides by and §3 already carries as a column. It is now a **selectbox over all
+21 nightly metrics** (`effort` excluded — that is §6's job), defaulting to
+**Lecciones con Amigos**, which nothing else on the page shows. Keyed on stable
+ids with `format_func`, and the heading reads `st.session_state` before the
+widget is drawn so it can name the chosen metric and still sit above its own
+control — same pattern as §3's *Mostrar* switch.
+
+The series is **reindexed onto the window's seven dates**, so a day nobody
+reported is a gap in the week rather than a date the chart silently omits.
+
+### Translations
+
+The Panel's old effort strings were replaced wholesale. ⚠️ `"Most Effort"` /
+`"Some Effort"` were deleted with them and had to be restored — **the Scores
+page still draws those two labels**, and `test_i18n_coverage` caught it. They
+now sit beside `"Full Effort"` in the Scores block, where they belong.
+
+### Suite
+
+**430 → 535 passing**, same 5 pre-existing failures. `javascript_tool` worked
+against the running app again (that is how the chart's four traces and the
+ranked table were read out of the DOM); `get_page_text` also worked.
+`screenshot` / `read_page` were not retried.
+
+### Still open, deliberately
+
+`get_effort_by_area()` in `app/db/queries.py` is now unused — it parsed
+`NIGHTLY_FORM_RAW` with the same 8-day cut and no deduplication, which is
+exactly what this item concluded is the less trustworthy path. Left in place
+rather than deleted in the same commit.
+
 ---
 
 ## Side findings (not Panel work)

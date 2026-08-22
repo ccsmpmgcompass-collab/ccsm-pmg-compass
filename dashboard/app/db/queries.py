@@ -917,18 +917,14 @@ def get_nightly_weekly_trends_by_area(n_weeks: int = 52) -> pd.DataFrame:
 # DAILY_LOG
 # ══════════════════════════════════════════════════════════════════════════════
 
-@st.cache_data(ttl=300)
-def get_daily_log(days: int = 365) -> pd.DataFrame:
-    """
-    DAILY_LOG rows for the last `days` calendar days.
-    Date column normalised to string YYYY-MM-DD.
+def _daily_log_frame(days: int) -> pd.DataFrame:
+    """DAILY_LOG for the last `days` days — columns renamed, values still RAW.
 
-    Cached: pure derivation of DAILY_LOG, which only Apps Script writes — the
-    app's own writes (which clear only the sheets-layer caches) never touch it,
-    so this can never serve staler data than read_tab itself. Same reasoning on
-    the other cached derivations below; don't add caches like this to
-    derivations of tabs the APP writes (NOTES, TABLEAU_*, MISSION_ORG) without
-    also clearing them from the write path.
+    Shared by get_daily_log, which then coerces every metric column to a number,
+    and get_daily_effort_log, which must not: `effort` holds the nightly form's
+    own words ("Todo" / "La mayor parte" / "Algo") and numeric coercion turns
+    all three into 0. Uncached on purpose — read_tab beneath it is cached and
+    both callers cache their own result.
     """
     df = read_tab("DAILY_LOG", header_marker="Date")
     if df.empty:
@@ -954,9 +950,49 @@ def get_daily_log(days: int = 365) -> pd.DataFrame:
         return pd.DataFrame()
     df["Date"] = df["Date"].astype(str).str.strip().str[:10]
     cutoff = (datetime.today() - timedelta(days=days)).strftime("%Y-%m-%d")
-    df = df[df["Date"] >= cutoff].copy()
+    return df[df["Date"] >= cutoff].copy()
+
+
+@st.cache_data(ttl=300)
+def get_daily_log(days: int = 365) -> pd.DataFrame:
+    """
+    DAILY_LOG rows for the last `days` calendar days.
+    Date column normalised to string YYYY-MM-DD.
+
+    Cached: pure derivation of DAILY_LOG, which only Apps Script writes — the
+    app's own writes (which clear only the sheets-layer caches) never touch it,
+    so this can never serve staler data than read_tab itself. Same reasoning on
+    the other cached derivations below; don't add caches like this to
+    derivations of tabs the APP writes (NOTES, TABLEAU_*, MISSION_ORG) without
+    also clearing them from the write path.
+    """
+    df = _daily_log_frame(days)
+    if df.empty:
+        return df
     metric_cols = [c for c in df.columns if c not in ("Date", "Area", "Zone", "District")]
     return _num(df, metric_cols)
+
+
+@st.cache_data(ttl=300)
+def get_daily_effort_log(days: int = 45) -> pd.DataFrame:
+    """
+    Date | Area | Zone | District | effort — the nightly effort answer as TEXT.
+
+    The one DAILY_LOG column that is not a count. get_daily_log() coerces it to
+    0 along with everything else, so anything grading effort reads it here
+    instead; app/analytics/effort_breakdown.py is the arithmetic that does.
+    Returns an empty frame when the column is absent (a mission whose nightly
+    form does not ask the question) rather than raising.
+    """
+    df = _daily_log_frame(days)
+    if df.empty:
+        return pd.DataFrame(columns=["Date", "Area", "Zone", "District", "effort"])
+    cols = [c for c in ("Date", "Area", "Zone", "District", "effort") if c in df.columns]
+    if "effort" not in cols:
+        return pd.DataFrame(columns=["Date", "Area", "Zone", "District", "effort"])
+    out = df[cols].copy()
+    out["effort"] = out["effort"].astype(str).str.strip()
+    return out
 
 
 def get_daily_summary(days: int = 30) -> pd.DataFrame:

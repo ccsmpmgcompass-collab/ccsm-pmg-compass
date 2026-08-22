@@ -17,7 +17,7 @@ from app.components.design_system import (
     render_section_label, render_kpi_row, render_table,
 )
 from app.config.flavor_loader import flavor, METRIC_LABELS
-from app.config.metric_catalog import key_indicator_metrics
+from app.config.metric_catalog import key_indicator_metrics, nightly_metrics
 from app.i18n import t
 from app.i18n.formats import (
     fmt_int, fmt_number, fmt_percent, fmt_week_span, fmt_day_month,
@@ -26,8 +26,7 @@ from app.config.theme import CHART_COLORS
 from app.db.queries import (
     get_mission_totals,
     get_zone_totals,
-    get_effort_data,
-    get_effort_by_area,
+    get_daily_effort_log,
     get_weekly_ki_trends,
     get_weekly_ki_totals,
     get_weekly_ki_reporting,
@@ -54,9 +53,10 @@ from app.analytics.zone_comparison import (
 )
 from app.analytics.period_delta import (
     reporting_dates, window_pair, window_totals, window_areas, days_in_window,
-    period_delta, MIN_COMPARABLE_DAYS, WINDOW_DAYS,
+    period_delta, point_delta, MIN_COMPARABLE_DAYS, WINDOW_DAYS,
 )
 from app.analytics.rate_metrics import rate_rows
+from app.analytics import effort_breakdown as eb
 from app.analytics import compliance_rankings as cr
 from app.components.scope_selector import render_scope_selectors, ANY as scope_ANY
 from app.utils.area_helpers import (
@@ -92,7 +92,6 @@ st.caption(
 
 mission_df = get_mission_totals()
 zone_df    = get_zone_totals()
-effort_df  = get_effort_data()
 trends_df  = get_weekly_ki_trends(8)
 daily_df   = get_daily_summary(7)
 ki_df      = get_weekly_ki_totals(8)
@@ -932,15 +931,44 @@ else:
         st.plotly_chart(fig2, use_container_width=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 5. DAILY TREND — headline nightly metric, last 7 days
+# THE NIGHTLY WINDOW — shared by sections 5 and 6
 # ═══════════════════════════════════════════════════════════════════════════════
-# Was hardcoded to nm_lessons ("Non-Member Lessons per Day"). CCSM's nightly
-# form has no such question, so the guard below always fell to _EMPTY_MSG and
-# this section has never drawn anything.
-_daily_key = next(
-    (k for k in flavor.nightly_highlights if k in daily_df.columns),
-    "",
-) if not daily_df.empty else ""
+# Both sections said "last 7 days" and meant different things. Section 5 read
+# get_daily_summary(7), whose cutoff is `today - 7` and therefore spans eight
+# dates from the moment tonight's first report lands; section 6 read
+# DASHBOARD_SUMMARY's EFFORT rows, which CCSM_Agent5A.gs cuts the same way. The
+# window is computed once, here, on the anchor section 7 already grades
+# compliance against: the last night whose 9:30 PM deadline has passed. An area
+# with hours left to file has not missed anything yet.
+_night_anchor = compliance_anchor_date()
+_night_start, _night_end = eb.window_bounds(_night_anchor)
+_night_span = t("{start}–{end}", start=fmt_day_month(_night_start),
+                 end=fmt_day_month(_night_end))
+_night_days = [_night_start + timedelta(days=i)
+               for i in range((_night_end - _night_start).days + 1)]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 5. DAILY TREND — one nightly metric, last 7 days
+# ═══════════════════════════════════════════════════════════════════════════════
+# Was hardcoded to nm_lessons ("Non-Member Lessons per Day"), which CCSM's
+# nightly form does not ask, so this section drew nothing for months; it was
+# then repointed at flavor.nightly_highlights[0] — contacts_attempted, the
+# number section 1b already divides by and section 3 already carries as a
+# column. That was M6: one figure, three appearances. The metric is the
+# reader's choice now, defaulting to one nothing else on the page shows.
+_daily_metric_options = [
+    k for k in nightly_metrics()
+    if k != "effort" and not daily_df.empty and k in daily_df.columns
+]
+_daily_default = ("friend_lessons" if "friend_lessons" in _daily_metric_options
+                  else (_daily_metric_options[0] if _daily_metric_options else ""))
+
+# Read before the widget is drawn, so the heading can name the chosen metric and
+# still sit above its own control (Streamlit renders in source order). Same
+# pattern as section 3's Mostrar switch.
+_daily_key = st.session_state.get("panel_daily_metric", _daily_default)
+if _daily_key not in _daily_metric_options:
+    _daily_key = _daily_default
 _daily_label = METRIC_LABELS.get(_daily_key, _daily_key)
 
 render_section_label(
@@ -948,15 +976,31 @@ render_section_label(
     else t("Daily Trend — Last 7 Days")
 )
 
-if not _daily_key:
-    st.info(_EMPTY_MSG)
+if not _daily_metric_options:
+    st.info(t("No nightly activity has been logged yet, so there is nothing to "
+              "chart by day."))
 else:
-    date_col = "Date" if "Date" in daily_df.columns else daily_df.columns[0]
+    st.selectbox(
+        t("Metric"), _daily_metric_options,
+        format_func=lambda k: METRIC_LABELS.get(k, k),
+        index=_daily_metric_options.index(_daily_key),
+        key="panel_daily_metric",
+    )
+
+    # Reindexed onto the window's seven dates: a day nobody reported is a gap in
+    # the mission's activity, and dropping the row would redraw the week as if
+    # that day had never been scheduled.
+    _daily_window = pd.DataFrame({"Date": [d.isoformat() for d in _night_days]})
+    _daily_window = _daily_window.merge(
+        daily_df[["Date", _daily_key]], on="Date", how="left"
+    ).fillna({_daily_key: 0})
+    _daily_window["Label"] = [fmt_day_month(d) for d in _night_days]
+
     fig_daily = px.bar(
-        daily_df,
-        x=date_col,
+        _daily_window,
+        x="Label",
         y=_daily_key,
-        labels={date_col: t("Date"), _daily_key: _daily_label},
+        labels={"Label": t("Date"), _daily_key: _daily_label},
         title=t("{metric} per day (mission total)", metric=_daily_label),
         color_discrete_sequence=["#6366f1"],
     )
@@ -965,62 +1009,179 @@ else:
         xaxis_type="category",
         yaxis_title=_daily_label,
         margin=dict(t=40, b=20),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
     )
     st.plotly_chart(fig_daily, use_container_width=True)
+    st.caption(t("{span} · mission total per day.", span=_night_span))
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 6. DAILY EFFORT BREAKDOWN — last 7 days
+# 6. EFFORT LEVEL — last 7 days, over every active area
 # ═══════════════════════════════════════════════════════════════════════════════
-render_section_label(t("Daily Effort Breakdown — Last 7 Days"))
+# M3. This section used to sum DASHBOARD_SUMMARY's EFFORT rows and report "146
+# Todo · 83 La mayor parte · 13 Algo" — 242 answers presented as the mission,
+# when 43 areas over 7 days had 301 chances to answer and 59 of them went
+# unfiled. Every share on screen was silently a share of the submitters.
+#
+# The arithmetic now lives in app/analytics/effort_breakdown.py, which builds
+# the denominator from the active areas and places the answers into it. Two
+# consequences worth keeping: the cards are percentages of all possible
+# area-days, and the effort SCORE is computed over the areas that answered and
+# only them (a missing form is a compliance failure — section 7 grades it by
+# name — not evidence that a companionship worked badly).
+render_section_label(t("Effort Level — Last 7 Days"))
 
-if effort_df.empty:
-    st.info(_EMPTY_MSG)
+#: How far the effort score must move before the card calls it a change. The
+#: rates' 2,0 is percentage POINTS on a 0-100 scale; this score lives on 1-3,
+#: where 0,10 is about one area in ten moving up a whole answer. Provisional in
+#: the same way period_delta.NEUTRAL_BAND_POINTS is — revisit once there are
+#: 6-8 weeks of history to see the real week-to-week wobble.
+_EFFORT_NEUTRAL_POINTS = 0.10
+
+_eff_areas = get_submitting_areas()
+_eff_log = get_daily_effort_log(60)
+_eff_sys_start = get_config_value("SYSTEM_START_DATE", "2026-06-08")[:10]
+_eff_transfer_start = get_config_value("TRANSFER_START_DATE", _eff_sys_start)[:10]
+_eff_floor = date.fromisoformat(_eff_sys_start)
+_eff_transfer = date.fromisoformat(_eff_transfer_start)
+
+_eff_cur = eb.build_window(
+    _eff_log, _eff_areas, start=_night_start, end=_night_end,
+    system_start=_eff_floor, transfer_start=_eff_transfer,
+)
+
+if _eff_cur.possible <= 0:
+    st.info(t("No effort answers have been logged yet. The nightly form asks "
+              "for one every night, so this fills in as areas report."))
 else:
-    all_count  = int(effort_df["all_count"].sum())
-    most_count = int(effort_df["most_count"].sum())
-    some_count = int(effort_df["some_count"].sum())
-
-    effort_data = pd.DataFrame({
-        "Effort Level": ["All", "Most", "Some"],
-        "Count":        [all_count, most_count, some_count],
-    })
-
-    fig_effort = px.bar(
-        effort_data,
-        x="Effort Level",
-        y="Count",
-        color="Effort Level",
-        color_discrete_map={
-            "All":  "#22c55e",
-            "Most": "#f59e0b",
-            "Some": "#ef4444",
-        },
-        title="Area Effort Levels Across Last 7 Days",
+    # The prior window, for the score's arrow only. Same pair section 1 uses, so
+    # "prior 7 days" means one thing on this page.
+    _, _, _eff_prior_start, _eff_prior_end = window_pair(_night_anchor)
+    _eff_prior = eb.build_window(
+        _eff_log, _eff_areas, start=_eff_prior_start, end=_eff_prior_end,
+        system_start=_eff_floor, transfer_start=_eff_transfer,
     )
+    _eff_report_dates = reporting_dates(_eff_log, len(_eff_areas))
+    _eff_change = point_delta(
+        _eff_cur.score, _eff_prior.score,
+        current_basis=days_in_window(_eff_report_dates, _night_start, _night_end),
+        prior_basis=days_in_window(_eff_report_dates, _eff_prior_start, _eff_prior_end),
+        neutral_band=_EFFORT_NEUTRAL_POINTS,
+    )
+
+    _eff_labels = {
+        eb.ALL:  t("Effort · All"),
+        eb.MOST: t("Effort · Most"),
+        eb.SOME: t("Effort · Some"),
+    }
+
+    def _eff_card(level: str) -> dict:
+        """One answer as a share of every area-day that could have carried it."""
+        return {
+            "label": _eff_labels[level],
+            "value": _eff_cur.share(level),
+            "unit": "%", "decimals": 1,
+            "note": t("{n} of {total} area-days",
+                      n=fmt_int(_eff_cur.counts.get(level, 0)),
+                      total=fmt_int(_eff_cur.possible)),
+        }
+
+    _eff_target = eb.score_target(get_agent_config())
+    render_kpi_row([
+        _eff_card(eb.ALL),
+        _eff_card(eb.MOST),
+        _eff_card(eb.SOME),
+        {
+            "label": t("Effort Score"),
+            "value": _eff_cur.score,
+            "decimals": 2,
+            "goal": _eff_target,
+            "change": _eff_change,
+            "points_unit": "",
+            "delta_label": t("vs prior 7 days"),
+            "note": t("Among the {n} area-days that answered",
+                      n=fmt_int(_eff_cur.answered)),
+        },
+    ])
+
+    st.caption(
+        t("{areas} active areas × {days} days = {possible} possible answers. "
+          "{missing} were never filed ({pct}). {span}.",
+          areas=fmt_int(_eff_cur.area_count),
+          days=fmt_int(len(_eff_cur.days)),
+          possible=fmt_int(_eff_cur.possible),
+          missing=fmt_int(_eff_cur.missing),
+          pct=fmt_percent(_eff_cur.missing_share),
+          span=_night_span)
+    )
+
+    # ── Per day, as a share of that day's areas ───────────────────────────────
+    # The old chart was three bars holding the same three numbers as the tiles
+    # beside it (M2). Per day it earns its place: it is the only thing on the
+    # page that shows whether a Sunday collapses or a transfer week sags, and
+    # the unfiled share is drawn rather than described.
+    _eff_day_labels = [fmt_day_month(d.day) for d in _eff_cur.days]
+    _eff_segments = [
+        (eb.ALL,  _eff_labels[eb.ALL],  "#22c55e"),
+        (eb.MOST, _eff_labels[eb.MOST], "#f59e0b"),
+        (eb.SOME, _eff_labels[eb.SOME], "#ef4444"),
+    ]
+
+    fig_effort = go.Figure()
+    for level, label, color in _eff_segments:
+        fig_effort.add_trace(go.Bar(
+            x=_eff_day_labels,
+            y=[d.share(level) or 0 for d in _eff_cur.days],
+            name=label,
+            marker_color=color,
+            customdata=[[d.counts.get(level, 0), d.possible] for d in _eff_cur.days],
+            hovertemplate="%{fullData.name}: %{customdata[0]}/%{customdata[1]} "
+                          "(%{y:.0f}%)<extra></extra>",
+        ))
+    fig_effort.add_trace(go.Bar(
+        x=_eff_day_labels,
+        y=[d.missing_share or 0 for d in _eff_cur.days],
+        name=t("Not reported"),
+        marker_color="#4b5563",
+        customdata=[[d.missing, d.possible] for d in _eff_cur.days],
+        hovertemplate="%{fullData.name}: %{customdata[0]}/%{customdata[1]} "
+                      "(%{y:.0f}%)<extra></extra>",
+    ))
     fig_effort.update_layout(
-        showlegend=False,
-        margin=dict(t=40, b=20),
-        yaxis_title="Day-Area Count",
+        barmode="stack",
+        title=t("Effort answers per day, share of all active areas"),
+        xaxis_title=t("Date"),
+        xaxis_type="category",
+        yaxis_title=t("Share of active areas"),
+        yaxis=dict(range=[0, 100], ticksuffix="%"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(t=60, b=20),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
     )
     st.plotly_chart(fig_effort, use_container_width=True)
 
-    e1, e2, e3 = st.columns(3)
-    e1.metric(t("All Effort"),  all_count,  help=t("Areas reporting full effort"))
-    e2.metric(t("Most Effort"), most_count, help=t("Areas reporting most effort"))
-    e3.metric(t("Some Effort"), some_count, help=t("Areas reporting some effort"))
+    # ── Per area ──────────────────────────────────────────────────────────────
+    with st.expander(t("Effort by area — who answered what ({span})", span=_night_span)):
+        # Ranked, not merely sorted: an area with two answers and a perfect
+        # score does not lead the mission. eb.MIN_RANKABLE_ANSWERS sinks those
+        # rows to the bottom with their numbers intact.
+        _eff_rows = eb.rank_areas(_eff_cur.areas)
+        _eff_table = pd.DataFrame([{
+            t("Area"):     a.area,
+            t("Zone"):     a.zone,
+            _eff_labels[eb.ALL]:  a.counts.get(eb.ALL, 0),
+            _eff_labels[eb.MOST]: a.counts.get(eb.MOST, 0),
+            _eff_labels[eb.SOME]: a.counts.get(eb.SOME, 0),
+            t("Answered"): f"{fmt_int(a.answered)}/{fmt_int(a.possible)}",
+            t("Not reported"): a.missing,
+            t("Effort Score"): fmt_number(a.score, 2) if a.score is not None else "—",
+        } for a in _eff_rows])
+        st.caption(
+            t("{n} active areas · Todo=3, La mayor parte=2, Algo=1, averaged "
+              "over the nights the area answered. An area that filed nothing "
+              "has no score, not a zero.", n=fmt_int(len(_eff_rows)))
+        )
+        render_table(_eff_table)
 
-    area_effort = get_effort_by_area(days=7)
-    with st.expander(t("Effort by area — who reported what (last 7 days)")):
-        if area_effort.empty:
-            st.caption(t("No per-area effort responses in the last 7 days."))
-        else:
-            st.caption(
-                t("{n} areas · sorted by effort score "
-                  "(All=3, Most=2, Some=1, averaged per submission). "
-                  "Counts are submissions per area over the last 7 days.",
-                  n=len(area_effort))
-            )
-            render_table(area_effort)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 7. SUBMISSION COMPLIANCE — all-time summary, calendars, per-area detail

@@ -271,24 +271,47 @@ ES: dict[str, str] = {
         "Tendencia de 8 Semanas — Totales de la Misión",
     "Daily NM Lessons — Last 7 Days":
         "Lecciones Diarias a NM — Últimos 7 Días",
-    "Daily Effort Breakdown — Last 7 Days":
-        "Desglose Diario de Esfuerzo — Últimos 7 Días",
-    "All Effort": "Esfuerzo Total",
-    "Most Effort": "Esfuerzo Mayoritario",
-    "Some Effort": "Algo de Esfuerzo",
-    "Areas reporting full effort": "Áreas que reportan esfuerzo total",
-    "Areas reporting most effort": "Áreas que reportan esfuerzo mayoritario",
-    "Areas reporting some effort": "Áreas que reportan algo de esfuerzo",
-    "Effort by area — who reported what (last 7 days)":
-        "Esfuerzo por área — quién reportó qué (últimos 7 días)",
-    "No per-area effort responses in the last 7 days.":
-        "No hay respuestas de esfuerzo por área en los últimos 7 días.",
-    "{n} areas · sorted by effort score "
-    "(All=3, Most=2, Some=1, averaged per submission). "
-    "Counts are submissions per area over the last 7 days.":
-        "{n} áreas · ordenadas por puntaje de esfuerzo "
-        "(Todo=3, Mayoría=2, Algo=1, promediado por envío). "
-        "Los conteos son envíos por área durante los últimos 7 días.",
+    # The Panel's old effort strings were replaced wholesale by the block below
+    # when section 6 stopped counting submitters as if they were the mission.
+    # "Full Effort" / "Most Effort" / "Some Effort" moved down beside the Scores
+    # page's other tile labels — that page still draws them.
+    "{span} · mission total per day.": "{span} · total de la misión por día.",
+    "No nightly activity has been logged yet, so there is nothing to "
+    "chart by day.":
+        "Todavía no se ha registrado actividad nocturna, así que no hay nada "
+        "que graficar por día.",
+
+    "Effort Level — Last 7 Days": "Nivel de Esfuerzo — Últimos 7 Días",
+    "No effort answers have been logged yet. The nightly form asks "
+    "for one every night, so this fills in as areas report.":
+        "Todavía no se ha registrado ninguna respuesta de esfuerzo. El "
+        "formulario nocturno la pide cada noche, así que esto se irá "
+        "llenando a medida que las áreas informen.",
+    # The three answers exactly as the nightly form words them — the missionary
+    # who chose "La mayor parte" should read that same phrase back here.
+    "Effort · All": "Todo",
+    "Effort · Most": "La mayor parte",
+    "Effort · Some": "Algo",
+    "{n} of {total} area-days": "{n} de {total} días-área",
+    "Effort Score": "Puntaje de Esfuerzo",
+    "Among the {n} area-days that answered":
+        "Entre los {n} días-área que respondieron",
+    "{areas} active areas × {days} days = {possible} possible answers. "
+    "{missing} were never filed ({pct}). {span}.":
+        "{areas} áreas activas × {days} días = {possible} respuestas posibles. "
+        "{missing} nunca se enviaron ({pct}). {span}.",
+    "Effort answers per day, share of all active areas":
+        "Respuestas de esfuerzo por día, proporción de todas las áreas activas",
+    "Share of active areas": "Proporción de áreas activas",
+    "Effort by area — who answered what ({span})":
+        "Esfuerzo por área — quién respondió qué ({span})",
+    "Answered": "Respondió",
+    "{n} active areas · Todo=3, La mayor parte=2, Algo=1, averaged "
+    "over the nights the area answered. An area that filed nothing "
+    "has no score, not a zero.":
+        "{n} áreas activas · Todo=3, La mayor parte=2, Algo=1, promediado "
+        "sobre las noches en que el área respondió. Un área que no envió "
+        "nada no tiene puntaje, no un cero.",
     "Submission Compliance": "Cumplimiento de Envíos",
     "Nightly Submission Compliance — Daily %":
         "Cumplimiento de Envíos Nocturnos — % Diario",
@@ -1775,6 +1798,8 @@ ES: dict[str, str] = {
         "Indicadores Clave del formulario semanal. Las métricas en 0 no cuentan "
         "para el puntaje de Indicadores Clave.",
     "Full Effort": "Todo el esfuerzo",
+    "Most Effort": "Esfuerzo Mayoritario",
+    "Some Effort": "Algo de Esfuerzo",
     "Effort reported per day": "Esfuerzo informado por día",
     "No effort responses recorded for this window yet.":
         "Aún no hay respuestas de esfuerzo registradas para este período.",
