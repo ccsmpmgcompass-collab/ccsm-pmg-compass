@@ -144,9 +144,22 @@ _STAGE_COLS = [REFERRED_STAGE] + [
 def compute_funnel_stage_counts(det_df: pd.DataFrame) -> dict:
     """
     Ordered {stage_label: count} for an already date-filtered Detail export
-    (e.g. via filter_by_range). Each stage counts rows (people) that reached
-    that milestone -- "Found" is every row; every later stage counts rows
-    whose milestone date column is non-blank.
+    (e.g. via filter_by_range). Each stage counts people who reached AT LEAST
+    that far -- that milestone date, or any milestone below it.
+
+    "At least that far" rather than a bare per-column count, because the real
+    export is not strictly nested: milestones get skipped. Over the last 30
+    days of the live data, 2,515 people carry a being-taught date while only
+    1,842 carry a successful-contact date -- referrals taught without the
+    contact step ever being logged. Counting each column on its own made the
+    funnel bulge outward at "Being Taught", which reads as a broken chart. A
+    person taught without a logged contact plainly did get contacted, so the
+    reverse-cumulative reading is both the truer one and monotonic by
+    construction.
+
+    The per-milestone counts are still available raw on the per-area table
+    (build_area_rankings), where a column is a fact about the area rather than
+    a stage in a pipeline and the nesting does not apply.
 
     Keys are the ENGLISH labels from FUNNEL_STAGES. Callers translate for
     display only: the page used to key its own copy of this dict by t(label)
@@ -155,9 +168,19 @@ def compute_funnel_stage_counts(det_df: pd.DataFrame) -> dict:
     """
     if det_df is None or det_df.empty:
         return {}
+    # Walk the stages bottom-up, OR-ing each milestone into the running mask,
+    # so a stage inherits everyone who made it past that stage.
+    reached, acc = {}, None
+    for label, col in reversed(FUNNEL_STAGES):
+        if col is None:
+            continue
+        present = parse_dates(det_df, col).notna()
+        acc = present if acc is None else (present | acc)
+        reached[label] = acc
+
     counts = {}
     for label, col in FUNNEL_STAGES:
-        counts[label] = len(det_df) if col is None else int(parse_dates(det_df, col).notna().sum())
+        counts[label] = len(det_df) if col is None else int(reached[label].sum())
     return counts
 
 

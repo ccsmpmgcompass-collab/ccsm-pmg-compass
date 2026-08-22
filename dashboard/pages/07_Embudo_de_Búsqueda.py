@@ -290,8 +290,9 @@ with fcol:
                           xaxis=dict(visible=False, range=[-_fmax * 0.05, _fmax * 1.35]))
         st.plotly_chart(fig, use_container_width=True, theme=None,
                         config={"displayModeBar": False})
-        st.caption(t("Each stage = people found in range who reached that milestone "
-                     "(from Tableau finding-event dates)."))
+        st.caption(t("Each stage = people found in range who reached at least that "
+                     "far. A milestone that was never logged is inherited from a "
+                     "later one, so the funnel never widens."))
     else:
         st.caption(t("Detail records needed to build the pipeline funnel."))
 

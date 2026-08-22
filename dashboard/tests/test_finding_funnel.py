@@ -139,6 +139,36 @@ def test_table_stages_are_derived_from_the_funnel_so_they_cannot_drift():
     assert funnel_cols == table_cols
 
 
+def test_a_skipped_milestone_still_counts_toward_the_stages_below_it():
+    """The real export is not strictly nested. Over the live last-30-days,
+    2,515 people carry a being-taught date and only 1,842 a successful-contact
+    date, so per-column counts made the funnel bulge outward. A person taught
+    without a logged contact did get contacted."""
+    df = _detail([
+        # taught, but the contact attempt was never logged
+        {"event_date_selected": "2026-08-01",
+         "first_new_person_being_taught_date": "2026-08-04"},
+        # the ordinary path
+        {"event_date_selected": "2026-08-01",
+         "first_contact_attempt_event_date": "2026-08-02",
+         "first_successful_contact_attempt_event_date": "2026-08-03",
+         "first_new_person_being_taught_date": "2026-08-04"},
+    ])
+    counts = compute_funnel_stage_counts(df)
+    assert counts["Being Taught"] == 2
+    assert counts["Successfully Contacted"] == 2, "inherits the skipped step"
+    assert counts["Contact Attempted"] == 2
+    values = list(counts.values())
+    assert values == sorted(values, reverse=True)
+
+
+def test_a_baptism_pulls_the_person_through_every_stage_above_it():
+    df = _detail([{"event_date_selected": "2026-08-01",
+                   "confirmation_date": "2026-08-30"}])
+    counts = compute_funnel_stage_counts(df)
+    assert all(counts[l] == 1 for l, _ in FUNNEL_STAGES)
+
+
 def test_stage_counts_are_keyed_in_english_and_narrow_monotonically():
     """Keys must be English: the page reads them back with English literals,
     and keying by the translated label made every Spanish lookup return 0."""

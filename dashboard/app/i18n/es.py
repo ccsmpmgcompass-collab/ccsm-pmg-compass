@@ -420,10 +420,12 @@ ES: dict[str, str] = {
     "Being Taught": "Recibiendo Lecciones",
     "Attended Church": "Asistió a la Iglesia",
     "Baptism Date Set": "Fecha de Bautismo Fijada",
-    "Each stage = people found in range who reached that milestone "
-    "(from Tableau finding-event dates).":
-        "Cada etapa = personas encontradas en el rango que alcanzaron ese hito "
-        "(según las fechas de los eventos de búsqueda de Tableau).",
+    "Each stage = people found in range who reached at least that "
+    "far. A milestone that was never logged is inherited from a "
+    "later one, so the funnel never widens.":
+        "Cada etapa = personas encontradas en el rango que llegaron al menos "
+        "hasta ahí. Un hito que nunca se registró se hereda de uno posterior, "
+        "así que el embudo nunca se ensancha.",
     "Detail records needed to build the pipeline funnel.":
         "Se requieren registros de detalle para construir el embudo del proceso.",
     "Finding Mix": "Composición de Hallazgos",
