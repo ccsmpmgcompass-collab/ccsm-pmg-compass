@@ -3116,12 +3116,40 @@ def get_blitz_dates(area: str = None):
 # TABLEAU PERSISTENCE
 # ══════════════════════════════════════════════════════════════════════════════
 
+#: AGENT_CONFIG key holding the Drive file id of the gzipped Detail export.
+#: In AGENT_CONFIG rather than st.secrets deliberately: it is editable from the
+#: spreadsheet without a redeploy, and it is visible to whoever inherits this
+#: system. A Streamlit Cloud secret has been forgotten during a migration here
+#: before (see the 2026-08-19 outage).
+TABLEAU_DETAIL_FILE_ID_KEY = "TABLEAU_DETAIL_FILE_ID"
+
+
+def get_tableau_detail_file_id() -> str:
+    """The Drive file id for the Detail blob, or '' when not configured."""
+    return str(get_config_value(TABLEAU_DETAIL_FILE_ID_KEY, "") or "").strip()
+
+
 def get_tableau_detail() -> tuple:
     """
-    Load persisted Finding Detail CSV from COMPASS_CCSM.
+    Load the persisted Finding Detail export.
     Returns (df, uploaded_by, uploaded_at) or (empty_df, '', '').
-    Row 1 is metadata, row 2 is the real header.
+
+    Prefers the **Drive blob** when TABLEAU_DETAIL_FILE_ID is configured in
+    AGENT_CONFIG. As a Sheets tab this export is 17.35 MB of JSON and 1.26M of
+    the spreadsheet's 10M cells — about 12.6s per uncached page load, nearly
+    all of it transfer. Gzipped in Drive it is 1.16 MB and about a second.
+
+    Falls back to the TABLEAU_DETAIL tab when no file id is set, or when the
+    blob is unreadable, so a half-finished migration (or a deleted Drive file)
+    degrades to the old path instead of an empty funnel.
     """
+    file_id = get_tableau_detail_file_id()
+    if file_id:
+        from app.db.drive_blob import read_dataframe_blob
+        blob_df, by, at = read_dataframe_blob(file_id)
+        if not blob_df.empty:
+            return blob_df, by, at
+
     df = read_tab("TABLEAU_DETAIL")
     if df.empty or len(df) < 2:
         return pd.DataFrame(), "", ""

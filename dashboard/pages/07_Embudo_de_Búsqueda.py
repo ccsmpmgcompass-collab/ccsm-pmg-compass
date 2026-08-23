@@ -10,7 +10,10 @@ from app.components.design_system import (
     inject_global_css, render_page_header, render_sidebar, render_section_label,
     render_table, render_kpi_row, PALETTE,
 )
-from app.db.queries import get_tableau_detail, get_tableau_ranking
+from app.db.drive_blob import save_dataframe_blob
+from app.db.queries import (
+    get_tableau_detail, get_tableau_detail_file_id, get_tableau_ranking,
+)
 from app.db.sheets_client import read_tab, save_dataframe
 from app.ingestion.tableau_detail_transform import clean_detail
 from app.ingestion.tableau_summary_parser import baptisms_rows, parse_summary_pdf
@@ -112,6 +115,52 @@ def _already_handled(slot: str, uploaded) -> bool:
     return False
 
 
+def _save_detail(df: pd.DataFrame) -> None:
+    """Persist the cleaned Detail export.
+
+    Drive blob when TABLEAU_DETAIL_FILE_ID is configured in AGENT_CONFIG,
+    otherwise the sheet tab. Same choice get_tableau_detail() makes on the way
+    back in, so the two can never disagree about where the data lives.
+    """
+    who = user.get("email", "")
+    file_id = get_tableau_detail_file_id()
+    if file_id:
+        out = save_dataframe_blob(file_id, df, uploaded_by=who)
+        if out["ok"]:
+            st.caption(t("Saved to Drive · {mb:.2f} MB gzipped",
+                         mb=out["bytes"] / 1e6))
+        return
+    save_dataframe("TABLEAU_DETAIL", df, uploaded_by=who)
+
+
+def _render_uploaders(expanded: bool = False) -> None:
+    """The manual upload controls.
+
+    A function, and not inline at the foot of the page, because the no-data
+    branch `st.stop()`s — so the page told you to upload the export "in Manual
+    upload below" and then rendered nothing below. The funnel could not be
+    bootstrapped through the UI at all: no data meant no uploader, and no
+    uploader meant no data. It is rendered in that branch too, opened.
+    """
+    with st.expander(t("Manual upload / re-sync"), expanded=expanded):
+        st.caption(t("Export the Mission Finding Summary view from Tableau and drop the "
+                     "files here. The Detail export REPLACES the stored data, so export "
+                     "the full view, not a recent slice. Summary PDFs merge by month — "
+                     "upload as many as you like at once."))
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            # .xlsx first: that is what the real export is. This uploader was
+            # pd.read_csv only, so the actual file could never be loaded.
+            st.file_uploader(t("Detail export (.xlsx or .csv)"),
+                             type=["xlsx", "xlsm", "xls", "csv"], key="detail")
+        with c2:
+            st.file_uploader(t("Ranking export (.xlsx or .csv)"),
+                             type=["xlsx", "xlsm", "xls", "csv"], key="ranking")
+        with c3:
+            st.file_uploader(t("Summary PDFs (one per month)"), type=["pdf"],
+                             key="summary", accept_multiple_files=True)
+
+
 def _source_caption(by: str, at: str) -> str:
     if by.startswith("auto:"):
         return t("Auto-synced · {source} · {at}",
@@ -179,7 +228,7 @@ if detail_file is not None:
             # confirmation instead of writing it.
             st.session_state["_detail_saved"] = not plan["narrower"]
             if not plan["narrower"]:
-                save_dataframe("TABLEAU_DETAIL", clean, uploaded_by=user.get("email", ""))
+                _save_detail(clean)
         except Exception as e:
             st.error(t("Could not read the Detail export: {err}", err=e))
             st.session_state["_df_detail"] = pd.DataFrame()
@@ -203,7 +252,7 @@ if detail_file is not None:
             new_from=_n1, new_to=_n2, new_rows=fmt_int(_plan["incoming_rows"]),
             old_from=_o1, old_to=_o2, old_rows=fmt_int(_plan["existing_rows"])))
         if st.button(t("Replace anyway"), key="ff_force_detail"):
-            save_dataframe("TABLEAU_DETAIL", det_df, uploaded_by=user.get("email", ""))
+            _save_detail(det_df)
             st.session_state["_detail_saved"] = True
             st.rerun()
     elif st.session_state.get("_detail_stats"):
@@ -254,6 +303,9 @@ if summary_file:
 if rank_df.empty and det_df.empty:
     st.info(t("No finding data yet. Export the Mission Finding Summary view from "
               "Tableau and upload it in **Manual upload** below."))
+    # Render the uploaders BEFORE stopping, or "below" is a lie and the page
+    # can never be bootstrapped from empty.
+    _render_uploaders(expanded=True)
     st.stop()
 
 sync_note = _source_caption(rank_by, rank_at) or _source_caption(det_by, det_at)
@@ -647,20 +699,4 @@ with st.expander(t("Finding Summary PDF"), expanded=False):
             f'type="application/pdf" sandbox="allow-same-origin"></iframe>', height=820)
 
 # ── Manual upload / re-sync ───────────────────────────────────────────────────
-with st.expander(t("Manual upload / re-sync"), expanded=False):
-    st.caption(t("Export the Mission Finding Summary view from Tableau and drop the "
-                 "files here. The Detail export REPLACES the stored data, so export "
-                 "the full view, not a recent slice. Summary PDFs merge by month — "
-                 "upload as many as you like at once."))
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        # .xlsx first: that is what the real export is. This uploader was
-        # pd.read_csv only, so the actual file could never be loaded.
-        st.file_uploader(t("Detail export (.xlsx or .csv)"),
-                         type=["xlsx", "xlsm", "xls", "csv"], key="detail")
-    with c2:
-        st.file_uploader(t("Ranking export (.xlsx or .csv)"),
-                         type=["xlsx", "xlsm", "xls", "csv"], key="ranking")
-    with c3:
-        st.file_uploader(t("Summary PDFs (one per month)"), type=["pdf"],
-                         key="summary", accept_multiple_files=True)
+_render_uploaders()

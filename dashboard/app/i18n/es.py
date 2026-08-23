@@ -487,6 +487,10 @@ ES: dict[str, str] = {
     "Could not save baptism counts: {err}":
         "No se pudieron guardar los bautismos: {err}",
     "Could not parse {msg}": "No se pudo procesar {msg}",
+    "Saved to Drive · {mb:.2f} MB gzipped":
+        "Guardado en Drive · {mb:.2f} MB comprimido",
+    "Could not save to Drive: {e}": "No se pudo guardar en Drive: {e}",
+    "Could not read from Drive: {e}": "No se pudo leer desde Drive: {e}",
     "Detailed Data": "Datos Detallados",
     "Area Rankings (per-area table)":
         "Clasificación de Áreas (tabla por área)",
