@@ -153,25 +153,26 @@ function runChain(kiRows) {
 
 // ===========================================================================
 // 1b. Goal-progress colour bands (a1c_goalBandColor_): green >=90,
-//     amber 25-89, red <25. Exercised at the exact boundaries, because an
-//     off-by-one here silently repaints a third of every letter.
+//     blue 50-89, yellow 1-49, red only at a genuine zero. Exercised at every
+//     boundary, because an off-by-one here silently repaints a quarter of
+//     every letter and nothing else would catch it.
 // ===========================================================================
 {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const thisSunday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay());
 
-  const GREEN = '#16a34a', AMBER = '#b45309', RED = '#dc2626';
+  const GREEN = '#16a34a', BLUE = '#2563eb', YELLOW = '#a16207', RED = '#dc2626';
 
   // meta 100 keeps real == pct, so each KI lands on a chosen percentage.
   const { body } = runChain([{
     Week_End_Date: toDateStr(thisSunday), Area: 'Arauco 1', Zone: 'Arauco', District: 'Arauco',
     ki_new_people_real: 90, ki_new_people_meta: 100,          // 90% -> green (lower edge)
-    ki_member_lessons_real: 89, ki_member_lessons_meta: 100,  // 89% -> amber (upper edge)
-    ki_friends_sacrament_real: 25, ki_friends_sacrament_meta: 100,   // 25% -> amber (lower edge)
-    ki_friends_first_week_real: 24, ki_friends_first_week_meta: 100, // 24% -> red (upper edge)
-    ki_baptismal_date_real: 0, ki_baptismal_date_meta: 100,   // 0%  -> red
-    ki_baptized_confirmed_real: 0, ki_baptized_confirmed_meta: 0,
+    ki_member_lessons_real: 89, ki_member_lessons_meta: 100,  // 89% -> blue (upper edge)
+    ki_friends_sacrament_real: 50, ki_friends_sacrament_meta: 100,   // 50% -> blue (lower edge)
+    ki_friends_first_week_real: 49, ki_friends_first_week_meta: 100, // 49% -> yellow (upper edge)
+    ki_baptismal_date_real: 1, ki_baptismal_date_meta: 100,   // 1%  -> yellow (lower edge)
+    ki_baptized_confirmed_real: 0, ki_baptized_confirmed_meta: 100,  // 0%  -> red
     ki_rc_at_church_real: 150, ki_rc_at_church_meta: 100,     // 150% -> green
     leader_call: 'TRUE', correlation_meeting: 'TRUE',
   }]);
@@ -181,24 +182,57 @@ function runChain(kiRows) {
     return m ? m[1].toLowerCase() : null;
   }
 
-  assert.strictEqual(colorOf('90% de la meta'), GREEN, '90% must be the lower edge of green');
-  assert.strictEqual(colorOf('89% de la meta'), AMBER, '89% must fall to amber');
-  assert.strictEqual(colorOf('25% de la meta'), AMBER, '25% must be the lower edge of amber');
-  assert.strictEqual(colorOf('24% de la meta'), RED,   '24% must fall to red');
-  assert.strictEqual(colorOf('0% de la meta'),  RED,   '0% must be red');
+  assert.strictEqual(colorOf('90% de la meta'), GREEN,  '90% must be the lower edge of green');
+  assert.strictEqual(colorOf('89% de la meta'), BLUE,   '89% must be the upper edge of blue');
+  assert.strictEqual(colorOf('50% de la meta'), BLUE,   '50% must be the lower edge of blue');
+  assert.strictEqual(colorOf('49% de la meta'), YELLOW, '49% must be the upper edge of yellow');
+  assert.strictEqual(colorOf('1% de la meta'),  YELLOW, '1% must still be yellow, not red');
+  assert.strictEqual(colorOf('0% de la meta'),  RED,    'a genuine zero must be red');
 
   // A met goal keeps its own caption, and stays green.
   assert.ok(/color:#16a34a;">Meta alcanzada/.test(body), 'a reached goal stays green');
 
-  // An unset meta must take no band colour at all -- it is not a red miss.
+  console.log('goal colour bands OK');
+}
+
+// ===========================================================================
+// 1c. Red is reserved for a REAL zero, not merely a percentage that rounds to
+//     one. 1 against a goal of 500 is 0.2% -> displays "0%" -> must still be
+//     yellow: the companionship did something, and red would say they did not.
+// ===========================================================================
+{
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const thisSunday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay());
+
+  const { body } = runChain([{
+    Week_End_Date: toDateStr(thisSunday), Area: 'Arauco 1', Zone: 'Arauco', District: 'Arauco',
+    ki_new_people_real: 1, ki_new_people_meta: 500,           // 0.2% -> shows 0%, but is not nothing
+    ki_member_lessons_real: 0, ki_member_lessons_meta: 500,   // a true zero
+    ki_friends_sacrament_real: 0, ki_friends_sacrament_meta: 0,
+    ki_friends_first_week_real: 0, ki_friends_first_week_meta: 0,
+    ki_baptismal_date_real: 0, ki_baptismal_date_meta: 0,
+    ki_baptized_confirmed_real: 0, ki_baptized_confirmed_meta: 0,
+    ki_rc_at_church_real: 0, ki_rc_at_church_meta: 0,
+    leader_call: 'TRUE', correlation_meeting: 'TRUE',
+  }]);
+
+  const zeroLabels = body.match(/color:(#[0-9a-fA-F]{6});">0% de la meta<\/strong>/g) || [];
+  const colors = zeroLabels.map((s) => s.match(/#[0-9a-fA-F]{6}/)[0].toLowerCase());
+  assert.ok(colors.includes('#a16207'),
+    'a rounded-down 0% with a nonzero actual must stay yellow, never red');
+  assert.ok(colors.includes('#dc2626'),
+    'a genuine zero must still be red');
+
+  // Unset metas must take no band colour at all -- nothing was expected.
   assert.ok(body.includes('sin meta esta semana'), 'unset meta still reads as "sin meta"');
-  assert.ok(!new RegExp('color:' + RED + ';">sin meta').test(body), 'an unset meta must never be red');
+  assert.ok(!/color:#dc2626;">sin meta/.test(body), 'an unset meta must never be red');
 
   // The band legend must be present so the colours are self-explaining.
-  assert.ok(/verde 90% o más, ámbar 25–89%, rojo bajo 25%/.test(body),
-    'the glossary must explain the colour bands');
+  assert.ok(/verde 90% o más, azul 50–89%, amarillo 1–49%, rojo cuando aún no se registra nada/.test(body),
+    'the glossary must explain all four colour bands');
 
-  console.log('goal colour bands OK');
+  console.log('red reserved for genuine zero OK');
 }
 
 // ===========================================================================

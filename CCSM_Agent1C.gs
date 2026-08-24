@@ -194,7 +194,7 @@ function a1c_glossedDisplay_(key, display) {
 var A1C_GLOSSARY = [
   ['Indicadores Clave', 'los 7 del informe semanal — la meta es la que ustedes mismos fijaron'],
   ['Δ',              'cambio contra la semana pasada'],
-  ['% Meta',         'lo logrado esta semana dividido por la meta — verde 90% o más, ámbar 25–89%, rojo bajo 25%'],
+  ['% Meta',         'lo logrado esta semana dividido por la meta — verde 90% o más, azul 50–89%, amarillo 1–49%, rojo cuando aún no se registra nada'],
   ['Prom. Transfer', 'promedio durante este transfer'],
   ['Tasa de Contacto',                'Contactos Logrados ÷ Contactos Intentados'],
   ['Tasa de Conversaciones Significativas', 'Conversaciones Significativas ÷ Contactos Logrados'],
@@ -578,11 +578,12 @@ function a1c_buildEmail(person, areas, summaries, weekEnd) {
     header:  '#1e3a5f',
     green:   '#16a34a',
     blue:    '#2563eb',
-    // Goal-progress bands (see a1c_goalBandColor_). amber is the same tone
-    // the ▼ arrows already use, so "needs attention" reads the same way
-    // everywhere; red is new to this letter and is deliberately reserved for
-    // the bottom band only.
-    amber:   '#b45309',
+    // Goal-progress bands (see a1c_goalBandColor_). yellow is yellow-700
+    // rather than a true yellow on purpose: #eab308 scores 1.9:1 against
+    // white and #ca8a04 2.9:1, both unreadable, while #a16207 reaches 4.92:1
+    // and clears AA. This text renders around 6px once a phone scales the
+    // 680px letter to fit, so contrast is not a nicety here.
+    yellow:  '#a16207',
     red:     '#dc2626',
     muted:   '#6b7280',
     border:  '#e5e7eb',
@@ -649,24 +650,36 @@ function a1c_buildEmail(person, areas, summaries, weekEnd) {
 // scoreboard's "% Meta" column so the two can never drift apart -- one colour
 // language for every percent-of-goal in the letter.
 //
-// Thresholds were chosen against the real spread of all 1,250 goal
-// percentages the 42 letters actually showed for the week ending 2026-08-23:
+// Four bands, each saying something a missionary can act on, measured against
+// the real spread of all 1,250 goal percentages the 42 letters actually showed
+// for the week ending 2026-08-23:
 //
-//   >= 90   green   28% of numbers   at or essentially at goal
-//   25-89   amber   42% of numbers   under way, short of goal
-//   <  25   red     30% of numbers   barely started
+//   >= 90    green    28%   at goal
+//   50-89    blue     27%   past halfway
+//   1-49     yellow   24%   started, under halfway
+//   0        red      21%   nothing at all this week
 //
-// Red is deliberately the bottom band only. Cutting it at 50 instead would
-// paint 45% of every letter red -- mostly metrics that sit at 0 in a normal
-// week (pmf_lessons, rc_lessons, referrals) -- which reads as a wall of
-// failure rather than a signal worth acting on.
+// Red means zero and only zero. That is a fact about the week rather than a
+// judgement of it, and it keeps red rare enough to be worth noticing -- a
+// threshold at 50 instead would paint 45% of every letter red, mostly metrics
+// that sit at 0 in a normal week (pmf_lessons, rc_lessons, member referrals).
+//
+// Blue carries its established meaning from the rest of the letter: in
+// progress, not a failure.
 var A1C_GOAL_BAND_GREEN = 90;
-var A1C_GOAL_BAND_AMBER = 25;
+var A1C_GOAL_BAND_BLUE  = 50;
 
-function a1c_goalBandColor_(pct, C) {
+/**
+ * `actual` decides the red band, NOT the rounded percentage: a real value of
+ * 0.4 against a goal of 100 rounds to 0% but is not "nothing this week", and
+ * colouring it red would tell the companionship they did nothing when they
+ * did. Only a genuine zero earns red.
+ */
+function a1c_goalBandColor_(pct, actual, C) {
   if (pct === null || pct === undefined || isNaN(pct)) return C.muted;
   if (pct >= A1C_GOAL_BAND_GREEN) return C.green;
-  if (pct >= A1C_GOAL_BAND_AMBER) return C.amber;
+  if (pct >= A1C_GOAL_BAND_BLUE)  return C.blue;
+  if (typeof actual === 'number' && actual > 0) return C.yellow;
   return C.red;
 }
 
@@ -769,7 +782,7 @@ function a1c_buildKiBlock_(ki, C, weekEnd) {
     var pct     = hasGoal ? Math.round(real / meta * 100) : null;
     if (pct !== null && pct < 0) pct = 0;
     var reached = hasGoal && real >= meta;
-    var fill    = hasGoal ? a1c_goalBandColor_(pct, C) : C.muted;
+    var fill    = hasGoal ? a1c_goalBandColor_(pct, real, C) : C.muted;
 
     html += '<div style="margin:0 0 9px;">';
     html += '<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:3px;">' +
@@ -1116,7 +1129,7 @@ function a1c_buildScoreboard_(stats, ranked, der, C, weekEnd) {
     if (pct < 0) pct = 0;
     var reached = actual >= goal;
     return cell(metaTxt) +
-           cell('<strong style="color:' + a1c_goalBandColor_(pct, C) + ';">' +
+           cell('<strong style="color:' + a1c_goalBandColor_(pct, actual, C) + ';">' +
                 (reached ? '✓ 100%' : pct + '%') + '</strong>');
   }
 
