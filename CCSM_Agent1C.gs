@@ -1441,6 +1441,80 @@ function a1c_buildKpiTiles_(totals, C) {
   return html;
 }
 
+// ─── SOFT HYPHENATION ─────────────────────────────────────────────────────────
+// The area table's min-content width is set by the LONGEST WORD in each header,
+// not by the data underneath -- measured on the live mission letter, dropping
+// "Conversaciones Significativas" saved exactly the width of "Significativas"
+// (73px), "Nuevas Personas Encontradas" the width of "Encontradas" (60px), and
+// so on. That put the 9-column mission table at 436px against a 327px budget
+// (a 375px phone less 48px of container padding) -- the single cause of all
+// 109px of horizontal overflow in a leadership letter.
+//
+// Rather than drop two metric columns or re-abbreviate the headers that
+// 75a3884 deliberately restored to the nightly form's own wording, we insert
+// U+00AD SOFT HYPHEN at Spanish syllable boundaries. A soft hyphen is invisible
+// until the browser actually needs to break the word, so the header still reads
+// "Conversaciones Significativas" -- it just gains permission to wrap mid-word
+// on a narrow screen. Measured: 436px -> 305px, no column dropped, no wording
+// changed, no cell padding reduced.
+//
+// Escaping note: this returns literal U+00AD characters, not "&shy;", because
+// the result is passed through a1c_esc() -- an entity would have its ampersand
+// escaped and render as visible text.
+function a1c_softHyphenate_(text) {
+  var VOWELS = 'aeiouáéíóúüAEIOUÁÉÍÓÚÜ';
+  // Digraphs and consonant+liquid clusters that Spanish never splits.
+  var INSEPARABLE = ['ch','ll','rr','pr','br','tr','dr','cr','gr','fr',
+                     'pl','bl','cl','gl','fl'];
+  var SHY = '­';
+  var MIN_WORD = 8;   // shorter words never need to break
+  var MIN_EDGE = 2;   // never orphan a single letter at either end
+
+  function isVowel(c) { return VOWELS.indexOf(c) >= 0; }
+
+  // Returns the indices at which `word` may be broken.
+  function breakPoints(word) {
+    var points = [];
+    var i = 0;
+    while (i < word.length) {
+      if (!isVowel(word[i])) { i++; continue; }
+      // Consume the whole vowel group -- diphthongs (cio, au, ue) stay intact.
+      var v = i + 1;
+      while (v < word.length && isVowel(word[v])) v++;
+      // Consume the consonants up to the next vowel.
+      var c = v;
+      while (c < word.length && !isVowel(word[c])) c++;
+      if (c >= word.length) break;      // trailing consonants -- no break after
+      var run = c - v;
+      var at;
+      if (run === 0)      at = -1;      // vowel follows directly: no break
+      else if (run === 1) at = v;       // V-CV: the consonant joins the next vowel
+      else {
+        // 2+ consonants: the last two join the following vowel only when they
+        // form an inseparable cluster (en-con-TRA-das), otherwise they split
+        // (con-TAC-tos).
+        var pair = word.substr(c - 2, 2).toLowerCase();
+        at = (INSEPARABLE.indexOf(pair) >= 0) ? c - 2 : c - 1;
+      }
+      if (at > 0) points.push(at);
+      i = c;
+    }
+    return points;
+  }
+
+  return String(text).split(' ').map(function(word) {
+    if (word.length < MIN_WORD) return word;
+    var out = '', prev = 0;
+    breakPoints(word).forEach(function(p) {
+      if (p >= MIN_EDGE && word.length - p >= MIN_EDGE) {
+        out += word.slice(prev, p) + SHY;
+        prev = p;
+      }
+    });
+    return out + word.slice(prev);
+  }).join(' ');
+}
+
 /**
  * Area data table for leadership emails.
  * zone scope     — areas grouped by district with district subtotals + zone total row.
@@ -1478,11 +1552,16 @@ function a1c_buildAreaDataTable_(areaDetails, scope, C) {
   // a 716px min-content width -- wider than the 680px letter itself. Letting
   // just the header row wrap brings it back to 477px, inside the letter,
   // while keeping the labels the missionaries actually recognise.
+  //
+  // Wrapping between words was not enough on a phone: the widest single WORD
+  // then sets the floor, leaving the mission table at 436px against a 327px
+  // budget. a1c_softHyphenate_ lets those words break mid-syllable too --
+  // invisibly, until the screen is actually too narrow. See its comment above.
   function makeHeaderRow() {
     var row = '<tr style="background:' + C.header + ';color:white;">';
     cols.forEach(function(c) {
       row += '<th style="padding:5px 3px;text-align:' + c.al + ';font-size:10px;">' +
-             a1c_esc(c.h) + '</th>';
+             a1c_esc(a1c_softHyphenate_(c.h)) + '</th>';
     });
     return row + '</tr>';
   }
