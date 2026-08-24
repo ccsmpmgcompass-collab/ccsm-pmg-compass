@@ -1015,7 +1015,7 @@ function a1c_buildYouVsYou_(pick, derived, C) {
           a1c_glossedDisplay_(key, pick.display) + '</div>';
   html += '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:11px;">';
   rows.forEach(function(r) {
-    html += '<tr><td style="padding:3px 8px 3px 0;color:#374151;white-space:nowrap;width:90px;">' +
+    html += '<tr><td style="padding:3px 8px 3px 0;color:#374151;width:90px;">' +
             a1c_esc(r.label) + '</td>';
     if (r.value === null) {
       html += '<td style="padding:3px 0;color:' + C.muted + ';">—</td>';
@@ -1481,7 +1481,7 @@ function a1c_buildAreaDataTable_(areaDetails, scope, C) {
   function makeHeaderRow() {
     var row = '<tr style="background:' + C.header + ';color:white;">';
     cols.forEach(function(c) {
-      row += '<th style="padding:5px 6px;text-align:' + c.al + ';font-size:10px;">' +
+      row += '<th style="padding:5px 3px;text-align:' + c.al + ';font-size:10px;">' +
              a1c_esc(c.h) + '</th>';
     });
     return row + '</tr>';
@@ -1496,7 +1496,7 @@ function a1c_buildAreaDataTable_(areaDetails, scope, C) {
       else if (c.key === 'submitted')    v = submCount + '/' + totalCount;
       else if (c.key === 'effort_score') v = '—';
       else                                v = totMap[c.key] || 0;
-      row += '<td style="padding:4px 6px;text-align:' + c.al + ';white-space:nowrap;">' +
+      row += '<td style="padding:4px 3px;text-align:' + c.al + ';">' +
              a1c_esc(String(v)) + '</td>';
     });
     return row + '</tr>';
@@ -1537,7 +1537,7 @@ function a1c_buildAreaDataTable_(areaDetails, scope, C) {
           var v = c.key === 'name' ? aObj.name
                 : c.key === 'zone' ? aObj.zone
                 : statVal(s, c.key);
-          html += '<td style="padding:3px 6px;text-align:' + c.al + ';border-bottom:1px solid ' + C.border + ';white-space:nowrap;">' +
+          html += '<td style="padding:3px 3px;text-align:' + c.al + ';border-bottom:1px solid ' + C.border + ';">' +
                   a1c_esc(String(v !== undefined && v !== null ? v : '—')) + '</td>';
         });
         html += '</tr>';
@@ -1571,7 +1571,7 @@ function a1c_buildAreaDataTable_(areaDetails, scope, C) {
         var v = c.key === 'name' ? aObj.name
               : c.key === 'zone' ? aObj.zone
               : statVal(s, c.key);
-        html += '<td style="padding:3px 6px;text-align:' + c.al + ';border-bottom:1px solid ' + C.border + ';white-space:nowrap;">' +
+        html += '<td style="padding:3px 3px;text-align:' + c.al + ';border-bottom:1px solid ' + C.border + ';">' +
                 a1c_esc(String(v !== undefined && v !== null ? v : '—')) + '</td>';
       });
       html += '</tr>';
@@ -1657,7 +1657,7 @@ function a1c_buildAreaDetailPanel_(areaDetails, scope, C) {
              'color:#9ca3af;font-weight:700;margin-bottom:2px;">' + emoji + ' ' + a1c_esc(label) + '</div>' +
              '<div style="font-size:10px;color:#374151;line-height:2.0;">' +
              pairs.map(function(p) {
-               return '<span style="margin-right:14px;white-space:nowrap;">' +
+               return '<span style="margin-right:14px;">' +
                       '<span style="color:#6b7280;">' + a1c_esc(p[0]) + ':&nbsp;</span>' +
                       '<strong>' + a1c_esc(String(p[1])) + '</strong></span>';
              }).join('') + '</div></div>';
