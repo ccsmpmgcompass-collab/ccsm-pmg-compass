@@ -113,7 +113,10 @@ console.log('compliance OK');
 // ===========================================================================
 assert.ok(body.includes('Totales de la Misión'), 'expected the mission totals section');
 assert.ok(body.includes('>16<'), 'expected the summed contacts_made (10+6) tile value');
-assert.ok(body.includes('Contactos Logrados'), 'expected a real CCSM metric label, not a raw key');
+assert.ok(body.includes('Nuevas Personas Encontradas'),
+  'expected a real CCSM metric label resolved from CcsmData displayEs, not a raw key');
+assert.ok(!/Lecciones PMF|Lecciones CR con Miembro|Juegos de Rol/.test(body),
+  'the old hand-maintained labels that disagreed with the nightly form must be gone');
 
 console.log('KPI tiles OK');
 

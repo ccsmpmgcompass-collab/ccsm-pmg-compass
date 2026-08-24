@@ -104,12 +104,17 @@ var A1C_RATE_METRIC_KEYS = ['contact_rate', 'mc_rate', 'lesson_rate', 'close_rat
 // human-scannable — mirrors Provo's own curated-subset design; the FULL
 // metric set appears in the per-area detail panel, see
 // a1c_buildAreaDetailPanel_).
+// Labels are the nightly form's own wording (CcsmData.gs displayEs), not
+// period-clipped abbreviations -- 'Signif.', 'Nuevas' and 'Inv. Baut.' were
+// not words a missionary would recognise from the form they fill in. These
+// are table HEADERS, so they wrap to 2-3 lines once at the top of the table;
+// that costs a little header height and no column width.
 var A1C_TABLE_METRICS = [
   { key: 'contacts_made',            label: 'Contactos' },
-  { key: 'meaningful_conversations', label: 'Signif.' },
-  { key: 'new_people_found',         label: 'Nuevas' },
-  { key: 'friend_lessons',           label: 'Lecciones' },
-  { key: 'baptismal_invitations',    label: 'Inv. Baut.' }
+  { key: 'meaningful_conversations', label: 'Conversaciones Significativas' },
+  { key: 'new_people_found',         label: 'Nuevas Personas Encontradas' },
+  { key: 'friend_lessons',           label: 'Lecciones con Amigos' },
+  { key: 'baptismal_invitations',    label: 'Invitaciones al Bautismo' }
 ];
 
 // ─── PERSONAL-SECTION NUMBERS (Stage 2, 2026-08-01) ─────────────────────────
@@ -137,41 +142,95 @@ function a1c_fmtMetricVal_(key, val) {
   return String(Math.round(val));
 }
 
-// Spanish display labels for every CCSM metric the scoreboard/goal grid can
-// show — the 5 rate metrics plus every real QUESTIONS_CONFIG nightly metric
-// (see [[project-ccsm-readiness-aug7]]'s catalogue). Falls back to the raw
-// key if a future QUESTIONS_CONFIG addition isn't listed here yet (never a
-// blank label — see a1c_scoreboardLabel_).
-var A1C_METRIC_LABELS = {
-  contact_rate: 'Tasa de Contacto', mc_rate: 'Tasa de Significativas',
-  lesson_rate: 'Tasa de Lecciones', close_rate: 'Tasa de Compromiso',
-  effort_score: 'Esfuerzo',
-  contacts_attempted: 'Contactos Intentados', contacts_made: 'Contactos Logrados',
-  meaningful_conversations: 'Conversaciones Significativas', new_people_found: 'Nuevas Personas',
-  friend_texts: 'Mensajes de Texto', friend_calls: 'Llamadas',
-  friend_lessons: 'Lecciones a Amigos', pmf_lessons: 'Lecciones PMF',
-  rc_lessons: 'Lecciones a Conversos Recientes', rc_lessons_mcp: 'Lecciones CR con Miembro',
-  lessons_member_present: 'Lecciones con Miembro Presente', member_contacts: 'Contactos de Miembros',
-  references_asked: 'Referencias Pedidas', member_referrals_received: 'Referencias de Miembros',
-  bom_shared: 'Libros de Mormón Compartidos', roleplays: 'Juegos de Rol',
-  church_invites: 'Invitaciones a la Iglesia', baptism_doctrine_lessons: 'Lecciones de Doctrina Bautismal',
-  baptismal_invitations: 'Invitaciones al Bautismo', baptismal_calendars: 'Calendarios de Bautismo'
+// Spanish display labels for the 5 rate metrics. Every OTHER metric the
+// scoreboard can show is a real nightly form question, so its label is
+// resolved from CcsmData.gs instead of being copied here — see
+// a1c_scoreboardLabel_.
+//
+// These five match A1A_RATE_METRICS' own `display` values character for
+// character (CCSM_Agent1A.gs:52). They used to disagree, and both names
+// appeared in the SAME letter: the coaching card heading read 'Tasa de
+// Invitación Bautismal' (Agent1A) while the table row for that very metric
+// read 'Tasa de Compromiso' (here). Likewise 'Tasa de Conversaciones
+// Significativas' vs 'Tasa de Significativas', and 'Nivel de Esfuerzo' vs
+// 'Esfuerzo'. The glossary at the foot of the letter documented Agent1A's
+// names, so it defined two terms the table never used and left the table's
+// own two undefined.
+// Spanish nouns for the internal scope tokens. The Gemini prompts build
+// Spanish sentences around `scope` ('mission'/'zone'/'district') and used to
+// interpolate the raw English token: "Alcance: zone", "una narrativa para el
+// líder de zone", "el nombre exacto del district". Beyond reading wrong, it
+// invited Gemini to echo the English word back into a Spanish letter.
+var A1C_SCOPE_NOUNS = { mission: 'misión', zone: 'zona', district: 'distrito' };
+function a1c_scopeNoun_(scope) {
+  return A1C_SCOPE_NOUNS[scope] || scope;
+}
+
+var A1C_RATE_LABELS = {
+  contact_rate: 'Tasa de Contacto',
+  mc_rate:      'Tasa de Conversaciones Significativas',
+  lesson_rate:  'Tasa de Lecciones',
+  close_rate:   'Tasa de Invitación Bautismal',
+  effort_score: 'Nivel de Esfuerzo'
 };
 
+// Lazily-built key -> displayEs index over CcsmData.gs's nightly question
+// map. Built on FIRST CALL, not at load time: CcsmData.gs is a separate file
+// and a top-level cross-file read is load-order dependent — that exact
+// pattern has already caused one production crash in this project
+// (CCSM_AgentScores/CCSM_AgentValidation, 2026-08-20).
+var _a1cNightlyLabels = null;
+function a1c_nightlyLabels_() {
+  if (_a1cNightlyLabels) return _a1cNightlyLabels;
+  var map = {};
+  if (typeof CCSM_NIGHTLY_QUESTIONS !== 'undefined') {
+    CCSM_NIGHTLY_QUESTIONS.forEach(function(q) {
+      if (q.key && q.displayEs) map[q.key] = q.displayEs;
+    });
+  }
+  _a1cNightlyLabels = map;
+  return map;
+}
+
+/**
+ * Display label for any metric the scoreboard can show.
+ *
+ * Single source of truth: the nightly form itself, via CcsmData.gs's
+ * CCSM_NIGHTLY_QUESTIONS[].displayEs — the same strings that seed the
+ * QUESTIONS_CONFIG sheet that Agent1A reads for the coaching-card headings.
+ * So the table and the cards can no longer name the same metric differently.
+ *
+ * These labels used to be a hand-maintained copy and 19 of the 21 had drifted
+ * from the form the missionaries actually fill in. Two had drifted into a
+ * different meaning outright:
+ *   - rc_lessons_mcp read 'Lecciones CR con Miembro'. The metric is lessons
+ *     to recent converts taught USING MI SENDA DE LOS CONVENIOS, and the row
+ *     directly above it is the real 'Lecciones con Miembro Presente'.
+ *   - pmf_lessons read 'Lecciones PMF' — an untranslated English acronym
+ *     (Part-Member Families) shown to Spanish-speaking missionaries.
+ * Several others quietly reversed a preposition ('Contactos DE Miembros' for
+ * contacts made WITH ward members) or used a term the form never uses
+ * ('Juegos de Rol' for 'Prácticas de Enseñanza').
+ *
+ * Falls back to the raw key so a future QUESTIONS_CONFIG addition renders
+ * something rather than a blank label.
+ */
 function a1c_scoreboardLabel_(key) {
-  return A1C_METRIC_LABELS[key] || key;
+  return A1C_RATE_LABELS[key] || a1c_nightlyLabels_()[key] || key;
 }
 
 // Rate-metric formulas, code-grounded from A1A_RATE_METRICS' own num/den
 // keys (CCSM_Agent1A.gs) -- not translated from Provo's glossary, which
 // describes metrics CCSM doesn't collect. Count metrics get no gloss: their
-// A1C_METRIC_LABELS are already plain, unabbreviated Spanish, nothing to
-// decode.
+// form labels are already plain, unabbreviated Spanish, nothing to decode.
+//
+// The operand names here MUST stay identical to what a1c_scoreboardLabel_
+// renders, or the formula names a row the reader cannot find in the table.
 var A1C_GLOSS = {
-  contact_rate: 'Contactos Logrados ÷ Contactos Intentados',
-  mc_rate:      'Conversaciones Significativas ÷ Contactos Logrados',
-  lesson_rate:  'Lecciones a Amigos ÷ Contactos Intentados',
-  close_rate:   'Invitaciones al Bautismo ÷ Lecciones a Amigos',
+  contact_rate: 'Contactos ÷ Intentos de Contacto',
+  mc_rate:      'Conversaciones Significativas ÷ Contactos',
+  lesson_rate:  'Lecciones con Amigos ÷ Intentos de Contacto',
+  close_rate:   'Invitaciones al Bautismo ÷ Lecciones con Amigos',
   effort_score: 'Todo=3, La mayor parte=2, Algo=1 — promedio de la semana'
 };
 
@@ -188,19 +247,28 @@ function a1c_glossedDisplay_(key, display) {
 
 // Bottom-of-letter glossary: generic symbols/abbreviations used anywhere in
 // this email, so nothing needs a lookup outside the letter itself. Kept
-// short and code-grounded -- CCSM's metric labels (A1C_METRIC_LABELS) are
-// already unabbreviated Spanish, so only the rate-metric formulas and the
-// handful of generic symbols actually need decoding.
+// short and code-grounded -- the count-metric labels come straight from the
+// nightly form (a1c_scoreboardLabel_) and are already unabbreviated Spanish,
+// so only the rate-metric formulas and the handful of generic symbols
+// actually need decoding.
+//
+// Every term on the left MUST be a string that really appears in the letter,
+// and every formula on the right MUST use the labels a1c_scoreboardLabel_
+// renders -- otherwise the glossary defines words the reader never sees and
+// leaves the ones they do see undefined, which is exactly what happened
+// before the rate labels were reconciled with Agent1A.
 var A1C_GLOSSARY = [
   ['Indicadores Clave', 'los 7 del informe semanal — la meta es la que ustedes mismos fijaron'],
-  ['Δ',              'cambio contra la semana pasada'],
+  // 'diferencia', not 'cambio': 'cambio' is the word for a transfer, used two
+  // entries below, and overloading it here reads as "change vs last transfer".
+  ['Δ',              'diferencia con la semana pasada'],
   ['% Meta',         'lo logrado esta semana dividido por la meta — verde 90% o más, azul 50–89%, amarillo 1–49%, rojo cuando aún no se registra nada'],
-  ['Prom. Transfer', 'promedio durante este transfer'],
-  ['Tasa de Contacto',                'Contactos Logrados ÷ Contactos Intentados'],
-  ['Tasa de Conversaciones Significativas', 'Conversaciones Significativas ÷ Contactos Logrados'],
-  ['Tasa de Lecciones',               'Lecciones a Amigos ÷ Contactos Intentados'],
-  ['Tasa de Invitación Bautismal',    'Invitaciones al Bautismo ÷ Lecciones a Amigos'],
-  ['Esfuerzo',        "Promedio ponderado del reporte nocturno — Todo=3, La mayor parte=2, Algo=1"]
+  ['Prom. del Cambio', 'promedio durante este cambio'],
+  ['Tasa de Contacto',                'Contactos ÷ Intentos de Contacto'],
+  ['Tasa de Conversaciones Significativas', 'Conversaciones Significativas ÷ Contactos'],
+  ['Tasa de Lecciones',               'Lecciones con Amigos ÷ Intentos de Contacto'],
+  ['Tasa de Invitación Bautismal',    'Invitaciones al Bautismo ÷ Lecciones con Amigos'],
+  ['Nivel de Esfuerzo', 'Promedio ponderado del informe nocturno — Todo=3, La mayor parte=2, Algo=1']
 ];
 
 function a1c_buildGlossary_(C, weekEnd) {
@@ -910,14 +978,15 @@ function a1c_buildTrendChart_(trend, C) {
     html += '<td>' + a1c_esc(a1c_shortDate_(p.week)) + '</td>';
   });
   html += '</tr></table>';
-  html += '<div style="font-size:10px;color:' + C.muted + ';margin-top:5px;">★ = lo mejor de tu área · esta semana en azul marino · — = sin reporte</div>';
+  html += '<div style="font-size:10px;color:' + C.muted + ';margin-top:5px;">★ = lo mejor de su área · esta semana en azul marino · — = sin reporte</div>';
   html += '</div>';
   return html;
 }
 
 /**
- * "Tu contra Ti" — horizontal comparison bars for the growth metric: Esta
- * Semana / Semana Pasada / Prom. Transfer / Tu Mejor on a shared baseline.
+ * "Su Propio Progreso" — horizontal comparison bars for the growth metric:
+ * Esta Semana / Semana Pasada / Prom. del Cambio / Su Mejor Marca on a shared
+ * baseline.
  * Comparing a missionary against their OWN history is the motivator (never
  * area-vs-area). Null values render '—' with no bar; all-null/zero history
  * renders nothing.
@@ -933,8 +1002,8 @@ function a1c_buildYouVsYou_(pick, derived, C) {
   var rows = [
     { label: 'Esta Semana',    value: (pick.actual === null || pick.actual === undefined) ? null : pick.actual, color: C.header },
     { label: 'Semana Pasada',  value: pull(derived && derived.lastWeek), color: '#93b4d8' },
-    { label: 'Prom. Transfer', value: pull(derived && derived.xferAvg),  color: '#93b4d8' },
-    { label: 'Tu Mejor',       value: pull(derived && derived.best),     color: '#2563eb' }
+    { label: 'Prom. del Cambio', value: pull(derived && derived.xferAvg),  color: '#93b4d8' },
+    { label: 'Su Mejor Marca', value: pull(derived && derived.best),     color: '#2563eb' }
   ];
   var max = 0;
   rows.forEach(function(r) { if (r.value !== null && r.value > max) max = r.value; });
@@ -942,7 +1011,7 @@ function a1c_buildYouVsYou_(pick, derived, C) {
 
   var html = '<div style="margin:14px 0 6px;">';
   html += '<div style="font-size:12px;font-weight:700;color:' + C.header +
-          ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">🆚 Tú contra Ti — ' +
+          ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">🆚 Su Propio Progreso — ' +
           a1c_glossedDisplay_(key, pick.display) + '</div>';
   html += '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:11px;">';
   rows.forEach(function(r) {
@@ -1109,7 +1178,7 @@ function a1c_buildMessageBlock(label, msg, C, accentColor, numbersHtml) {
 }
 
 /**
- * "Tu Semana — Todos los Indicadores": full metrics table (this week / last
+ * "Su Semana — Todos los Indicadores": full metrics table (this week / last
  * week / delta / transfer avg / best) grouped Buscar/Ensenar/Invitar, plus a
  * tiny this-week-vs-best bar under each value. CCSM analogue of Provo's
  * docs/Agent1C.gs a1c_buildScoreboard_ — see A1C_SCOREBOARD_GROUPS above for
@@ -1200,7 +1269,7 @@ function a1c_buildScoreboard_(stats, ranked, der, C, weekEnd) {
   var html = '<div style="margin:16px 0;">';
   html += '<div style="font-size:12px;font-weight:700;color:' + C.header +
           ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">' +
-          a1c_esc(a1c_saltTitle_('Tu Semana — Todos los Indicadores', weekEnd)) + '</div>';
+          a1c_esc(a1c_saltTitle_('Su Semana — Todos los Indicadores', weekEnd)) + '</div>';
   html += '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:11px;">';
   html += '<tr style="background:' + C.header + ';color:#ffffff;">' +
     '<th style="padding:5px 8px;text-align:left;font-size:10px;">Indicador</th>' +
@@ -1270,7 +1339,7 @@ function a1c_buildLeadershipSection(title, summaryTotals, areas, scope, weekEnd,
   if (lMsg) {
     html += '<div style="margin-top:4px;">';
     html += a1c_buildMessageBlock(
-      '📋 Coaching de Liderazgo — ' + a1c_esc(lMsg.theme),
+      '📋 Capacitación de Líderes — ' + a1c_esc(lMsg.theme),
       {
         subjectLine:    lMsg.subject,
         bodyText:       lMsg.body,
@@ -1360,13 +1429,13 @@ function a1c_buildKpiTiles_(totals, C) {
   html += '<tr>';
   html += tile(submLabel,                              'Reportaron',        '#374151');
   html += tile(t.contacts_made             || 0,        'Contactos',        C.header);
-  html += tile(t.meaningful_conversations  || 0,        'Significativas',   '#7c3aed');
-  html += tile(t.new_people_found          || 0,        'Nuevas',           '#2563eb');
+  html += tile(t.meaningful_conversations  || 0,        'Conversaciones Significativas', '#7c3aed');
+  html += tile(t.new_people_found          || 0,        'Nuevas Personas Encontradas',   '#2563eb');
   html += '</tr><tr>';
-  html += tile(t.friend_lessons            || 0,        'Lecciones',        '#0f766e');
-  html += tile(t.baptismal_invitations     || 0,        'Inv. Bautismo',    '#b45309');
-  html += tile(t.bom_shared                || 0,        'Libros Entreg.',   '#475569');
-  html += tile(t.baptism_doctrine_lessons  || 0,        'Doctrina Baut.',   '#15803d');
+  html += tile(t.friend_lessons            || 0,        'Lecciones con Amigos',          '#0f766e');
+  html += tile(t.baptismal_invitations     || 0,        'Invitaciones al Bautismo',      '#b45309');
+  html += tile(t.bom_shared                || 0,        'Libros de Mormón Entregados',   '#475569');
+  html += tile(t.baptism_doctrine_lessons  || 0,        'Lecciones de Doctrina del Bautismo', '#15803d');
   html += '</tr>';
   html += '</table>';
   return html;
@@ -1403,10 +1472,16 @@ function a1c_buildAreaDataTable_(areaDetails, scope, C) {
     return c.key !== 'name' && c.key !== 'zone' && c.key !== 'submitted';
   });
 
+  // Header cells WRAP (the data cells below still don't -- numbers and area
+  // names must stay on one line). The metric headers carry the nightly form's
+  // full wording now, and holding them on one line each forced this table to
+  // a 716px min-content width -- wider than the 680px letter itself. Letting
+  // just the header row wrap brings it back to 477px, inside the letter,
+  // while keeping the labels the missionaries actually recognise.
   function makeHeaderRow() {
     var row = '<tr style="background:' + C.header + ';color:white;">';
     cols.forEach(function(c) {
-      row += '<th style="padding:5px 6px;text-align:' + c.al + ';white-space:nowrap;font-size:10px;">' +
+      row += '<th style="padding:5px 6px;text-align:' + c.al + ';font-size:10px;">' +
              a1c_esc(c.h) + '</th>';
     });
     return row + '</tr>';
@@ -1604,22 +1679,22 @@ function a1c_buildAreaDetailPanel_(areaDetails, scope, C) {
       ['Con Miembro Presente',  s.lessons_member_present  || 0],
       ['Familias Parciales',    s.pmf_lessons             || 0],
       ['Conversos Recientes',   s.rc_lessons              || 0],
-      ['CR (Mi Senda)',         s.rc_lessons_mcp          || 0],
+      ['Conversos Recientes (Mi Senda de los Convenios)', s.rc_lessons_mcp || 0],
       ['Tasa de Lecciones',     a1c_formatMetricValue('lesson_rate', s.lesson_rate)]
     ]);
 
     html += section('📱', 'Compartir', [
-      ['Libros de Mormón Entreg.',   s.bom_shared                || 0],
+      ['Libros de Mormón Entregados', s.bom_shared               || 0],
       ['Invitaciones a la Iglesia',  s.church_invites            || 0],
       ['Referencias Solicitadas',    s.references_asked          || 0],
-      ['Ref. de Miembros Recibidas', s.member_referrals_received || 0],
+      ['Referencias de Miembros Recibidas', s.member_referrals_received || 0],
       ['Contactos con Miembros',     s.member_contacts           || 0]
     ]);
 
     html += section('📅', 'Bautismo', [
       ['Invitaciones al Bautismo', s.baptismal_invitations    || 0],
       ['Lecciones de Doctrina',    s.baptism_doctrine_lessons || 0],
-      ['Calendarios Entregados',   s.baptismal_calendars      || 0],
+      ['Calendarios Bautismales Entregados', s.baptismal_calendars || 0],
       ['Tasa de Invitación',       a1c_formatMetricValue('close_rate', s.close_rate)]
     ]);
 
@@ -1682,9 +1757,9 @@ function a1c_buildLeadershipNarrative(scope, unitName, summaryData, areaDetails,
     var prompt = [
       'Eres un asistente de análisis de misión para la ' + getMissionName() + '.',
       'Semana que termina: ' + dateLabel,
-      'Alcance: ' + scope + ' — ' + unitName,
+      'Alcance: ' + a1c_scopeNoun_(scope) + ' — ' + unitName,
       '',
-      'Estadísticas agregadas para este ' + scope + ':',
+      'Estadísticas agregadas para esta ' + a1c_scopeNoun_(scope) + ':',
       '- Áreas que reportaron: '           + (totals.submitted               || 0) + ' / ' + (totals.total_areas || 0),
       '- Contactos: '                      + (totals.contacts_made           || 0),
       '- Conversaciones Significativas: '  + (totals.meaningful_conversations|| 0),
@@ -1695,17 +1770,18 @@ function a1c_buildLeadershipNarrative(scope, unitName, summaryData, areaDetails,
       'Desglose por área:',
       areaLines,
       '',
-      'Escriba una narrativa de coaching de 3 a 4 oraciones para el líder de ' + scope + ' de ' + unitName + '.',
+      'Escriba una narrativa de capacitación de 3 a 4 oraciones para el líder de ' + a1c_scopeNoun_(scope) + ' de ' + unitName + '.',
       '',
       'Estructura:',
       '(1) Celebre una fortaleza visible — mencione un área específica si se destaca.',
       '(2) Identifique la necesidad de crecimiento más común entre las áreas.',
-      '(3) Dé una directriz de coaching específica y accionable para usar en el inventario de esta semana.',
+      '(3) Dé una directriz específica y accionable para usar en el inventario de esta semana.',
       '(4) Termine con una referencia de página de Predicad Mi Evangelio y una escritura que respalde la directriz.',
       '',
       'Reglas:',
       '- NUNCA use la palabra "investigador" — a las personas que están siendo enseñadas siempre se les llama "amigos".',
       '- Escriba en un tono cristiano: alentador, esperanzador y centrado en la fe.',
+      '- Trate al lector de USTED, nunca de tú. Use el registro formal en toda la respuesta.',
       '- Edifique al líder — nunca avergüence, culpe ni compare áreas negativamente.',
       '- Fundamente la directriz en los principios del evangelio restaurado y la misión de Jesucristo.',
       '- Puede mencionar áreas por nombre cuando sea útil, pero nunca nombre a misioneros individuales.',
@@ -1713,7 +1789,7 @@ function a1c_buildLeadershipNarrative(scope, unitName, summaryData, areaDetails,
       '- Escriba con naturalidad y claridad, como si hablara con un líder experimentado que ama a los misioneros que dirige.',
       '',
       'Formato (siga exactamente):',
-      'Línea 1: El párrafo de coaching (prosa simple, sin viñetas, sin markdown).',
+      'Línea 1: El párrafo de capacitación (prosa simple, sin viñetas, sin markdown).',
       'Línea 2: PMG p.{número de página} | {referencia de escritura}',
       '',
       'No incluya encabezados, líneas adicionales ni explicaciones más allá de estas dos líneas.',
@@ -1933,7 +2009,7 @@ function a1c_renderNarrativeHtml_(rawText, C) {
   var html = '<div style="background:#f0f4f8;border-left:4px solid ' + C.header +
              ';padding:12px 16px;margin-bottom:14px;border-radius:0 6px 6px 0;">';
   html += '<div style="font-size:12px;font-weight:700;color:' + C.header +
-          ';margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;">Coaching de Liderazgo</div>';
+          ';margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;">Capacitación de Líderes</div>';
   html += '<div style="font-size:13px;line-height:1.7;color:#1f2937;">' +
           a1c_esc(narrative) + '</div>';
   if (pmgLine) {
@@ -1987,13 +2063,14 @@ function a1c_fetchBatchNarratives_(scopeType, summaryMap, areas, weekEnd) {
     'Eres un asistente de análisis de misión para la ' + getMissionName() + '.',
     'Semana que termina: ' + dateLabel,
     '',
-    'Genere una narrativa de coaching para cada ' + scopeType + ' que aparece a continuación.',
-    'Devuelva un objeto JSON válido: cada clave es el nombre exacto del ' + scopeType + ',',
+    'Genere una narrativa de capacitación para cada ' + a1c_scopeNoun_(scopeType) + ' que aparece a continuación.',
+    'Devuelva un objeto JSON válido: cada clave es el nombre exacto de la ' + a1c_scopeNoun_(scopeType) + ',',
     'cada valor es una narrativa (3-4 oraciones, luego: PMG p.{página} | {escritura}).',
     '',
     'REGLAS:',
     '- NUNCA use la palabra "investigador" — a las personas que están siendo enseñadas siempre se les llama "amigos"',
     '- Tono cristiano: alentador, esperanzador, centrado en la fe — nunca avergüence ni compare áreas negativamente',
+    '- Trate al lector de USTED, nunca de tú. Use el registro formal en toda la respuesta.',
     '- Mencione áreas específicas por nombre cuando una se destaque — nunca nombre a misioneros individuales',
     '- Note patrones entre áreas (por ejemplo, si la mayoría tiene una tasa de conversaciones significativas baja o poco esfuerzo, dígalo explícitamente)',
     '- Termine cada narrativa con: PMG p.{página} | {referencia de escritura}',
@@ -2001,7 +2078,7 @@ function a1c_fetchBatchNarratives_(scopeType, summaryMap, areas, weekEnd) {
     '- Genere SOLO JSON válido — sin bloques de código markdown, sin texto adicional',
     '- IMPORTANTE: Escriba toda su respuesta en español.',
     '',
-    scopeType.toUpperCase() + ' — DATOS:'
+    a1c_scopeNoun_(scopeType).toUpperCase() + ' — DATOS:'
   ];
 
   unitNames.forEach(function(unitName) {

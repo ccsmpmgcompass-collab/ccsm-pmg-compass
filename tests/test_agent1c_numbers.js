@@ -112,11 +112,11 @@ console.log('stat line + goal bar OK');
 // ===========================================================================
 // Full scoreboard: salted title, Buscar/Ensenar/Invitar groups, no English.
 // ===========================================================================
-assert.ok(body.includes('Tu Semana'), 'expected the scoreboard title');
+assert.ok(body.includes('Su Semana'), 'expected the scoreboard title');
 assert.ok(body.includes('BUSCAR'), 'expected the Buscar scoreboard group');
 assert.ok(body.includes('ENSEÑAR'), 'expected the Ensenar scoreboard group');
 assert.ok(body.includes('INVITAR'), 'expected the Invitar scoreboard group');
-assert.ok(body.includes('Contactos Intentados'), 'expected a real CCSM metric label in the scoreboard');
+assert.ok(body.includes('Intentos de Contacto'), 'expected a real CCSM metric label in the scoreboard (CcsmData displayEs)');
 
 assert.ok(!/Goal reached|% of goal|This Wk|Last Wk|Xfer Avg|Metric<\/th>/.test(body),
   'no English scoreboard/goal-bar strings may leak into the Spanish letter');

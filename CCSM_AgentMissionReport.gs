@@ -372,24 +372,36 @@ function amr_buildEmail(weekEnd, summary, scores) {
   return html;
 }
 
-// Same unabbreviated-Spanish-label philosophy as CCSM_Agent1C.gs's
-// A1C_METRIC_LABELS — kept as a small local copy rather than a cross-file
-// call, matching this codebase's per-file self-containment convention.
-var AMR_METRIC_LABELS = {
-  contacts_attempted: 'Contactos Intentados', contacts_made: 'Contactos Logrados',
-  meaningful_conversations: 'Conversaciones Significativas', new_people_found: 'Nuevas Personas',
-  friend_texts: 'Mensajes de Texto', friend_calls: 'Llamadas',
-  friend_lessons: 'Lecciones a Amigos', pmf_lessons: 'Lecciones PMF',
-  rc_lessons: 'Lecciones a CR', rc_lessons_mcp: 'Lecciones CR con Miembro',
-  lessons_member_present: 'Lecciones con Miembro', member_contacts: 'Contactos de Miembros',
-  references_asked: 'Referencias Pedidas', member_referrals_received: 'Referencias de Miembros',
-  bom_shared: 'Libros de Mormón Compartidos', roleplays: 'Juegos de Rol',
-  church_invites: 'Invitaciones a la Iglesia', baptism_doctrine_lessons: 'Lecciones Doctrina Bautismal',
-  baptismal_invitations: 'Invitaciones al Bautismo', baptismal_calendars: 'Calendarios de Bautismo'
-};
+// Metric display labels come from the nightly form itself -- CcsmData.gs's
+// CCSM_NIGHTLY_QUESTIONS[].displayEs, the same strings that seed the
+// QUESTIONS_CONFIG sheet and that CCSM_Agent1C.gs's a1c_scoreboardLabel_
+// resolves.
+//
+// This used to be a hand-maintained local copy, "matching this codebase's
+// per-file self-containment convention". The convention produced silent
+// drift: 19 of the 20 labels here disagreed with the form, and two named the
+// wrong metric outright -- 'Lecciones CR con Miembro' for the metric that
+// counts recent-convert lessons taught with MI SENDA DE LOS CONVENIOS, which
+// sat next to 'Lecciones con Miembro' (lessons_member_present) and was
+// practically indistinguishable from it.
+var _amrNightlyLabels = null;
+function amr_nightlyLabels_() {
+  if (_amrNightlyLabels) return _amrNightlyLabels;
+  var map = {};
+  if (typeof CCSM_NIGHTLY_QUESTIONS !== 'undefined') {
+    CCSM_NIGHTLY_QUESTIONS.forEach(function(q) {
+      if (q.key && q.displayEs) map[q.key] = q.displayEs;
+    });
+  }
+  _amrNightlyLabels = map;
+  return map;
+}
 
+// Built lazily, never at load time: CcsmData.gs is a separate file and a
+// top-level cross-file read is load-order dependent (that pattern already
+// caused one production crash here, 2026-08-20).
 function amr_metricLabel(key) {
-  return AMR_METRIC_LABELS[key] || key;
+  return amr_nightlyLabels_()[key] || key;
 }
 
 // ─── UTILITIES ───────────────────────────────────────────────────────────────

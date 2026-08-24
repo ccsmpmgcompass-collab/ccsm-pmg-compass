@@ -307,7 +307,7 @@ var A1A_KI_DEFS = [
   { key: 'ki_new_people',         display: 'Nuevas Personas Encontradas' },
   { key: 'ki_member_lessons',     display: 'Lecciones con Miembros' },
   { key: 'ki_friends_sacrament',  display: 'Amigos en la Reunión Sacramental' },
-  { key: 'ki_friends_first_week', display: 'Amigos en la Iglesia (1ra Semana)' },
+  { key: 'ki_friends_first_week', display: 'Amigos en la Iglesia (Primera Semana)' },
   { key: 'ki_baptismal_date',     display: 'Amigos con Fecha Bautismal' },
   { key: 'ki_baptized_confirmed', display: 'Bautizados y Confirmados' },
   { key: 'ki_rc_at_church',       display: 'Conversos Recientes en la Iglesia' }

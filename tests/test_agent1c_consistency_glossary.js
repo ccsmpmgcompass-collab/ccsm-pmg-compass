@@ -87,7 +87,7 @@ console.log('consistency block OK');
 // terms (NM/LSI/LA/RC/pew/gate/renew) at all.
 // ===========================================================================
 assert.ok(body.includes('Qué significan las abreviaturas'), 'expected the Spanish glossary title');
-assert.ok(body.includes('Contactos Logrados ÷ Contactos Intentados'), 'expected the contact_rate formula in the glossary');
+assert.ok(body.includes('Contactos ÷ Intentos de Contacto'), 'expected the contact_rate formula in the glossary, stated in the nightly form labels');
 assert.ok(!/\bNM\b|\bLSI\b|\bLA\b|\bRC\b|\bpew\b|\bgate\b|\brenew\b/.test(body),
   'no Provo-only glossary abbreviations may appear -- CCSM has none of these metrics');
 

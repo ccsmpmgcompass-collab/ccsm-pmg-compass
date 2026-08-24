@@ -123,7 +123,7 @@ function runChain(kiRows) {
 
   [
     'Nuevas Personas Encontradas', 'Lecciones con Miembros',
-    'Amigos en la Reunión Sacramental', 'Amigos en la Iglesia (1ra Semana)',
+    'Amigos en la Reunión Sacramental', 'Amigos en la Iglesia (Primera Semana)',
     'Amigos con Fecha Bautismal', 'Bautizados y Confirmados',
     'Conversos Recientes en la Iglesia',
   ].forEach((label) => {
@@ -267,7 +267,7 @@ function runChain(kiRows) {
   assert.ok(!body.includes('No recibimos su informe semanal'),
     'an unavailable source must not be reported as the companionship failing to submit');
   assert.ok(!body.includes('🎯'), 'the KI block should not render at all when the tab is unavailable');
-  assert.ok(body.includes('Tu Semana — Todos los Indicadores'),
+  assert.ok(body.includes('Su Semana — Todos los Indicadores'),
     'the rest of the letter must still build normally without WEEKLY_KI');
 
   console.log('KI block with unavailable source OK');

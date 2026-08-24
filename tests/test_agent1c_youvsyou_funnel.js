@@ -82,17 +82,17 @@ const body = testEmail.htmlBody || '';
 // ===========================================================================
 // You-vs-You: title + the 4 Spanish row labels for the growth metric.
 // ===========================================================================
-assert.ok(body.includes('Tú contra Ti'), 'expected the You-vs-You title');
+assert.ok(body.includes('Su Propio Progreso'), 'expected the You-vs-You title in the formal usted register');
 assert.ok(body.includes('Esta Semana'), 'expected the "Esta Semana" row');
 assert.ok(body.includes('Semana Pasada'), 'expected the "Semana Pasada" row');
-assert.ok(body.includes('Prom. Transfer'), 'expected the "Prom. Transfer" row');
-assert.ok(body.includes('Tu Mejor'), 'expected the "Tu Mejor" row');
+assert.ok(body.includes('Prom. del Cambio'), 'expected the "Prom. del Cambio" row ("transfer" is an anglicism)');
+assert.ok(body.includes('Su Mejor Marca'), 'expected the "Su Mejor Marca" row');
 assert.ok(!/This Week|Last Week|Transfer Avg|Your Best/.test(body), 'no English You-vs-You labels may leak');
 
 // ===========================================================================
 // Regression coverage for a real shipped bug (found in code review,
 // 2026-08-01): a1a_loadMultiWeekHistory never derived rate metrics per
-// week, so You-vs-You's "Semana Pasada"/"Prom. Transfer"/"Tu Mejor" rows
+// week, so You-vs-You's "Semana Pasada"/"Prom. del Cambio"/"Su Mejor Marca" rows
 // for a rate-metric growth pick (close_rate here) silently repeated THIS
 // week's own value instead of real history. Known close_rate per week from
 // the friend_lessons/baptismal_invitations numbers seeded above: twoAgo
@@ -102,7 +102,7 @@ assert.ok(!/This Week|Last Week|Transfer Avg|Your Best/.test(body), 'no English 
 // current week repeated on every row.
 // ===========================================================================
 assert.ok(body.includes('5%'), 'expected the current week\'s real close_rate (5%) on the "Esta Semana" row');
-assert.ok(body.includes('7%'), 'expected last week\'s REAL close_rate (7%, from 1/14) on "Semana Pasada"/"Tu Mejor" -- not a repeat of this week\'s 5%');
+assert.ok(body.includes('7%'), 'expected last week\'s REAL close_rate (7%, from 1/14) on "Semana Pasada"/"Su Mejor Marca" -- not a repeat of this week\'s 5%');
 
 console.log('You-vs-You OK (including real-history regression check)');
 
