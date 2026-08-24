@@ -586,8 +586,25 @@ function a1c_buildPeopleMap(fullOrgData) {
         people[email].areas.push(areaName);
       }
     }
+    // Roles are de-duplicated for the same reason areas are, and it matters
+    // more here. On CCSM's roster the two missionaries in a companionship
+    // usually SHARE one inbox -- Companion1_Email and Companion2_Email are the
+    // same address on 41 of the 43 active rows -- so addCompanion runs twice
+    // for the same person on the same row. The areas guard above absorbed
+    // that; roles did not, so every leader's summary was pushed twice and
+    // a1c_buildEmail's roles.forEach rendered the whole section twice.
+    // Measured on the live roster: 20 of the 21 leaders got a duplicate
+    // (9 DL, 6 STL, 4 ZL, 1 AP).
     var role = a1c_getRoleFromRow(orgRow);
-    if (role) people[email].roles.push(role);
+    if (role) {
+      var key = a1c_roleSectionKey_(role);
+      var already = people[email].roles.some(function(existing) {
+        return a1c_roleSectionKey_(existing) === key;
+      });
+      // Genuinely distinct callings still both render -- a DL over two
+      // districts produces two different keys.
+      if (!already) people[email].roles.push(role);
+    }
   }
 
   fullOrgData.forEach(function(row) {
@@ -613,6 +630,27 @@ function a1c_getRoleFromRow(row) {
   if ((row['Is_DL']  || '').toUpperCase() === 'TRUE') return { type: 'DL',  zone: zone, district: district };
   if (zone.toUpperCase() === 'ALL') return { type: 'MP', zone: zone, district: district };
   return null;
+}
+
+/**
+ * The identity of the leadership SECTION a role will render — used to keep one
+ * letter from repeating the same summary.
+ *
+ * This deliberately keys on the section, not on the role, because several role
+ * types collapse onto the same output: a1c_buildEmail renders the mission
+ * summary for BOTH 'MP' and 'AP' and ignores the zone/district sitting on
+ * their row, and renders the zone summary for both 'ZL' and 'STL'. Keying on
+ * the raw {type, zone, district} triple would therefore still let two rows
+ * produce two identical "Resumen de la Misión" sections.
+ *
+ * Keep in step with the role branching in a1c_buildEmail.
+ */
+function a1c_roleSectionKey_(role) {
+  if (!role) return null;
+  if (role.type === 'MP' || role.type === 'AP')  return 'mission';
+  if (role.type === 'ZL' || role.type === 'STL') return 'zone|' + role.zone;
+  if (role.type === 'DL')                        return 'district|' + role.district;
+  return role.type + '|' + role.zone + '|' + role.district;
 }
 
 /**
