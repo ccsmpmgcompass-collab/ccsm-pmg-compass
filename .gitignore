@@ -29,3 +29,6 @@ credentials*.json
 client_secret*.json
 gcp_*.json
 dashboard/logs/
+
+# Email preview tool: holds a dump of live sheet data (missionary names + emails)
+tools/email_preview/.data/
