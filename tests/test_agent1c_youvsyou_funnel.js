@@ -107,16 +107,44 @@ assert.ok(body.includes('7%'), 'expected last week\'s REAL close_rate (7%, from 
 console.log('You-vs-You OK (including real-history regression check)');
 
 // ===========================================================================
-// Funnel strip: title, Spanish tile labels, current week's real numbers,
-// no LSI tile/note at all (CCSM has no LSI metric).
+// Funnel: title, Spanish stage labels, current week's real numbers, no LSI
+// tile/note at all (CCSM has no LSI metric).
+//
+// The funnel is STACKED, not a horizontal strip (2026-08-24) -- the old strip
+// was one table row of 5 tiles + 4 fixed-34px arrows and had a 412px
+// min-content width, the widest block in the letter and the only reason the
+// email forced a horizontal scroll on a phone.
 // ===========================================================================
-assert.ok(body.includes('Tu Embudo Esta Semana'), 'expected the Spanish funnel strip title');
-assert.ok(body.includes('Intentados'), 'expected the "Intentados" funnel tile');
-assert.ok(body.includes('Nuevas Amistades'), 'expected the "Nuevas Amistades" funnel tile');
+assert.ok(body.includes('Su Embudo Esta Semana'), 'expected the Spanish funnel title (formal "Su", not "Tu")');
+assert.ok(!body.includes('Tu Embudo'), 'the informal "Tu Embudo" title must be gone');
+
+// Stage labels must be CcsmData.gs displayEs verbatim -- the same words the
+// companionship reads on the nightly form. The old strip used clipped
+// fragments and one term ('Nuevas Amistades') the form never uses.
+['Intentos de Contacto', 'Conversaciones Significativas',
+ 'Lecciones con Amigos', 'Nuevas Personas Encontradas'].forEach(function(label) {
+  assert.ok(body.includes(label), 'expected the funnel stage label "' + label + '" (CcsmData displayEs)');
+});
+// Scoped to the funnel block itself: the leadership KPI tile strip further
+// down the letter legitimately abbreviates in its 4-across tiles, so this
+// check must not reach into it.
+const funnelBlock = body.slice(body.indexOf('Su Embudo Esta Semana'),
+                               body.indexOf('Esfuerzo y Constancia'));
+assert.ok(funnelBlock.length > 200, 'failed to slice out the funnel block');
+['Intentados', 'Significativas', 'Nuevas Amistades'].forEach(function(frag) {
+  assert.ok(!funnelBlock.includes('>' + frag + '<'),
+    'the old clipped funnel tile "' + frag + '" must be gone');
+});
+
 // Current week: attempted=30, contacted=15 -> contactedPct = 50%.
-assert.ok(/50%/.test(body), 'expected the funnel arrow to show 50% (contacted/attempted)');
+assert.ok(/50% de los intentos/.test(body),
+  'expected the stage caption "50% de los intentos" (contacted/attempted)');
+
+// The old fixed-width arrow cell is what made the block unshrinkable.
+assert.ok(!/width:34px/.test(body), 'the fixed-34px arrow cells must be gone');
+
 assert.ok(!/LSI|NM Doors|New Friends(?!\p{L})/u.test(body), 'no Provo LSI/door funnel strings may appear');
 
-console.log('funnel strip OK');
+console.log('funnel OK');
 
 console.log('agent1c you-vs-you + funnel OK');

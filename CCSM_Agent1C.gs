@@ -964,34 +964,72 @@ function a1c_buildYouVsYou_(pick, derived, C) {
 }
 
 /**
- * "Tu Embudo Esta Semana" — CCSM's real nightly funnel (attempted -> made ->
- * meaningful -> lessons -> new friends found), from area.derived.funnel (see
+ * "Su Embudo Esta Semana" — CCSM's real nightly funnel (attempted -> made ->
+ * meaningful -> lessons -> new people found), from area.derived.funnel (see
  * a1a_buildDerived's funnel remap). No LSI tile/note at all — CCSM's form
  * has no LSI metric, unlike Provo's version this was ported from.
+ *
+ * STACKED, NOT A STRIP (2026-08-24): the original was one table row of 5
+ * tiles + 4 fixed-34px arrow cells, whose uppercase unwrappable labels gave
+ * it a 412px min-content width — the single widest block in the letter and
+ * the only reason the email forced a horizontal scroll on a phone. Stacking
+ * the stages drops it to ~140px and lets the letter's floor fall to the
+ * consistency grid (302px). It also reads as a funnel now: each bar is the
+ * stage's share of the top, so the block visibly narrows.
  */
 function a1c_buildFunnelStrip_(f, C, weekEnd) {
   if (!f) return '';
-  function tile(val, label, hl) {
-    return '<td style="background:' + (hl ? '#eafaf0' : '#f0f4f8') + ';border-radius:6px;padding:8px 6px;text-align:center;' + (hl ? 'border:1px solid #16a34a;' : '') + '">' +
-      '<div style="font-size:16px;font-weight:700;color:' + (hl ? '#15803d' : C.header) + ';">' + a1c_esc(String(val)) + '</div>' +
-      '<div style="font-size:9px;color:' + (hl ? '#15803d' : C.muted) + ';text-transform:uppercase;">' + a1c_esc(label) + '</div></td>';
-  }
-  function arrow(p) {
-    return '<td style="width:34px;text-align:center;font-size:9px;color:#16a34a;font-weight:700;">→<br>' + (p === null ? '—' : p + '%') + '</td>';
-  }
+
+  // Stage labels are CcsmData.gs CCSM_NIGHTLY_QUESTIONS displayEs verbatim --
+  // the same words the companionship reads on the nightly form. The old strip
+  // used clipped fragments ('Intentados', 'Significativas') and one term the
+  // form never uses at all ('Nuevas Amistades').
+  var stages = [
+    { val: f.attempted,  label: 'Intentos de Contacto',          pct: null,            from: '' },
+    { val: f.contacted,  label: 'Contactos',                     pct: f.contactedPct,  from: 'de los intentos' },
+    { val: f.meaningful, label: 'Conversaciones Significativas', pct: f.meaningfulPct, from: 'de los contactos' },
+    { val: f.lessons,    label: 'Lecciones con Amigos',          pct: f.lessonPct,     from: 'de las conversaciones' },
+    { val: f.newFound,   label: 'Nuevas Personas Encontradas',   pct: f.newFoundPct,   from: 'de las lecciones', hl: true }
+  ];
+  var top = f.attempted || 0;
+
   var html = '<div style="margin:18px 0;">';
   html += '<div style="font-size:12px;font-weight:700;color:' + C.header +
-          ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">🔄 ' + a1c_esc(a1c_saltTitle_('Tu Embudo Esta Semana', weekEnd)) + '</div>';
-  html += '<table width="100%" cellpadding="0" cellspacing="0"><tr>' +
-    tile(f.attempted, 'Intentados') + arrow(f.contactedPct) +
-    tile(f.contacted, 'Contactos') + arrow(f.meaningfulPct) +
-    tile(f.meaningful, 'Significativas') + arrow(f.lessonPct) +
-    tile(f.lessons, 'Lecciones') + arrow(f.newFoundPct) +
-    tile(f.newFound, 'Nuevas Amistades', true) +
-    '</tr></table>';
+          ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">🔄 ' +
+          a1c_esc(a1c_saltTitle_('Su Embudo Esta Semana', weekEnd)) + '</div>';
+
+  stages.forEach(function(s, i) {
+    var val = s.val || 0;
+    // Bar = this stage as a share of the TOP of the funnel. Clamped to 100:
+    // the chain is not guaranteed monotonic (new people found can exceed
+    // friend lessons in a real week). A non-zero value always keeps a 2%
+    // sliver so it never reads as nothing.
+    var w = top > 0 ? Math.min(100, Math.round(val / top * 100)) : 0;
+    if (val > 0 && w < 2) w = 2;
+    var col = s.hl ? '#15803d' : C.header;
+
+    // The conversion caption sits ABOVE its stage: it describes the step that
+    // produced this row, so the arrow reads top-down into the number.
+    if (i > 0) {
+      html += '<div style="font-size:9px;color:' + C.muted + ';margin:0 0 3px 2px;">↓ ' +
+              (s.pct === null ? '—' : a1c_esc(String(s.pct)) + '% ' + s.from) + '</div>';
+    }
+
+    html += '<div style="margin:0 0 7px;">';
+    html += '<div style="font-size:11px;font-weight:700;color:' + (s.hl ? col : '#374151') +
+            ';margin-bottom:3px;">' + a1c_esc(s.label) + '</div>';
+    html += '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>' +
+            '<td style="background:' + C.border + ';border-radius:5px;padding:0;">' +
+            '<div style="width:' + w + '%;background:' + col +
+            ';height:9px;border-radius:5px;font-size:1px;line-height:1px;">&nbsp;</div></td>' +
+            '<td style="width:56px;text-align:right;padding-left:8px;font-weight:700;font-size:13px;color:' +
+            col + ';">' + a1c_esc(String(val)) + '</td></tr></table>';
+    html += '</div>';
+  });
+
   if (f.lessonsPerNewFriend !== null) {
     html += '<div style="font-size:10px;color:' + C.muted + ';margin-top:6px;">' +
-            f.lessonsPerNewFriend + ' lecciones por cada nueva amistad encontrada</div>';
+            f.lessonsPerNewFriend + ' lecciones por cada nueva persona encontrada</div>';
   }
   html += '</div>';
   return html;
