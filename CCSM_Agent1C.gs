@@ -192,8 +192,10 @@ function a1c_glossedDisplay_(key, display) {
 // already unabbreviated Spanish, so only the rate-metric formulas and the
 // handful of generic symbols actually need decoding.
 var A1C_GLOSSARY = [
+  ['Indicadores Clave', 'los 7 del informe semanal — la meta es la que ustedes mismos fijaron'],
   ['Δ',              'cambio contra la semana pasada'],
-  ['Prom Transfer',  'promedio durante este transfer'],
+  ['% Meta',         'lo logrado esta semana dividido por la meta'],
+  ['Prom. Transfer', 'promedio durante este transfer'],
   ['Tasa de Contacto',                'Contactos Logrados ÷ Contactos Intentados'],
   ['Tasa de Conversaciones Significativas', 'Conversaciones Significativas ÷ Contactos Logrados'],
   ['Tasa de Lecciones',               'Lecciones a Amigos ÷ Contactos Intentados'],
@@ -692,6 +694,77 @@ function a1c_buildGoalBar_(pick, C) {
   return html;
 }
 
+/**
+ * "Indicadores Clave" — the 7 weekly Key Indicators (area.ki, from Agent1A's
+ * a1a_loadWeeklyKi -> WEEKLY_KI), each as real / meta / % with a goal bar.
+ * Leads the letter: this is the first thing under the area name.
+ *
+ * Two things make this block different from everything below it:
+ *   1. The goal is the companionship's OWN weekly meta, typed on the weekly
+ *      form -- not a mission-configured nightly goal. Where both exist they
+ *      can disagree (e.g. new people: nightly goal 7, own meta 8); here the
+ *      companionship's own number is the one they are measured against.
+ *   2. Three of the seven (sacrament, first week, RC at church) have no
+ *      nightly equivalent, so this is the only place they appear at all.
+ *
+ * A meta of 0 renders as "sin meta" with no bar rather than a fake 0% -- an
+ * unset goal is not a missed goal. A missing report never shows as seven
+ * zeros: `ki` of [] states plainly that no weekly form arrived, and `ki` of
+ * null (source unavailable) renders nothing at all rather than implying the
+ * companionship failed to report.
+ */
+function a1c_buildKiBlock_(ki, C, weekEnd) {
+  if (ki === null || ki === undefined) return '';
+
+  var html = '<div style="margin:14px 0 18px;">';
+  html += '<div style="font-size:12px;font-weight:700;color:' + C.header +
+          ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">🎯 ' +
+          a1c_esc(a1c_saltTitle_('Indicadores Clave', weekEnd)) + '</div>';
+
+  if (ki.length === 0) {
+    html += '<div style="border-left:4px solid ' + C.border + ';padding:8px 12px;background:' + C.bgLight +
+            ';font-size:11px;color:#374151;line-height:1.5;">' +
+            'No recibimos su informe semanal de indicadores clave para esta semana, ' +
+            'así que esta sección está vacía. Al enviarlo, aquí verán sus siete indicadores ' +
+            'comparados con las metas que ustedes mismos fijaron.</div>';
+    html += '</div>';
+    return html;
+  }
+
+  ki.forEach(function(k) {
+    var real = parseFloat(k.real), meta = parseFloat(k.meta);
+    if (isNaN(real)) real = 0;
+    var hasGoal = !isNaN(meta) && meta > 0;
+    var pct     = hasGoal ? Math.round(real / meta * 100) : null;
+    if (pct !== null && pct < 0) pct = 0;
+    var reached = hasGoal && real >= meta;
+    var fill    = reached ? C.green : C.blue;
+
+    html += '<div style="margin:0 0 9px;">';
+    html += '<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:3px;">' +
+            a1c_esc(k.display) + '</div>';
+    html += '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:10px;"><tr>' +
+            '<td style="background:' + C.border + ';border-radius:5px;padding:0;">' +
+            '<div style="width:' + (hasGoal ? (reached ? 100 : Math.max(2, pct)) : 0) +
+            '%;background:' + fill + ';height:9px;border-radius:5px;font-size:1px;line-height:1px;">&nbsp;</div>' +
+            '</td>' +
+            '<td style="width:74px;text-align:right;padding-left:8px;font-weight:700;color:' +
+            (hasGoal ? fill : C.muted) + ';font-size:11px;">' +
+            a1c_esc(String(Math.round(real))) + ' / ' + (hasGoal ? a1c_esc(String(Math.round(meta))) : '—') +
+            '</td></tr></table>';
+    html += '<div style="font-size:9px;color:' + C.muted + ';margin-top:2px;">' +
+            (hasGoal
+              ? (reached ? '<strong style="color:' + C.green + ';">Meta alcanzada ✓</strong>'
+                         : '<strong style="color:' + C.blue + ';">' + pct + '% de la meta</strong>')
+              : 'sin meta esta semana') +
+            '</div>';
+    html += '</div>';
+  });
+
+  html += '</div>';
+  return html;
+}
+
 /** Area header: name + days-reported chip + streak (from area.derived.consistency). */
 function a1c_buildAreaHeader_(areaName, area, C) {
   var der  = area.derived;
@@ -729,6 +802,7 @@ function a1c_buildAreaSection(areaName, area, weekEnd, C) {
 
   var html = '<div style="margin:16px 0;padding:0 4px;">';
   html += a1c_buildAreaHeader_(areaName, area, C);
+  html += a1c_buildKiBlock_(area.ki, C, weekEnd);
 
   if (s)  html += a1c_buildMessageBlock('💪 Fortaleza — ' + a1c_glossedDisplay_(s.key, s.display),  area.msg_strength1, C, C.green,
                                          a1c_statLine_(s, der, false) + a1c_buildGoalBar_(s, C));
@@ -739,8 +813,7 @@ function a1c_buildAreaSection(areaName, area, weekEnd, C) {
 
   html += a1c_buildYouVsYou_(g, der, C);
   html += a1c_buildTrendChart_(der && der.trend, C);
-  html += a1c_buildScoreboard_(area.stats, der, C, weekEnd);
-  html += a1c_buildGoalGrid_(area.ranked, C, weekEnd);
+  html += a1c_buildScoreboard_(area.stats, area.ranked, der, C, weekEnd);
   html += a1c_buildFunnelStrip_(der && der.funnel, C, weekEnd);
   html += a1c_buildConsistencyBlock_(der && der.consistency, C, weekEnd);
 
@@ -794,72 +867,6 @@ function a1c_buildTrendChart_(trend, C) {
   });
   html += '</tr></table>';
   html += '<div style="font-size:10px;color:' + C.muted + ';margin-top:5px;">★ = lo mejor de tu área · esta semana en azul marino · — = sin reporte</div>';
-  html += '</div>';
-  return html;
-}
-
-/**
- * "Tu Progreso Hacia la Meta — Todos los Indicadores": one compact two-bar
- * mini-chart per goaled metric (Meta track + Tú fill, 0->goal scale),
- * grouped under the same A1C_SCOREBOARD_GROUPS headers as the scoreboard.
- * Returns '' when `ranked` is empty or carries no positive goals.
- */
-function a1c_buildGoalGrid_(ranked, C, weekEnd) {
-  if (!ranked || ranked.length === 0) return '';
-
-  var byKey = {};
-  ranked.forEach(function(p) {
-    var goal = parseFloat(p.goal), actual = parseFloat(p.actual);
-    if (isNaN(goal) || goal <= 0 || isNaN(actual)) return;
-    byKey[p.key] = p;
-  });
-  if (Object.keys(byKey).length === 0) return '';
-
-  function chart(p) {
-    var goal = parseFloat(p.goal), actual = parseFloat(p.actual);
-    var pct = Math.round(actual / goal * 100);
-    if (pct < 0) pct = 0;
-    var reached = actual >= goal;
-    var youW = reached ? 100 : Math.max(2, pct);
-    var fill = reached ? C.green : C.blue;
-    var caption = reached ? 'Meta alcanzada ✓' : pct + '% de la meta';
-    var h = '<div style="margin:0 0 10px;">';
-    h += '<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:3px;">' +
-         a1c_glossedDisplay_(p.key, p.display) + '</div>';
-    h += '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:10px;">';
-    h += '<tr><td style="width:38px;color:' + C.muted + ';padding-right:6px;">Meta</td>' +
-         '<td><div style="background:' + C.border + ';border-radius:5px;">' +
-         '<div style="width:100%;background:#c7d2e0;height:9px;border-radius:5px;font-size:1px;line-height:1px;">&nbsp;</div></div></td>' +
-         '<td style="width:52px;text-align:right;padding-left:6px;color:#374151;font-weight:700;">' +
-         a1c_esc(a1c_fmtMetricVal_(p.key, goal)) + '</td></tr>';
-    h += '<tr><td style="width:38px;color:' + C.muted + ';padding-right:6px;padding-top:2px;">Tú</td>' +
-         '<td style="padding-top:2px;"><div style="background:' + C.border + ';border-radius:5px;">' +
-         '<div style="width:' + youW + '%;background:' + fill + ';height:9px;border-radius:5px;font-size:1px;line-height:1px;">&nbsp;</div></div></td>' +
-         '<td style="width:52px;text-align:right;padding-left:6px;padding-top:2px;color:' + fill + ';font-weight:700;">' +
-         a1c_esc(a1c_fmtMetricVal_(p.key, actual)) + '</td></tr>';
-    h += '</table>';
-    h += '<div style="font-size:9px;color:' + C.muted + ';margin-top:1px;">' + a1c_esc(caption) + '</div>';
-    h += '</div>';
-    return h;
-  }
-
-  var claimed = {};
-  A1C_SCOREBOARD_GROUPS.forEach(function(gr) { gr.keys.forEach(function(k) { claimed[k] = 1; }); });
-  var extras = Object.keys(byKey).filter(function(k) { return !claimed[k]; }).sort();
-  var groups = A1C_SCOREBOARD_GROUPS.slice();
-  if (extras.length > 0) groups.push({ title: '📦 OTROS — Formulario Nocturno', keys: extras });
-
-  var html = '<div style="margin:16px 0;">';
-  html += '<div style="font-size:12px;font-weight:700;color:' + C.header +
-          ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">' +
-          a1c_esc(a1c_saltTitle_('Tu Progreso Hacia la Meta — Todos los Indicadores', weekEnd)) + '</div>';
-  groups.forEach(function(gr) {
-    var present = gr.keys.filter(function(k) { return byKey[k]; });
-    if (present.length === 0) return;
-    html += '<div style="font-size:10px;font-weight:700;color:' + C.header +
-            ';background:#dbeafe;padding:4px 8px;border-radius:4px;margin:8px 0;">' + a1c_esc(gr.title) + '</div>';
-    present.forEach(function(k) { html += chart(byKey[k]); });
-  });
   html += '</div>';
   return html;
 }
@@ -1026,8 +1033,18 @@ function a1c_buildMessageBlock(label, msg, C, accentColor, numbersHtml) {
  * docs/Agent1C.gs a1c_buildScoreboard_ — see A1C_SCOREBOARD_GROUPS above for
  * the CCSM-specific grouping and metric set.
  */
-function a1c_buildScoreboard_(stats, der, C, weekEnd) {
+function a1c_buildScoreboard_(stats, ranked, der, C, weekEnd) {
   if (!der || !stats) return '';
+
+  // Goal lookup, folded in from what used to be a separate "Tu Progreso Hacia
+  // la Meta" section listing the SAME metrics a second time. Rows with no
+  // goal still render -- they just show '—' in Meta / % Meta.
+  var goalByKey = {};
+  (ranked || []).forEach(function(p) {
+    var g = parseFloat(p.goal);
+    if (!isNaN(g) && g > 0) goalByKey[p.key] = g;
+  });
+
   function cell(v, al, extra) {
     return '<td style="padding:4px 6px;text-align:' + (al || 'center') + ';border-bottom:1px solid ' + C.border + ';' + (extra || '') + '">' + v + '</td>';
   }
@@ -1050,6 +1067,28 @@ function a1c_buildScoreboard_(stats, der, C, weekEnd) {
     return '<div style="background:' + C.border + ';border-radius:2px;margin-top:2px;">' +
            '<div style="width:' + w + '%;background:' + C.blue + ';height:4px;border-radius:2px;font-size:1px;line-height:1px;">&nbsp;</div></div>';
   }
+  // Meta + "% Meta", carried over from the retired goal-grid section.
+  // Reached goals go green so the table can be skimmed for wins the same way
+  // the old bars could.
+  function goalCells(key) {
+    var goal = goalByKey[key];
+    if (goal === undefined) {
+      return cell('<span style="color:' + C.muted + ';">—</span>') +
+             cell('<span style="color:' + C.muted + ';">—</span>');
+    }
+    var actual = stats[key];
+    var metaTxt = a1c_esc(a1c_fmtMetricVal_(key, goal));
+    if (typeof actual !== 'number' || isNaN(actual)) {
+      return cell(metaTxt) + cell('<span style="color:' + C.muted + ';">—</span>');
+    }
+    var pct = Math.round(actual / goal * 100);
+    if (pct < 0) pct = 0;
+    var reached = actual >= goal;
+    return cell(metaTxt) +
+           cell('<strong style="color:' + (reached ? '#16a34a' : C.blue) + ';">' +
+                (reached ? '✓ 100%' : pct + '%') + '</strong>');
+  }
+
   function row(key, idx) {
     var label = a1c_scoreboardLabel_(key);
     var bg = idx % 2 === 0 ? '#ffffff' : C.bgLight;
@@ -1057,10 +1096,9 @@ function a1c_buildScoreboard_(stats, der, C, weekEnd) {
     return '<tr style="background:' + bg + ';">' +
       cell(a1c_esc(label), 'left') +
       cell('<strong>' + a1c_esc(a1c_fmtMetricVal_(key, stats[key])) + bestMark + '</strong>' + miniBar(key)) +
+      goalCells(key) +
       cell('<span style="color:' + C.muted + ';">' + a1c_esc(a1c_fmtMetricVal_(key, der.lastWeek ? der.lastWeek[key] : null)) + '</span>') +
       deltaCell(key) +
-      cell(a1c_esc(a1c_fmtMetricVal_(key, der.xferAvg ? der.xferAvg[key] : null))) +
-      cell(a1c_esc(a1c_fmtMetricVal_(key, der.best ? der.best[key] : null))) +
       '</tr>';
   }
 
@@ -1085,10 +1123,10 @@ function a1c_buildScoreboard_(stats, der, C, weekEnd) {
   html += '<tr style="background:' + C.header + ';color:#ffffff;">' +
     '<th style="padding:5px 8px;text-align:left;font-size:10px;">Indicador</th>' +
     '<th style="padding:5px 6px;text-align:center;font-size:10px;">Esta Sem</th>' +
+    '<th style="padding:5px 6px;text-align:center;font-size:10px;">Meta</th>' +
+    '<th style="padding:5px 6px;text-align:center;font-size:10px;">% Meta</th>' +
     '<th style="padding:5px 6px;text-align:center;font-size:10px;">Sem Pasada</th>' +
-    '<th style="padding:5px 6px;text-align:center;font-size:10px;">Δ</th>' +
-    '<th style="padding:5px 6px;text-align:center;font-size:10px;">Prom Transfer</th>' +
-    '<th style="padding:5px 6px;text-align:center;font-size:10px;">Mejor</th></tr>';
+    '<th style="padding:5px 6px;text-align:center;font-size:10px;">Δ</th></tr>';
 
   var groups = A1C_SCOREBOARD_GROUPS.slice();
   if (extras.length > 0) groups.push({ title: '📦 OTROS — Formulario Nocturno', keys: extras.sort() });

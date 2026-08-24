@@ -103,17 +103,27 @@ assert.ok(!/last 8 weeks/i.test(body), 'must not leak the English trend chart ti
 console.log('trend chart title OK');
 
 // ===========================================================================
-// Goal grid: title, Meta/Tu row labels, group headers, no English leak.
+// Merged scoreboard: goal columns folded into "Tu Semana" so the letter no
+// longer lists the same ~25 metrics twice (the separate "Tu Progreso Hacia
+// la Meta" bar grid was retired -- see a1c_buildScoreboard_'s goalCells).
 // ===========================================================================
-assert.ok(body.includes('Tu Progreso Hacia la Meta'), 'expected the Spanish goal grid title');
-assert.ok(body.includes('>Meta<'), 'expected the "Meta" row label in at least one goal-grid mini-chart');
-assert.ok(body.includes('>Tú<'), 'expected the "Tu" row label in at least one goal-grid mini-chart');
-assert.ok(body.includes('BUSCAR'), 'expected goal-grid metrics grouped under Buscar');
+assert.ok(body.includes('Tu Semana — Todos los Indicadores'), 'expected the Spanish scoreboard title');
+assert.ok(body.includes('>Meta<'),   'expected the "Meta" column in the merged scoreboard');
+assert.ok(body.includes('>% Meta<'), 'expected the "% Meta" column in the merged scoreboard');
+assert.ok(body.includes('BUSCAR'),   'expected scoreboard metrics grouped under Buscar');
+
+assert.ok(!body.includes('Tu Progreso Hacia la Meta'),
+  'the duplicate goal-grid section must be gone -- its Meta/% now live in the scoreboard');
+
+// The retired columns must be gone from the table, but "Prom. Transfer" still
+// appears in the You-vs-You block, so only the table's own headers are checked.
+assert.ok(!body.includes('>Prom Transfer<'), 'Prom Transfer column should be retired from the scoreboard');
+assert.ok(!body.includes('>Mejor<'),         'Mejor column should be retired from the scoreboard');
 
 assert.ok(!/Your Progress to Goal|Goal reached|% of goal(?!\p{L})/u.test(body),
   'no English goal-grid strings may leak into the Spanish letter');
 
-console.log('goal grid OK');
+console.log('merged scoreboard OK');
 
 // ===========================================================================
 // area.ranked flowed all the way through A1A -> A1B(JSON round-trip) -> 1C:

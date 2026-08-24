@@ -135,13 +135,19 @@ const Utilities = {
   formatDate(date, tz, fmt) {
     const d = date instanceof Date ? date : new Date(date);
     const p = (n, w) => String(n).padStart(w || 2, '0');
-    return String(fmt)
-      .replace(/yyyy/g, d.getFullYear())
-      .replace(/MM/g, p(d.getMonth() + 1))
-      .replace(/dd/g, p(d.getDate()))
-      .replace(/HH/g, p(d.getHours()))
-      .replace(/mm/g, p(d.getMinutes()))
-      .replace(/ss/g, p(d.getSeconds()));
+    // Longest token first so e.g. "dd" isn't left partially matched by "d".
+    return String(fmt).replace(/yyyy|MM|dd|HH|mm|ss|M|d/g, (tok) => {
+      switch (tok) {
+        case 'yyyy': return d.getFullYear();
+        case 'MM': return p(d.getMonth() + 1);
+        case 'dd': return p(d.getDate());
+        case 'HH': return p(d.getHours());
+        case 'mm': return p(d.getMinutes());
+        case 'ss': return p(d.getSeconds());
+        case 'M': return d.getMonth() + 1;
+        case 'd': return d.getDate();
+      }
+    });
   },
   sleep() {},
   getUuid: () => 'offline-uuid',
@@ -259,9 +265,36 @@ function run(fnName) {
   return true;
 }
 
+// Apps Script caps the whole Script Properties store at 500 KB. A1A_DATA and
+// A1B_DATA are both resident between 1A and 1C, and only Agent1C clears them
+// -- the suspected cause of Agent1C never having run. Report the sizes after
+// each step so any change to the payload shape is measured, not guessed.
+// saveTempData splits big values across `KEY__0, KEY__1, ... KEY__chunks`, so
+// group by the base key before '__' rather than looking for a bare KEY.
+const PROP_LIMIT = 500 * 1024;
+function reportPayloads(label) {
+  const keys = Object.keys(_props);
+  if (keys.length === 0) return;
+  const byBase = {};
+  let total = 0;
+  keys.forEach((k) => {
+    const base = k.split('__')[0];
+    const n = _props[k].length + k.length;
+    byBase[base] = (byBase[base] || 0) + n;
+    total += n;
+  });
+  const parts = Object.keys(byBase).sort()
+    .map((b) => `${b}=${(byBase[b] / 1024).toFixed(1)}KB`);
+  const pct = ((total / PROP_LIMIT) * 100).toFixed(0);
+  console.log(`     ${label}: ${parts.join('  ')}  ->  total ${(total / 1024).toFixed(1)}KB ` +
+              `(${pct}% of the 500KB property-store limit)${total > PROP_LIMIT ? '  ** OVER LIMIT **' : ''}`);
+}
+
 console.log(`\nLoaded ${FILES.length} agent files. Gemini: ${USE_GEMINI ? 'LIVE' : 'placeholder'}\n`);
 if (!run('runAgent1A')) process.exit(1);
+reportPayloads('after 1A');
 if (!run('runAgent1B')) process.exit(1);
+reportPayloads('after 1B');
 if (!run('runAgent1C')) process.exit(1);
 
 fs.mkdirSync(OUT, { recursive: true });

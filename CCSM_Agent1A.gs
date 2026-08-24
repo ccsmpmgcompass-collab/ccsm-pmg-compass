@@ -137,6 +137,12 @@ function runAgent1A() {
       });
     });
 
+    // Weekly Key Indicators (WEEKLY_KI) -- the 7 real/meta pairs the coaching
+    // letter now leads with. Separate from everything above, which is nightly.
+    var weeklyKi = a1a_loadWeeklyKi(weekEnd);
+    Logger.log('Agent1A: WEEKLY_KI rows for ' + weekEnd + ': ' +
+               (weeklyKi === null ? 'TAB UNAVAILABLE' : Object.keys(weeklyKi).length));
+
     var areaData = {};
     missionOrg.forEach(function(areaObj) {
       var name   = areaObj['Area_Name'];
@@ -153,7 +159,11 @@ function runAgent1A() {
         name1:     areaObj['Companion1_Name']  || '',
         name2:     areaObj['Companion2_Name']  || '',
         stats:     stats,
-        ranked:    ranked, // full ranked metric list -- a1c_buildGoalGrid_ needs every goaled metric, not just the 3 picks below
+        // 7 weekly Key Indicators. [] = tab readable but this area filed no
+        // weekly form (the letter says so); null = tab unavailable entirely
+        // (the letter stays silent rather than blaming the companionship).
+        ki:        weeklyKi === null ? null : (weeklyKi[name] || []),
+        ranked:    ranked, // full ranked metric list -- the scoreboard needs every goaled metric, not just the 3 picks below
         strength1: ranked[0] || null,
         strength2: ranked[1] || null,
         growth:    growth,
@@ -284,6 +294,71 @@ function a1a_loadGoals() {
     });
   }
   return goals;
+}
+
+// The 7 weekly Key Indicators, in the order they are reported and taught.
+// These come from the WEEKLY form (Agent5A -> WEEKLY_KI), NOT the nightly
+// form, so they are the only numbers in the coaching letter that carry the
+// companionship's OWN goal ("meta") rather than a mission-configured one.
+// Three of them -- sacrament attendance, first-week attendance and RC at
+// church -- have no nightly equivalent at all, so without this loader the
+// coaching letter can say nothing about them.
+var A1A_KI_DEFS = [
+  { key: 'ki_new_people',         display: 'Nuevas Personas Encontradas' },
+  { key: 'ki_member_lessons',     display: 'Lecciones con Miembros' },
+  { key: 'ki_friends_sacrament',  display: 'Amigos en la Reunión Sacramental' },
+  { key: 'ki_friends_first_week', display: 'Amigos en la Iglesia (1ra Semana)' },
+  { key: 'ki_baptismal_date',     display: 'Amigos con Fecha Bautismal' },
+  { key: 'ki_baptized_confirmed', display: 'Bautizados y Confirmados' },
+  { key: 'ki_rc_at_church',       display: 'Conversos Recientes en la Iglesia' }
+];
+
+/**
+ * Per-area weekly Key Indicators for `weekEnd`, as
+ *   { areaName: [{ key, display, real, meta }, ...] }
+ *
+ * Week_End_Date is normalized through a1a_toDateString rather than compared
+ * raw: WEEKLY_KI is written by Agent5A as a 'yyyy-MM-dd' string, but a date-
+ * formatted column comes back from getValues() as a Date, and comparing those
+ * two directly would silently match nothing.
+ *
+ * Returns NULL (not {}) when the tab is missing or unreadable, so the letter
+ * can tell "this companionship didn't submit the weekly form" apart from
+ * "the source is unavailable" and word the gap correctly instead of blaming
+ * the missionaries for a system problem.
+ */
+function a1a_loadWeeklyKi(weekEnd) {
+  var out  = {};
+  var data = a1a_getSheetData('WEEKLY_KI');
+  if (!data || data.length < 2) return null;
+
+  var headers = data[0].map(function(h) { return String(h).trim(); });
+  var dateIdx = headers.indexOf('Week_End_Date');
+  var areaIdx = headers.indexOf('Area');
+  if (dateIdx < 0 || areaIdx < 0) return null;
+
+  var cols = {};
+  A1A_KI_DEFS.forEach(function(d) {
+    cols[d.key] = { real: headers.indexOf(d.key + '_real'), meta: headers.indexOf(d.key + '_meta') };
+  });
+
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    if (a1a_toDateString(row[dateIdx]) !== weekEnd) continue;
+    var area = String(row[areaIdx] || '').trim();
+    if (!area) continue;
+
+    out[area] = A1A_KI_DEFS.map(function(d) {
+      var c = cols[d.key];
+      return {
+        key:     d.key,
+        display: d.display,
+        real:    c.real >= 0 ? (parseFloat(row[c.real]) || 0) : 0,
+        meta:    c.meta >= 0 ? (parseFloat(row[c.meta]) || 0) : 0
+      };
+    });
+  }
+  return out;
 }
 
 function a1a_loadFeedbackHistory() {

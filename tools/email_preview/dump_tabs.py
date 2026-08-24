@@ -23,8 +23,9 @@ HERE = Path(__file__).resolve().parent
 OUT_DIR = HERE / ".data"
 
 # Every tab the chain touches. DAILY_LOG/NIGHTLY_FORM_RAW/QUESTIONS_CONFIG/
-# GOALS_CONFIG/MISSION_ORG/FEEDBACK_HISTORY come from a1a_getSheetData; the
-# rest are read by CCSM_Helpers (getConfig, getMessageBank) on the way through.
+# GOALS_CONFIG/MISSION_ORG/FEEDBACK_HISTORY/WEEKLY_KI come from
+# a1a_getSheetData; the rest are read by CCSM_Helpers (getConfig,
+# getMessageBank) on the way through.
 TABS = [
     "MISSION_ORG",
     "DAILY_LOG",
@@ -32,6 +33,7 @@ TABS = [
     "QUESTIONS_CONFIG",
     "GOALS_CONFIG",
     "FEEDBACK_HISTORY",
+    "WEEKLY_KI",
     "MESSAGE_BANK",
     "AGENT_CONFIG",
     "WEEKLY_BREAKDOWNS",
@@ -63,7 +65,9 @@ def main() -> int:
     out = OUT_DIR / "tabs.json"
     out.write_text(json.dumps(grids), encoding="utf-8")
     print(f"\nwrote {out}  ({out.stat().st_size / 1e6:.2f} MB)")
-    print("⚠️  contains real names and emails — gitignored, do not commit")
+    # ASCII only: the Windows console runs cp1252, where a warning emoji or an
+    # em dash raises UnicodeEncodeError and buries the successful dump above it.
+    print("WARNING: contains real names and emails - gitignored, do not commit")
     return 0
 
 
