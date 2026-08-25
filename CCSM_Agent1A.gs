@@ -199,7 +199,14 @@ function runAgent1A() {
       };
     });
 
-    var summaries = a1a_buildSummaries(areaData, missionOrg, prevWeekEnd);
+    // The last A1A_TREND_WEEKS of the 8 weeks `history` was bucketed for --
+    // sliced from that same array rather than recomputed, so the trend block
+    // and the area charts can never disagree about where a week starts.
+    // Four, because the featured chain draws four weekly bars; DAILY_LOG
+    // currently reaches back only two, so the older two render as missing
+    // history and fill in on their own as the mission accumulates weeks.
+    var trendWeeks = derivedWeeks.slice(-A1A_TREND_WEEKS);
+    var summaries  = a1a_buildSummaries(areaData, missionOrg, prevWeekEnd, history, trendWeeks);
 
     saveTempData('A1A_DATA', {
       weekStart: weekStart,
@@ -340,6 +347,56 @@ var A1A_KI_DEFS = [
   { key: 'ki_baptized_confirmed', display: 'Bautizados y Confirmados' },
   { key: 'ki_rc_at_church',       display: 'Conversos Recientes en la Iglesia' }
 ];
+
+/**
+ * The nightly metrics that FEED each weekly Key Indicator — the effort a
+ * companionship puts in during the week that produces the weekly number.
+ * "El Rumbo de la Zona" (CCSM_Agent1C.gs) reads this to decide which numbers
+ * to feature when a unit's weakest indicator needs explaining: a leader told
+ * "Amigos con Fecha Bautismal: 2 de 9" can do nothing with that sentence
+ * alone, but can act on the doctrine lessons, baptismal invitations and
+ * calendars that produce it.
+ *
+ * Only indicators with a real nightly chain appear here. ki_friends_first_week
+ * and ki_baptized_confirmed have none the nightly form actually collects, and
+ * are deliberately absent rather than paired with a plausible-looking guess --
+ * the letter skips to the next weakest indicator that has a chain. Anything
+ * added here is picked up by A1A_TREND_COUNT_KEYS below automatically, so a
+ * new feeder cannot end up featured but uncarried, which would render an
+ * empty chain rather than an error.
+ */
+var A1A_KI_FEEDERS = {
+  ki_new_people:        ['contacts_attempted', 'contacts_made', 'meaningful_conversations'],
+  ki_member_lessons:    ['member_contacts', 'lessons_member_present', 'references_asked'],
+  ki_friends_sacrament: ['church_invites'],
+  ki_baptismal_date:    ['baptism_doctrine_lessons', 'baptismal_invitations', 'baptismal_calendars'],
+  ki_rc_at_church:      ['rc_lessons']
+};
+
+// The nightly funnel chain the trend block lists in its own right, whichever
+// indicator turns out to be weakest: what a leader watches week to week.
+var A1A_TREND_FUNNEL_KEYS = [
+  'contacts_attempted', 'contacts_made', 'meaningful_conversations',
+  'new_people_found', 'friend_lessons', 'church_invites', 'baptismal_invitations'
+];
+
+// Every count metric a1a_rollUpTrend_ carries per unit per week: the funnel
+// chain plus every Key Indicator feeder, unioned so the two lists cannot
+// drift apart. The 4 fraction rates are derived from these sums rather than
+// carried separately, so contacts_attempted / contacts_made / friend_lessons /
+// baptismal_invitations must stay in this list -- they are A1A_RATE_METRICS'
+// own num/den keys.
+var A1A_TREND_COUNT_KEYS = (function() {
+  var seen = {}, out = [];
+  function add(k) { if (!seen[k]) { seen[k] = 1; out.push(k); } }
+  A1A_TREND_FUNNEL_KEYS.forEach(add);
+  Object.keys(A1A_KI_FEEDERS).forEach(function(ki) { A1A_KI_FEEDERS[ki].forEach(add); });
+  return out;
+})();
+
+// Weeks of nightly history each unit carries, matching the four weekly bars
+// the trend block's featured chain draws.
+var A1A_TREND_WEEKS = 4;
 
 /**
  * Per-area weekly Key Indicators for `weekEnd`, as
@@ -947,7 +1004,7 @@ function a1a_rankMetrics(stats, areaGoals, rateTargets, lastGrowthMetric) {
 
 // --- SUMMARIES --------------------------------------------------------------
 
-function a1a_buildSummaries(areaData, missionOrg, metaWeekEnd) {
+function a1a_buildSummaries(areaData, missionOrg, metaWeekEnd, history, trendWeeks) {
   var mission   = a1a_emptySummary();
   var zones     = {};
   var districts = {};
@@ -992,6 +1049,18 @@ function a1a_buildSummaries(areaData, missionOrg, metaWeekEnd) {
   });
   Object.keys(districts).forEach(function(dn) {
     districts[dn].ki = a1a_rollUpKi_(members.districts[dn], metaWeekEnd);
+  });
+
+  // Multi-week nightly activity per unit, for the letter's trend block. Both
+  // arguments are optional: a caller with no DAILY_LOG history leaves every
+  // .trend null and the letter renders no trend block, rather than one drawn
+  // from nothing.
+  mission.trend = a1a_rollUpTrend_(members.mission, history, trendWeeks);
+  Object.keys(zones).forEach(function(z) {
+    zones[z].trend = a1a_rollUpTrend_(members.zones[z], history, trendWeeks);
+  });
+  Object.keys(districts).forEach(function(dn) {
+    districts[dn].trend = a1a_rollUpTrend_(members.districts[dn], history, trendWeeks);
   });
 
   return { mission: mission, zones: zones, districts: districts };
@@ -1082,6 +1151,96 @@ function a1a_rollUpKi_(members, metaWeekEnd) {
     silentAreas:   silentAreas.sort(),
     indicators:    indicators
   };
+}
+
+/**
+ * One zone / district / mission's NIGHTLY activity, week by week, for the
+ * leadership letter's "El Rumbo de la Zona" trend block. `members` is the same
+ * [{ name, ... }] list a1a_rollUpKi_ reads, `history` is
+ * a1a_loadMultiWeekHistory's output, and `weeks` is the ascending list of
+ * week-ending Sundays to carry (a SUBSET of the weeks `history` was bucketed
+ * for -- see runAgent1A, which slices one array rather than building two).
+ *
+ * Returns { weeks: [{ week, days, metrics }] } or null when there is nothing
+ * to roll up. `days` is area-days reported, not calendar days: a zone of 11
+ * areas can report at most 77.
+ *
+ * Two aggregation rules here are the whole reason this cannot be done by
+ * summing area numbers in the letter:
+ *
+ *  1. RATES COME FROM THE UNIT'S OWN NUMERATOR AND DENOMINATOR, never from
+ *     averaging the areas' rates. An area that attempted 1 contact and made it
+ *     has a 100% contact rate; averaged in, it moves a zone as much as an area
+ *     that attempted 200. Summing num and den first gives the rate the zone
+ *     actually ran at.
+ *  2. effort_score is already an average (1-3, Todo/La mayor parte/Algo), so it
+ *     rolls up WEIGHTED BY THE NIGHTS IT AVERAGES. An area with no
+ *     effort_score for the week is left out of both sides rather than counted
+ *     as a zero, which is not a value the 1-3 scale can produce.
+ *
+ * COUNTS are left as raw weekly sums on purpose. Deciding to show them per
+ * reporting day is the letter's job, and it needs `days` in front of the
+ * reader anyway: this mission's raw weekly totals genuinely reverse sign when
+ * reporting volume shifts (a zone's church invitations fell 9% in raw totals
+ * the same week they rose 9% per reporting day), so the letter states both the
+ * day counts and the basis rather than quietly picking one.
+ */
+function a1a_rollUpTrend_(members, history, weeks) {
+  if (!members || !members.length) return null;
+  if (!history || !history.byArea)  return null;
+  if (!weeks   || !weeks.length)    return null;
+
+  var byArea = history.byArea;
+
+  var series = weeks.map(function(we) {
+    var days   = 0;
+    var counts = {};
+    A1A_TREND_COUNT_KEYS.forEach(function(k) { counts[k] = 0; });
+    var effortSum = 0, effortDays = 0;
+
+    members.forEach(function(m) {
+      var wk = byArea[m.name] && byArea[m.name][we];
+      if (!wk) return; // this area filed nothing that week
+      var sub = wk.submissions || 0;
+      days += sub;
+      A1A_TREND_COUNT_KEYS.forEach(function(k) {
+        if (typeof wk[k] === 'number') counts[k] += wk[k];
+      });
+      if (typeof wk.effort_score === 'number' && sub > 0) {
+        effortSum  += wk.effort_score * sub;
+        effortDays += sub;
+      }
+    });
+
+    var metrics = {};
+    A1A_TREND_COUNT_KEYS.forEach(function(k) { metrics[k] = counts[k]; });
+
+    Object.keys(A1A_FRACTION_RATE_KEYS).forEach(function(key) {
+      var r = A1A_FRACTION_RATE_KEYS[key];
+      // A rate whose operands this roll-up does not carry is null, not 0 --
+      // a zero here would read as "the zone converted nothing" when what
+      // happened is that nobody measured it.
+      if (!counts.hasOwnProperty(r.num) || !counts.hasOwnProperty(r.den)) {
+        metrics[key] = null;
+        return;
+      }
+      metrics[key] = counts[r.den] > 0
+        ? a1a_roundForMetric_(key, counts[r.num] / counts[r.den])
+        : 0;
+    });
+
+    // Two decimals, not a1a_round1's one. A unit's effort score averages
+    // 50-90 nights, where the second decimal is real movement; the trend
+    // block's delta chip would otherwise round a week's whole change
+    // (+0,34 on one live zone) down to "+0,3".
+    metrics.effort_score = effortDays > 0
+      ? Math.round(effortSum / effortDays * 100) / 100
+      : null;
+
+    return { week: we, days: days, metrics: metrics };
+  });
+
+  return { weeks: series };
 }
 
 function a1a_emptySummary() {

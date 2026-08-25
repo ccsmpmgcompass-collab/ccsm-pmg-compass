@@ -1146,6 +1146,399 @@ function a1c_buildLeaderKiBlock_(ki, scope, C) {
   return html;
 }
 
+// ─── "EL RUMBO DE LA ZONA" — the leadership trend block ───────────────────────
+
+// Spanish nouns with their article, for prose that has to name the unit
+// mid-sentence ("la zona informó 45 días"). A1C_SCOPE_OF above is the
+// possessive form used in titles; this is the subject form, and the article
+// differs by gender, so neither can be built from the other.
+var A1C_SCOPE_THE = { mission: 'la misión', zone: 'la zona', district: 'el distrito' };
+
+// Direction bands. These are TEXT colours on white at 10-11px, which is why
+// they are not C.green / C.red: #16a34a scores 3.0:1 against white and
+// #dc2626 4.26:1, both under AA's 4.5:1, while #166534 (8.0:1) and #b91c1c
+// (5.9:1) clear it. Same reasoning that put #a16207 in C.yellow rather than a
+// true yellow -- and `flat.text` IS C.yellow, kept literal only because this
+// table is built once at load time and C is per-letter. The verdict bar above
+// these lists is a FILL with white text on it, so it keeps the letter's one
+// colour authority instead (a1c_goalBandColor_).
+var A1C_TREND_BANDS = {
+  up:   { title: '▲ Subiendo',   text: '#166534', rule: '#dcfce7', mark: '▲' },
+  flat: { title: '■ Sin cambio', text: '#a16207', rule: '#fef3c7', mark: '■' },
+  down: { title: '▼ Bajando',    text: '#b91c1c', rule: '#fee2e2', mark: '▼' }
+};
+
+// What counts as movement rather than noise. Without a dead band the
+// "Subiendo" list fills up with metrics that will read the other way next
+// week, and a leader who acts on all of them is acting on rounding.
+var A1C_TREND_FLAT_PCT    = 5;    // count metrics, percent change
+var A1C_TREND_FLAT_PP     = 1;    // the 4 fraction rates, percentage points
+var A1C_TREND_FLAT_EFFORT = 0.1;  // effort_score, absolute on its 1-3 scale
+
+/**
+ * A number in Spanish notation — decimal comma, fixed places.
+ *
+ * The rest of the letter shows integers and whole percents, so this is the
+ * first place the decimal separator has mattered. (a1c_fmtMetricVal_ still
+ * prints effort_score with a dot; that is a one-line fix with suite-wide
+ * fallout and is deliberately not bundled into this block.)
+ */
+function a1c_esNum_(n, places) {
+  if (typeof n !== 'number' || isNaN(n)) return '—';
+  return n.toFixed(places).replace('.', ',');
+}
+
+/** True for the 4 fraction rates, which are ratios and need no day divisor. */
+function a1c_isRateKey_(key) { return A1C_PERCENT_METRIC_KEYS.indexOf(key) !== -1; }
+
+/**
+ * One metric's week-over-week movement for the trend block, or null when
+ * either week lacks the data to compare.
+ *
+ * The basis is the whole point. Counts are divided by DAYS REPORTED, because
+ * this mission's reporting volume swings by 20% week to week and the raw
+ * totals then reverse sign: one zone's church invitations fell 9% in raw
+ * totals the same week they rose 9% per reporting day. Rates are already
+ * ratios and are used as they are.
+ */
+function a1c_trendMeasure_(key, cur, prev) {
+  var cm = (cur && cur.metrics) || {}, pm = (prev && prev.metrics) || {};
+  var cv = cm[key], pv = pm[key];
+  if (typeof cv !== 'number' || typeof pv !== 'number') return null;
+
+  var isRate   = a1c_isRateKey_(key);
+  var isEffort = key === 'effort_score';
+  var out = { key: key, isRate: isRate, isEffort: isEffort, cur: cv, prev: pv };
+
+  if (isRate) {
+    var pp = (cv - pv) * 100;
+    out.delta = pp;
+    out.band  = Math.abs(pp) < A1C_TREND_FLAT_PP ? 'flat' : (pp > 0 ? 'up' : 'down');
+    out.deltaText = a1c_esNum_(Math.abs(pp), 1) + ' pp';
+  } else if (isEffort) {
+    var d = cv - pv;
+    out.delta = d;
+    out.band  = Math.abs(d) < A1C_TREND_FLAT_EFFORT ? 'flat' : (d > 0 ? 'up' : 'down');
+    out.deltaText = a1c_esNum_(Math.abs(d), 2);
+  } else {
+    if (!(cur.days > 0) || !(prev.days > 0)) return null;
+    out.cur  = cv / cur.days;
+    out.prev = pv / prev.days;
+    if (out.prev === 0) {
+      // A percent change from zero has no value to report, so say what
+      // actually happened instead of printing Infinity or a made-up ceiling.
+      out.delta     = out.cur > 0 ? Infinity : 0;
+      out.band      = out.cur > 0 ? 'up' : 'flat';
+      out.deltaText = out.cur > 0 ? 'desde 0' : '0%';
+    } else {
+      var pct = (out.cur - out.prev) / out.prev * 100;
+      out.delta     = pct;
+      out.band      = Math.abs(pct) < A1C_TREND_FLAT_PCT ? 'flat' : (pct > 0 ? 'up' : 'down');
+      out.deltaText = Math.round(Math.abs(pct)) + '%';
+    }
+  }
+  return out;
+}
+
+/** The displayed value of a measure: "42,5%" / "2,47" / "24,0" / "0,87". */
+function a1c_trendValueText_(m) {
+  if (m.isRate)   return a1c_esNum_(m.cur * 100, 1) + '%';
+  if (m.isEffort) return a1c_esNum_(m.cur, 2);
+  // Below 1 a single decimal throws the number away -- 0,11 becomes 0,1 and
+  // 0,87 becomes 0,9. These are per-day averages, so most of the baptismal
+  // chain lives there.
+  return a1c_esNum_(m.cur, (m.cur > 0 && m.cur < 1) ? 2 : 1);
+}
+
+/**
+ * "▲ 79%" chip markup in its band's colour.
+ *
+ * A "sin cambio" chip carries its own sign, because ■ says nothing about
+ * direction: "■ 0,4 pp" cannot be told from a rate that rose. ▲ and ▼ already
+ * say it, so those stay unsigned.
+ */
+function a1c_trendChip_(m, size, boxed) {
+  var b    = A1C_TREND_BANDS[m.band];
+  var sign = (m.band === 'flat' && m.delta !== 0) ? (m.delta > 0 ? '+' : '−') : '';
+  return '<span style="font-size:' + size + 'px;font-weight:700;color:' + b.text +
+         (boxed ? ';background:' + b.rule + ';padding:1px 5px;border-radius:3px;margin-left:4px' : ';margin-left:3px') +
+         ';">' + b.mark + ' ' + sign + a1c_esc(m.deltaText) + '</span>';
+}
+
+/**
+ * The unit's weakest Key Indicator that has a nightly chain behind it, or
+ * null. Weakest = furthest short of its own meta; an indicator with no meta
+ * has no weakness to measure, and one that MET its meta is not a chain to
+ * warn about, so both are out. A1A_KI_FEEDERS (CCSM_Agent1A.gs) decides what
+ * feeds what -- indicators the nightly form has no chain for are skipped
+ * rather than paired with a plausible guess, so the block moves on to the
+ * next weakest instead.
+ */
+function a1c_weakestKiChain_(ki) {
+  if (!ki || !ki.indicators) return null;
+  var feeders = (typeof A1A_KI_FEEDERS !== 'undefined') ? A1A_KI_FEEDERS : {};
+  var cands = [];
+  ki.indicators.forEach(function(k, i) {
+    var f = feeders[k.key] || [];
+    if (!f.length) return;
+    var meta = Math.round(k.meta || 0), real = Math.round(k.real || 0);
+    if (meta <= 0 || real >= meta) return;
+    cands.push({ display: k.display, real: real, meta: meta, feeders: f, pct: real / meta, order: i });
+  });
+  if (!cands.length) return null;
+  cands.sort(function(a, b) { return (a.pct - b.pct) || (a.order - b.order); });
+  return cands[0];
+}
+
+/** Four weekly bars for one featured metric, tallest week = 22px. */
+function a1c_trendBars_(key, weeks, C) {
+  var perDay = weeks.map(function(w) {
+    var v = w.metrics ? w.metrics[key] : undefined;
+    if (typeof v !== 'number' || !(w.days > 0)) return null; // no reports that week
+    return v / w.days;
+  });
+  var max = 0;
+  perDay.forEach(function(v) { if (v !== null && v > max) max = v; });
+
+  var html = '<table width="100%" cellpadding="0" cellspacing="0"><tr>';
+  perDay.forEach(function(v, i) {
+    var last = (i === perDay.length - 1);
+    var h    = 3;
+    var col  = C.border;
+    if (v !== null) {
+      col = last ? C.header : '#93c5fd';
+      h   = max > 0 ? Math.max(3, Math.round(v / max * 22)) : 3;
+    }
+    html += '<td style="width:25%;' + (last ? '' : 'padding-right:3px;') +
+            'vertical-align:bottom;height:22px;"><div style="height:' + h + 'px;background:' + col +
+            ';border-radius:2px;font-size:1px;">&nbsp;</div></td>';
+  });
+  html += '</tr><tr>';
+  weeks.forEach(function(w, i) {
+    var last = (i === weeks.length - 1);
+    var col  = last ? '#111;font-weight:700' : (i === weeks.length - 2 ? C.muted : '#9ca3af');
+    html += '<td style="font-size:8px;color:' + col + ';padding-top:2px;">' +
+            a1c_esc(a1c_shortDate_(w.week)) + '</td>';
+  });
+  return html + '</tr></table>';
+}
+
+/** "Estos son los tres números que la producen — y los tres van subiendo." */
+function a1c_chainSentence_(measures) {
+  var LOS = ['', '', 'los dos', 'los tres'];
+  var n   = measures.length;
+  var lead = (n === 1)
+    ? 'Este es el número que la produce'
+    : 'Estos son ' + (LOS[n] ? LOS[n] + ' números' : 'los ' + n + ' números') + ' que la producen';
+
+  var up = 0, down = 0;
+  measures.forEach(function(m) { if (m.band === 'up') up++; else if (m.band === 'down') down++; });
+
+  var all = (up === n) ? 'subiendo' : (down === n) ? 'bajando' : '';
+  if (!all) return lead + ' — así van esta semana.';
+  if (n === 1) return lead + ' — y va ' + all + '.';
+  return lead + ' — y ' + (LOS[n] || 'todos') + ' van ' + all + '.';
+}
+
+/**
+ * A count metric whose RAW weekly total moves the opposite way from its
+ * per-reporting-day average — the concrete reason this block is per-day at
+ * all. Returns { label, rawPct, direction } or null when nothing flips.
+ */
+function a1c_trendRawFlip_(measures, cur, prev) {
+  var best = null;
+  measures.forEach(function(m) {
+    if (m.isRate || m.isEffort) return;          // ratios don't move with day count
+    if (m.band !== 'up' && m.band !== 'down') return;
+    var cv = cur.metrics[m.key], pv = prev.metrics[m.key];
+    if (typeof cv !== 'number' || typeof pv !== 'number' || pv === 0) return;
+    var rawPct = (cv - pv) / pv * 100;
+    var rawBand = Math.abs(rawPct) < A1C_TREND_FLAT_PCT ? 'flat' : (rawPct > 0 ? 'up' : 'down');
+    if ((m.band === 'up' && rawBand !== 'down') || (m.band === 'down' && rawBand !== 'up')) return;
+    if (!best || Math.abs(rawPct) > Math.abs(best.rawPct)) {
+      best = { key: m.key, rawPct: rawPct, verb: rawPct < 0 ? 'bajaría' : 'subiría' };
+    }
+  });
+  return best;
+}
+
+/**
+ * "El Rumbo de la Zona" — where the unit is heading, under the Key Indicators
+ * block that says where it is.
+ *
+ * Reads the per-unit weekly nightly roll-up Agent1A hangs on each summary
+ * (a1a_rollUpTrend_) plus the same KI roll-up the block above renders. Three
+ * things it does that a plainer version would get wrong:
+ *
+ *  - EVERYTHING IS PER REPORTING DAY. Reporting volume swings ~20% week to
+ *    week here, and raw totals then say the opposite of what happened: one
+ *    zone's church invitations fell 9% in raw totals the same week they rose
+ *    9% per reporting day. The footnote states the day counts and names the
+ *    flip when there is one, rather than asking the reader to take the basis
+ *    on trust.
+ *  - THE FEATURED CHAIN IS CHOSEN FROM THE DATA. It shows the nightly numbers
+ *    behind whichever Key Indicator fell furthest short of its own meta, so
+ *    "2 de 9" arrives with the three things that produce it. Nothing here is
+ *    hardcoded to an indicator.
+ *  - A DEAD BAND SEPARATES MOVEMENT FROM NOISE. A rate that moved under a
+ *    percentage point is "sin cambio", not a direction to act on.
+ *
+ * Renders nothing when there is no roll-up at all; says so in a sentence when
+ * there is one but no week to compare against, because "the history does not
+ * exist yet" and "nothing moved" are different facts.
+ */
+function a1c_buildRumboBlock_(trend, ki, scope, C) {
+  var weeks = (trend && trend.weeks) || [];
+  if (weeks.length < 2) return '';
+
+  var cur  = weeks[weeks.length - 1];
+  var prev = weeks[weeks.length - 2];
+  var unit = A1C_SCOPE_THE[scope] || 'la unidad';
+
+  var html = '<div style="margin:0 0 18px;">';
+  html += '<div style="font-size:12px;font-weight:700;color:' + C.header +
+          ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">📈 El Rumbo ' +
+          a1c_esc(A1C_SCOPE_OF[scope] || '') + '</div>';
+
+  function note(text) {
+    return '<div style="font-size:11px;color:' + C.muted + ';font-style:italic;line-height:1.5;">' +
+           a1c_esc(text) + '</div></div>';
+  }
+
+  if (!(cur.days > 0)) {
+    return html + note('Esta semana ' + unit + ' no registró informes nocturnos, así que todavía no hay ' +
+                       'un rumbo que medir.');
+  }
+  if (!(prev.days > 0)) {
+    return html + note('Todavía no hay una semana anterior con la que comparar: ' + unit +
+                       ' no registró informes nocturnos en la semana del ' + a1c_formatDate(prev.week) + '.');
+  }
+
+  html += '<div style="font-size:10px;color:' + C.muted + ';line-height:1.5;margin-bottom:10px;">' +
+          'Promedio por día informado, contra la semana del ' + a1c_esc(a1c_formatDate(prev.week)) + '.</div>';
+
+  // The featured chain claims its metrics first; the grouped lists below show
+  // what is left, so no number is counted twice or read twice.
+  var chain = a1c_weakestKiChain_(ki);
+  var chainMeasures = [], featured = {};
+  if (chain) {
+    chain.feeders.forEach(function(k) {
+      var m = a1c_trendMeasure_(k, cur, prev);
+      if (m) { chainMeasures.push(m); featured[k] = true; }
+    });
+  }
+
+  var funnelKeys = (typeof A1A_TREND_FUNNEL_KEYS !== 'undefined') ? A1A_TREND_FUNNEL_KEYS : [];
+  var grouped = { up: [], flat: [], down: [] };
+  var groupedAll = [];
+  funnelKeys.concat(A1C_RATE_METRIC_KEYS).forEach(function(k) {
+    if (featured[k]) return;
+    var m = a1c_trendMeasure_(k, cur, prev);
+    if (!m) return;
+    grouped[m.band].push(m);
+    groupedAll.push(m);
+  });
+
+  if (groupedAll.length === 0 && chainMeasures.length === 0) {
+    return html + note('Todavía no hay suficientes noches informadas en las dos semanas para medir un rumbo.');
+  }
+
+  // Verdict bar. The fill is a1c_goalBandColor_ on the share of indicators
+  // rising, the same colour authority the Key Indicator tiles use, so a unit
+  // where nothing rose cannot get the tile a unit where everything rose gets.
+  var rising = grouped.up.length, total = groupedAll.length;
+  if (total > 0) {
+    var pct  = Math.round(rising / total * 100);
+    var fill = a1c_goalBandColor_(pct, rising, C);
+    // Nothing falling is the line worth reading, so it outranks the count of
+    // flat indicators rather than sharing space with it.
+    var tail = [];
+    if (grouped.down.length) {
+      tail.push(grouped.down.length + ' a la baja');
+      if (grouped.flat.length) tail.push(grouped.flat.length + ' sin cambio');
+    }
+    html += '<div style="background:' + fill + ';border-radius:6px;padding:10px;text-align:center;margin-bottom:14px;">' +
+            '<div style="font-size:17px;font-weight:700;color:#ffffff;line-height:1.2;">' +
+            rising + ' de ' + total + (total === 1 ? ' indicador' : ' indicadores') + ' al alza</div>' +
+            '<div style="font-size:10px;color:#ffffff;opacity:0.9;margin-top:3px;">' +
+            a1c_esc(tail.length ? tail.join(' · ') : 'ninguno a la baja esta semana') + '</div></div>';
+  }
+
+  if (chain && chainMeasures.length) {
+    html += '<div style="border:1px solid ' + C.border + ';border-radius:6px;padding:10px;margin-bottom:14px;' +
+            'background:' + C.bgLight + ';">';
+    html += '<div style="font-size:10px;font-weight:700;color:' + C.yellow +
+            ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px;">⚠ La cadena más débil</div>';
+    html += '<div style="font-size:10px;color:#374151;line-height:1.5;margin-bottom:10px;"><strong>' +
+            a1c_esc(chain.display) + ': ' + chain.real + ' de ' + chain.meta + '.</strong> ' +
+            a1c_esc(a1c_chainSentence_(chainMeasures)) + '</div>';
+
+    chainMeasures.forEach(function(m, i) {
+      html += '<div' + (i < chainMeasures.length - 1 ? ' style="margin-bottom:10px;"' : '') + '>';
+      html += '<table width="100%" cellpadding="0" cellspacing="0"><tr>' +
+              '<td style="font-size:11px;font-weight:700;color:#374151;padding-bottom:3px;">' +
+              a1c_esc(a1c_scoreboardLabel_(m.key)) + '</td>' +
+              '<td style="text-align:right;padding-bottom:3px;white-space:nowrap;">' +
+              '<span style="font-size:14px;font-weight:700;color:#111;">' +
+              a1c_esc(a1c_trendValueText_(m)) + '</span>' + a1c_trendChip_(m, 10, true) + '</td></tr></table>';
+      html += a1c_trendBars_(m.key, weeks, C);
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  ['up', 'flat', 'down'].forEach(function(band, idx) {
+    var b = A1C_TREND_BANDS[band];
+    html += '<div style="font-size:11px;font-weight:700;color:' + b.text +
+            ';text-transform:uppercase;letter-spacing:0.05em;border-bottom:2px solid ' + b.rule +
+            ';padding-bottom:4px;margin:' + (idx === 0 ? '0 0 5px' : '13px 0 5px') + ';">' + b.title + '</div>';
+    if (!grouped[band].length) {
+      // An empty group says so. A heading followed by nothing reads as a
+      // rendering fault, and "nothing fell this week" is worth reading.
+      var empty = band === 'up'   ? 'Ningún indicador subió esta semana.'
+                : band === 'flat' ? 'Todos los indicadores se movieron esta semana.'
+                :                   'Ningún indicador bajó esta semana.';
+      html += '<div style="font-size:11px;color:' + C.muted + ';font-style:italic;padding:4px 0;">' +
+              a1c_esc(empty) + '</div>';
+      return;
+    }
+    // Counts before rates, then biggest mover first inside each. Sorting the
+    // whole band on magnitude alone would rank a percent change against a
+    // percentage-point change, which are not the same unit and do not compare.
+    grouped[band].sort(function(a, z) {
+      var ra = (a.isRate || a.isEffort) ? 1 : 0, rz = (z.isRate || z.isEffort) ? 1 : 0;
+      return (ra - rz) || (Math.abs(z.delta) - Math.abs(a.delta));
+    });
+    html += '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:11px;">';
+    grouped[band].forEach(function(m) {
+      html += '<tr><td style="padding:5px 0;color:#374151;">' + a1c_esc(a1c_scoreboardLabel_(m.key)) + '</td>' +
+              '<td style="padding:5px 0;text-align:right;white-space:nowrap;"><b style="font-size:13px;">' +
+              a1c_esc(a1c_trendValueText_(m)) + '</b>' + a1c_trendChip_(m, 10, false) + '</td></tr>';
+    });
+    html += '</table>';
+  });
+
+  // A thin week is still a real week -- a district where one companionship
+  // reported a single night genuinely does swing hundreds of percent per day --
+  // so the day counts are stated rather than the movement suppressed. They
+  // also have to read as Spanish: the naive version prints "informó 1 días".
+  var dias = cur.days === 1 ? ' día' : ' días';
+  var foot = cur.days === prev.days
+    ? 'Por día informado: ' + unit + ' informó ' + cur.days + dias + ' en cada una de las dos semanas.'
+    : 'Por día informado: ' + unit + ' informó ' + cur.days + dias + ' esta semana y ' + prev.days +
+      ' la anterior, así que los totales crudos no son comparables.';
+  var flip = a1c_trendRawFlip_(groupedAll.concat(chainMeasures), cur, prev);
+  if (flip) {
+    foot += ' En crudo, ' + a1c_scoreboardLabel_(flip.key) + ' ' + flip.verb + ' ' +
+            Math.round(Math.abs(flip.rawPct)) + '%.';
+  }
+  html += '<div style="font-size:9px;color:' + C.muted + ';line-height:1.5;border-top:1px solid ' + C.border +
+          ';padding-top:6px;margin-top:12px;">' + a1c_esc(foot) + '</div>';
+
+  html += '</div>';
+  return html;
+}
+
 /** Area header: name + days-reported chip + streak (from area.derived.consistency). */
 function a1c_buildAreaHeader_(areaName, area, C) {
   var der  = area.derived;
@@ -1600,6 +1993,14 @@ function a1c_buildLeadershipSection(title, summaryTotals, areas, scope, weekEnd,
   // whether their areas hit the goals they set, not how many doors they
   // knocked. Renders nothing when WEEKLY_KI was unreadable (ki === null).
   html += a1c_buildLeaderKiBlock_(summaryTotals && summaryTotals.ki, scope, C);
+
+  // Then where the unit is heading, immediately under where it is: the Key
+  // Indicators above are one week's verdict, and a leader cannot tell a bad
+  // week from a bad direction without this. Reads the same summary's nightly
+  // roll-up (a1a_rollUpTrend_) and the KI totals directly above, so the
+  // featured chain explains the very indicator that block just showed short.
+  html += a1c_buildRumboBlock_(summaryTotals && summaryTotals.trend,
+                               summaryTotals && summaryTotals.ki, scope, C);
 
   var narrative = a1c_buildLeadershipNarrative(scope, unitName, summaryTotals, areaDetails, weekEnd, C);
   if (narrative) html += narrative;
