@@ -258,7 +258,7 @@ function a1c_glossedDisplay_(key, display) {
 // leaves the ones they do see undefined, which is exactly what happened
 // before the rate labels were reconciled with Agent1A.
 var A1C_GLOSSARY = [
-  ['Indicadores Clave', 'los 7 del informe semanal — la meta es la que ustedes mismos fijaron'],
+  ['Indicadores Clave', 'los 7 del informe semanal — la meta es la que ustedes mismos fijaron la semana anterior, que es la que estaban trabajando'],
   // 'diferencia', not 'cambio': 'cambio' is the word for a transfer, used two
   // entries below, and overloading it here reads as "change vs last transfer".
   ['Δ',              'diferencia con la semana pasada'],
@@ -318,6 +318,22 @@ function a1c_shortDate_(weekEnd) {
 function a1c_saltTitle_(title, weekEnd) {
   var d = a1c_shortDate_(weekEnd);
   return d ? title + ' · ' + d : title;
+}
+
+/**
+ * The week-end date seven days before `weekEnd`, as 'yyyy-MM-dd', or '' when
+ * the input is not a date string. Built from local Date parts rather than by
+ * subtracting milliseconds, so a DST boundary cannot land the result on a
+ * Saturday. Mirrors Agent1A's a1a_lastNWeekEnds_(weekEnd, 2)[0], which is
+ * where the prior-week metas this labels actually come from.
+ */
+function a1c_prevWeekEnd_(weekEnd) {
+  var m = String(weekEnd || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return '';
+  var d = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10) - 7);
+  return d.getFullYear() + '-' +
+         ('0' + (d.getMonth() + 1)).slice(-2) + '-' +
+         ('0' + d.getDate()).slice(-2);
 }
 
 // Leadership coaching message bank — human-curated, never AI-generated. One
@@ -857,20 +873,45 @@ function a1c_buildGoalBar_(pick, C) {
  *   2. Three of the seven (sacrament, first week, RC at church) have no
  *      nightly equivalent, so this is the only place they appear at all.
  *
+ * `metaPrev` ({ ki_key: meta } from area.kiMetaPrev, or null) is the meta half
+ * of LAST week's WEEKLY_KI row, and it -- not the meta sitting on this week's
+ * row beside the result -- is what these results are graded against. The
+ * weekly form says as much to the missionary who fills it in: the metas are
+ * "las metas que usted estableció durante la planificación semanal para la
+ * semana siguiente" (WeeklyReportForm_ES.gs:117). Pairing a result with the
+ * meta on its own row therefore grades every companionship against a goal it
+ * had not begun working on yet, and it is not a rounding-level difference --
+ * mission-wide the two metas agree for only about half of the
+ * area-by-indicator pairs.
+ *
+ * When metaPrev is null the companionship filed nothing last week, so there
+ * is no prior goal to use and the block falls back to this week's own meta.
+ * That fallback is never silent: the sub-caption carries a dagger and a
+ * footnote says which week the metas came from, because a comparison whose
+ * basis changes without saying so is worse than either basis alone.
+ *
  * A meta of 0 renders as "sin meta" with no bar rather than a fake 0% -- an
  * unset goal is not a missed goal. A missing report never shows as seven
  * zeros: `ki` of [] states plainly that no weekly form arrived, and `ki` of
  * null (source unavailable) renders nothing at all rather than implying the
  * companionship failed to report.
  */
-function a1c_buildKiBlock_(ki, C, weekEnd) {
+function a1c_buildKiBlock_(ki, C, weekEnd, metaPrev) {
   if (ki === null || ki === undefined) return '';
+
+  // metaPrev absent (never filed last week, or an older caller that predates
+  // it) -> grade against this week's own meta and say so under a dagger.
+  var usePrev  = !!metaPrev;
+  var prevEnd  = a1c_prevWeekEnd_(weekEnd);
+  var onDay    = prevEnd ? 'el ' + a1c_formatDate(prevEnd) : 'la semana pasada';
 
   var html = '<div style="margin:14px 0 18px;">';
   html += '<div style="font-size:12px;font-weight:700;color:' + C.header +
-          ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">🎯 ' +
+          ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:' +
+          (ki.length === 0 ? '8' : '3') + 'px;">🎯 ' +
           a1c_esc(a1c_saltTitle_('Indicadores Clave', weekEnd)) + '</div>';
 
+  // No results, so there is no comparison to caption -- straight to the gap.
   if (ki.length === 0) {
     html += '<div style="border-left:4px solid ' + C.border + ';padding:8px 12px;background:' + C.bgLight +
             ';font-size:11px;color:#374151;line-height:1.5;">' +
@@ -881,8 +922,19 @@ function a1c_buildKiBlock_(ki, C, weekEnd) {
     return html;
   }
 
+  // Which week's metas these results are measured against, said on every
+  // letter rather than only the fallback ones: a reader who has to infer the
+  // basis from a dagger's absence has not been told it.
+  html += '<div style="font-size:10px;color:' + C.muted + ';line-height:1.5;margin-bottom:9px;">' +
+          (usePrev
+            ? 'Sus resultados de esta semana contra las metas que ustedes fijaron ' + a1c_esc(onDay) + '.'
+            : 'Sus resultados de esta semana contra las metas que ustedes fijaron en el informe de esta misma semana.†') +
+          '</div>';
+
   ki.forEach(function(k) {
-    var real = parseFloat(k.real), meta = parseFloat(k.meta);
+    var real = parseFloat(k.real);
+    // The result is always this week's; only the goal changes week.
+    var meta = usePrev ? parseFloat(metaPrev[k.key]) : parseFloat(k.meta);
     if (isNaN(real)) real = 0;
     var hasGoal = !isNaN(meta) && meta > 0;
     var pct     = hasGoal ? Math.round(real / meta * 100) : null;
@@ -906,10 +958,19 @@ function a1c_buildKiBlock_(ki, C, weekEnd) {
             (hasGoal
               ? (reached ? '<strong style="color:' + C.green + ';">Meta alcanzada ✓</strong>'
                          : '<strong style="color:' + fill + ';">' + pct + '% de la meta</strong>')
-              : 'sin meta esta semana') +
+              : (usePrev ? 'no fijaron meta para este indicador' : 'sin meta esta semana')) +
             '</div>';
     html += '</div>';
   });
+
+  if (!usePrev) {
+    html += '<div style="font-size:9px;color:' + C.muted + ';line-height:1.5;margin-top:8px;border-top:1px solid ' +
+            C.border + ';padding-top:6px;">† No recibimos su informe semanal de la semana anterior' +
+            (prevEnd ? ', la que terminó ' + a1c_esc(onDay) : '') +
+            ', así que aquí la comparación usa las metas del informe de esta misma semana. ' +
+            'Normalmente usa las metas de la semana anterior, que son las que ustedes ya ' +
+            'estaban trabajando.</div>';
+  }
 
   html += '</div>';
   return html;
@@ -1122,7 +1183,7 @@ function a1c_buildAreaSection(areaName, area, weekEnd, C) {
 
   var html = '<div style="margin:16px 0;padding:0 4px;">';
   html += a1c_buildAreaHeader_(areaName, area, C);
-  html += a1c_buildKiBlock_(area.ki, C, weekEnd);
+  html += a1c_buildKiBlock_(area.ki, C, weekEnd, area.kiMetaPrev);
 
   if (s)  html += a1c_buildMessageBlock('💪 Fortaleza — ' + a1c_glossedDisplay_(s.key, s.display),  area.msg_strength1, C, C.green,
                                          a1c_statLine_(s, der, false) + a1c_buildGoalBar_(s, C));
