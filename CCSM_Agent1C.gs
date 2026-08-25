@@ -915,6 +915,176 @@ function a1c_buildKiBlock_(ki, C, weekEnd) {
   return html;
 }
 
+// "of the <unit>" for leadership block titles. Kept separate from
+// A1C_SCOPE_NOUNS because the article contracts with the preposition for the
+// one masculine noun -- "del Distrito", never "de el Distrito".
+var A1C_SCOPE_OF = { mission: 'de la Misión', zone: 'de la Zona', district: 'del Distrito' };
+
+/** Joins area names for a prose list, keeping each name unbroken. */
+function a1c_areaNameList_(names) {
+  return names.map(function(n) {
+    // A literal U+00A0, not '&nbsp;' -- this goes through a1c_esc, which would
+    // escape the ampersand and print the entity. Same reason a1c_softHyphenate_
+    // emits a literal soft hyphen.
+    return a1c_esc(String(n).replace(/ /g, ' '));
+  }).join(', ');
+}
+
+/**
+ * "Indicadores Clave de la Zona" — the leadership counterpart to
+ * a1c_buildKiBlock_, opening every leadership section. A leader's letter used
+ * to start on nightly activity totals; this starts it on the seven goals their
+ * areas actually set for themselves.
+ *
+ * Reads the roll-up Agent1A's a1a_rollUpKi_ hangs on each summary
+ * (summaries.mission.ki / .zones[z].ki / .districts[d].ki). Everything about
+ * which areas count, and which week's meta each one is measured against, is
+ * decided there -- this function renders and never re-derives.
+ *
+ * The one number worth spelling out: the meta is the one filed the WEEK
+ * BEFORE. A meta on a WEEKLY_KI row is next week's plan, which the weekly form
+ * itself says out loud ("las metas que usted estableció durante la
+ * planificación semanal para la semana siguiente", WeeklyReportForm_ES.gs:117),
+ * so grading this week's results against this week's row grades every area
+ * against a goal it had not started working on. It changes the verdict, not
+ * just the arithmetic: Los Angeles Norte reads 2 of 7 metas met on same-week
+ * metas and 4 of 7 on the metas its areas were actually pursuing.
+ *
+ * Three things are stated rather than left for the reader to infer, because
+ * each one is a place where a silent number would mislead:
+ *   - Areas that filed nothing are named in a callout, not folded into a
+ *     smaller total that looks like a worse week.
+ *   - Areas with no meta from last week fall back to their own same-week meta
+ *     and are named under a dagger; a mixed rule nobody can see is a bug from
+ *     the reader's side.
+ *   - The tiles carry the goal-band colour rather than a fixed green, so a
+ *     unit that met none of its metas cannot read as if it met them all.
+ */
+function a1c_buildLeaderKiBlock_(ki, scope, C) {
+  if (!ki || !ki.indicators) return '';
+
+  var metaDate  = ki.metaWeekEnd ? a1c_formatDate(ki.metaWeekEnd) : '';
+  var onMetaDay = metaDate ? 'el ' + metaDate : 'la semana pasada';
+  var reported  = ki.areasReported || 0;
+  var fallbacks = ki.fallbackAreas || [];
+  var silent    = ki.silentAreas   || [];
+
+  function tile(val, label, bg) {
+    return '<td style="width:50%;padding:3px;">' +
+      '<div style="background:' + bg + ';border-radius:6px;padding:9px 4px;text-align:center;">' +
+      '<div style="font-size:19px;font-weight:700;line-height:1.1;color:#ffffff;">' + a1c_esc(val) + '</div>' +
+      '<div style="font-size:9px;text-transform:uppercase;letter-spacing:0.05em;margin-top:3px;' +
+      'color:#ffffff;opacity:0.9;">' + a1c_esc(label) + '</div></div></td>';
+  }
+
+  function bandOf(num, den) {
+    return den > 0 ? a1c_goalBandColor_(Math.round(num / den * 100), num, C) : C.muted;
+  }
+
+  var html = '<div style="margin:0 0 18px;">';
+  html += '<div style="font-size:12px;font-weight:700;color:' + C.header +
+          ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">🎯 Indicadores Clave ' +
+          a1c_esc(A1C_SCOPE_OF[scope] || '') + '</div>';
+  html += '<div style="font-size:10px;color:' + C.muted + ';line-height:1.5;margin-bottom:9px;">' +
+          'Resultados de esta semana contra las metas que las áreas fijaron ' + a1c_esc(onMetaDay) + '.' +
+          (fallbacks.length > 0 ? '†' : '') + '</div>';
+
+  // "0 / 0 Metas alcanzadas" reads as a broken tile rather than as "no area
+  // set a meta", which is what it means -- when nothing was set there is
+  // nothing to have achieved, and the tile says so with a dash.
+  var metasLabel = (ki.metasSet || 0) > 0
+    ? (ki.metasAchieved || 0) + ' / ' + ki.metasSet
+    : '—';
+
+  html += '<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;border-collapse:collapse;"><tr>';
+  html += tile(metasLabel, 'Metas alcanzadas',
+               bandOf(ki.metasAchieved || 0, ki.metasSet || 0));
+  html += tile(reported + ' / ' + (ki.areasTotal || 0), 'Áreas que informaron',
+               bandOf(reported, ki.areasTotal || 0));
+  html += '</tr></table>';
+
+  if (silent.length > 0) {
+    html += '<div style="border-left:4px solid ' + C.red + ';padding:7px 10px;background:' + C.bgLight +
+            ';font-size:10px;color:#374151;line-height:1.55;margin-bottom:12px;">' +
+            '<strong style="color:' + C.red + ';">' + silent.length +
+            (silent.length === 1 ? ' área fijó meta ' : ' áreas fijaron meta ') + a1c_esc(onMetaDay) +
+            (silent.length === 1 ? ' y no informó resultado:' : ' y no informaron resultado:') + '</strong> ' +
+            a1c_areaNameList_(silent) + '. Su meta no entra en los totales de abajo.</div>';
+  }
+
+  // Nothing filed anywhere in the unit: seven rows of 0 / 0 would read as a
+  // catastrophic week rather than a missing one. Say which it is.
+  if (reported === 0) {
+    html += '<div style="border-left:4px solid ' + C.border + ';padding:8px 12px;background:' + C.bgLight +
+            ';font-size:11px;color:#374151;line-height:1.5;">' +
+            'Ninguna de las ' + (ki.areasTotal || 0) + ' áreas envió su informe semanal de indicadores ' +
+            'esta semana, así que no hay resultados que sumar todavía.</div>';
+    html += '</div>';
+    return html;
+  }
+
+  // Metas met first, then closest-to-met, so the conversation the leader most
+  // needs to have is the one they finish reading on. An indicator nobody set a
+  // meta for has no standing in either group and sorts last.
+  var rows = ki.indicators.map(function(k, i) {
+    var real = Math.round(k.real || 0);
+    var meta = Math.round(k.meta || 0);
+    return {
+      display:  k.display,
+      real:     real,
+      meta:     meta,
+      hasGoal:  meta > 0,
+      pct:      meta > 0 ? Math.max(0, Math.round(real / meta * 100)) : null,
+      achieved: !!k.achieved,
+      order:    i
+    };
+  });
+  rows.sort(function(a, b) {
+    if (a.hasGoal !== b.hasGoal)   return a.hasGoal ? -1 : 1;
+    if (a.achieved !== b.achieved) return a.achieved ? -1 : 1;
+    if (a.pct !== b.pct)           return b.pct - a.pct;
+    return a.order - b.order;
+  });
+
+  rows.forEach(function(r) {
+    var fill = r.hasGoal ? a1c_goalBandColor_(r.pct, r.real, C) : C.muted;
+    html += '<div style="margin:0 0 9px;">';
+    html += '<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:3px;">' +
+            a1c_esc(r.display) + '</div>';
+    html += '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>' +
+            '<td style="background:' + C.border + ';border-radius:5px;padding:0;">' +
+            '<div style="width:' + (r.hasGoal ? (r.achieved ? 100 : Math.max(2, Math.min(100, r.pct))) : 0) +
+            '%;background:' + fill + ';height:9px;border-radius:5px;font-size:1px;line-height:1px;">&nbsp;</div>' +
+            '</td>' +
+            '<td style="width:74px;text-align:right;padding-left:8px;font-weight:700;color:' + fill +
+            ';font-size:11px;">' + r.real + ' / ' + (r.hasGoal ? r.meta : '—') + '</td>' +
+            '</tr></table>';
+    html += '<div style="font-size:9px;color:' + C.muted + ';margin-top:2px;">' +
+            (r.hasGoal
+              ? (r.achieved ? '<strong style="color:' + C.green + ';">Meta alcanzada ✓</strong>'
+                            : '<strong style="color:' + fill + ';">' + r.pct + '% de la meta</strong>')
+              : 'ninguna área fijó meta para este indicador') +
+            '</div>';
+    html += '</div>';
+  });
+
+  html += '<div style="font-size:9px;color:' + C.muted + ';line-height:1.5;margin-top:8px;border-top:1px solid ' +
+          C.border + ';padding-top:6px;">' +
+          (reported === 1 ? 'Los totales cubren el área que informó.'
+                          : 'Los totales suman las ' + reported + ' áreas que informaron.');
+  if (fallbacks.length > 0) {
+    html += '<br>† ' + fallbacks.length +
+            (fallbacks.length === 1
+              ? ' área no había fijado meta ' + a1c_esc(onMetaDay) + ', así que cuenta con la meta que fijó esta semana: '
+              : ' áreas no habían fijado meta ' + a1c_esc(onMetaDay) + ', así que cuentan con la meta que fijaron esta semana: ') +
+            a1c_areaNameList_(fallbacks) + '.';
+  }
+  html += '</div>';
+
+  html += '</div>';
+  return html;
+}
+
 /** Area header: name + days-reported chip + streak (from area.derived.consistency). */
 function a1c_buildAreaHeader_(areaName, area, C) {
   var der  = area.derived;
@@ -1363,6 +1533,12 @@ function a1c_buildLeadershipSection(title, summaryTotals, areas, scope, weekEnd,
       strength2: area.strength2 || null
     });
   });
+
+  // The unit's own seven Key Indicators lead the section, ahead of the
+  // narrative and the nightly-activity tiles: a leader's first question is
+  // whether their areas hit the goals they set, not how many doors they
+  // knocked. Renders nothing when WEEKLY_KI was unreadable (ki === null).
+  html += a1c_buildLeaderKiBlock_(summaryTotals && summaryTotals.ki, scope, C);
 
   var narrative = a1c_buildLeadershipNarrative(scope, unitName, summaryTotals, areaDetails, weekEnd, C);
   if (narrative) html += narrative;
