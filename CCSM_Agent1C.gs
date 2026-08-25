@@ -1381,10 +1381,25 @@ function a1c_buildLeadershipSection(title, summaryTotals, areas, scope, weekEnd,
       {
         subjectLine:    lMsg.subject,
         bodyText:       lMsg.body,
-        pmgPage:        lMsg.pmg,
+        // Citations deliberately withheld until each one has been verified.
+        // CONTENT_REVIEW.md ("MENSAJES DE LIDERAZGO") records that the PMG
+        // page numbers come from the English edition, that the scripture text
+        // was drafted by a model rather than copied from the official Spanish
+        // edition, and that at least two references do not match the text
+        // quoted alongside them. The coaching prose itself carries no direct
+        // quote, so subject and body still render as written.
+        //
+        // _LEADERSHIP_MSGS keeps pmg/scripture/scriptText untouched, so
+        // restoring the citations is a change to these three lines only.
+        // Passing empty values makes a1c_buildMessageBlock's
+        // `if (pmgRef || scripture)` guard skip the whole citation line. The
+        // missionary Fortaleza / Crecimiento cards share that function but
+        // read from MESSAGE_BANK, which already ships blank scripture text --
+        // they are unaffected.
+        pmgPage:        null,
         pmgDescription: '',
-        scripture:      lMsg.scripture,
-        scriptureText:  lMsg.scriptText
+        scripture:      '',
+        scriptureText:  ''
       },
       C,
       C.header
