@@ -143,6 +143,26 @@ function runAgent1A() {
     Logger.log('Agent1A: WEEKLY_KI rows for ' + weekEnd + ': ' +
                (weeklyKi === null ? 'TAB UNAVAILABLE' : Object.keys(weeklyKi).length));
 
+    // The SECOND read of the same tab, one week back -- and this is where the
+    // metas come from, not from the row above.
+    //
+    // A WEEKLY_KI row carries the results a companionship achieved during that
+    // week alongside the metas they set during weekly planning FOR THE WEEK
+    // AHEAD. The form tells the missionary so in as many words:
+    // WeeklyReportForm_ES.gs:117 introduces the meta fields as "las metas que
+    // usted estableció durante la planificación semanal para la semana
+    // siguiente". So the goal this week's results should be measured against is
+    // the one filed on LAST week's row; pairing real against meta off the same
+    // row grades every area against a goal it had not set yet.
+    //
+    // Both calls read the same tab, so weeklyKiPrev is null only when weeklyKi
+    // is null as well -- "this area filed nothing last week" is always a
+    // missing key, never a null map, so the two never need telling apart.
+    var prevWeekEnd  = a1a_lastNWeekEnds_(weekEnd, 2)[0];
+    var weeklyKiPrev = a1a_loadWeeklyKi(prevWeekEnd);
+    Logger.log('Agent1A: WEEKLY_KI meta rows for ' + prevWeekEnd + ': ' +
+               (weeklyKiPrev === null ? 'TAB UNAVAILABLE' : Object.keys(weeklyKiPrev).length));
+
     var areaData = {};
     missionOrg.forEach(function(areaObj) {
       var name   = areaObj['Area_Name'];
@@ -163,6 +183,14 @@ function runAgent1A() {
         // weekly form (the letter says so); null = tab unavailable entirely
         // (the letter stays silent rather than blaming the companionship).
         ki:        weeklyKi === null ? null : (weeklyKi[name] || []),
+        // The metas this area set a week earlier, as { ki_key: meta }, or
+        // null when it filed no weekly form that week. This is the goal
+        // `ki` above should be graded against (see the prevWeekEnd comment).
+        // Held separately from `ki` so the two weeks stay distinguishable:
+        // an area with results but no kiMetaPrev has to fall back to its own
+        // same-week meta, and the letter marks that row so the mixed rule is
+        // never silent.
+        kiMetaPrev: weeklyKiPrev === null ? null : a1a_kiMetaMap_(weeklyKiPrev[name]),
         ranked:    ranked, // full ranked metric list -- the scoreboard needs every goaled metric, not just the 3 picks below
         strength1: ranked[0] || null,
         strength2: ranked[1] || null,
@@ -171,7 +199,7 @@ function runAgent1A() {
       };
     });
 
-    var summaries = a1a_buildSummaries(areaData, missionOrg);
+    var summaries = a1a_buildSummaries(areaData, missionOrg, prevWeekEnd);
 
     saveTempData('A1A_DATA', {
       weekStart: weekStart,
@@ -358,6 +386,19 @@ function a1a_loadWeeklyKi(weekEnd) {
       };
     });
   }
+  return out;
+}
+
+/**
+ * The meta half of one a1a_loadWeeklyKi row, as { ki_key: meta }.
+ * Returns null for a missing row so callers can tell "set no metas" apart
+ * from "set every meta to zero" -- the first falls back to the same-week
+ * meta, the second reads as "sin meta esta semana".
+ */
+function a1a_kiMetaMap_(kiRow) {
+  if (!kiRow || !kiRow.length) return null;
+  var out = {};
+  kiRow.forEach(function(ind) { out[ind.key] = ind.meta || 0; });
   return out;
 }
 
@@ -906,19 +947,32 @@ function a1a_rankMetrics(stats, areaGoals, rateTargets, lastGrowthMetric) {
 
 // --- SUMMARIES --------------------------------------------------------------
 
-function a1a_buildSummaries(areaData, missionOrg) {
+function a1a_buildSummaries(areaData, missionOrg, metaWeekEnd) {
   var mission   = a1a_emptySummary();
   var zones     = {};
   var districts = {};
+
+  // Areas grouped by scope, so the weekly Key Indicators can be rolled up
+  // once per unit below. The nightly stats accumulate in place; the KI roll-up
+  // cannot, because it has to count areas and name the ones that went silent.
+  var members = { mission: [], zones: {}, districts: {} };
 
   missionOrg.forEach(function(areaObj) {
     var name     = areaObj['Area_Name'];
     var zone     = areaObj['Zone']     || '';
     var district = areaObj['District'] || '';
-    var d        = (areaData[name] && areaData[name].stats) || {};
+    var area     = areaData[name] || {};
+    var d        = area.stats || {};
 
     if (!zones[zone])         zones[zone]         = a1a_emptySummary();
     if (!districts[district]) districts[district] = a1a_emptySummary();
+
+    if (!members.zones[zone])         members.zones[zone]         = [];
+    if (!members.districts[district]) members.districts[district] = [];
+    var member = { name: name, ki: area.ki, kiMetaPrev: area.kiMetaPrev || null };
+    members.mission.push(member);
+    members.zones[zone].push(member);
+    members.districts[district].push(member);
 
     [mission, zones[zone], districts[district]].forEach(function(s) {
       s.total_areas++;
@@ -932,7 +986,102 @@ function a1a_buildSummaries(areaData, missionOrg) {
     });
   });
 
+  mission.ki = a1a_rollUpKi_(members.mission, metaWeekEnd);
+  Object.keys(zones).forEach(function(z) {
+    zones[z].ki = a1a_rollUpKi_(members.zones[z], metaWeekEnd);
+  });
+  Object.keys(districts).forEach(function(dn) {
+    districts[dn].ki = a1a_rollUpKi_(members.districts[dn], metaWeekEnd);
+  });
+
   return { mission: mission, zones: zones, districts: districts };
+}
+
+/**
+ * The 7 weekly Key Indicators totalled across one zone, district or the whole
+ * mission, so a leader's letter can open on their unit's own goals rather than
+ * on nightly activity. `members` is [{ name, ki, kiMetaPrev }]; `metaWeekEnd`
+ * is the week those metas were filed (weekEnd - 7), carried through so the
+ * letter can date the claim instead of asking the reader to trust it.
+ *
+ * Returns null when WEEKLY_KI itself is unavailable, matching area.ki: the
+ * letter then renders no block at all rather than reporting zeros the areas
+ * did not earn.
+ *
+ * Three rules decide what enters the totals, and all three exist because the
+ * naive sum is wrong in a way nobody would notice:
+ *
+ *  1. Only areas that filed THIS week contribute -- to both real and meta.
+ *     Summing every meta but only the results that arrived would quietly
+ *     penalise a unit for its non-reporters, so an area that filed nothing is
+ *     reported by name instead (silentAreas) and left out of the arithmetic.
+ *  2. The meta is the one filed a week earlier. An area that filed this week
+ *     but not last has none, so it falls back to its own same-week meta and is
+ *     named in fallbackAreas -- the letter marks those with a dagger, because
+ *     a mixed rule that says nothing is indistinguishable from a bug.
+ *  3. "Achieved" needs a meta above zero. A goal of zero is "nothing planned
+ *     this week", not a goal met by doing nothing.
+ */
+function a1a_rollUpKi_(members, metaWeekEnd) {
+  if (!members || !members.length) return null;
+  // area.ki is null only when the tab could not be read, which is a property
+  // of the tab and therefore true for every area at once.
+  if (members[0].ki === null || members[0].ki === undefined) return null;
+
+  var totals = {};
+  A1A_KI_DEFS.forEach(function(def) {
+    totals[def.key] = { key: def.key, display: def.display, real: 0, meta: 0 };
+  });
+
+  var reported      = 0;
+  var fallbackAreas = [];
+  var silentAreas   = [];
+
+  members.forEach(function(m) {
+    var filed = !!(m.ki && m.ki.length);
+    var hadMeta = !!m.kiMetaPrev;
+
+    if (!filed) {
+      // A meta of zero across the board is a blank plan, not an unmet goal --
+      // only call an area out when it actually owed a result.
+      if (hadMeta && A1A_KI_DEFS.some(function(def) { return (m.kiMetaPrev[def.key] || 0) > 0; })) {
+        silentAreas.push(m.name);
+      }
+      return;
+    }
+
+    reported++;
+    if (!hadMeta) fallbackAreas.push(m.name);
+
+    m.ki.forEach(function(ind) {
+      var t = totals[ind.key];
+      if (!t) return; // a key WEEKLY_KI carries but A1A_KI_DEFS does not
+      t.real += ind.real || 0;
+      t.meta += hadMeta ? (m.kiMetaPrev[ind.key] || 0) : (ind.meta || 0);
+    });
+  });
+
+  var indicators = A1A_KI_DEFS.map(function(def) {
+    var t = totals[def.key];
+    return {
+      key:      t.key,
+      display:  t.display,
+      real:     t.real,
+      meta:     t.meta,
+      achieved: t.meta > 0 && t.real >= t.meta
+    };
+  });
+
+  return {
+    metaWeekEnd:   metaWeekEnd || '',
+    areasTotal:    members.length,
+    areasReported: reported,
+    metasSet:      indicators.filter(function(i) { return i.meta > 0; }).length,
+    metasAchieved: indicators.filter(function(i) { return i.achieved; }).length,
+    fallbackAreas: fallbackAreas.sort(),
+    silentAreas:   silentAreas.sort(),
+    indicators:    indicators
+  };
 }
 
 function a1a_emptySummary() {
