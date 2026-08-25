@@ -1188,6 +1188,27 @@ function a1c_esNum_(n, places) {
   return n.toFixed(places).replace('.', ',');
 }
 
+/**
+ * A whole number in Spanish notation — thousands separated by a full stop,
+ * "1.079".
+ *
+ * Used by "Las Metas y el Esfuerzo que las Sostiene", the only place in the
+ * letter that prints four-digit counts inside a running phrase, where
+ * "1079 Intentos de Contacto" is harder to read at 10px than "1.079". The KPI
+ * tiles and the area table still print bare integers; unifying them is a
+ * one-line change with suite-wide fallout, deliberately not bundled here —
+ * the same call a1c_esNum_ above records for the effort-score decimal.
+ */
+function a1c_esInt_(n) {
+  if (typeof n !== 'number' || isNaN(n)) return '—';
+  var s = String(Math.round(Math.abs(n))), out = '';
+  for (var i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 === 0) out += '.';
+    out += s.charAt(i);
+  }
+  return (n < 0 ? '−' : '') + out;
+}
+
 /** True for the 4 fraction rates, which are ratios and need no day divisor. */
 function a1c_isRateKey_(key) { return A1C_PERCENT_METRIC_KEYS.indexOf(key) !== -1; }
 
@@ -1535,6 +1556,198 @@ function a1c_buildRumboBlock_(trend, ki, scope, C) {
   html += '<div style="font-size:9px;color:' + C.muted + ';line-height:1.5;border-top:1px solid ' + C.border +
           ';padding-top:6px;margin-top:12px;">' + a1c_esc(foot) + '</div>';
 
+  html += '</div>';
+  return html;
+}
+
+// ─── "LAS METAS Y EL ESFUERZO QUE LAS SOSTIENE" ───────────────────────────────
+
+/**
+ * True when `key` is the NUMERATOR of a rate whose DENOMINATOR is `prevKey` —
+ * that is, when the second number is genuinely a subset of the first and an
+ * arrow drawn between them states something the data supports.
+ *
+ * Derived from A1A_RATE_METRICS' own num/den pairs rather than listed here,
+ * so the arrows cannot outlive the relationship they assert. Live, this makes
+ * exactly one chain arrowed (intentos → contactos → conversaciones
+ * significativas, which are contact_rate's and mc_rate's own operands) and
+ * leaves the parallel efforts behind the other indicators separated by a dot,
+ * because "272 contactos con miembros → 58 lecciones" would claim a funnel
+ * that does not exist.
+ */
+function a1c_feedsFrom_(prevKey, key) {
+  var rates = (typeof A1A_FRACTION_RATE_KEYS !== 'undefined') ? A1A_FRACTION_RATE_KEYS : {};
+  return Object.keys(rates).some(function(rk) {
+    return rates[rk].den === prevKey && rates[rk].num === key;
+  });
+}
+
+/**
+ * Each weekly Key Indicator paired with the nightly numbers that produce it.
+ * Returns { pairs, skipped } — `skipped` holds the display names of the
+ * indicators that could not be paired, so the block can say why they are
+ * missing instead of quietly showing five rows where the block above showed
+ * seven.
+ *
+ * An indicator is skipped when A1A_KI_FEEDERS gives it no nightly chain
+ * (ki_friends_first_week and ki_baptized_confirmed have none the nightly form
+ * collects) or when this mission's QUESTIONS_CONFIG does not carry a single
+ * one of its feeders. A feeder with no number is left out rather than printed
+ * as 0: "0 Referencias Solicitadas" says the areas asked for none, which is a
+ * different claim from "this mission does not ask".
+ *
+ * Sorted exactly as a1c_buildLeaderKiBlock_ sorts — metas met first, weakest
+ * last — so the two blocks read in the same order and the row a leader
+ * finishes on is the one the trend block above already explained.
+ */
+function a1c_kiEffortPairs_(ki, totals) {
+  var feeders = (typeof A1A_KI_FEEDERS !== 'undefined') ? A1A_KI_FEEDERS : {};
+  var t       = totals || {};
+  var pairs = [], skipped = [];
+
+  (ki.indicators || []).forEach(function(k, i) {
+    var effort = [];
+    (feeders[k.key] || []).forEach(function(fk) {
+      var v = t[fk];
+      if (typeof v !== 'number' || isNaN(v)) return;
+      // Adjacency is judged against the previous KEPT feeder, so a metric this
+      // mission does not collect breaks the chain rather than letting the two
+      // numbers either side of it inherit an arrow they never earned.
+      var prev = effort.length ? effort[effort.length - 1].key : null;
+      effort.push({ key: fk, value: v, arrow: !!prev && a1c_feedsFrom_(prev, fk) });
+    });
+    if (!effort.length) { skipped.push(k.display); return; }
+
+    var real = Math.round(k.real || 0), meta = Math.round(k.meta || 0);
+    pairs.push({
+      key:      k.key,
+      display:  k.display,
+      real:     real,
+      meta:     meta,
+      hasGoal:  meta > 0,
+      pct:      meta > 0 ? Math.max(0, Math.round(real / meta * 100)) : null,
+      achieved: !!k.achieved,
+      effort:   effort,
+      order:    i
+    });
+  });
+
+  pairs.sort(function(a, b) {
+    if (a.hasGoal !== b.hasGoal)   return a.hasGoal ? -1 : 1;
+    if (a.achieved !== b.achieved) return a.achieved ? -1 : 1;
+    if (a.pct !== b.pct)           return b.pct - a.pct;
+    return a.order - b.order;
+  });
+  return { pairs: pairs, skipped: skipped };
+}
+
+/** "A", "A y B", "A, B y C" — a Spanish prose list, escaped. */
+function a1c_esList_(items) {
+  var safe = items.map(function(s) { return a1c_esc(String(s)); });
+  if (safe.length <= 1) return safe.join('');
+  return safe.slice(0, -1).join(', ') + ' y ' + safe[safe.length - 1];
+}
+
+/**
+ * "Las Metas y el Esfuerzo que las Sostiene" — the goal a unit set beside the
+ * week of nightly work that was supposed to produce it, then the Gemini
+ * "Lectura de la semana" paragraph that reads the two against each other.
+ *
+ * Why the numbers here are RAW WEEKLY TOTALS while the trend block directly
+ * above is emphatically per reporting day: this block is not a comparison
+ * between weeks. It sets one week's effort beside one week's meta, and the
+ * meta is itself a weekly total, so dividing one side by days reported would
+ * compare a rate against a count. The footnote states the basis rather than
+ * leaving a reader to reconcile it with the block above.
+ *
+ * The Lectura paragraph is the section's ONLY AI-written text — this block
+ * absorbed the standalone narrative box that used to sit under the section
+ * heading, so a leader no longer reads two model-written paragraphs a few
+ * hundred pixels apart. It renders whether or not the table does, which is
+ * why it is appended outside the table's guard: WEEKLY_KI being unreadable is
+ * no reason to withhold the week's reading.
+ */
+function a1c_buildMetasEsfuerzoBlock_(ki, totals, narrativeProse, C) {
+  var table = '';
+  var built = null;
+
+  // areasReported === 0 is already reported as a missing week by the Key
+  // Indicator block above; five rows of "0/—" against zero effort would say
+  // it a second time and in a worse way.
+  if (ki && ki.indicators && (ki.areasReported || 0) > 0) {
+    built = a1c_kiEffortPairs_(ki, totals);
+    if (built.pairs.length) {
+      var th = 'padding:5px 4px;border-bottom:1px solid ' + C.border +
+               ';font-size:9px;color:#374151;text-transform:uppercase;letter-spacing:0.04em;text-align:';
+      var td = 'padding:6px 4px;border-bottom:1px solid #f1f5f9;';
+
+      table += '<table width="100%" cellpadding="0" cellspacing="0" ' +
+               'style="border-collapse:collapse;font-size:10px;">';
+      table += '<tr style="background:' + C.bgLight + ';">' +
+               '<th style="' + th + 'left;">Indicador Clave</th>' +
+               '<th style="' + th + 'right;">Sem.</th>' +
+               '<th style="' + th + 'left;">Esfuerzo nocturno</th></tr>';
+
+      built.pairs.forEach(function(p) {
+        var fill = p.hasGoal ? a1c_goalBandColor_(p.pct, p.real, C) : C.muted;
+        var effort = '';
+        p.effort.forEach(function(f, i) {
+          if (i > 0) effort += f.arrow ? ' → ' : ' · ';
+          effort += a1c_esInt_(f.value) + ' ' + a1c_esc(a1c_scoreboardLabel_(f.key));
+        });
+        table += '<tr>' +
+          '<td style="' + td + 'color:#374151;">' + a1c_esc(p.display) + '</td>' +
+          '<td style="' + td + 'text-align:right;font-weight:700;white-space:nowrap;color:' + fill + ';">' +
+          a1c_esInt_(p.real) + '/' + (p.hasGoal ? a1c_esInt_(p.meta) : '—') + '</td>' +
+          '<td style="' + td + 'color:' + C.muted + ';line-height:1.45;">' + effort + '</td></tr>';
+      });
+      table += '</table>';
+
+      // "Sem." is the approved column heading and has to stay short to keep
+      // the third column wide enough to wrap, so the footnote spends the words
+      // the header cannot.
+      var foot = 'Sem. = el resultado de la semana contra la meta. Los números de esfuerzo son ' +
+                 'totales de la semana, no promedios por día informado: la meta también es semanal.';
+      if (built.skipped.length) {
+        foot += ' ' + a1c_esList_(built.skipped) +
+                (built.skipped.length === 1
+                  ? ' no aparece aquí: el informe nocturno no registra un número que lo alimente.'
+                  : ' no aparecen aquí: el informe nocturno no registra números que los alimenten.');
+      }
+      table += '<div style="font-size:9px;color:' + C.muted + ';line-height:1.5;margin-top:6px;">' +
+               foot + '</div>';
+    }
+  }
+
+  var lectura = '';
+  if (narrativeProse) {
+    lectura += '<div style="border-left:4px solid ' + C.blue + ';padding:8px 10px;background:' + C.bgLight +
+               ';font-size:10px;color:#374151;line-height:1.6;margin-top:12px;">' +
+               '<strong style="color:' + C.header + ';">Lectura de la semana</strong>' +
+               '<span style="display:inline-block;background:#7c3aed;color:#ffffff;font-size:8px;' +
+               'font-weight:700;padding:1px 5px;border-radius:3px;vertical-align:middle;' +
+               'margin-left:4px;">GEMINI</span><br>' + narrativeProse + '</div>';
+      // Said plainly, and only here: the missionaries' own letters carry no
+      // model-written text at all, and a leader should be able to tell which
+      // sentences in their letter were written by one.
+    lectura += '<div style="font-size:9px;color:' + C.muted + ';line-height:1.5;margin-top:5px;">' +
+               'Este párrafo lo redacta un modelo de lenguaje a partir de los números de esta carta. ' +
+               'Solo las cartas de liderazgo lo incluyen; las cartas de los misioneros no llevan ' +
+               'texto generado por inteligencia artificial.</div>';
+  }
+
+  if (!table && !lectura) return '';
+
+  var html = '<div style="margin:0 0 18px;">';
+  if (table) {
+    html += '<div style="font-size:12px;font-weight:700;color:' + C.header +
+            ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">' +
+            '📊 Las Metas y el Esfuerzo que las Sostiene</div>';
+    html += '<div style="font-size:10px;color:' + C.muted + ';line-height:1.5;margin-bottom:10px;">' +
+            'Cada indicador clave junto al esfuerzo que el informe nocturno registró esta semana.</div>';
+    html += table;
+  }
+  html += lectura;
   html += '</div>';
   return html;
 }
@@ -2002,8 +2215,13 @@ function a1c_buildLeadershipSection(title, summaryTotals, areas, scope, weekEnd,
   html += a1c_buildRumboBlock_(summaryTotals && summaryTotals.trend,
                                summaryTotals && summaryTotals.ki, scope, C);
 
-  var narrative = a1c_buildLeadershipNarrative(scope, unitName, summaryTotals, areaDetails, weekEnd, C);
-  if (narrative) html += narrative;
+  // Then the metas beside the week of nightly work meant to produce them, and
+  // with them the "Lectura de la semana" paragraph. The Gemini narrative used
+  // to be a box of its own directly under the section heading; it now lives
+  // inside this block, reading the table it sits under, so the section carries
+  // one model-written paragraph instead of two a few hundred pixels apart.
+  var narrative = a1c_buildLeadershipNarrative(scope, unitName, summaryTotals, areaDetails, weekEnd);
+  html += a1c_buildMetasEsfuerzoBlock_(summaryTotals && summaryTotals.ki, summaryTotals, narrative, C);
 
   html += a1c_buildKpiTiles_(summaryTotals, C);
   html += a1c_buildAreaDataTable_(areaDetails, scope, C);
@@ -2506,23 +2724,52 @@ function a1c_areaSummaryLine_(a) {
 }
 
 /**
- * Calls Gemini to generate a Christlike coaching paragraph for a leadership
- * level. Returns an HTML string to inject above the data table, or '' on
- * any error (table still renders without it).
+ * The unit's weekly metas beside the nightly effort behind each one, as
+ * prompt lines — the same pairing a1c_buildMetasEsfuerzoBlock_ renders, built
+ * by the same function, so the "Lectura de la semana" paragraph can only talk
+ * about the table the leader is looking at. Returns [] when there is no
+ * WEEKLY_KI roll-up to pair against.
  *
- * Language rules enforced in the prompt: NEVER "investigador" — always
- * "amigos"; Christlike tone; no negative comparisons or shaming; append the
- * required Spanish-output instruction; use getMissionName() (never a
- * hardcoded mission name literal) — see file header note.
+ * Shared by both prompt builders (per-unit and batch) for the same reason
+ * a1c_areaSummaryLine_ is: two prompts that drift apart produce two different
+ * paragraphs in two letters describing the same week.
  */
-function a1c_buildLeadershipNarrative(scope, unitName, summaryData, areaDetails, weekEnd, C) {
+function a1c_kiEffortPromptLines_(totals) {
+  var ki = totals && totals.ki;
+  if (!ki || !ki.indicators || !(ki.areasReported || 0)) return [];
+  return a1c_kiEffortPairs_(ki, totals).pairs.map(function(p) {
+    var effort = p.effort.map(function(f) {
+      return f.value + ' ' + a1c_scoreboardLabel_(f.key);
+    }).join(' · ');
+    return '- ' + p.display + ': ' + p.real +
+      (p.hasGoal ? ' contra una meta de ' + p.meta : ' (ninguna área fijó meta)') +
+      ' | esfuerzo nocturno de la semana: ' + effort;
+  });
+}
+
+/**
+ * Calls Gemini to write the unit's "Lectura de la semana" — the paragraph
+ * that reads the weekly metas against the nightly effort behind them.
+ * Returns ESCAPED prose for a1c_buildMetasEsfuerzoBlock_ to place inside its
+ * Lectura box, or '' on any error (every other block still renders).
+ *
+ * Rules enforced in the prompt: NEVER "investigador" — always "amigos";
+ * Christlike tone; no negative comparisons or shaming; NO page references,
+ * book quotations or scripture references of any kind (none of the ones this
+ * prompt used to ask for was ever verified — see CONTENT_REVIEW.md and
+ * a1c_narrativeProse_, which strips one anyway); append the required
+ * Spanish-output instruction; use getMissionName() (never a hardcoded mission
+ * name literal) — see file header note.
+ */
+function a1c_buildLeadershipNarrative(scope, unitName, summaryData, areaDetails, weekEnd) {
   var cacheKey = scope + ':' + unitName;
-  if (_narrativeCache[cacheKey]) return a1c_renderNarrativeHtml_(_narrativeCache[cacheKey], C);
+  if (_narrativeCache[cacheKey]) return a1c_narrativeProse_(_narrativeCache[cacheKey]);
 
   try {
     var dateLabel = weekEnd ? a1c_formatDate(weekEnd) : 'esta semana';
     var totals    = summaryData || {};
     var areaLines = areaDetails.map(a1c_areaSummaryLine_).join('\n');
+    var kiLines   = a1c_kiEffortPromptLines_(totals);
 
     var prompt = [
       'Eres un asistente de análisis de misión para la ' + getMissionName() + '.',
@@ -2535,18 +2782,23 @@ function a1c_buildLeadershipNarrative(scope, unitName, summaryData, areaDetails,
       '- Conversaciones Significativas: '  + (totals.meaningful_conversations|| 0),
       '- Nuevas Personas Encontradas: '    + (totals.new_people_found        || 0),
       '- Lecciones con Amigos: '           + (totals.friend_lessons          || 0),
-      '- Invitaciones al Bautismo: '       + (totals.baptismal_invitations   || 0),
+      '- Invitaciones al Bautismo: '       + (totals.baptismal_invitations   || 0)
+    ].concat(
+      kiLines.length
+        ? ['', 'Metas de la semana pasada y el esfuerzo nocturno que las sostuvo:'].concat(kiLines)
+        : []
+    ).concat([
       '',
       'Desglose por área:',
       areaLines,
       '',
-      'Escriba una narrativa de capacitación de 3 a 4 oraciones para el líder de ' + a1c_scopeNoun_(scope) + ' de ' + unitName + '.',
+      'Escriba la "Lectura de la semana": un párrafo de 4 a 6 oraciones para el líder de ' +
+        a1c_scopeNoun_(scope) + ' de ' + unitName + '.',
       '',
       'Estructura:',
-      '(1) Celebre una fortaleza visible — mencione un área específica si se destaca.',
-      '(2) Identifique la necesidad de crecimiento más común entre las áreas.',
-      '(3) Dé una directriz específica y accionable para usar en el inventario de esta semana.',
-      '(4) Termine con una referencia de página de Predicad Mi Evangelio y una escritura que respalde la directriz.',
+      '(1) Diga qué produjo el trabajo de la semana: nombre un indicador que alcanzó su meta y el esfuerzo nocturno que lo sostuvo.',
+      '(2) Nombre el punto donde el esfuerzo no se convirtió en resultado, citando los dos números que lo muestran.',
+      '(3) Dé una directriz específica y accionable para el consejo o la reunión de esta semana.',
       '',
       'Reglas:',
       '- NUNCA use la palabra "investigador" — a las personas que están siendo enseñadas siempre se les llama "amigos".',
@@ -2556,21 +2808,18 @@ function a1c_buildLeadershipNarrative(scope, unitName, summaryData, areaDetails,
       '- Fundamente la directriz en los principios del evangelio restaurado y la misión de Jesucristo.',
       '- Puede mencionar áreas por nombre cuando sea útil, pero nunca nombre a misioneros individuales.',
       '- No invente datos. Base cada afirmación en los números anteriores.',
+      '- NO incluya referencias de páginas, citas de libros ni referencias de escrituras. Escriba solo el párrafo.',
       '- Escriba con naturalidad y claridad, como si hablara con un líder experimentado que ama a los misioneros que dirige.',
       '',
-      'Formato (siga exactamente):',
-      'Línea 1: El párrafo de capacitación (prosa simple, sin viñetas, sin markdown).',
-      'Línea 2: PMG p.{número de página} | {referencia de escritura}',
-      '',
-      'No incluya encabezados, líneas adicionales ni explicaciones más allá de estas dos líneas.',
+      'Formato: un solo párrafo en prosa simple, sin viñetas, sin markdown, sin encabezados y sin líneas adicionales.',
       '',
       'IMPORTANTE: Escriba su respuesta en español.'
-    ].join('\n');
+    ]).join('\n');
 
     var response = callGemini(prompt);
     if (!response || !response.trim()) return '';
     _narrativeCache[cacheKey] = response.trim();
-    return a1c_renderNarrativeHtml_(response.trim(), C);
+    return a1c_narrativeProse_(response.trim());
 
   } catch (e) {
     Logger.log('a1c_buildLeadershipNarrative ERROR (' + scope + '/' + unitName + '): ' + e.message);
@@ -2758,36 +3007,38 @@ function a1c_formatDate(dateStr) {
 
 // ─── BATCH NARRATIVE PRE-GENERATION ───────────────────────────────────────────
 /**
- * Renders raw Gemini narrative text into an HTML coaching block. Handles
- * both per-unit format (PMG on its own line) and batch format (PMG inline
- * at end).
+ * Raw Gemini narrative text cleaned up into ESCAPED prose, ready to drop
+ * inside the "Lectura de la semana" box that a1c_buildMetasEsfuerzoBlock_
+ * draws. Returns '' when there is nothing usable left.
+ *
+ * This used to return the whole grey "Capacitación de Líderes" box that sat
+ * under the section heading. That box is gone: its job now belongs to the
+ * Lectura paragraph, so the section carries one model-written paragraph
+ * rather than two a few hundred pixels apart — and only one thing in the
+ * letter is called "Capacitación de Líderes", the static coaching card at the
+ * foot of the section.
+ *
+ * TWO FILTERS, both belt-and-suspenders against a model that ignores its
+ * prompt. Neither is the primary defence — the prompts themselves forbid both
+ * things — but both failure modes reach a real reader if they get through:
+ *   - "investigador" for a person being taught. The mission says "amigos".
+ *   - A "PMG p.N | escritura" citation. Both prompts stopped asking for one,
+ *     and no such citation has ever been verified against the Spanish edition
+ *     of Predicad Mi Evangelio (see CONTENT_REVIEW.md, "MENSAJES DE
+ *     LIDERAZGO", and tests/test_leadership_citations_withheld.js). A
+ *     volunteered one is stripped and DISCARDED, not relocated: the old box
+ *     rendered it under a 📖 glyph, which is exactly what this removes.
  */
-function a1c_renderNarrativeHtml_(rawText, C) {
+function a1c_narrativeProse_(rawText) {
   if (!rawText) return '';
-  // Belt-and-suspenders: Gemini should never use "investigador" but filter anyway.
-  var text = rawText.trim().replace(/\binvestigadores\b/gi, 'amigos').replace(/\binvestigador\b/gi, 'amigo');
-  var pmgLine = '';
-  var narrative = text;
-
-  var pmgMatch = text.match(/PMG p\.\d[^\n]*/i);
-  if (pmgMatch) {
-    pmgLine   = pmgMatch[0].trim();
-    narrative = text.replace(pmgMatch[0], '').replace(/[\s|]+$/, '').trim();
-  }
-  if (!narrative) return '';
-
-  var html = '<div style="background:#f0f4f8;border-left:4px solid ' + C.header +
-             ';padding:12px 16px;margin-bottom:14px;border-radius:0 6px 6px 0;">';
-  html += '<div style="font-size:12px;font-weight:700;color:' + C.header +
-          ';margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;">Capacitación de Líderes</div>';
-  html += '<div style="font-size:13px;line-height:1.7;color:#1f2937;">' +
-          a1c_esc(narrative) + '</div>';
-  if (pmgLine) {
-    html += '<div style="margin-top:8px;font-size:11px;color:#6b7280;">📖 ' +
-            a1c_esc(pmgLine) + '</div>';
-  }
-  html += '</div>';
-  return html;
+  var text = String(rawText).trim()
+    .replace(/\binvestigadores\b/gi, 'amigos')
+    .replace(/\binvestigador\b/gi, 'amigo')
+    .replace(/PMG p\.\s*\d[^\n]*/gi, '')
+    .replace(/[\s|]+$/, '')
+    .trim();
+  if (!text) return '';
+  return a1c_esc(text);
 }
 
 /**
@@ -2818,9 +3069,15 @@ function a1c_pregenerateNarratives(summaries, areas, weekEnd) {
 }
 
 /**
- * Generates coaching narratives for all units of one scope type in a single
- * Gemini call. Returns {unitName: rawNarrativeText}. On any failure returns
- * {} so per-unit fallback fires.
+ * Generates "Lectura de la semana" paragraphs for all units of one scope type
+ * in a single Gemini call. Returns {unitName: rawNarrativeText}. On any
+ * failure returns {} so per-unit fallback fires.
+ *
+ * ⚠ This prompt is a near-duplicate of a1c_buildLeadershipNarrative's, and
+ * every unit except the mission takes THIS path — a rule changed there and
+ * not here leaves 20 of the 21 leadership letters on the old wording. The two
+ * share a1c_areaSummaryLine_ and a1c_kiEffortPromptLines_ so at least the
+ * DATA cannot drift; the instructions have to be kept in step by hand.
  */
 function a1c_fetchBatchNarratives_(scopeType, summaryMap, areas, weekEnd) {
   var unitNames = Object.keys(summaryMap);
@@ -2833,9 +3090,14 @@ function a1c_fetchBatchNarratives_(scopeType, summaryMap, areas, weekEnd) {
     'Eres un asistente de análisis de misión para la ' + getMissionName() + '.',
     'Semana que termina: ' + dateLabel,
     '',
-    'Genere una narrativa de capacitación para cada ' + a1c_scopeNoun_(scopeType) + ' que aparece a continuación.',
+    'Genere la "Lectura de la semana" para cada ' + a1c_scopeNoun_(scopeType) + ' que aparece a continuación.',
     'Devuelva un objeto JSON válido: cada clave es el nombre exacto de la ' + a1c_scopeNoun_(scopeType) + ',',
-    'cada valor es una narrativa (3-4 oraciones, luego: PMG p.{página} | {escritura}).',
+    'cada valor es un solo párrafo de 4 a 6 oraciones, en prosa simple.',
+    '',
+    'CADA PÁRRAFO DEBE:',
+    '(1) Decir qué produjo el trabajo de la semana: nombrar un indicador que alcanzó su meta y el esfuerzo nocturno que lo sostuvo.',
+    '(2) Nombrar el punto donde el esfuerzo no se convirtió en resultado, citando los dos números que lo muestran.',
+    '(3) Dar una directriz específica y accionable para el consejo o la reunión de esta semana.',
     '',
     'REGLAS:',
     '- NUNCA use la palabra "investigador" — a las personas que están siendo enseñadas siempre se les llama "amigos"',
@@ -2843,7 +3105,7 @@ function a1c_fetchBatchNarratives_(scopeType, summaryMap, areas, weekEnd) {
     '- Trate al lector de USTED, nunca de tú. Use el registro formal en toda la respuesta.',
     '- Mencione áreas específicas por nombre cuando una se destaque — nunca nombre a misioneros individuales',
     '- Note patrones entre áreas (por ejemplo, si la mayoría tiene una tasa de conversaciones significativas baja o poco esfuerzo, dígalo explícitamente)',
-    '- Termine cada narrativa con: PMG p.{página} | {referencia de escritura}',
+    '- NO incluya referencias de páginas, citas de libros ni referencias de escrituras. Escriba solo el párrafo.',
     '- No invente datos — base cada afirmación en los números proporcionados',
     '- Genere SOLO JSON válido — sin bloques de código markdown, sin texto adicional',
     '- IMPORTANTE: Escriba toda su respuesta en español.',
@@ -2869,6 +3131,14 @@ function a1c_fetchBatchNarratives_(scopeType, summaryMap, areas, weekEnd) {
       ' | Contactos: ' + (totals.contacts_made || 0) +
       ' | Nuevas Personas: ' + (totals.new_people_found || 0) +
       ' | Invitaciones al Bautismo: ' + (totals.baptismal_invitations || 0));
+    // The same pairing the unit's own table renders, so the paragraph is a
+    // reading of what the leader is looking at rather than of a second,
+    // differently-assembled set of numbers.
+    var kiLines = a1c_kiEffortPromptLines_(totals);
+    if (kiLines.length) {
+      lines.push('Metas de la semana pasada y el esfuerzo nocturno que las sostuvo:');
+      kiLines.forEach(function(l) { lines.push('  ' + l); });
+    }
     unitAreas.forEach(function(a) {
       lines.push('  ' + a1c_areaSummaryLine_(a));
     });
