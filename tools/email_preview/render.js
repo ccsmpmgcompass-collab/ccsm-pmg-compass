@@ -13,9 +13,9 @@
  * live project, so there was no sent email to look at either.
  *
  * HOW IT STAYS HONEST. Only the Apps Script PLATFORM is faked (Logger,
- * Utilities, SpreadsheetApp, PropertiesService, MailApp, UrlFetchApp,
- * ScriptApp). Every line of CCSM_*.gs is loaded as-is. If the layout changes,
- * this output changes with it, because it IS the shipping code.
+ * Utilities, SpreadsheetApp, PropertiesService, DriveApp, MailApp,
+ * UrlFetchApp, ScriptApp). Every line of CCSM_*.gs is loaded as-is. If the
+ * layout changes, this output changes with it, because it IS the shipping code.
  *
  *   node tools/email_preview/render.js [--gemini] [--out DIR]
  *
@@ -128,6 +128,35 @@ const PropertiesService = {
   }),
 };
 
+// Minimal in-memory Drive, just enough for CCSM_Helpers.gs's
+// saveTempData/loadTempData/clearTempData (the A1A_DATA/A1B_DATA chain
+// handoff moved here from Script Properties -- see reportPayloads() below).
+const _driveFiles = {};
+let _nextDriveId = 1;
+const DriveApp = {
+  getFoldersByName: () => ({ hasNext: () => false, next() {} }),
+  createFolder: () => ({
+    getId: () => 'offline-folder',
+    createFile(name, content) {
+      const id = 'drive_' + (_nextDriveId++);
+      _driveFiles[id] = { name, content: String(content) };
+      return {
+        getId: () => id,
+        setTrashed(t) { if (_driveFiles[id]) _driveFiles[id].trashed = !!t; return this; },
+      };
+    },
+  }),
+  getFileById: (id) => {
+    if (!_driveFiles[id] || _driveFiles[id].trashed) throw new Error('No Drive file with id ' + id);
+    return {
+      getId: () => id,
+      getBlob: () => ({ getDataAsString: () => _driveFiles[id].content }),
+      setTrashed(t) { _driveFiles[id].trashed = !!t; return this; },
+    };
+  },
+};
+const MimeType = { PLAIN_TEXT: 'text/plain' };
+
 const Logger = { log: (m) => { logLines.push(String(m)); } };
 
 /** Enough of Utilities.formatDate for the patterns the agents actually use. */
@@ -210,7 +239,7 @@ const CacheService = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const sandbox = {
-  SpreadsheetApp, PropertiesService, Logger, Utilities, MailApp,
+  SpreadsheetApp, PropertiesService, DriveApp, MimeType, Logger, Utilities, MailApp,
   UrlFetchApp, ScriptApp, Session, CacheService,
   console, JSON, Math, Date, String, Number, Object, Array, RegExp, isNaN, parseInt, parseFloat,
 };
@@ -266,28 +295,29 @@ function run(fnName) {
 }
 
 // Apps Script caps the whole Script Properties store at 500 KB. A1A_DATA and
-// A1B_DATA are both resident between 1A and 1C, and only Agent1C clears them
-// -- the suspected cause of Agent1C never having run. Report the sizes after
-// each step so any change to the payload shape is measured, not guessed.
-// saveTempData splits big values across `KEY__0, KEY__1, ... KEY__chunks`, so
-// group by the base key before '__' rather than looking for a bare KEY.
+// A1B_DATA used to be chunked directly into that store and were both
+// resident between 1A and 1C -- proven (2026-08-25 measurement: 941KB, 188%
+// of budget) to be why Agent1C never completed a run. CCSM_Helpers.gs now
+// routes those payloads through Drive instead (saveTempData/loadTempData),
+// leaving only a tiny `KEY__driveId` pointer in Script Properties. Report
+// both stores after each step so a regression back toward the old scheme (or
+// any future payload that again threatens the property-store budget) is
+// measured, not guessed.
 const PROP_LIMIT = 500 * 1024;
 function reportPayloads(label) {
-  const keys = Object.keys(_props);
-  if (keys.length === 0) return;
-  const byBase = {};
-  let total = 0;
-  keys.forEach((k) => {
-    const base = k.split('__')[0];
-    const n = _props[k].length + k.length;
-    byBase[base] = (byBase[base] || 0) + n;
-    total += n;
-  });
-  const parts = Object.keys(byBase).sort()
-    .map((b) => `${b}=${(byBase[b] / 1024).toFixed(1)}KB`);
-  const pct = ((total / PROP_LIMIT) * 100).toFixed(0);
-  console.log(`     ${label}: ${parts.join('  ')}  ->  total ${(total / 1024).toFixed(1)}KB ` +
-              `(${pct}% of the 500KB property-store limit)${total > PROP_LIMIT ? '  ** OVER LIMIT **' : ''}`);
+  const propKeys = Object.keys(_props);
+  let propTotal = 0;
+  propKeys.forEach((k) => { propTotal += _props[k].length + k.length; });
+
+  const driveKeys = Object.keys(_driveFiles).filter((id) => !_driveFiles[id].trashed);
+  let driveTotal = 0;
+  driveKeys.forEach((id) => { driveTotal += _driveFiles[id].content.length; });
+
+  if (propKeys.length === 0 && driveKeys.length === 0) return;
+  const pct = ((propTotal / PROP_LIMIT) * 100).toFixed(0);
+  console.log(`     ${label}: Script Properties ${(propTotal / 1024).toFixed(1)}KB ` +
+              `(${pct}% of the 500KB limit)${propTotal > PROP_LIMIT ? '  ** OVER LIMIT **' : ''}` +
+              `  |  Drive ${driveKeys.length} file(s), ${(driveTotal / 1024).toFixed(1)}KB (no quota ceiling)`);
 }
 
 console.log(`\nLoaded ${FILES.length} agent files. Gemini: ${USE_GEMINI ? 'LIVE' : 'placeholder'}\n`);

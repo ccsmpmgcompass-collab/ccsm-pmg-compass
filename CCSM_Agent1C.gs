@@ -74,15 +74,15 @@
  *    which only defines English MONTH_NAMES).
  *
  * WHAT IT DOES:
- * 1. Loads enriched area data (stats + selected messages) from Script
- *    Properties (A1B_DATA)
+ * 1. Loads enriched area data (stats + selected messages) from the Drive
+ *    file behind the A1B_DATA Script Properties pointer
  * 2. Loads MISSION_ORG to build a per-person map (email → areas + roles)
  * 3. Sends ONE combined HTML email per unique email address
  * 4. ALL emails route through Relay 2 (agentName = 'Agent1C', see
  *    CCSM_Helpers.gs sendEmail())
  * 5. Writes one row per area to WEEKLY_BREAKDOWNS
  * 6. Records sent messages in FEEDBACK_HISTORY via recordMessageSent()
- * 7. Cleans up Script Properties (A1A_DATA and A1B_DATA)
+ * 7. Cleans up the chain's Drive files + Script Properties pointers (A1A_DATA and A1B_DATA)
  * 8. Logs to AGENT_RUN_LOG
  */
 
@@ -527,9 +527,9 @@ function runAgent1C() {
     a1c_recordFeedbackHistory(areas);
     notes.push('FEEDBACK_HISTORY updated');
 
-    // Clean up Script Properties
-    try { saveTempData('A1A_DATA', ''); } catch (e) {}
-    try { saveTempData('A1B_DATA', ''); } catch (e) {}
+    // Clean up the chain's Drive-hosted payloads + their Script Properties pointers
+    try { clearTempData('A1A_DATA'); } catch (e) {}
+    try { clearTempData('A1B_DATA'); } catch (e) {}
 
     Logger.log('Agent1C: Complete — ' + notes.join(' | '));
   } catch (e) {

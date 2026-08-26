@@ -16,8 +16,9 @@
  * codebase's pattern).
  *
  * WHY INDEPENDENT, NOT CHAINED onto Agent1A/1B/1C: that chain's own
- * A1A_DATA/A1B_DATA Script Properties are deliberately CLEARED at the end of
- * runAgent1C() (its cleanup step), so a naive scheduleNext() from Agent1C
+ * A1A_DATA/A1B_DATA chain payloads (Drive files, pointed to by a Script
+ * Properties key each) are deliberately CLEARED at the end of runAgent1C()
+ * (its cleanup step), so a naive scheduleNext() from Agent1C
  * would read empty data. This agent's mission/zone totals are cheap to
  * recompute directly from DAILY_LOG (unlike Agent1A's per-area ranked/
  * derived stats, which are the actual reason 1B/1C stay chained), so

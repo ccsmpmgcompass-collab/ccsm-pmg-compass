@@ -116,13 +116,12 @@ scope.runAgent1B();
 // Script Properties assertions (via the real saveTempData/loadTempData
 // contract, loaded straight from CCSM_Helpers.gs into `scope`).
 // ---------------------------------------------------------------------------
-// saveTempData() chunks large payloads across numbered properties (see
-// CCSM_Helpers.gs TEMP_DATA_CHUNK_CHARS) — 68+ areas of stats routinely
-// exceed the single-property cap, so check for either the direct key or its
-// chunk-count marker rather than assuming an unchunked value.
+// saveTempData() now stores the actual payload as a Drive file and leaves
+// only a small pointer (key + '__driveId') in Script Properties — see
+// CCSM_Helpers.gs. Check for that pointer rather than a direct/chunked value.
 function savedToProps(key) {
   const bucket = env.state.props.script || {};
-  return Boolean(bucket[key] || bucket[key + '__chunks']);
+  return Boolean(bucket[key + '__driveId']);
 }
 assert.ok(savedToProps('A1A_DATA'), 'A1A_DATA must be saved to Script Properties');
 assert.ok(savedToProps('A1B_DATA'), 'A1B_DATA must be saved to Script Properties');

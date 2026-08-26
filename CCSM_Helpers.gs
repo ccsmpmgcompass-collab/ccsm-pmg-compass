@@ -635,69 +635,90 @@ function deleteTriggerByName(functionName) {
 }
 
 /**
- * Serializes a value to JSON and saves it in Script Properties.
- * Used to pass data between chained agents.
+ * Serializes a value to JSON and stores it in a Drive file, used to pass data
+ * between chained agents (Agent1A -> Agent1B -> Agent1C). Script Properties
+ * only ever holds a tiny pointer (the Drive file ID) — never the payload
+ * itself.
  *
- * Script Properties cap each VALUE at 9KB. The Sunday chain payloads
- * (A1A_DATA / A1B_DATA: 68 areas of stats + full message texts) run to
- * 50KB+, so large values are transparently split across numbered chunk
- * properties (key__0, key__1, ... + key__chunks). loadTempData() reassembles
- * them. Callers never see the chunking.
+ * Why not Script Properties directly (the old approach): that store caps its
+ * WHOLE project-wide total at 500KB, shared with every other feature that
+ * uses it (escalation dedup keys, config caches, ...). The Sunday chain
+ * payloads (A1A_DATA / A1B_DATA: 68 areas of stats + full message texts +
+ * KI/trend/metas roll-ups) run past 900KB combined — already at 188% of that
+ * budget on their own before anything else touches it. That is a hard,
+ * structural ceiling, not a tuning problem: chunking across more property
+ * keys (the old scheme) doesn't help, because the 500KB cap is on the total
+ * store, not any one key. It was the proven cause of Agent1C never
+ * completing a single run (AGENT_RUN_LOG: 1A x3, 1B x2, 1C x0) — see
+ * [[ccsm-coaching-email]]. Drive has no comparable ceiling for a project's
+ * own files.
  */
-var TEMP_DATA_CHUNK_CHARS = 8000;  // safely under the 9KB per-value limit
+function ccsmTempDataFolder_() {
+  var FOLDER_NAME = 'CCSM Chain Data (auto-generated — safe to empty)';
+  var it = DriveApp.getFoldersByName(FOLDER_NAME);
+  if (it.hasNext()) return it.next();
+  return DriveApp.createFolder(FOLDER_NAME);
+}
 
 function saveTempData(key, value) {
   var json  = JSON.stringify(value);
   var props = PropertiesService.getScriptProperties();
 
-  // Clear any previous value/chunks for this key so stale chunks never linger
-  var oldChunks = parseInt(props.getProperty(key + '__chunks') || '0', 10);
-  for (var c = 0; c < oldChunks; c++) props.deleteProperty(key + '__' + c);
-  props.deleteProperty(key + '__chunks');
-  props.deleteProperty(key);
+  ccsmDeleteTempDataFile_(key, props);
 
-  if (json.length <= TEMP_DATA_CHUNK_CHARS) {
-    props.setProperty(key, json);
-    Logger.log('saveTempData: Saved "' + key + '" (' + json.length + ' chars).');
-    return;
-  }
-
-  var n = Math.ceil(json.length / TEMP_DATA_CHUNK_CHARS);
-  for (var i = 0; i < n; i++) {
-    props.setProperty(key + '__' + i, json.substr(i * TEMP_DATA_CHUNK_CHARS, TEMP_DATA_CHUNK_CHARS));
-  }
-  props.setProperty(key + '__chunks', String(n));
-  Logger.log('saveTempData: Saved "' + key + '" (' + json.length + ' chars in ' + n + ' chunks).');
+  var file = ccsmTempDataFolder_().createFile(key + '.json', json, MimeType.PLAIN_TEXT);
+  props.setProperty(key + '__driveId', file.getId());
+  Logger.log('saveTempData: Saved "' + key + '" to Drive file ' + file.getId() +
+             ' (' + json.length + ' chars).');
 }
 
 /**
  * Loads and deserializes a value previously saved with saveTempData().
- * Reassembles chunked values written by saveTempData(). Returns null if the
- * key does not exist.
+ * Returns null if the key was never saved, was already cleared, or its
+ * Drive file has gone missing.
  */
 function loadTempData(key) {
-  var props  = PropertiesService.getScriptProperties();
-  var chunks = parseInt(props.getProperty(key + '__chunks') || '0', 10);
-
-  if (chunks > 0) {
-    var json = '';
-    for (var i = 0; i < chunks; i++) {
-      var part = props.getProperty(key + '__' + i);
-      if (part === null) {
-        Logger.log('loadTempData: Missing chunk ' + i + ' of ' + chunks + ' for key "' + key + '".');
-        return null;
-      }
-      json += part;
-    }
-    return JSON.parse(json);
-  }
-
-  var raw = props.getProperty(key);
-  if (!raw) {
+  var props = PropertiesService.getScriptProperties();
+  var id    = props.getProperty(key + '__driveId');
+  if (!id) {
     Logger.log('loadTempData: No data found for key "' + key + '".');
     return null;
   }
-  return JSON.parse(raw);
+  try {
+    var json = DriveApp.getFileById(id).getBlob().getDataAsString();
+    return JSON.parse(json);
+  } catch (e) {
+    Logger.log('loadTempData: Drive file for key "' + key + '" (id ' + id + ') unreadable: ' + e.message);
+    return null;
+  }
+}
+
+/**
+ * Deletes a chain payload's Drive file and its Script Properties pointer.
+ * Agent1C calls this at the end of the chain, once every recipient has their
+ * email, so nothing lingers in Drive between Mondays.
+ */
+function clearTempData(key) {
+  ccsmDeleteTempDataFile_(key, PropertiesService.getScriptProperties());
+}
+
+/**
+ * Shared cleanup: trashes the Drive file behind `key` (if any) and its
+ * pointer property. Also deletes any leftover key/key__N/key__chunks
+ * properties from the pre-Drive chunking scheme, so a store that still has
+ * an old stuck payload resident self-heals the first time either agent in
+ * the chain touches that key again.
+ */
+function ccsmDeleteTempDataFile_(key, props) {
+  var id = props.getProperty(key + '__driveId');
+  if (id) {
+    try { DriveApp.getFileById(id).setTrashed(true); } catch (e) {}
+    props.deleteProperty(key + '__driveId');
+  }
+  var oldChunks = parseInt(props.getProperty(key + '__chunks') || '0', 10);
+  for (var c = 0; c < oldChunks; c++) props.deleteProperty(key + '__' + c);
+  props.deleteProperty(key + '__chunks');
+  props.deleteProperty(key);
 }
 
 /**

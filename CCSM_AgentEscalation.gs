@@ -758,13 +758,17 @@ function ae_escapeHtml(str) {
  * Removes ESC_ keys older than ESC_KEY_RETENTION_DAYS to prevent
  * PropertiesService bloat. One key per (area, date) means 98 areas at 30 days
  * of nightly-only retention alone approaches ~3,000 keys — a large enough
- * slice of the script-wide 500KB Script Properties budget (shared with the
- * A1A_DATA/A1B_DATA chunked coaching-chain payloads, 50KB+ each) that it was
- * the likely cause of Agent1A's "exceeded the property storage quota" error
- * on 2026-08-03, which killed that week's entire coaching chain before
- * Agent1B/1C ever ran. Dedup only needs to survive MISSED_DAYS_LOOKBACK (3
- * days) for nightly and one week for weekly escalation, so 10 days keeps a
- * comfortable safety margin while cutting steady-state key count ~3x.
+ * slice of the script-wide 500KB Script Properties budget that it was the
+ * likely cause of Agent1A's "exceeded the property storage quota" error on
+ * 2026-08-03, which killed that week's entire coaching chain before
+ * Agent1B/1C ever ran. (At the time, that budget was also shared with the
+ * A1A_DATA/A1B_DATA coaching-chain payloads themselves, chunked directly
+ * into Script Properties at 50KB+ each — CCSM_Helpers.gs moved those to a
+ * Drive-file handoff, so Script Properties now holds only a tiny pointer per
+ * key, but ESC_ key sprawl alone can still fill the store on its own.) Dedup
+ * only needs to survive MISSED_DAYS_LOOKBACK (3 days) for nightly and one
+ * week for weekly escalation, so 10 days keeps a comfortable safety margin
+ * while cutting steady-state key count ~3x.
  */
 var ESC_KEY_RETENTION_DAYS = 10;
 function ae_purgeOldKeys() {

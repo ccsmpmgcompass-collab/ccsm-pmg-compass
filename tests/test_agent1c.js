@@ -202,9 +202,9 @@ assert.strictEqual(growthRow[fhMsgIdx], 'G-CL-001');
 assert.strictEqual(growthRow[fhGrowthIdx], 'close_rate');
 
 // ---------------------------------------------------------------------------
-// Script Properties cleaned up after Agent1C. saveTempData('A1A_DATA', '')
-// stores JSON.stringify('') = '""', so loadTempData() parses back to '' (an
-// empty string) rather than null — check falsiness, not strict null.
+// Chain payloads cleaned up after Agent1C: clearTempData() trashes the Drive
+// file and deletes the Script Properties pointer, so loadTempData() finds no
+// pointer and returns null.
 // ---------------------------------------------------------------------------
 assert.ok(!scope.loadTempData('A1A_DATA'), 'A1A_DATA should be cleared after Agent1C');
 assert.ok(!scope.loadTempData('A1B_DATA'), 'A1B_DATA should be cleared after Agent1C');

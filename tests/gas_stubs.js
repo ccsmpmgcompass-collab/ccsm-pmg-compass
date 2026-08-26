@@ -56,6 +56,7 @@ function makeGasEnv(options = {}) {
     logs: [],
     triggers: [],
     props: {},
+    drive: { folders: {}, files: {} },
     // Gmail daily-send quota modeling. Configurable via
     // makeGasEnv({ remainingQuota: N }); defaults high (1000) so existing
     // tests that don't care about quota guards are unaffected. Decrements by
@@ -470,6 +471,65 @@ function makeGasEnv(options = {}) {
     getDocumentProperties() { return makePropertyStore('document'); },
   };
 
+  // ---- Drive ---------------------------------------------------------------
+  // Minimal in-memory file/folder store — just enough for CCSM_Helpers.gs's
+  // saveTempData/loadTempData/clearTempData (ccsmTempDataFolder_, createFile,
+  // getFileById, getBlob().getDataAsString(), setTrashed). No real folder
+  // hierarchy, sharing, or permissions modeled; state.drive is exposed on the
+  // returned `state` for tests that want to assert on it directly.
+  let nextDriveId = 1;
+  function genDriveId() { return 'drive_' + (nextDriveId++); }
+
+  function makeDriveFile(id) {
+    return {
+      getId() { return id; },
+      getBlob() {
+        const rec = state.drive.files[id];
+        return { getDataAsString() { return rec.content; } };
+      },
+      setTrashed(trashed) {
+        const rec = state.drive.files[id];
+        if (rec) rec.trashed = !!trashed;
+        return this;
+      },
+    };
+  }
+
+  function makeDriveFolder(id) {
+    return {
+      getId() { return id; },
+      createFile(name, content, mimeType) {
+        const fileId = genDriveId();
+        state.drive.files[fileId] = { id: fileId, name, content: String(content), mimeType, folderId: id, trashed: false };
+        return makeDriveFile(fileId);
+      },
+    };
+  }
+
+  const DriveApp = {
+    getFoldersByName(name) {
+      const matches = Object.values(state.drive.folders).filter((f) => f.name === name && !f.trashed);
+      let i = 0;
+      return {
+        hasNext() { return i < matches.length; },
+        next() { return makeDriveFolder(matches[i++].id); },
+      };
+    },
+    createFolder(name) {
+      const id = genDriveId();
+      state.drive.folders[id] = { id, name, trashed: false };
+      return makeDriveFolder(id);
+    },
+    getFileById(id) {
+      if (!state.drive.files[id] || state.drive.files[id].trashed) {
+        throw new Error('No Drive file with id ' + id);
+      }
+      return makeDriveFile(id);
+    },
+  };
+
+  const MimeType = { PLAIN_TEXT: 'text/plain' };
+
   // ---- ScriptApp -----------------------------------------------------------
   let nextTriggerId = 1;
   function makeTriggerBuilder(handlerFunctionName) {
@@ -619,6 +679,8 @@ function makeGasEnv(options = {}) {
     Logger,
     Utilities,
     PropertiesService,
+    DriveApp,
+    MimeType,
     ScriptApp,
     Session,
     MailApp,
