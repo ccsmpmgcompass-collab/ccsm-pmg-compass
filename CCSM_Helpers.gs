@@ -635,25 +635,6 @@ function deleteTriggerByName(functionName) {
 }
 
 /**
- * Serializes a value to JSON and stores it in a Drive file, used to pass data
- * between chained agents (Agent1A -> Agent1B -> Agent1C). Script Properties
- * only ever holds a tiny pointer (the Drive file ID) — never the payload
- * itself.
- *
- * Why not Script Properties directly (the old approach): that store caps its
- * WHOLE project-wide total at 500KB, shared with every other feature that
- * uses it (escalation dedup keys, config caches, ...). The Sunday chain
- * payloads (A1A_DATA / A1B_DATA: 68 areas of stats + full message texts +
- * KI/trend/metas roll-ups) run past 900KB combined — already at 188% of that
- * budget on their own before anything else touches it. That is a hard,
- * structural ceiling, not a tuning problem: chunking across more property
- * keys (the old scheme) doesn't help, because the 500KB cap is on the total
- * store, not any one key. It was the proven cause of Agent1C never
- * completing a single run (AGENT_RUN_LOG: 1A x3, 1B x2, 1C x0) — see
- * [[ccsm-coaching-email]]. Drive has no comparable ceiling for a project's
- * own files.
- */
-/**
  * Finds/creates the Drive folder that holds chain payload files, remembering
  * its ID in Script Properties rather than looking it up by name.
  *
@@ -682,6 +663,25 @@ function ccsmTempDataFolder_() {
   return folder;
 }
 
+/**
+ * Serializes a value to JSON and stores it in a Drive file, used to pass data
+ * between chained agents (Agent1A -> Agent1B -> Agent1C). Script Properties
+ * only ever holds a tiny pointer (the Drive file ID) — never the payload
+ * itself.
+ *
+ * Why not Script Properties directly (the old approach): that store caps its
+ * WHOLE project-wide total at 500KB, shared with every other feature that
+ * uses it (escalation dedup keys, config caches, ...). The Sunday chain
+ * payloads (A1A_DATA / A1B_DATA: 68 areas of stats + full message texts +
+ * KI/trend/metas roll-ups) run past 900KB combined — already at 188% of that
+ * budget on their own before anything else touches it. That is a hard,
+ * structural ceiling, not a tuning problem: chunking across more property
+ * keys (the old scheme) doesn't help, because the 500KB cap is on the total
+ * store, not any one key. It was the proven cause of Agent1C never
+ * completing a single run (AGENT_RUN_LOG: 1A x3, 1B x2, 1C x0) — see
+ * [[ccsm-coaching-email]]. Drive has no comparable ceiling for a project's
+ * own files.
+ */
 function saveTempData(key, value) {
   var json  = JSON.stringify(value);
   var props = PropertiesService.getScriptProperties();
