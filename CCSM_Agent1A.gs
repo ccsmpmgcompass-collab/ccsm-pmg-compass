@@ -206,7 +206,15 @@ function runAgent1A() {
     // currently reaches back only two, so the older two render as missing
     // history and fill in on their own as the mission accumulates weeks.
     var trendWeeks = derivedWeeks.slice(-A1A_TREND_WEEKS);
-    var summaries  = a1a_buildSummaries(areaData, missionOrg, prevWeekEnd, history, trendWeeks);
+
+    // Who filed the weekly form in each of those same four weeks. One more
+    // read of WEEKLY_KI, not four: the compliance block wants a boolean per
+    // area per week, and the two loads above carry a week's numbers each.
+    var weeklyFilings = a1a_loadWeeklyFilings_(trendWeeks);
+    Logger.log('Agent1A: WEEKLY_KI filing history over ' + trendWeeks.length + ' weeks: ' +
+               (weeklyFilings === null ? 'TAB UNAVAILABLE' : Object.keys(weeklyFilings).length + ' areas'));
+
+    var summaries  = a1a_buildSummaries(areaData, missionOrg, prevWeekEnd, history, trendWeeks, weeklyFilings);
 
     saveTempData('A1A_DATA', {
       weekStart: weekStart,
@@ -456,6 +464,48 @@ function a1a_kiMetaMap_(kiRow) {
   if (!kiRow || !kiRow.length) return null;
   var out = {};
   kiRow.forEach(function(ind) { out[ind.key] = ind.meta || 0; });
+  return out;
+}
+
+/**
+ * WHICH areas filed the weekly form in each of `weekEnds`, as
+ *   { areaName: { 'yyyy-MM-dd': true } }
+ *
+ * a1a_loadWeeklyKi answers the same question for ONE week and carries every
+ * real/meta pair with it. The compliance block needs several weeks and none of
+ * the numbers, so this reads the tab ONCE for the whole window instead of
+ * calling that loader per week: WEEKLY_KI is read whole every time, and the
+ * letter's 4-week table would otherwise cost four more full reads to learn
+ * four booleans per area.
+ *
+ * Returns NULL when the tab is missing or unreadable, matching
+ * a1a_loadWeeklyKi -- "nobody filed" and "we cannot see the tab" are different
+ * sentences in the letter, and only one of them is the missionaries' doing.
+ */
+function a1a_loadWeeklyFilings_(weekEnds) {
+  var data = a1a_getSheetData('WEEKLY_KI');
+  if (!data || data.length < 2) return null;
+
+  var headers = data[0].map(function(h) { return String(h).trim(); });
+  var dateIdx = headers.indexOf('Week_End_Date');
+  var areaIdx = headers.indexOf('Area');
+  if (dateIdx < 0 || areaIdx < 0) return null;
+
+  var wanted = {};
+  (weekEnds || []).forEach(function(we) { wanted[we] = true; });
+
+  var out = {};
+  for (var i = 1; i < data.length; i++) {
+    // Same normalization a1a_loadWeeklyKi applies: Agent5A writes this column
+    // as a 'yyyy-MM-dd' string, but a date-formatted cell comes back as a Date
+    // and comparing the two raw silently matches nothing.
+    var we = a1a_toDateString(data[i][dateIdx]);
+    if (!we || !wanted[we]) continue;
+    var area = String(data[i][areaIdx] || '').trim();
+    if (!area) continue;
+    if (!out[area]) out[area] = {};
+    out[area][we] = true;
+  }
   return out;
 }
 
@@ -1004,7 +1054,7 @@ function a1a_rankMetrics(stats, areaGoals, rateTargets, lastGrowthMetric) {
 
 // --- SUMMARIES --------------------------------------------------------------
 
-function a1a_buildSummaries(areaData, missionOrg, metaWeekEnd, history, trendWeeks) {
+function a1a_buildSummaries(areaData, missionOrg, metaWeekEnd, history, trendWeeks, filings) {
   var mission   = a1a_emptySummary();
   var zones     = {};
   var districts = {};
@@ -1061,6 +1111,19 @@ function a1a_buildSummaries(areaData, missionOrg, metaWeekEnd, history, trendWee
   });
   Object.keys(districts).forEach(function(dn) {
     districts[dn].trend = a1a_rollUpTrend_(members.districts[dn], history, trendWeeks);
+  });
+
+  // Weekly-form filing per unit per week, over the same weeks as .trend --
+  // the two columns of the compliance block's 4-week table. Optional for the
+  // same reason `history` is: a caller that cannot read WEEKLY_KI leaves every
+  // .filings null and the letter renders no weekly half rather than reporting
+  // a mission-wide zero nobody earned.
+  mission.filings = a1a_rollUpFilings_(members.mission, filings, trendWeeks);
+  Object.keys(zones).forEach(function(z) {
+    zones[z].filings = a1a_rollUpFilings_(members.zones[z], filings, trendWeeks);
+  });
+  Object.keys(districts).forEach(function(dn) {
+    districts[dn].filings = a1a_rollUpFilings_(members.districts[dn], filings, trendWeeks);
   });
 
   return { mission: mission, zones: zones, districts: districts };
@@ -1241,6 +1304,40 @@ function a1a_rollUpTrend_(members, history, weeks) {
   });
 
   return { weeks: series };
+}
+
+/**
+ * One zone / district / mission's WEEKLY-FORM filing count, week by week, for
+ * the letter's "Cumplimiento" block. `members` is the same list the two
+ * roll-ups above read, `filings` is a1a_loadWeeklyFilings_'s output, and
+ * `weeks` is the same ascending week list a1a_rollUpTrend_ is given, so the
+ * two halves of that block's 4-week table are indexed by one set of weeks
+ * rather than two that could drift apart.
+ *
+ * Returns [{ week, filed, total }] or null when there is nothing to roll up.
+ *
+ * `total` is the unit's CURRENT area count applied to every week in the
+ * window, because MISSION_ORG records today's roster and not last month's.
+ * That is an approximation across a transfer, and the letter says so in a
+ * footnote rather than presenting a moved denominator as history.
+ *
+ * The current week's `filed` is the same number a1a_rollUpKi_ reports as
+ * areasReported -- both walk `members` and both count a WEEKLY_KI row for that
+ * week. That is deliberate: the block's headline bar and the last row of its
+ * 4-week table are one number, so they cannot disagree on screen.
+ */
+function a1a_rollUpFilings_(members, filings, weeks) {
+  if (!members || !members.length) return null;
+  if (!filings)                    return null;
+  if (!weeks || !weeks.length)     return null;
+
+  return weeks.map(function(we) {
+    var filed = 0;
+    members.forEach(function(m) {
+      if (filings[m.name] && filings[m.name][we]) filed++;
+    });
+    return { week: we, filed: filed, total: members.length };
+  });
 }
 
 function a1a_emptySummary() {

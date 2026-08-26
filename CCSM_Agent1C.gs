@@ -2198,7 +2198,13 @@ function a1c_buildLeadershipSection(title, summaryTotals, areas, scope, weekEnd,
       district:  area.district  || '',
       growth:    area.growth    || null,
       strength1: area.strength1 || null,
-      strength2: area.strength2 || null
+      strength2: area.strength2 || null,
+      // Whether this area filed the weekly form, for the compliance table at
+      // the foot of the section. NULL, not false, when WEEKLY_KI could not be
+      // read at all: [] means "readable, and this companionship sent nothing"
+      // while null means "we cannot see the tab", and only the first of those
+      // is anybody's fault.
+      kiFiled:   area.ki === null || area.ki === undefined ? null : !!(area.ki && area.ki.length)
     });
   });
 
@@ -2268,6 +2274,14 @@ function a1c_buildLeadershipSection(title, summaryTotals, areas, scope, weekEnd,
     );
     html += '</div>';
   }
+
+  // Compliance closes the section, deliberately last. Who sent the form is
+  // the least interesting thing in the letter and the easiest to act on, so
+  // it sits under the coaching rather than in front of it -- a leader whose
+  // letter opened on submission rates would read a filing report, not a
+  // reading of their unit's week.
+  html += a1c_buildCumplimientoBlock_(summaryTotals, areaDetails,
+                                      summaryTotals && summaryTotals.ki, scope, C);
 
   html += '</div>';
   return html;
@@ -3065,6 +3079,390 @@ function a1c_buildAreaCapsules_(areaDetails, ki, scope, C) {
     html += '<div style="font-size:10px;color:' + C.muted + ';line-height:1.5;margin-top:3px;">' +
             '0 de 7 días.' + tail + '</div>';
     html += '</div>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+// ─── "CUMPLIMIENTO" — the compliance block that closes the section ────────────
+
+// The grey a week with nothing on either form is printed in. Both logs began
+// on a real date and the 4-week window reaches back past it, so those rows say
+// "sin datos" instead of drawing a 0% the areas never earned.
+var A1C_NO_DATA_COLOR = '#9ca3af';
+
+// The row colour for an area that owed a weekly result and sent none. It is
+// the same set a1a_rollUpKi_ names in the callout at the top of the section --
+// said once as a count there, once as a state here, which is what decision 6
+// asked for.
+var A1C_META_SIN_RESULTADO_BG = '#fef2f2';
+
+/** Rounded percent, or null when there is no denominator to divide by. */
+function a1c_compPct_(num, den) {
+  return den > 0 ? Math.round(num / den * 100) : null;
+}
+
+/**
+ * One labelled compliance bar: the metric name, a goal-banded fill, and
+ * "45/77 · 58%" on the right. Same bar the Key Indicator rows draw, so a
+ * leader reads compliance with the eye they already used on their metas.
+ */
+function a1c_compBar_(label, num, den, C) {
+  var pct  = a1c_compPct_(num, den);
+  var fill = a1c_goalBandColor_(pct, num, C);
+  // A genuine zero draws no bar at all. The 2% floor exists so a 1% week is
+  // still visible, not so an empty one looks like it started.
+  var width = pct ? Math.max(2, Math.min(100, pct)) : 0;
+  return '<div style="margin:0 0 9px;">' +
+    '<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:3px;">' + a1c_esc(label) + '</div>' +
+    '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>' +
+    '<td style="background:' + C.border + ';border-radius:5px;padding:0;">' +
+    '<div style="width:' + width + '%;background:' + fill +
+    ';height:9px;border-radius:5px;font-size:1px;line-height:1px;">&nbsp;</div></td>' +
+    '<td style="width:92px;text-align:right;padding-left:8px;font-weight:700;color:' + fill +
+    ';font-size:11px;white-space:nowrap;">' + num + '/' + den +
+    (pct === null ? '' : ' · ' + pct + '%') + '</td>' +
+    '</tr></table></div>';
+}
+
+/**
+ * The two roll-ups merged into one row per week, ascending:
+ *   { week, days, possible, filed, total, empty }
+ *
+ * `days` / `possible` come from a1a_rollUpTrend_ and `filed` / `total` from
+ * a1a_rollUpFilings_, which Agent1A hands the SAME week list, so the two
+ * columns of the 4-week table are indexed by one set of weeks. Either half can
+ * be missing on its own -- an unreadable WEEKLY_KI leaves `filed` null while
+ * the nightly column still has something true to say.
+ *
+ * `empty` marks a week with nothing on either form anywhere in the unit. That
+ * is not a week the unit failed; it is a week before the logs begin, and the
+ * table prints "sin datos" for it. A unit that genuinely reported nothing on
+ * both forms inside the covered period would read the same way, which is the
+ * one case this rule gets wrong -- so the footnote dates where the history
+ * starts and lets the reader tell the two apart.
+ */
+function a1c_compWeeks_(trend, filings, areasTotal) {
+  var byWeek = {}, order = [];
+  function slot(we) {
+    if (!byWeek[we]) {
+      byWeek[we] = { week: we, days: null, possible: null, filed: null, total: null };
+      order.push(we);
+    }
+    return byWeek[we];
+  }
+
+  ((trend && trend.weeks) || []).forEach(function(w) {
+    var s = slot(w.week);
+    s.days     = w.days || 0;
+    s.possible = areasTotal * 7;
+  });
+  (filings || []).forEach(function(f) {
+    var s = slot(f.week);
+    s.filed = f.filed || 0;
+    s.total = f.total || 0;
+  });
+
+  order.sort(); // 'yyyy-MM-dd' sorts chronologically as text
+  return order.map(function(we) {
+    var s = byWeek[we];
+    s.empty = !s.days && !s.filed;
+    return s;
+  });
+}
+
+/**
+ * The 4-week history table. The current week is bold and carries a ▲/▼ chip
+ * against the most recent EARLIER WEEK THAT HAS DATA -- not against the row
+ * directly above it, which in a young mission is "sin datos" and would make
+ * every comparison read as a recovery from nothing.
+ */
+function a1c_compHistoryTable_(rows, C) {
+  if (!rows.length) return '';
+
+  var th = 'padding:5px 4px;border-bottom:1px solid ' + C.border +
+           ';font-size:9px;color:#374151;text-transform:uppercase;letter-spacing:0.04em;text-align:';
+  var td = 'padding:6px 4px;border-bottom:1px solid #f1f5f9;font-size:10px;';
+
+  var last     = rows.length - 1;
+  var prevWith = -1;
+  for (var i = last - 1; i >= 0; i--) { if (!rows[i].empty) { prevWith = i; break; } }
+  var prev = prevWith >= 0 ? rows[prevWith] : null;
+
+  function chip(cur, before) {
+    if (cur === null || before === null) return '';
+    var d = cur - before;
+    // A flat week states its own sign the way the trend block's ■ chip does:
+    // ▲ and ▼ carry direction, ■ has to say it.
+    if (d === 0) return ' <span style="color:' + C.muted + ';">■ 0 pp</span>';
+    return ' <span style="color:' + (d > 0 ? '#166534' : '#b91c1c') + ';">' +
+           (d > 0 ? '▲ +' : '▼ −') + Math.abs(d) + ' pp</span>';
+  }
+
+  function cell(num, den, beforeNum, beforeDen, isLast) {
+    if (num === null) return '<span style="color:' + A1C_NO_DATA_COLOR + ';">sin datos</span>';
+    var pct = a1c_compPct_(num, den);
+    var txt = num + '/' + den + (pct === null ? '' : ' · ' + pct + '%');
+    if (!isLast || beforeNum === null || beforeNum === undefined) return txt;
+    return txt + chip(pct, a1c_compPct_(beforeNum, beforeDen));
+  }
+
+  var html = '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">';
+  html += '<tr style="background:' + C.bgLight + ';">' +
+          '<th style="' + th + 'left;">Semana</th>' +
+          '<th style="' + th + 'left;">Nocturno</th>' +
+          '<th style="' + th + 'left;">Semanal</th></tr>';
+
+  rows.forEach(function(r, i) {
+    var isLast = i === last;
+    var weight = isLast ? 'font-weight:700;' : '';
+    var color  = r.empty ? A1C_NO_DATA_COLOR : '#374151';
+    var noData = '<span style="color:' + A1C_NO_DATA_COLOR + ';">sin datos</span>';
+    html += '<tr>' +
+      '<td style="' + td + weight + 'color:' + color + ';white-space:nowrap;">' +
+      a1c_esc(a1c_shortDate_(r.week)) + '</td>' +
+      '<td style="' + td + weight + 'color:' + color + ';white-space:nowrap;">' +
+      (r.empty ? noData : cell(r.days, r.possible, prev && prev.days, prev && prev.possible, isLast)) + '</td>' +
+      '<td style="' + td + weight + 'color:' + color + ';white-space:nowrap;">' +
+      (r.empty ? noData : cell(r.filed, r.total, prev && prev.filed, prev && prev.total, isLast)) + '</td>' +
+      '</tr>';
+  });
+  html += '</table>';
+  return html;
+}
+
+/**
+ * One area's weekly-form state: filed / owed nothing / owed a result and sent
+ * none. Returns null only when WEEKLY_KI could not be read at all, which is a
+ * property of the tab and so true for every area at once -- the caller then
+ * drops the whole column rather than printing a dash the companionship did
+ * not earn.
+ */
+function a1c_compWeeklyState_(a, silentNames) {
+  if (a.kiFiled === null || a.kiFiled === undefined) return null;
+  if (a.kiFiled) return 'filed';
+  return silentNames[a.name] ? 'silent' : 'none';
+}
+
+/**
+ * "Área · Noct. · Sem." for a zone or district letter. Best first, the same
+ * order the Key Indicator block puts met metas in: the rows a leader has to do
+ * something about finish the table, where the red backgrounds are, rather than
+ * opening it.
+ */
+function a1c_compAreaTable_(areaDetails, silentNames, hasWeekly, metaDate, C) {
+  if (!areaDetails.length) return '';
+
+  var rows = areaDetails.map(function(a) {
+    return {
+      name:  a.name,
+      days:  (a.stats && a.stats.submissions) || 0,
+      state: a1c_compWeeklyState_(a, silentNames)
+    };
+  });
+  rows.sort(function(x, y) {
+    var xf = x.state === 'filed' ? 1 : 0, yf = y.state === 'filed' ? 1 : 0;
+    if (xf !== yf)         return yf - xf;
+    if (x.days !== y.days) return y.days - x.days;
+    return x.name < y.name ? -1 : x.name > y.name ? 1 : 0;
+  });
+
+  var th = 'padding:5px 4px;border-bottom:1px solid ' + C.border +
+           ';font-size:9px;color:#374151;text-transform:uppercase;letter-spacing:0.04em;text-align:';
+  var td = 'padding:6px 4px;border-bottom:1px solid #f1f5f9;font-size:10px;';
+
+  var html = '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">';
+  html += '<tr style="background:' + C.bgLight + ';">' +
+          '<th style="' + th + 'left;">Área</th>' +
+          '<th style="' + th + 'right;">Noct.</th>' +
+          (hasWeekly ? '<th style="' + th + 'left;">Sem.</th>' : '') + '</tr>';
+
+  var anySilent = false;
+  rows.forEach(function(r) {
+    var bg  = r.state === 'silent' ? 'background:' + A1C_META_SIN_RESULTADO_BG + ';' : '';
+    var col = a1c_goalBandColor_(a1c_compPct_(r.days, 7), r.days, C);
+    var sem = '';
+    if (r.state === 'filed') {
+      sem = '<span style="color:' + C.green + ';font-weight:700;">✓</span>';
+    } else if (r.state === 'silent') {
+      sem = '<span style="color:' + C.red + ';font-weight:700;">meta sin resultado</span>';
+      anySilent = true;
+    } else if (r.state === 'none') {
+      sem = '<span style="color:' + C.muted + ';">—</span>';
+    }
+
+    html += '<tr style="' + bg + '">' +
+      // Hyphenate THEN escape -- the order a1c_softHyphenate_'s own note asks
+      // for ("returns literal U+00AD ... because the result is passed through
+      // a1c_esc()") and the order the area table at :2493 uses. Checked both
+      // ways against the live names: they survive either order today, because
+      // a1c_esc leaves apostrophes alone and the syllable rule never lands a
+      // break inside "&amp;". So this is convention, not a bug fix -- but the
+      // convention is worth holding, since the function emits a bare U+00AD
+      // precisely so that escaping can come after it. One live area is called
+      // "Huepil & Tucapel & Villa Obispo".
+      '<td style="' + td + 'color:#374151;">' + a1c_esc(a1c_softHyphenate_(r.name)) + '</td>' +
+      '<td style="' + td + 'text-align:right;font-weight:700;white-space:nowrap;color:' + col + ';">' +
+      r.days + '/7</td>' +
+      (hasWeekly ? '<td style="' + td + '">' + sem + '</td>' : '') +
+      '</tr>';
+  });
+  html += '</table>';
+
+  if (anySilent) {
+    html += '<div style="font-size:9px;color:' + C.muted + ';line-height:1.5;margin-top:5px;">' +
+            'meta sin resultado = fijó una meta ' +
+            (metaDate ? 'el ' + a1c_esc(metaDate) : 'la semana pasada') +
+            ' y no envió el informe semanal de esta semana, así que no hay resultado que comparar.</div>';
+  }
+  return html;
+}
+
+/**
+ * "Zona · Nocturno · Semanal" for the mission letter, plus a bold Misión row.
+ * An AP's letter covers every area in the mission; 43 rows is several screens
+ * of a table nobody scrolls, and an AP does not chase an area directly -- the
+ * zone is the unit they act on, and the Panel holds the area detail.
+ *
+ * The Misión row is the SUM OF THE ROWS ABOVE IT, not a separately rolled-up
+ * total, so a table that does not add up cannot reach a reader.
+ */
+function a1c_compZoneTable_(areaDetails, silentNames, hasWeekly, C) {
+  var byZone = {}, names = [];
+  areaDetails.forEach(function(a) {
+    var z = a.zone || 'Sin zona asignada';
+    if (!byZone[z]) { byZone[z] = { days: 0, areas: 0, filed: 0 }; names.push(z); }
+    byZone[z].days += (a.stats && a.stats.submissions) || 0;
+    byZone[z].areas++;
+    if (a1c_compWeeklyState_(a, silentNames) === 'filed') byZone[z].filed++;
+  });
+  if (!names.length) return '';
+  names.sort();
+
+  var th = 'padding:5px 4px;border-bottom:1px solid ' + C.border +
+           ';font-size:9px;color:#374151;text-transform:uppercase;letter-spacing:0.04em;text-align:';
+  var td = 'padding:6px 4px;border-bottom:1px solid #f1f5f9;font-size:10px;';
+
+  function cells(z, bold) {
+    var nPct = a1c_compPct_(z.days, z.areas * 7);
+    var wPct = a1c_compPct_(z.filed, z.areas);
+    var w    = bold ? 'font-weight:700;' : '';
+    return '<td style="' + td + w + 'white-space:nowrap;color:' +
+             a1c_goalBandColor_(nPct, z.days, C) + ';">' +
+             z.days + '/' + (z.areas * 7) + (nPct === null ? '' : ' · ' + nPct + '%') + '</td>' +
+           (hasWeekly
+             ? '<td style="' + td + w + 'white-space:nowrap;color:' +
+               a1c_goalBandColor_(wPct, z.filed, C) + ';">' +
+               z.filed + '/' + z.areas + (wPct === null ? '' : ' · ' + wPct + '%') + '</td>'
+             : '');
+  }
+
+  var html = '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">';
+  html += '<tr style="background:' + C.bgLight + ';">' +
+          '<th style="' + th + 'left;">Zona</th>' +
+          '<th style="' + th + 'left;">Nocturno</th>' +
+          (hasWeekly ? '<th style="' + th + 'left;">Semanal</th>' : '') + '</tr>';
+
+  var tot = { days: 0, areas: 0, filed: 0 };
+  names.forEach(function(n) {
+    var z = byZone[n];
+    tot.days += z.days; tot.areas += z.areas; tot.filed += z.filed;
+    html += '<tr><td style="' + td + 'color:#374151;">' + a1c_esc(a1c_softHyphenate_(n)) + '</td>' +
+            cells(z, false) + '</tr>';
+  });
+  html += '<tr style="background:' + C.bgLight + ';"><td style="' + td +
+          'font-weight:700;color:' + C.header + ';">Misión</td>' + cells(tot, true) + '</tr>';
+  html += '</table>';
+  return html;
+}
+
+/**
+ * "Cumplimiento de la Zona" — the block that closes a leadership section.
+ *
+ * Two forms, both trended over four weeks. The nightly half comes from
+ * a1a_rollUpTrend_'s `days` (AREA-days reported, so a zone of 11 maxes at 77
+ * in a week, not 7) and the weekly half from a1a_rollUpFilings_. Every number
+ * is rendered from one of those two roll-ups or from the same areaDetails the
+ * rest of the section already draws, never re-counted from a third place.
+ *
+ * Three things this block deliberately does NOT do:
+ *   - It does not grade the week. Compliance is who sent the form, not how the
+ *     week went; the Key Indicator block at the top of the section already
+ *     said how the week went, and a second verdict built on submission rates
+ *     would let a diligent zone with a hard week read as a failing one.
+ *   - It does not print a per-area table in the mission letter (see
+ *     a1c_compZoneTable_).
+ *   - It does not invent history. A week before the logs begin says "sin
+ *     datos", and the footnote dates where the history actually starts --
+ *     derived from the data, not written down, so the sentence stays true as
+ *     the window fills in on its own each week.
+ */
+function a1c_buildCumplimientoBlock_(totals, areaDetails, ki, scope, C) {
+  if (!totals) return '';
+  var areasTotal = totals.total_areas || 0;
+  if (areasTotal === 0) return '';
+
+  var rows = a1c_compWeeks_(totals.trend || null, totals.filings || null, areasTotal);
+  if (!rows.length) return '';
+
+  var cur       = rows[rows.length - 1];
+  var hasWeekly = cur.filed !== null;
+  var metaDate  = ki && ki.metaWeekEnd ? a1c_formatDate(ki.metaWeekEnd) : '';
+
+  var silentNames = {};
+  ((ki && ki.silentAreas) || []).forEach(function(n) { silentNames[n] = true; });
+
+  var html = '<div style="margin:14px 0 4px;">';
+  html += '<div style="font-size:12px;font-weight:700;color:' + C.header +
+          ';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">✅ Cumplimiento ' +
+          a1c_esc(A1C_SCOPE_OF[scope] || '') + '</div>';
+  // "esta semana", not the mockup's "la semana pasada". Every other block in
+  // this letter calls the week it reports "esta semana"; two names for one
+  // week, a few hundred pixels apart, read as two different weeks.
+  html += '<div style="font-size:10px;color:' + C.muted + ';line-height:1.5;margin-bottom:9px;">' +
+          'Quién envió cada informe esta semana, y hacia dónde va.</div>';
+
+  html += a1c_compBar_('Informe nocturno — días informados', cur.days || 0, cur.possible || 0, C);
+  if (hasWeekly) {
+    html += a1c_compBar_('Informe semanal de indicadores', cur.filed, cur.total, C);
+  }
+
+  if (rows.length > 1) {
+    html += '<div style="font-size:11px;font-weight:700;color:#374151;margin:12px 0 4px;">Últimas ' +
+            rows.length + ' semanas</div>';
+    html += a1c_compHistoryTable_(rows, C);
+  }
+
+  var firstWith = null;
+  for (var i = 0; i < rows.length; i++) { if (!rows[i].empty) { firstWith = rows[i]; break; } }
+  var foot = 'Nocturno = días informados de los 7 que cada área puede informar. ' +
+             'Semanal = áreas que enviaron el informe de indicadores.';
+  if (firstWith && firstWith !== rows[0]) {
+    foot += ' El historial empieza en la semana que terminó el ' +
+            a1c_esc(a1c_formatDate(firstWith.week)) +
+            '; los registros no llegan más atrás, así que las semanas anteriores dicen «sin datos».';
+  }
+  if (rows.length > 1) {
+    // The denominator is today's roster applied backwards, which is an
+    // approximation across a transfer -- said out loud rather than presented
+    // as history, because MISSION_ORG records who serves where now and keeps
+    // no record of last month.
+    foot += ' Las semanas anteriores se miden contra las ' + areasTotal + ' áreas que ' +
+            (scope === 'mission' ? 'la misión tiene' : scope === 'zone' ? 'la zona tiene' : 'el distrito tiene') +
+            ' hoy.';
+  }
+  html += '<div style="font-size:9px;color:' + C.muted + ';line-height:1.5;margin-top:4px;">' + foot + '</div>';
+
+  if (scope === 'mission') {
+    html += '<div style="font-size:11px;font-weight:700;color:#374151;margin:14px 0 4px;">Por zona</div>';
+    html += a1c_compZoneTable_(areaDetails, silentNames, hasWeekly, C);
+    html += '<div style="font-size:9px;color:' + C.muted + ';line-height:1.5;margin-top:5px;">' +
+            'El detalle área por área está en el Panel de PMG Compass: son ' + areasTotal +
+            ' áreas, demasiadas para una tabla en un correo.</div>';
+  } else {
+    html += '<div style="font-size:11px;font-weight:700;color:#374151;margin:14px 0 4px;">Por área</div>';
+    html += a1c_compAreaTable_(areaDetails, silentNames, hasWeekly, metaDate, C);
   }
 
   html += '</div>';
