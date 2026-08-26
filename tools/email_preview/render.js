@@ -132,20 +132,31 @@ const PropertiesService = {
 // saveTempData/loadTempData/clearTempData (the A1A_DATA/A1B_DATA chain
 // handoff moved here from Script Properties -- see reportPayloads() below).
 const _driveFiles = {};
+const _driveFolders = {};
 let _nextDriveId = 1;
-const DriveApp = {
-  getFoldersByName: () => ({ hasNext: () => false, next() {} }),
-  createFolder: () => ({
-    getId: () => 'offline-folder',
+function makeOfflineFolder(id) {
+  return {
+    getId: () => id,
     createFile(name, content) {
-      const id = 'drive_' + (_nextDriveId++);
-      _driveFiles[id] = { name, content: String(content) };
+      const fid = 'drive_' + (_nextDriveId++);
+      _driveFiles[fid] = { name, content: String(content) };
       return {
-        getId: () => id,
-        setTrashed(t) { if (_driveFiles[id]) _driveFiles[id].trashed = !!t; return this; },
+        getId: () => fid,
+        setTrashed(t) { if (_driveFiles[fid]) _driveFiles[fid].trashed = !!t; return this; },
       };
     },
-  }),
+  };
+}
+const DriveApp = {
+  createFolder: () => {
+    const id = 'folder_' + (_nextDriveId++);
+    _driveFolders[id] = true;
+    return makeOfflineFolder(id);
+  },
+  getFolderById: (id) => {
+    if (!_driveFolders[id]) throw new Error('No Drive folder with id ' + id);
+    return makeOfflineFolder(id);
+  },
   getFileById: (id) => {
     if (!_driveFiles[id] || _driveFiles[id].trashed) throw new Error('No Drive file with id ' + id);
     return {

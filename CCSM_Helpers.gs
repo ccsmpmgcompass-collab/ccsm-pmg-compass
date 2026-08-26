@@ -653,11 +653,33 @@ function deleteTriggerByName(functionName) {
  * [[ccsm-coaching-email]]. Drive has no comparable ceiling for a project's
  * own files.
  */
+/**
+ * Finds/creates the Drive folder that holds chain payload files, remembering
+ * its ID in Script Properties rather than looking it up by name.
+ *
+ * Why not DriveApp.getFoldersByName(): that method can return ANY folder in
+ * the user's Drive, so Apps Script's authorization scanner assigns the
+ * broad, "sensitive" https://www.googleapis.com/auth/drive scope to the
+ * whole project — the one that shows Google's "app isn't verified" warning
+ * on every authorization. createFolder()/getFolderById(), used only on a
+ * folder this script itself created, only need the narrower drive.file
+ * scope (files/folders the app created or the user opened with it), which
+ * does not trigger that warning. One tiny pointer property is a cheap price
+ * for staying off the sensitive-scope list.
+ */
 function ccsmTempDataFolder_() {
-  var FOLDER_NAME = 'CCSM Chain Data (auto-generated — safe to empty)';
-  var it = DriveApp.getFoldersByName(FOLDER_NAME);
-  if (it.hasNext()) return it.next();
-  return DriveApp.createFolder(FOLDER_NAME);
+  var FOLDER_NAME  = 'CCSM Chain Data (auto-generated — safe to empty)';
+  var props        = PropertiesService.getScriptProperties();
+  var folderIdProp = 'CCSM_TEMP_FOLDER_ID';
+  var existingId    = props.getProperty(folderIdProp);
+
+  if (existingId) {
+    try { return DriveApp.getFolderById(existingId); } catch (e) {} // trashed/deleted -- recreate below
+  }
+
+  var folder = DriveApp.createFolder(FOLDER_NAME);
+  props.setProperty(folderIdProp, folder.getId());
+  return folder;
 }
 
 function saveTempData(key, value) {

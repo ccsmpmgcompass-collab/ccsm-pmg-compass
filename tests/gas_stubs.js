@@ -520,6 +520,12 @@ function makeGasEnv(options = {}) {
       state.drive.folders[id] = { id, name, trashed: false };
       return makeDriveFolder(id);
     },
+    getFolderById(id) {
+      if (!state.drive.folders[id] || state.drive.folders[id].trashed) {
+        throw new Error('No Drive folder with id ' + id);
+      }
+      return makeDriveFolder(id);
+    },
     getFileById(id) {
       if (!state.drive.files[id] || state.drive.files[id].trashed) {
         throw new Error('No Drive file with id ' + id);
