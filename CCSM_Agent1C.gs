@@ -91,6 +91,11 @@
 // Populated by a1c_pregenerateNarratives() at run start; used by a1c_buildLeadershipNarrative().
 var _narrativeCache = {};
 
+// Set by a1c_fetchBatchNarratives_ when a scope type's ONE batch call fails —
+// see a1c_buildLeadershipNarrative for why this matters (prevents an
+// avalanche of individual per-unit Gemini retries).
+var _batchNarrativeFailed = {};
+
 // Spanish month names — see file header note #6. Index 0 = enero.
 var A1C_SPANISH_MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -3533,6 +3538,12 @@ function a1c_buildLeadershipNarrative(scope, unitName, summaryData, areaDetails,
   var cacheKey = scope + ':' + unitName;
   if (_narrativeCache[cacheKey]) return a1c_narrativeProse_(_narrativeCache[cacheKey]);
 
+  // The batch call for this scope type already failed for every unit in it
+  // (same prompt shape, same likely cause) — don't spend another ~13-second
+  // Gemini round trip per unit on a retry that's very unlikely to succeed
+  // where the batch didn't. See _batchNarrativeFailed's declaration.
+  if (_batchNarrativeFailed[scope]) return '';
+
   try {
     var dateLabel = weekEnd ? a1c_formatDate(weekEnd) : 'esta semana';
     var totals    = summaryData || {};
@@ -3918,6 +3929,18 @@ function a1c_fetchBatchNarratives_(scopeType, summaryMap, areas, weekEnd) {
     var cleaned  = response.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
     return JSON.parse(cleaned);
   } catch (e) {
+    // A batch call covers every unit of this scope type in ONE request. If it
+    // fails, the per-unit fallback in a1c_buildLeadershipNarrative would
+    // otherwise retry Gemini individually for every zone/district that
+    // shares this scope — each with callGemini's mandatory 13-second
+    // rate-limit sleep. On a mission this size (10 zones + 11 districts)
+    // that's up to ~270 extra seconds, comfortably enough on its own to blow
+    // Apps Script's 6-minute execution cap (measured: this is what happened
+    // 2026-08-25/26, see AGENT_RUN_LOG / [[ccsm-coaching-email]]). Recording
+    // the failure here lets that function skip straight to its empty-string
+    // fallback instead of gambling ~270 seconds on a retry that's failing
+    // for the same underlying reason (same data shape, same prompt style).
+    _batchNarrativeFailed[scopeType] = true;
     Logger.log('a1c_fetchBatchNarratives_ ERROR (' + scopeType + '): ' + e.message + '. Se usará el respaldo por unidad.');
     return {};
   }

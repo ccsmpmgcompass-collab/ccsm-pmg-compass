@@ -445,12 +445,28 @@ function callGemini(prompt, maxOutputTokens) {
 }
 
 /**
+ * Raw MESSAGE_BANK rows, cached for the lifetime of ONE execution.
+ * getMessageBank() is called up to 3x per area (strength1/strength2/growth) —
+ * 60-130+ calls in a full Agent1B run — and MESSAGE_BANK is never written
+ * during that run, so re-reading the sheet on every call was pure waste
+ * (measured: this was the dominant cost behind Agent1B running 200+ seconds
+ * and Apps Script's 6-minute execution cap being a real risk). Apps Script
+ * resets every top-level var at the start of each execution, so this cache
+ * can never leak stale data across runs.
+ */
+var _messageBankRowsCache = null;
+function _messageBankRows_(tabName) {
+  if (!_messageBankRowsCache) _messageBankRowsCache = getTabData(tabName);
+  return _messageBankRowsCache;
+}
+
+/**
  * Reads MESSAGE_BANK and returns all ACTIVE messages for a category + metric pair.
  * Called by pickMessage() to get the candidate pool before calling Gemini.
  */
 function getMessageBank(category, metric) {
   var tabName  = getConfig('MESSAGE_BANK_TAB') || 'MESSAGE_BANK';
-  var rows     = getTabData(tabName);
+  var rows     = _messageBankRows_(tabName);
   var C = {
     messageId:      col_(tabName, 'Message_ID'),
     category:       col_(tabName, 'Category'),
@@ -519,22 +535,38 @@ function pickMessage(areaKey, category, metric, stats) {
 }
 
 /**
+ * Maps areaId -> Set of Last_Message_ID values, built once per execution.
+ * checkNoRepeat() is called once per CANDIDATE message inside pickMessage()
+ * — several hundred times across a full Agent1B run — and this data is only
+ * ever READ during that run (Agent1C's recordMessageSent(), the only writer,
+ * runs in a separate later execution with its own fresh globals), so
+ * building the index once and reusing it is always safe.
+ */
+var _noRepeatIndexCache = null;
+function _noRepeatIndex_(tabName) {
+  if (_noRepeatIndexCache) return _noRepeatIndexCache;
+  var rows       = getTabData(tabName);
+  var cAreaId    = col_(tabName, 'Area_ID');
+  var cLastMsgId = col_(tabName, 'Last_Message_ID');
+  var index = {};
+  rows.forEach(function(row) {
+    var areaId = String(row[cAreaId]);
+    if (!index[areaId]) index[areaId] = {};
+    index[areaId][String(row[cLastMsgId])] = true;
+  });
+  _noRepeatIndexCache = index;
+  return _noRepeatIndexCache;
+}
+
+/**
  * Checks FEEDBACK_HISTORY to enforce the no-repeat rule.
  * Returns false (block) if this messageId is the most recently sent to this area.
  * Returns true (safe) otherwise.
  */
 function checkNoRepeat(areaKey, messageId) {
-  var tabName      = getConfig('FEEDBACK_HISTORY_TAB') || 'FEEDBACK_HISTORY';
-  var rows         = getTabData(tabName);
-  var cAreaId      = col_(tabName, 'Area_ID');
-  var cLastMsgId   = col_(tabName, 'Last_Message_ID');
-  for (var i = 0; i < rows.length; i++) {
-    if (String(rows[i][cAreaId])    === String(areaKey) &&
-        String(rows[i][cLastMsgId]) === String(messageId)) {
-      return false; // Was last sent — block it
-    }
-  }
-  return true; // Safe to use
+  var tabName = getConfig('FEEDBACK_HISTORY_TAB') || 'FEEDBACK_HISTORY';
+  var forArea = _noRepeatIndex_(tabName)[String(areaKey)];
+  return !(forArea && forArea[String(messageId)]); // true = safe, false = was last sent
 }
 
 /**
@@ -551,10 +583,32 @@ function checkNoRepeat(areaKey, messageId) {
  *   same growth focus two weeks running — mirrors Provo's
  *   a1c_writeFeedbackHistory behavior without duplicating its upsert logic.
  */
-function recordMessageSent(areaKey, messageId, category, growthMetric) {
-  var tabName = getConfig('FEEDBACK_HISTORY_TAB') || 'FEEDBACK_HISTORY';
+/**
+ * areaId|category -> 0-based index into a cached copy of FEEDBACK_HISTORY's
+ * data rows, built on the first recordMessageSent() call and kept in sync
+ * with every write this execution makes (never re-read from the sheet).
+ * a1c_recordFeedbackHistory calls this up to 2x per area — 60-90+ calls in a
+ * full Agent1C run — and each used to re-read the whole tab from scratch to
+ * find the one row it needed.
+ */
+var _feedbackHistoryCache = null;
+function _feedbackHistoryCache_(tabName, numCols) {
+  if (_feedbackHistoryCache) return _feedbackHistoryCache;
   var sheet   = getTab(tabName);
   var lastRow = sheet.getLastRow();
+  var rows    = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, numCols).getValues() : [];
+  var cAreaId = col_(tabName, 'Area_ID');
+  var cCategory = col_(tabName, 'Category');
+  var index = {};
+  rows.forEach(function(row, i) {
+    index[String(row[cAreaId]) + '|' + String(row[cCategory])] = i;
+  });
+  _feedbackHistoryCache = { sheet: sheet, rows: rows, index: index };
+  return _feedbackHistoryCache;
+}
+
+function recordMessageSent(areaKey, messageId, category, growthMetric) {
+  var tabName = getConfig('FEEDBACK_HISTORY_TAB') || 'FEEDBACK_HISTORY';
   var now     = new Date();
   var headers = getHeaders_(tabName);
   var growthColIdx = headers.indexOf('Last_Growth_Metric'); // -1 if the sheet doesn't have it
@@ -568,23 +622,21 @@ function recordMessageSent(areaKey, messageId, category, growthMetric) {
     prevSentDate: col_(tabName, 'Previous_Sent_Date')
   };
   var numCols = headers.length;
+  var cache   = _feedbackHistoryCache_(tabName, numCols);
+  var key     = String(areaKey) + '|' + String(category);
+  var rowIdx  = cache.index[key];
 
-  if (lastRow > 1) {
-    var data = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
-    for (var i = 0; i < data.length; i++) {
-      if (String(data[i][C.areaId]) === String(areaKey) &&
-          String(data[i][C.category]) === String(category)) {
-        var updated = data[i].slice();
-        updated[C.prevMsgId]    = data[i][C.lastMsgId]    || '';
-        updated[C.prevSentDate] = data[i][C.lastSentDate] || '';
-        updated[C.lastMsgId]    = messageId;
-        updated[C.lastSentDate] = now;
-        if (growthColIdx >= 0 && growthMetric) updated[growthColIdx] = growthMetric;
-        sheet.getRange(i + 2, 1, 1, updated.length).setValues([updated]);
-        SpreadsheetApp.flush();
-        return;
-      }
-    }
+  if (rowIdx !== undefined) {
+    var data    = cache.rows[rowIdx];
+    var updated = data.slice();
+    updated[C.prevMsgId]    = data[C.lastMsgId]    || '';
+    updated[C.prevSentDate] = data[C.lastSentDate] || '';
+    updated[C.lastMsgId]    = messageId;
+    updated[C.lastSentDate] = now;
+    if (growthColIdx >= 0 && growthMetric) updated[growthColIdx] = growthMetric;
+    cache.sheet.getRange(rowIdx + 2, 1, 1, updated.length).setValues([updated]);
+    cache.rows[rowIdx] = updated; // keep the cache in sync for any later call this execution
+    return;
   }
 
   // New row
@@ -597,8 +649,9 @@ function recordMessageSent(areaKey, messageId, category, growthMetric) {
   newRow[C.prevMsgId]    = '';
   newRow[C.prevSentDate] = '';
   if (growthColIdx >= 0 && growthMetric) newRow[growthColIdx] = growthMetric;
-  sheet.appendRow(newRow);
-  SpreadsheetApp.flush();
+  cache.sheet.appendRow(newRow);
+  cache.index[key] = cache.rows.length;
+  cache.rows.push(newRow);
 }
 
 // =============================================================================
