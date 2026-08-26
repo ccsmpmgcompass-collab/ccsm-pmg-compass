@@ -101,9 +101,10 @@ var A1C_SPANISH_MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
 var A1C_RATE_METRIC_KEYS = ['contact_rate', 'mc_rate', 'lesson_rate', 'close_rate', 'effort_score'];
 
 // Curated metric subset shown in KPI tiles / the area data table (concise,
-// human-scannable — mirrors Provo's own curated-subset design; the FULL
-// metric set appears in the per-area detail panel, see
-// a1c_buildAreaDetailPanel_).
+// human-scannable — mirrors Provo's own curated-subset design). The full
+// nightly metric set used to follow it area by area; a1c_buildAreaCapsules_
+// replaced that dump with a four-number funnel read per area, and the
+// dashboard is where the remaining metrics live.
 // Labels are the nightly form's own wording (CcsmData.gs displayEs), not
 // period-clipped abbreviations -- 'Signif.', 'Nuevas' and 'Inv. Baut.' were
 // not words a missionary would recognise from the form they fill in. These
@@ -2225,8 +2226,13 @@ function a1c_buildLeadershipSection(title, summaryTotals, areas, scope, weekEnd,
 
   html += a1c_buildKpiTiles_(summaryTotals, C);
   html += a1c_buildAreaDataTable_(areaDetails, scope, C);
+  // Then the per-area read, which is a different job from the cross-area table
+  // directly above it: the table compares areas against each other, a capsule
+  // compares one area against the unit and says what to do about it. Zone and
+  // district only -- a mission letter would carry 43 capsules, and an AP does
+  // not lead areas directly.
   if (scope !== 'mission') {
-    html += a1c_buildAreaDetailPanel_(areaDetails, scope, C);
+    html += a1c_buildAreaCapsules_(areaDetails, summaryTotals && summaryTotals.ki, scope, C);
   }
 
   var lMsg = a1c_pickRelevantLeadershipMsg_(summaryTotals, areaDetails);
@@ -2578,124 +2584,488 @@ function a1c_buildAreaDataTable_(areaDetails, scope, C) {
   return html;
 }
 
-// ─── AREA DETAIL PANEL ────────────────────────────────────────────────────────
+// ─── AREA CAPSULES — "CÓMO AYUDAR A CADA ÁREA" ────────────────────────────────
+
 /**
- * Renders one coaching card per area for zone/district leadership emails,
- * covering the FULL CCSM nightly metric set (see file header note #1) —
- * contact, conversations, teaching, sharing, baptism, and effort/compliance.
- * Language rule: NEVER "investigador" — all people being taught are "amigos".
+ * The five indicators a capsule measures an area on, and the four of them it
+ * prints. Four cells is what fits across 375px, so Tasa de Conversaciones
+ * Significativas stays out of the number strip while still taking part in the
+ * median comparison behind the diagnosis sentence — that is where its one
+ * real use lies, in recognising an area that contacts little but deeply.
+ *
+ * `prose` carries its own article because the sentences below set these names
+ * mid-clause ("Su único punto bajo es la tasa de contacto"). The names are
+ * a1c_scoreboardLabel_'s, lowercased — the same one-name-per-metric rule the
+ * trend block follows. `label` is a strip heading at 7px, where the full name
+ * cannot go.
+ *
+ * `ipd` — intentos de contacto por día informado — is the only indicator with
+ * no A1A_RATE_METRICS entry, because it is a count over days rather than a
+ * ratio. It leads the strip: an area's week is easier to read forward from how
+ * much it went out than from any of the rates it produced.
  */
-function a1c_buildAreaDetailPanel_(areaDetails, scope, C) {
+var A1C_CAPSULE_INDICATORS = [
+  { key: 'ipd',          label: 'Int./día',   prose: 'el volumen de contacto',                   strip: true  },
+  { key: 'contact_rate', label: 'Contacto',   prose: 'la tasa de contacto',                      strip: true  },
+  { key: 'mc_rate',      label: 'Conv. Sig.', prose: 'la tasa de conversaciones significativas', strip: false },
+  { key: 'lesson_rate',  label: 'Lecciones',  prose: 'la tasa de lecciones',                     strip: true  },
+  { key: 'close_rate',   label: 'Invitación', prose: 'la tasa de invitación bautismal',          strip: true  }
+];
+
+// How far from the unit median a number has to sit before it is coloured, and
+// the text colours it takes. Same 11px-on-white reasoning as A1C_TREND_BANDS:
+// #166534 and #b91c1c clear AA against white where C.green and C.red do not.
+var A1C_CAPSULE_HIGH   = 0.20;   // at or above → strong
+var A1C_CAPSULE_LOW    = -0.10;  // at or below → soft
+var A1C_CAPSULE_WEAK   = -0.30;  // at or below → weak
+var A1C_CAPSULE_STRONG_TEXT = '#166534';
+var A1C_CAPSULE_WEAK_TEXT   = '#b91c1c';
+
+/**
+ * "de la zona" / "del distrito" — A1C_SCOPE_OF where it falls mid-sentence.
+ * Derived rather than kept as a fourth scope table, so the article can only
+ * ever contract in one place.
+ */
+function a1c_scopeOfLower_(scope) {
+  return (A1C_SCOPE_OF[scope] || '').toLowerCase();
+}
+
+/** The middle value, or the mean of the middle two. null for nothing to take. */
+function a1c_median_(values) {
+  if (!values || values.length === 0) return null;
+  var v = values.slice().sort(function(a, b) { return a - b; });
+  var mid = Math.floor(v.length / 2);
+  return (v.length % 2) ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+}
+
+/**
+ * One area's five capsule numbers, recomputed from the week's raw counts
+ * rather than read off area.stats.
+ *
+ * Why not the stats: a1a_buildStats stores a rate with no denominator as 0
+ * (`s[den] > 0 ? num/den : 0`). That is the right default for a table cell and
+ * the wrong one here. An area that taught nobody has no invitation rate at
+ * all; carrying it as 0% paints the number red, drags the unit median down and
+ * hands the area a diagnosis about a number it never had. null keeps "no
+ * basis" apart from "zero", which is the whole distinction this block colours.
+ *
+ * The num/den pairs come from A1A_FRACTION_RATE_KEYS, so a capsule cannot
+ * define tasa de contacto differently from the rest of the letter.
+ */
+function a1c_capsuleMetrics_(stats, days) {
+  var s = stats || {};
+  var rates = (typeof A1A_FRACTION_RATE_KEYS !== 'undefined') ? A1A_FRACTION_RATE_KEYS : {};
+  var m = { ipd: days > 0 ? (s.contacts_attempted || 0) / days : null };
+  A1C_CAPSULE_INDICATORS.forEach(function(ind) {
+    if (ind.key === 'ipd') return;
+    var r   = rates[ind.key];
+    var den = r ? (s[r.den] || 0) : 0;
+    m[ind.key] = (r && den > 0) ? ((s[r.num] || 0) / den) : null;
+  });
+  return m;
+}
+
+/**
+ * The same five numbers with the ones this area cannot be judged on removed.
+ *
+ * A significant conversation is part of a contact, so an area reporting more
+ * of the first than of the second has a tasa de conversaciones significativas
+ * above 100% — which is not a strength, it is the very counting mismatch the
+ * capsule warns about two lines further down. Ranking it as this area's best
+ * indicator would have the block praise a number it is questioning in the same
+ * breath, and it would pull the unit median up for everybody else.
+ *
+ * Tied to a1c_capsuleIntegrityWarning_'s own test rather than to a general
+ * "a rate over 100% is impossible" rule, because that rule is not true of all
+ * four: a lesson does not need a contact attempt in the same week, and one
+ * lesson can carry more than one baptismal invitation. Only attempted →
+ * contactos → conversaciones is a genuine subset chain.
+ *
+ * The strip still PRINTS the number as reported. Hiding it would leave the
+ * warning underneath talking about a figure the reader cannot see.
+ */
+function a1c_capsuleComparable_(m, stats) {
+  var out = {};
+  Object.keys(m).forEach(function(k) { out[k] = m[k]; });
+  if (a1c_capsuleIntegrityWarning_(stats)) out.mc_rate = null;
+  return out;
+}
+
+/** A capsule number as text — one decimal for intentos/día, a percent for the rates. */
+function a1c_capsuleVal_(key, v) {
+  if (typeof v !== 'number' || isNaN(v)) return '—';
+  return key === 'ipd' ? a1c_esNum_(v, 1) : a1c_fmtMetricVal_(key, v);
+}
+
+/**
+ * A capsule number coloured against the UNIT MEDIAN rather than a mission
+ * target, which is the point of the block: a leader is deciding which of their
+ * own areas to spend Tuesday with, and "below the mission's contact-rate
+ * target" is true of nearly all of them at once.
+ *
+ * A real zero is red whatever the median says — an area that invited nobody is
+ * not merely below the middle — while a number with no basis at all stays
+ * muted rather than borrowing either verdict.
+ */
+function a1c_capsuleColor_(v, med, C) {
+  if (typeof v !== 'number' || isNaN(v)) return C.muted;
+  if (typeof med !== 'number' || !med)   return C.muted;
+  if (v === 0) return A1C_CAPSULE_WEAK_TEXT;
+  var dev = (v - med) / med;
+  if (dev >= A1C_CAPSULE_HIGH) return A1C_CAPSULE_STRONG_TEXT;
+  if (dev <= A1C_CAPSULE_WEAK) return A1C_CAPSULE_WEAK_TEXT;
+  if (dev <= A1C_CAPSULE_LOW)  return C.yellow;
+  return C.muted;
+}
+
+/**
+ * The area's indicators ranked by how far each sits from the unit median,
+ * weakest first. Indicators the area has no number for, and indicators the
+ * unit has no median for, are left out rather than ranked at the bottom —
+ * neither is a finding about this area.
+ */
+function a1c_capsuleDevs_(m, med) {
+  var out = [];
+  A1C_CAPSULE_INDICATORS.forEach(function(ind, i) {
+    var v = m[ind.key], mv = med[ind.key];
+    if (typeof v !== 'number' || isNaN(v)) return;
+    if (typeof mv !== 'number' || !mv)     return;
+    out.push({ key: ind.key, prose: ind.prose, value: v, dev: (v - mv) / mv, order: i });
+  });
+  out.sort(function(a, b) { return a.dev !== b.dev ? a.dev - b.dev : a.order - b.order; });
+  return out;
+}
+
+/**
+ * True when this area alone holds the unit's highest or lowest value for an
+ * indicator — the only condition under which the sentences below are allowed
+ * to say "la más baja de la zona".
+ *
+ * A superlative is a claim about every other area, not about this one. Being
+ * the worst of one's own five indicators does not make one the worst in the
+ * unit, and a tie makes "la más baja" false for both areas holding it. Two
+ * areas that both invited nobody are the live case: close_rate 0 is the floor,
+ * so it ties constantly. Same standard as the arrows in "Las Metas y el
+ * Esfuerzo que las Sostiene" — a mark that asserts something has to earn it.
+ */
+function a1c_isUniqueExtreme_(extremes, key, v, which) {
+  var e = extremes && extremes[key];
+  if (!e || e.n < 2 || typeof v !== 'number' || isNaN(v)) return false;
+  return which === 'min' ? (v === e.min && e.minCount === 1)
+                         : (v === e.max && e.maxCount === 1);
+}
+
+/** Highest and lowest value per indicator across the areas that reported, with tie counts. */
+function a1c_capsuleExtremes_(metricsByArea) {
+  var ext = {};
+  A1C_CAPSULE_INDICATORS.forEach(function(ind) {
+    var vals = [];
+    Object.keys(metricsByArea).forEach(function(name) {
+      var v = metricsByArea[name][ind.key];
+      if (typeof v === 'number' && !isNaN(v)) vals.push(v);
+    });
+    if (vals.length === 0) { ext[ind.key] = { n: 0 }; return; }
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+    ext[ind.key] = {
+      n: vals.length, min: min, max: max,
+      minCount: vals.filter(function(v) { return v === min; }).length,
+      maxCount: vals.filter(function(v) { return v === max; }).length
+    };
+  });
+  return ext;
+}
+
+/**
+ * The sentence under an area's numbers — rule-based and deterministic, NOT
+ * Gemini. The one AI-written paragraph in a leadership letter is the "Lectura
+ * de la semana", and 43 model-written area sentences a week is 43 chances to
+ * invent a fact about a real companionship nobody would catch.
+ *
+ * The rules run in order, most specific first, and each one exists because the
+ * numbers alone do not say what to do about them:
+ *   1. High volume, nothing converted — the area is working, so the
+ *      conversation is about inviting, not about effort.
+ *   2. The funnel breaks at the first step, in which case nothing downstream
+ *      is worth discussing yet.
+ *   3. Teaching without inviting.
+ *   4. Strong throughout, one soft spot.
+ *   5. Anything else: its best number and the one to attend to.
+ *
+ * Every superlative is checked against the unit before it is written (see
+ * a1c_isUniqueExtreme_), and every sentence carries its sign, so an area whose
+ * "best" number is still below the median is told that rather than praised.
+ */
+function a1c_capsuleDiagnosis_(m, med, stats, extremes, scope) {
+  var devs = a1c_capsuleDevs_(m, med);
+  if (devs.length === 0) return '';
+
+  var s       = stats || {};
+  var lo      = devs[0];
+  var hi      = devs[devs.length - 1];
+  var of      = a1c_scopeOfLower_(scope);
+  var the     = A1C_SCOPE_THE[scope] || 'la zona';
+  var lessons = Math.round(s.friend_lessons || 0);
+  var invites = Math.round(s.baptismal_invitations || 0);
+
+  function pctOf(dev) { return Math.abs(Math.round(dev * 100)) + '%'; }
+  function val(d)     { return a1c_capsuleVal_(d.key, d.value); }
+  function lessonsPhrase() {
+    return lessons + (lessons === 1 ? ' lección' : ' lecciones');
+  }
+
+  // Only one indicator is comparable at all. The two-sided sentences below
+  // would name it as both the strength and the weakness, which reads as a
+  // contradiction rather than as the thin week it actually is.
+  if (devs.length === 1) {
+    return 'De lo que informó esta semana sólo ' + lo.prose + ' se puede comparar con ' + the +
+           ': <strong>' + val(lo) + '</strong>, ' + pctOf(lo.dev) +
+           (lo.dev >= 0 ? ' sobre ' : ' bajo ') + the + '.';
+  }
+
+  // 1 · Works the hardest, converts the least.
+  if (hi.key === 'ipd' && hi.dev >= 0.5 && m.close_rate === 0 && lessons > 0) {
+    var topVolume = a1c_isUniqueExtreme_(extremes, 'ipd', m.ipd, 'max');
+    var lowClose  = a1c_isUniqueExtreme_(extremes, 'close_rate', m.close_rate, 'min');
+    return (topVolume && lowClose
+              ? 'La que más trabaja ' + of + ' y la que menos convierte: '
+              : 'Mucho trabajo y poca conversión: ') +
+           '<strong>' + lessonsPhrase() + ', ninguna invitación al bautismo</strong>.';
+  }
+
+  // 2 · The funnel is cut at the first step.
+  if (lo.key === 'contact_rate' && lo.dev <= A1C_CAPSULE_WEAK) {
+    var tail = a1c_isUniqueExtreme_(extremes, 'contact_rate', m.contact_rate, 'min')
+      ? ', la más baja ' + of + '.'
+      : ', ' + pctOf(lo.dev) + ' bajo la mediana ' + of + '.';
+    var deep = '';
+    if (typeof m.mc_rate === 'number' && med.mc_rate && m.mc_rate > med.mc_rate) {
+      deep = ' Contacta poco pero profundo: <strong>' +
+             a1c_capsuleVal_('mc_rate', m.mc_rate) + ' de conversaciones significativas</strong>.';
+    }
+    return 'El embudo se corta en el primer paso: <strong>tasa de contacto ' +
+           a1c_capsuleVal_('contact_rate', m.contact_rate) + '</strong>' + tail + deep;
+  }
+
+  // 3 · Teaches but does not invite.
+  if (lo.key === 'close_rate' && lessons > 0 && invites === 0) {
+    return 'Enseña pero no invita: <strong>' + lessonsPhrase() +
+           ' con amigos y ninguna invitación al bautismo</strong> esta semana.';
+  }
+
+  // 4 · Nothing below the median at all — "su único punto bajo" would name a
+  // point that is not low. Say what is actually true and let the narrowest
+  // margin stand in for the weakness the numbers do not show. An area sitting
+  // exactly on the median everywhere has no margin to name either, and "por
+  // encima de la mediana" would be false of every one of its numbers.
+  if (lo.dev >= 0) {
+    return hi.dev === 0
+      ? 'Exactamente en la mediana ' + of + ' en todo el embudo.'
+      : 'Sin ningún número bajo la mediana ' + of + '. Su margen más ajustado es ' +
+        lo.prose + ' (<strong>' + val(lo) + '</strong>).';
+  }
+
+  // 4b · Strong across the funnel, one soft spot.
+  if (lo.dev >= -0.15) {
+    return 'Sólida en todo el embudo. Su único punto bajo es ' + lo.prose + ', ' +
+           pctOf(lo.dev) + ' bajo ' + the + '.';
+  }
+
+  // 5 · The general case: the best number and the one to attend to. An area
+  // whose best number is still under the median is told exactly that.
+  return (hi.dev >= 0
+            ? 'Fuerte en ' + hi.prose + ' (<strong>' + val(hi) + '</strong>, ' +
+              pctOf(hi.dev) + ' sobre ' + the + ').'
+            : 'Su mejor número es ' + hi.prose + ' (<strong>' + val(hi) + '</strong>), y aun así ' +
+              pctOf(hi.dev) + ' bajo ' + the + '.') +
+         ' A atender: ' + lo.prose + ' (<strong>' + val(lo) + '</strong>, ' +
+         pctOf(lo.dev) + ' bajo ' + the + ').';
+}
+
+/**
+ * A count that cannot be true by definition, put to the leader as a counting
+ * question and never as an accusation. A significant conversation is part of a
+ * contact, so it cannot outnumber contacts — but the likeliest cause by far is
+ * two missionaries reading the nightly form's two questions differently, not
+ * anyone inflating anything, and the wording has to leave that open.
+ *
+ * Deliberately not guarded on contacts_made > 0: "12 conversaciones
+ * significativas contra 0 contactos" is the starkest version of the same
+ * mismatch, not a case to stay quiet about.
+ */
+function a1c_capsuleIntegrityWarning_(stats) {
+  var s    = stats || {};
+  var mc   = Math.round(s.meaningful_conversations || 0);
+  var made = Math.round(s.contacts_made || 0);
+  if (mc <= made) return '';
+  return '⚠ ' + mc + ' conversaciones significativas contra ' + made +
+         ' contactos. Una conversación significativa es parte de un contacto, así que conviene ' +
+         'revisar cómo se está contando.';
+}
+
+/**
+ * "Cómo Ayudar a Cada Área" — one capsule per area: the days it reported, the
+ * four numbers of its funnel against the unit median, and a sentence naming
+ * what to do about them.
+ *
+ * WHAT THIS REPLACED, AND WHY. Until this block the leadership letter ended in
+ * a per-area dump of all 28 nightly metrics — 432px an area, 4,730px in a
+ * zone letter, 41% of the whole letter and nearly six phone screens of numbers
+ * with no verdict attached to any of them. A district leader reading it had to
+ * hold the zone's typical values in their head to know whether 34 lecciones
+ * was a good week. The capsule is 100px, states the comparison the reader was
+ * being asked to make, and lands the letter 12.5% SHORTER than before despite
+ * the section gaining four new blocks above this one.
+ *
+ * The full metric set did not move anywhere else in the letter: the wide
+ * cross-area table above keeps the five headline counts for comparison between
+ * areas, and the dashboard holds everything. This block is the per-area read,
+ * which is a different job from the table's cross-area one — the two are kept
+ * side by side deliberately.
+ *
+ * Sorted by district FIRST and then by fewest days reported, so the area whose
+ * leader most needs the conversation opens its own group. Sorting by days
+ * while grouping by district prints a district chip above every single area,
+ * which is not a grouping at all — the group key has to lead the sort.
+ */
+function a1c_buildAreaCapsules_(areaDetails, ki, scope, C) {
   if (!areaDetails || areaDetails.length === 0) return '';
 
-  var sorted = areaDetails.slice().sort(function(a, b) {
-    if (scope === 'zone') {
-      var da = a.district || ''; var db = b.district || '';
-      if (da !== db) return da < db ? -1 : 1;
-    }
+  var reporting = [], silent = [];
+  areaDetails.forEach(function(a) {
+    var days = Math.round((a.stats && a.stats.submissions) || 0);
+    (days > 0 ? reporting : silent).push({
+      name: a.name, district: a.district || '', stats: a.stats || {}, days: days
+    });
+  });
+
+  // Two maps of the same numbers: what each area reported, and the subset of
+  // it the area can fairly be measured on. Every comparison below -- medians,
+  // extremes, colours, the diagnosis -- runs on the second; only the printed
+  // strip reads the first.
+  var metricsByArea = {}, comparableByArea = {};
+  reporting.forEach(function(a) {
+    metricsByArea[a.name]    = a1c_capsuleMetrics_(a.stats, a.days);
+    comparableByArea[a.name] = a1c_capsuleComparable_(metricsByArea[a.name], a.stats);
+  });
+
+  var med = {};
+  A1C_CAPSULE_INDICATORS.forEach(function(ind) {
+    var vals = [];
+    reporting.forEach(function(a) {
+      var v = comparableByArea[a.name][ind.key];
+      if (typeof v === 'number' && !isNaN(v)) vals.push(v);
+    });
+    med[ind.key] = a1c_median_(vals);
+  });
+  var extremes = a1c_capsuleExtremes_(comparableByArea);
+
+  // The district chip is a zone-letter device — a district leader's areas all
+  // share one district, so grouping by it there would print a single chip over
+  // the whole list. Where no chip renders, the district must not lead the sort
+  // either, or the list is ordered on something invisible.
+  var grouped = (scope === 'zone');
+  reporting.sort(function(a, b) {
+    if (grouped && a.district !== b.district) return a.district < b.district ? -1 : 1;
+    if (a.days !== b.days) return a.days - b.days;
     return a.name < b.name ? -1 : 1;
   });
+  silent.sort(function(a, b) { return a.name < b.name ? -1 : 1; });
+
+  var of = a1c_scopeOfLower_(scope);
 
   var html = '<div style="margin:16px 0;">';
   html += '<div style="font-size:12px;font-weight:700;color:' + C.header +
           ';text-transform:uppercase;letter-spacing:0.05em;padding-bottom:4px;' +
-          'border-bottom:2px solid ' + C.border + ';margin-bottom:10px;">' +
-          'Detalle de Áreas — Métricas Completas de la Semana</div>';
+          'border-bottom:2px solid ' + C.border + ';margin-bottom:4px;">' +
+          'Cómo Ayudar a Cada Área</div>';
+  html += '<div style="font-size:10px;color:' + C.muted + ';line-height:1.5;margin-bottom:10px;">' +
+          'Los cuatro números del embudo de cada área, comparados con la mediana ' +
+          a1c_esc(of) + '.</div>';
 
   var lastDistrict = null;
-
-  sorted.forEach(function(aObj) {
-    var s         = aObj.stats;
-    var g         = aObj.growth;
-    var submitted = (s.submissions || 0) > 0;
-
-    if (scope === 'zone' && aObj.district !== lastDistrict) {
-      lastDistrict = aObj.district;
+  reporting.forEach(function(a) {
+    if (grouped && a.district !== lastDistrict) {
+      lastDistrict = a.district;
       html += '<div style="font-size:10px;font-weight:700;color:' + C.header +
               ';margin:10px 0 4px;padding:3px 6px;background:#dbeafe;border-radius:4px;">' +
-              '📍 Distrito ' + a1c_esc(aObj.district) + '</div>';
+              '📍 Distrito ' + a1c_esc(a.district) + '</div>';
     }
 
-    var growthHtml = '';
-    if (g) {
-      var actualStr = a1c_formatMetricValue(g.key, g.actual);
-      var goalStr   = a1c_formatMetricValue(g.key, g.goal);
-      var pct = Math.round(g.pct * 100);
-      growthHtml = '<div style="font-size:10px;color:#1d4ed8;margin:3px 0 6px;">' +
-                   '📈 Área de Crecimiento: <strong>' + a1c_esc(g.display) + '</strong>' +
-                   ' — ' + a1c_esc(actualStr) +
-                   ' (meta: ' + a1c_esc(goalStr) + ' · ' + pct + '% de la meta)</div>';
-    }
+    var m     = metricsByArea[a.name];
+    var cmp   = comparableByArea[a.name];
+    var dcol  = a.days >= 7 ? C.green : (a.days >= 5 ? C.blue : C.yellow);
 
-    html += '<div style="margin-bottom:8px;padding:8px 10px;background:#f9fafb;' +
-            'border-left:3px solid ' + (submitted ? C.header : '#9ca3af') +
-            ';border-radius:0 4px 4px 0;">';
-
+    html += '<div style="border:1px solid ' + C.border +
+            ';border-radius:5px;padding:8px 9px;margin-bottom:7px;">';
     html += '<table width="100%" cellpadding="0" cellspacing="0"><tr>' +
-            '<td style="font-size:11px;font-weight:700;color:#1f2937;">' + a1c_esc(aObj.name) + '</td>' +
-            '<td style="font-size:10px;color:' + C.muted + ';text-align:right;">' +
-            (submitted ? '✓ Reportó' : '⚠ Sin informe') +
-            '</td></tr></table>';
+            '<td style="font-size:11px;font-weight:700;color:#1f2937;">' + a1c_esc(a.name) + '</td>' +
+            '<td style="font-size:9px;color:' + dcol + ';text-align:right;font-weight:700;' +
+            'white-space:nowrap;">' + a.days + '/7 días</td></tr></table>';
 
-    html += growthHtml;
+    html += '<table width="100%" cellpadding="0" cellspacing="0" style="margin:6px 0 5px;"><tr>';
+    A1C_CAPSULE_INDICATORS.forEach(function(ind) {
+      if (!ind.strip) return;
+      html += '<td style="width:25%;text-align:center;">' +
+              '<div style="font-size:13px;font-weight:700;color:' +
+              a1c_capsuleColor_(cmp[ind.key], med[ind.key], C) + ';">' +
+              a1c_esc(a1c_capsuleVal_(ind.key, m[ind.key])) + '</div>' +
+              '<div style="font-size:7px;color:#9ca3af;text-transform:uppercase;' +
+              'letter-spacing:0.04em;">' + a1c_esc(ind.label) + '</div></td>';
+    });
+    html += '</tr></table>';
 
-    function section(emoji, label, pairs) {
-      return '<div style="margin-top:5px;">' +
-             '<div style="font-size:9px;text-transform:uppercase;letter-spacing:0.08em;' +
-             'color:#9ca3af;font-weight:700;margin-bottom:2px;">' + emoji + ' ' + a1c_esc(label) + '</div>' +
-             '<div style="font-size:10px;color:#374151;line-height:2.0;">' +
-             pairs.map(function(p) {
-               return '<span style="margin-right:14px;">' +
-                      '<span style="color:#6b7280;">' + a1c_esc(p[0]) + ':&nbsp;</span>' +
-                      '<strong>' + a1c_esc(String(p[1])) + '</strong></span>';
-             }).join('') + '</div></div>';
+    // One area reporting makes the unit median that area's own numbers, so
+    // every comparison reads 0% away from itself. Say there is nothing to
+    // compare against rather than print a verdict built on one row.
+    var diag = reporting.length < 2
+      ? 'Es la única área que informó esta semana, así que todavía no hay con qué comparar sus números.'
+      : a1c_capsuleDiagnosis_(cmp, med, a.stats, extremes, scope);
+    if (diag) {
+      html += '<div style="font-size:10px;color:#374151;line-height:1.5;' +
+              'border-top:1px solid #f1f5f9;padding-top:5px;">' + diag + '</div>';
     }
 
-    html += section('📞', 'Contacto', [
-      ['Intentos',         s.contacts_attempted || 0],
-      ['Contactos',        s.contacts_made       || 0],
-      ['Tasa de Contacto', a1c_formatMetricValue('contact_rate', s.contact_rate)]
-    ]);
-
-    html += section('💬', 'Conversaciones', [
-      ['Significativas', s.meaningful_conversations || 0],
-      ['Tasa',           a1c_formatMetricValue('mc_rate', s.mc_rate)]
-    ]);
-
-    html += section('📚', 'Enseñanza', [
-      ['Lecciones con Amigos',  s.friend_lessons          || 0],
-      ['Con Miembro Presente',  s.lessons_member_present  || 0],
-      ['Familias Parciales',    s.pmf_lessons             || 0],
-      ['Conversos Recientes',   s.rc_lessons              || 0],
-      ['Conversos Recientes (Mi Senda de los Convenios)', s.rc_lessons_mcp || 0],
-      ['Tasa de Lecciones',     a1c_formatMetricValue('lesson_rate', s.lesson_rate)]
-    ]);
-
-    html += section('📱', 'Compartir', [
-      ['Libros de Mormón Entregados', s.bom_shared               || 0],
-      ['Invitaciones a la Iglesia',  s.church_invites            || 0],
-      ['Referencias Solicitadas',    s.references_asked          || 0],
-      ['Referencias de Miembros Recibidas', s.member_referrals_received || 0],
-      ['Contactos con Miembros',     s.member_contacts           || 0]
-    ]);
-
-    html += section('📅', 'Bautismo', [
-      ['Invitaciones al Bautismo', s.baptismal_invitations    || 0],
-      ['Lecciones de Doctrina',    s.baptism_doctrine_lessons || 0],
-      ['Calendarios Bautismales Entregados', s.baptismal_calendars || 0],
-      ['Tasa de Invitación',       a1c_formatMetricValue('close_rate', s.close_rate)]
-    ]);
-
-    html += section('💪', 'Esfuerzo y Cumplimiento', [
-      ['Esfuerzo',         a1c_formatMetricValue('effort_score', s.effort_score)],
-      ['Todo',             s.effort_all  || 0],
-      ['La Mayor Parte',   s.effort_most || 0],
-      ['Algo',             s.effort_some || 0],
-      ['Días Reportados',  s.submissions || 0]
-    ]);
-
+    var warn = a1c_capsuleIntegrityWarning_(a.stats);
+    if (warn) {
+      html += '<div style="font-size:10px;color:#b45309;line-height:1.5;margin-top:4px;">' +
+              a1c_esc(warn) + '</div>';
+    }
     html += '</div>';
   });
+
+  // Silent areas collapse into one row. A card each would give an area that
+  // sent nothing the same weight on the page as one that sent seven nights,
+  // and there is nothing inside it to read.
+  if (silent.length > 0) {
+    var names = silent.map(function(a) { return a.name; });
+    html += '<div style="font-size:10px;font-weight:700;color:' + A1C_CAPSULE_WEAK_TEXT +
+            ';text-transform:uppercase;letter-spacing:0.05em;border-bottom:2px solid #fee2e2;' +
+            'padding-bottom:4px;margin:12px 0 6px;">Sin informe esta semana</div>';
+    html += '<div style="border-left:3px solid #9ca3af;background:' + C.bgLight +
+            ';border-radius:0 4px 4px 0;padding:7px 9px;">';
+    html += '<div style="font-size:11px;color:#374151;line-height:1.7;">' +
+            names.map(function(n) {
+              return '<strong>' + a1c_areaNameList_([n]) + '</strong>';
+            }).join(' · ') + '</div>';
+
+    // Which of them also owes a weekly result. The Key Indicators block at the
+    // top of the section names every area that set a meta and filed nothing;
+    // this says which of those were also dark on the nightly form all week,
+    // which is the harder conversation and not visible from either list alone.
+    var kiSilent = (ki && ki.silentAreas) || [];
+    var both = names.filter(function(n) { return kiSilent.indexOf(n) !== -1; });
+    var metaDate = (ki && ki.metaWeekEnd) ? a1c_formatDate(ki.metaWeekEnd) : '';
+    var tail = '';
+    if (both.length > 0) {
+      tail = ' ' + a1c_areaNameList_(both) +
+             (both.length === 1 ? ' además fijó meta ' : ' además fijaron meta ') +
+             (metaDate ? 'el ' + a1c_esc(metaDate) : 'la semana pasada') +
+             (both.length === 1 ? ' y no informó resultado.' : ' y no informaron resultado.');
+    }
+    html += '<div style="font-size:10px;color:' + C.muted + ';line-height:1.5;margin-top:3px;">' +
+            '0 de 7 días.' + tail + '</div>';
+    html += '</div>';
+  }
 
   html += '</div>';
   return html;
@@ -2963,8 +3333,9 @@ function a1c_esc(str) {
 /**
  * Formats a metric value for display: rate metrics (0..1 ratios) and
  * effort_score (0..3 weighted average) render as percentages; count metrics
- * render as a plain rounded number. Shared by the area detail panel and the
- * Gemini prompt-building area lines.
+ * render as a plain rounded number. Used by the wide cross-area table's
+ * effort column and the Gemini prompt-building area lines
+ * (a1c_areaSummaryLine_).
  */
 function a1c_formatMetricValue(key, value) {
   var v = value || 0;
