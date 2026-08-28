@@ -588,6 +588,14 @@ function smokeTestPipeline() {
               'they never generate it, so an empty bank means silent coaching.');
   }
 
+  var lmb = present['LEADERSHIP_MESSAGE_BANK'];
+  if (lmb) {
+    var lmbRows = Math.max(lmb.getLastRow() - 1, 0);
+    if (lmbRows > 0) ok('LEADERSHIP_MESSAGE_BANK: ' + lmbRows + ' message row(s).');
+    else fail('LEADERSHIP_MESSAGE_BANK is empty — run seedCcsmLeadershipMessageBank() once. ' +
+              'Zone/district leadership letters need at least one message per theme.');
+  }
+
   // SCORE_CONFIG has no header row in CCSM_TAB_SPECS — setupCcsmScoreConfig()
   // writes its own two-section layout (see CCSM_AgentScores.gs), so "populated"
   // means "has any row at all", not "has more than a header".

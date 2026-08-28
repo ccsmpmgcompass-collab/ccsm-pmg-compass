@@ -449,13 +449,13 @@ The Spanish in all 193 messages and 10 knowledge-base rows was **model-written**
 
 ### 8.3 Verify the 10 leadership scriptures — these are NOT blank
 
-This one is different from 8.1, and more urgent. The ten leadership messages hardcoded in **`CCSM_Agent1C.gs`** (`_LEADERSHIP_MSGS`) ship with their scripture text **already written** — and that text was written by a model, not copied from the official Spanish edition. It is exactly the fabrication the 193 blank rows exist to avoid, and it escaped the gate only because it lives in an agent file rather than the seed content.
+This one is different from 8.1, and more urgent. The ten leadership messages — now in the **`LEADERSHIP_MESSAGE_BANK`** sheet tab (formerly hardcoded in `CCSM_Agent1C.gs` as `_LEADERSHIP_MSGS`) — ship with their scripture text **already written**, and that text was written by a model, not copied from the official Spanish edition. It is exactly the fabrication the 193 blank rows exist to avoid, and it escaped the gate only because it lived in an agent file rather than the seed content.
 
 **At least two are attached to the wrong verse.** The text printed under `D. y C. 4:4-5` is actually D&C 4:2; `D. y C. 11:21` carries something else again. These messages go to zone leaders, district leaders, APs and **the mission president**.
 
 All ten are now listed in `CONTENT_REVIEW.md` under *MENSAJES DE LIDERAZGO*, each flagged for verification. For every one: confirm the **reference** is right, then confirm the **wording** against the official Spanish edition. Six of them also carry *Predicad Mi Evangelio* page numbers taken from the **English** edition — check those too.
 
-Corrections go in `CCSM_Agent1C.gs` and need a re-paste (Gotcha 1). There is no seeder to re-run for these.
+**Corrections now go directly in the `LEADERSHIP_MESSAGE_BANK` sheet tab — edit the `Scripture`/`Scripture_Text`/`PMG_Page` columns, no code deploy or re-paste needed.** `CCSM_Agent1C.gs`'s `a1c_pickRelevantLeadershipMsg_` caller still withholds those three columns from the rendered letter regardless of what they say — that gate has to be lifted separately (see the citation-withholding note at the render call site in `CCSM_Agent1C.gs`) once every row has been verified. `Theme`/`Subject_Line`/`Body_Text` are already safe to edit any time.
 
 - [ ] All 10 leadership scripture **references** verified
 - [ ] All 10 leadership scripture **texts** verified word-for-word against the Spanish edition

@@ -2,9 +2,11 @@
 // Evangelio page numbers and written-out scripture out of the leadership
 // letter.
 //
-// WHY THIS EXISTS. Every entry in CCSM_Agent1C.gs's _LEADERSHIP_MSGS carries
-// three citation fields alongside its coaching prose: `pmg` (a page number),
-// `scripture` (a reference) and `scriptText` (the verse, written out).
+// WHY THIS EXISTS. Every row in the LEADERSHIP_MESSAGE_BANK sheet tab (read
+// via CCSM_Helpers.gs's getLeadershipMessageBank(); formerly a hardcoded
+// _LEADERSHIP_MSGS array in CCSM_Agent1C.gs) carries three citation fields
+// alongside its coaching prose: `pmg` (a page number), `scripture` (a
+// reference) and `scriptText` (the verse, written out).
 // CONTENT_REVIEW.md's "MENSAJES DE LIDERAZGO" section already records that
 // none of the three is trustworthy — the page numbers come from the ENGLISH
 // edition, the verse text was drafted by a model rather than copied from the
@@ -15,8 +17,8 @@
 //
 // The prose itself carries no direct quote and is unaffected: subject and body
 // still render exactly as written. Only the citation line is withheld, and
-// only until each reference has been verified — _LEADERSHIP_MSGS keeps all
-// three fields populated (asserted below) so restoring them is a change to
+// only until each reference has been verified — LEADERSHIP_MESSAGE_BANK keeps
+// all three fields populated (asserted below) so restoring them is a change to
 // three lines at the one call site in a1c_buildLeadershipSection.
 //
 // SCOPE. This covers the STATIC message bank. The Gemini leadership narrative
@@ -35,12 +37,13 @@ const assert = require('assert');
 
 const env = makeGasEnv();
 const scope = loadGs(
-  ['CcsmData.gs', 'BuildCcsmSheet.gs', 'CCSM_Helpers.gs', 'CCSM_AgentTestMode.gs', 'CCSM_Agent1C.gs'],
+  ['CcsmData.gs', 'BuildCcsmSheet.gs', 'CCSM_Helpers.gs', 'CCSM_AgentTestMode.gs', 'CCSM_SeedContent.gs', 'CCSM_Agent1C.gs'],
   env.globals);
 // a1c_buildEmail's footer calls getMissionName(), which reads AGENT_CONFIG.
 makeCcsmSpreadsheet(env, scope);
+scope.seedCcsmLeadershipMessageBank();
 
-const MSGS = scope._LEADERSHIP_MSGS;
+const MSGS = scope.getLeadershipMessageBank();
 const LEADER_EMAIL = 'lider@missionary.org';
 const WEEK_END = new Date(2026, 7, 23);
 
@@ -49,7 +52,7 @@ const WEEK_END = new Date(2026, 7, 23);
 //    render call site on purpose, so that verifying them later is a one-place
 //    change and nothing has to be re-researched from scratch.
 // ===========================================================================
-assert.strictEqual(MSGS.length, 10, '_LEADERSHIP_MSGS should still hold 10 messages');
+assert.strictEqual(MSGS.length, 10, 'LEADERSHIP_MESSAGE_BANK should still hold 10 messages');
 MSGS.forEach((m) => {
   assert.ok(m.subject && m.body, m.theme + ': coaching prose must survive untouched');
   assert.ok(m.scripture,  m.theme + ': the scripture reference must stay in the data');

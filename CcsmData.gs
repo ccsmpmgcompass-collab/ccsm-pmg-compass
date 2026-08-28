@@ -322,6 +322,14 @@ var CCSM_TAB_SPECS = [
   { name: 'GOALS_CONFIG',      headers: null, prefill: null },   // real schema is wide (Area + one col/metric); see note above
   { name: 'SCORE_CONFIG',      headers: null, prefill: null },   // seeded by CCSM_AgentScores setup fn (Task 12)
   { name: 'MESSAGE_BANK',      headers: ['Message_ID','Category','Metric','Subcategory','Subject_Line','Body_Text','PMG_Chapter','PMG_Description','Scripture','Scripture_Text','Active'], prefill: null }, // content in Task 13
+  // Leadership coaching messages (zone/district letters). Used to be a
+  // hardcoded _LEADERSHIP_MSGS array in CCSM_Agent1C.gs; moved to a sheet tab
+  // so mission leadership (AP/president) can edit the wording directly
+  // without touching code. PMG_Page/Scripture/Scripture_Text carry the same
+  // unverified citation content the code array shipped with — see
+  // CONTENT_REVIEW.md and CCSM_DEPLOYMENT.md 8.3 — and a1c_pickRelevantLeadershipMsg_
+  // still withholds them at render time until each is verified.
+  { name: 'LEADERSHIP_MESSAGE_BANK', headers: ['Message_ID','Theme','Subject_Line','Body_Text','PMG_Page','Scripture','Scripture_Text','Active'], prefill: null },
   { name: 'KNOWLEDGE_BASE',    headers: ['ID','Category','Question','Answer','Keywords','Source','DateAdded','UseCount'], prefill: null },
   { name: 'TRANSFER_SCHEDULE', headers: ['Transfer_Number','Start_Date','Weeks','Status'], prefill: null },
   { name: 'DAILY_LOG',         headers: null, prefill: null },

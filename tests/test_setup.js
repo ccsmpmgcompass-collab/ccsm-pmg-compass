@@ -263,6 +263,7 @@ console.log('setup entry points zero-arg OK');
 // ===========================================================================
 scope.seedCcsmMessageBank();
 scope.seedCcsmKnowledgeBase();
+scope.seedCcsmLeadershipMessageBank();
 // runAgentScores (Monday 12:05 AM) is on the schedule, so an unseeded
 // SCORE_CONFIG is a pre-flight ERROR, not a passing state.
 scope.setupCcsmScoreConfig();

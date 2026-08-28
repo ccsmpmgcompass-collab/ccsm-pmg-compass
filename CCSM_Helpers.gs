@@ -504,6 +504,60 @@ function getMessageBank(category, metric) {
 }
 
 /**
+ * Raw LEADERSHIP_MESSAGE_BANK rows, cached for the lifetime of ONE execution —
+ * same reasoning as _messageBankRows_ above (Agent1C picks one leadership
+ * message per zone/district letter, so this is read once per run, not once
+ * per letter).
+ */
+var _leadershipMessageBankRowsCache = null;
+function _leadershipMessageBankRows_(tabName) {
+  if (!_leadershipMessageBankRowsCache) _leadershipMessageBankRowsCache = getTabData(tabName);
+  return _leadershipMessageBankRowsCache;
+}
+
+/**
+ * Reads LEADERSHIP_MESSAGE_BANK and returns all ACTIVE leadership coaching
+ * messages. Replaces the CCSM_Agent1C.gs hardcoded `_LEADERSHIP_MSGS` array
+ * so mission leadership can edit the wording via the Sheet.
+ *
+ * PMG_Page/Scripture/Scripture_Text are returned but NOT yet verified against
+ * the official Spanish edition — a1c_pickRelevantLeadershipMsg_'s caller
+ * withholds them at render time until CONTENT_REVIEW.md's review is done
+ * (see CCSM_DEPLOYMENT.md 8.3). Editing Theme/Subject_Line/Body_Text is safe
+ * today; editing the citation columns only matters once that gate lifts.
+ */
+function getLeadershipMessageBank() {
+  var tabName = getConfig('LEADERSHIP_MESSAGE_BANK_TAB') || 'LEADERSHIP_MESSAGE_BANK';
+  var rows    = _leadershipMessageBankRows_(tabName);
+  var C = {
+    messageId:     col_(tabName, 'Message_ID'),
+    theme:         col_(tabName, 'Theme'),
+    subject:       col_(tabName, 'Subject_Line'),
+    body:          col_(tabName, 'Body_Text'),
+    pmgPage:       col_(tabName, 'PMG_Page'),
+    scripture:     col_(tabName, 'Scripture'),
+    scriptureText: col_(tabName, 'Scripture_Text'),
+    active:        col_(tabName, 'Active')
+  };
+
+  var messages = [];
+  rows.forEach(function(row) {
+    var isActive = String(row[C.active]).toUpperCase() === 'TRUE';
+    if (!isActive) return;
+    messages.push({
+      messageId:  String(row[C.messageId]),
+      theme:      String(row[C.theme]),
+      subject:    String(row[C.subject]),
+      body:       String(row[C.body]),
+      pmg:        String(row[C.pmgPage]),
+      scripture:  String(row[C.scripture]),
+      scriptText: String(row[C.scriptureText])
+    });
+  });
+  return messages;
+}
+
+/**
  * Selects the best pre-written Message_ID for an area using Gemini.
  * Gemini's ONLY output is a Message_ID string — it does not write message text.
  */

@@ -268,22 +268,26 @@ assert.strictEqual(
 // ── The leadership messages must appear in CONTENT_REVIEW.md ───────────────
 // Final-review finding (content I-3/I-4). CONTENT_REVIEW.md claimed to list
 // every missionary-facing word, but covered only the seeded banks. The
-// hardcoded _LEADERSHIP_MSGS in CCSM_Agent1C.gs — which carry hand-written
-// Spanish scripture text, the exact thing the blank-Scripture_Text rule exists
-// to prevent, and at least two of them attached to the wrong verse — were
-// invisible to the human reviewing the content, and went to the mission
+// leadership messages (now the LEADERSHIP_MESSAGE_BANK sheet tab, formerly a
+// hardcoded _LEADERSHIP_MSGS array in CCSM_Agent1C.gs) — which carry
+// hand-written Spanish scripture text, the exact thing the blank-Scripture_Text
+// rule exists to prevent, and at least two of them attached to the wrong verse
+// — were invisible to the human reviewing the content, and went to the mission
 // president.
 //
 // Asserting every reference is present keeps the doc honest if someone adds an
 // eleventh leadership message later.
 {
+  const leadEnv = makeGasEnv();
   const leadScope = loadGs(
     ['CcsmData.gs', 'BuildCcsmSheet.gs', 'CCSM_Helpers.gs', 'CCSM_AgentTestMode.gs',
      'CCSM_Agent1A.gs', 'CCSM_SeedContent.gs', 'CCSM_Agent1C.gs'],
-    makeGasEnv().globals
+    leadEnv.globals
   );
-  const lead = leadScope._LEADERSHIP_MSGS;
-  assert.ok(Array.isArray(lead) && lead.length > 0, '_LEADERSHIP_MSGS must be a non-empty array');
+  makeCcsmSpreadsheet(leadEnv, leadScope);
+  leadScope.seedCcsmLeadershipMessageBank();
+  const lead = leadScope.getLeadershipMessageBank();
+  assert.ok(Array.isArray(lead) && lead.length > 0, 'LEADERSHIP_MESSAGE_BANK must be a non-empty array');
 
   assert.ok(/MENSAJES DE LIDERAZGO/.test(reviewMd),
     'CONTENT_REVIEW.md must contain the leadership-messages section');

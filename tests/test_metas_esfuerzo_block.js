@@ -41,12 +41,13 @@ const { makeCcsmSpreadsheet } = require('./fixtures');
 const assert = require('assert');
 
 const GS_FILES = ['CcsmData.gs', 'BuildCcsmSheet.gs', 'CCSM_Helpers.gs', 'CCSM_AgentTestMode.gs',
-                  'CCSM_Agent3.gs', 'CCSM_Agent1A.gs', 'CCSM_Agent1C.gs'];
+                  'CCSM_Agent3.gs', 'CCSM_Agent1A.gs', 'CCSM_SeedContent.gs', 'CCSM_Agent1C.gs'];
 
 function loadScope() {
   const env = makeGasEnv();
   const scope = loadGs(GS_FILES, env.globals);
   makeCcsmSpreadsheet(env, scope); // a1c_buildEmail's footer calls getMissionName()
+  scope.seedCcsmLeadershipMessageBank(); // section 10 renders the full letter, including the coaching card
   return { env, scope };
 }
 
@@ -73,6 +74,7 @@ function loadScopeWithGemini(reply) {
   };
   const scope = loadGs(GS_FILES, env.globals);
   makeCcsmSpreadsheet(env, scope);
+  scope.seedCcsmLeadershipMessageBank(); // section 10 renders the full letter, including the coaching card
   env.globals.PropertiesService.getScriptProperties().setProperty('GEMINI_API_KEY', 'test-key');
   return { env, scope, prompts };
 }

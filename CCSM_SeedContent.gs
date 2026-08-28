@@ -876,7 +876,90 @@ function seedCcsmKnowledgeBase() {
 }
 
 /**
- * Convenience: seeds both tabs in one Run-button click.
+ * Assembles one LEADERSHIP_MESSAGE_BANK row in CCSM_TAB_SPECS column order.
+ */
+function csc_makeLeadershipRow_(messageId, theme, subject, body, pmgPage, scripture, scriptureText) {
+  return [messageId, theme, subject, body, pmgPage || '', scripture || '', scriptureText || '', 'TRUE'];
+}
+
+/**
+ * Builds the 10 LEADERSHIP_MESSAGE_BANK data rows (no header) — the same 10
+ * messages that used to be the hardcoded `_LEADERSHIP_MSGS` array in
+ * CCSM_Agent1C.gs, transcribed verbatim. PMG_Page/Scripture/Scripture_Text
+ * are unverified citation content (see CONTENT_REVIEW.md) — CCSM_Agent1C.gs
+ * withholds them at render time regardless of what this seeds.
+ */
+function csc_buildLeadershipMessageRows_() {
+  return [
+    // ── BUSCAR (Finding) ──────────────────────────────────────────────────
+    csc_makeLeadershipRow_('LM-01', 'Buscar', 'Cada Contacto Es una Conversación en Potencia',
+      'Los números muestran cuántos contactos se intentaron — pero la pregunta que vale la pena hacer es qué pasó después. Esta semana en el inventario de compañerismo, anime a sus líderes de distrito a averiguar: de cada contacto realizado, ¿cuántos se convirtieron en una conversación real, y cuántos en una cita de regreso confirmada? Una conversación genuina con una próxima visita concreta es la unidad de trabajo que mueve a las personas hacia el bautismo.',
+      '157', 'D. y C. 4:4-5',
+      'Por tanto, oh vosotros que os embarcáis al servicio de Dios, ved que le sirváis con todo vuestro corazón, alma, mente y fuerza.'),
+    csc_makeLeadershipRow_('LM-02', 'Buscar', 'Las Referencias Necesitan una Respuesta el Mismo Día',
+      'Cada referencia que recibe su zona tiene una ventana de oportunidad. Cuando un miembro entrega el nombre de un amigo, un intento de contacto el mismo día no es solo una buena práctica — es una declaración a ese miembro de que se toma en serio su confianza. Revise esta semana: ¿recibió cada referencia un intento de contacto dentro de 24 horas? Conviértalo en un estándar de zona y reconozca a los misioneros que lo hacen sin que se les recuerde.',
+      '164', 'D. y C. 88:81',
+      'He aquí, os envié a testificar y amonestar al pueblo, y le corresponde a todo hombre que ha sido amonestado amonestar a su prójimo.'),
+    // ── ENSEÑAR (Teaching) ────────────────────────────────────────────────
+    csc_makeLeadershipRow_('LM-03', 'Enseñar', 'Una Lección Más Cambia la Trayectoria',
+      'Los amigos que reciben más de una lección por semana progresan a un ritmo notablemente más rápido. Mire los números de enseñanza de su zona y pregunte a sus líderes de distrito: ¿a qué amigos se les está viendo dos veces por semana, y cuáles llevan diez días sin una lección? Anime a sus misioneros a planificar dos visitas por amigo como norma, no como excepción.',
+      '174', 'Alma 26:22',
+      'Sí, aquel que se arrepiente y ejerce la fe, y produce buenas obras, y ora continuamente sin cesar — a tal se le concede conocer los misterios de Dios.'),
+    csc_makeLeadershipRow_('LM-04', 'Enseñar', 'Las Lecciones con Miembro Presente Son el Estándar',
+      'Un amigo que llega al bautismo sin haber estado nunca en una sala con un miembro del barrio es un amigo en riesgo. Esta semana, pida a cada compañerismo que identifique un miembro que llevarán a una lección antes del domingo — no necesita ser alguien del consejo de barrio, solo una persona amigable de la Iglesia que pueda sentarse con un nuevo amigo.',
+      '85', 'D. y C. 11:21',
+      'Escudriña las Escrituras; procura obtener sabiduría; asocíate con lo bueno, con lo que edifica.'),
+    // ── INDICADORES CLAVE (Key Indicators) ────────────────────────────────
+    csc_makeLeadershipRow_('LM-05', 'Indicadores Clave', 'Una Fecha Bautismal Es una Promesa, No una Fecha Límite',
+      'Fijar una fecha no es presión — es el regalo de una meta. Cuando un amigo se compromete con una fecha bautismal, cada cita posterior, cada visita a la reunión sacramental, cada presentación con un miembro cobra más sentido. Mire las invitaciones al bautismo de su zona y pregunte a sus líderes: ¿cómo se extendieron esas invitaciones? ¿Fueron pedidas con fe, ligadas al testimonio que el amigo ya está desarrollando?',
+      '205', 'Moroni 10:4',
+      'Y cuando recibáis estas cosas, quisiera exhortaros a que preguntaseis a Dios, el Padre Eterno, en el nombre de Cristo, si no son verdaderas estas cosas.'),
+    csc_makeLeadershipRow_('LM-06', 'Indicadores Clave', 'Pida un Compromiso Cada Vez',
+      'Toda lección debería terminar con un compromiso claro y específico — no una invitación vaga a pensarlo, sino una petición real con una respuesta. Practique en su próxima reunión de zona o distrito: ¿pueden sus misioneros pedir una fecha bautismal con naturalidad, sin dudar, sin disculparse por la pregunta? Un misionero que no pregunta priva a sus amigos de la oportunidad de decir que sí.',
+      '205', '2 Nefi 31:17',
+      'Por tanto, haced las cosas que os he dicho que he visto que haría vuestro Señor y vuestro Redentor.'),
+    // ── CULTURA DE ZONA (Zone Culture) ────────────────────────────────────
+    csc_makeLeadershipRow_('LM-07', 'Cultura de Zona', 'El Informe Nocturno Es Rendir Cuentas al Señor',
+      'La constancia en el informe refleja la cultura de la zona. Cuando los misioneros informan cada noche, rinden cuentas al Señor, a usted y entre ellos — no solo llenan un formulario. Revise el patrón de informes de esta semana y aborde con amor cualquier área inconstante, ayudando a los misioneros a entender que un informe nocturno honesto es parte de su convenio de servir con integridad.',
+      '', 'D. y C. 59:21',
+      'Y en nada ofende el hombre a Dios, ni se enciende su ira, sino contra aquellos que no confiesan su mano en todas las cosas, ni obedecen sus mandamientos.'),
+    csc_makeLeadershipRow_('LM-08', 'Cultura de Zona', 'Reconozca a Sus Misioneros por lo que Hacen Bien',
+      'Esta semana, encuentre algo específico que cada compañerismo de su zona está haciendo bien — y dígalo en voz alta. No un ánimo genérico, sino un reconocimiento concreto: "Contactaron esa referencia el mismo día que llegó. Ese es el estándar." Los misioneros que se sienten genuinamente vistos por sus líderes trabajan con más ánimo y se mantienen espiritualmente más fuertes.',
+      '', 'D. y C. 121:41',
+      'Ningún poder o influencia puede o debe mantenerse en virtud del sacerdocio, sino por medio de la persuasión, de la longanimidad, de la benignidad y la mansedumbre, y del amor sincero.'),
+    // ── FE (Faith) ─────────────────────────────────────────────────────────
+    csc_makeLeadershipRow_('LM-09', 'Fe', 'Su Zona Sigue Su Fe',
+      'El tono espiritual de su zona lo marca usted. Cuando testifica con sencillez, cuando habla de sus amigos con amor genuino en lugar de tratarlos como un número, cuando modela lo que significa trabajar con esfuerzo y confiar en Dios con los resultados — sus misioneros lo absorben y lo llevan a sus áreas. Esta semana, pregúntese con honestidad: ¿qué cree posible mi zona? Luego enséñeles a creer un poco más.',
+      '', 'Alma 26:12',
+      'Sé que no soy nada; en cuanto a mi propia fuerza, soy débil; por tanto, no me jactaré de mí mismo, sino que me jactaré de mi Dios, porque en su fuerza puedo hacer todas las cosas.'),
+    csc_makeLeadershipRow_('LM-10', 'Fe', 'La Obra Es de Él',
+      'Cada amigo que se enseña en su zona es un hijo de Dios que el Señor ha estado preparando desde mucho antes de que sus misioneros tocaran su puerta. Su labor no es fabricar la conversión — es presentarse, enseñar con el Espíritu, extender invitaciones con fe, y dejar el resultado en manos de Él. Si los números de esta semana no son los que esperaba, llévelo al Señor en oración y pregunte qué ve Él que usted no ve.',
+      '', 'D. y C. 18:15',
+      'Y si sucede que trabajáis todos vuestros días clamando arrepentimiento a este pueblo, y me traéis, aunque sea una sola alma, ¡cuán grande será vuestro gozo!')
+  ];
+}
+
+/**
+ * Seeds LEADERSHIP_MESSAGE_BANK with the 10 leadership coaching messages.
+ * ⚠️ ONE-TIME MIGRATION ONLY — unlike seedCcsmMessageBank/seedCcsmKnowledgeBase,
+ * do NOT re-run this after mission leadership (AP/president) starts editing
+ * the tab directly: it rewrites the tab from scratch and would silently wipe
+ * their edits. Deliberately NOT called from seedCcsmContent() for that
+ * reason. Run it once, by itself, to migrate off the old hardcoded
+ * CCSM_Agent1C.gs array; after that, edit the tab directly — no more code
+ * deploys needed for wording changes.
+ */
+function seedCcsmLeadershipMessageBank() {
+  var spec = null;
+  CCSM_TAB_SPECS.forEach(function(t) { if (t.name === 'LEADERSHIP_MESSAGE_BANK') spec = t; });
+  if (!spec) throw new Error('CCSM_SeedContent: LEADERSHIP_MESSAGE_BANK is not defined in CCSM_TAB_SPECS.');
+  return csc_writeTab_('LEADERSHIP_MESSAGE_BANK', spec.headers, csc_buildLeadershipMessageRows_());
+}
+
+/**
+ * Convenience: seeds both re-seedable content tabs in one Run-button click.
+ * LEADERSHIP_MESSAGE_BANK is deliberately excluded — see
+ * seedCcsmLeadershipMessageBank()'s comment; run that one separately, once.
  */
 function seedCcsmContent() {
   seedCcsmMessageBank();

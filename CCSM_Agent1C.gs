@@ -289,7 +289,7 @@ function a1c_buildGlossary_(C, weekEnd) {
 }
 
 // Scoreboard groups follow the same Buscar/Ensenar/Invitar funnel language
-// already used by this file's _LEADERSHIP_MSGS themes. Named metrics first;
+// already used by the LEADERSHIP_MESSAGE_BANK themes. Named metrics first;
 // any OTHER numeric nightly metric the mission tracks (dynamic via
 // QUESTIONS_CONFIG/DAILY_LOG, e.g. a newly added question) lands in
 // 'Otros' rather than being silently dropped.
@@ -346,93 +346,13 @@ function a1c_prevWeekEnd_(weekEnd) {
 // is picked (theme matched to the zone/district's actual growth-focus data)
 // and appended to each zone/district leadership email after the data table.
 // Always "amigos" — never "investigador".
-var _LEADERSHIP_MSGS = [
-  // ── BUSCAR (Finding) ────────────────────────────────────────────────────────
-  {
-    theme:    'Buscar',
-    subject:  'Cada Contacto Es una Conversación en Potencia',
-    body:     'Los números muestran cuántos contactos se intentaron — pero la pregunta que vale la pena hacer es qué pasó después. Esta semana en el inventario de compañerismo, anime a sus líderes de distrito a averiguar: de cada contacto realizado, ¿cuántos se convirtieron en una conversación real, y cuántos en una cita de regreso confirmada? Una conversación genuina con una próxima visita concreta es la unidad de trabajo que mueve a las personas hacia el bautismo.',
-    pmg:      '157',
-    scripture:'D. y C. 4:4-5',
-    scriptText:'Por tanto, oh vosotros que os embarcáis al servicio de Dios, ved que le sirváis con todo vuestro corazón, alma, mente y fuerza.'
-  },
-  {
-    theme:    'Buscar',
-    subject:  'Las Referencias Necesitan una Respuesta el Mismo Día',
-    body:     'Cada referencia que recibe su zona tiene una ventana de oportunidad. Cuando un miembro entrega el nombre de un amigo, un intento de contacto el mismo día no es solo una buena práctica — es una declaración a ese miembro de que se toma en serio su confianza. Revise esta semana: ¿recibió cada referencia un intento de contacto dentro de 24 horas? Conviértalo en un estándar de zona y reconozca a los misioneros que lo hacen sin que se les recuerde.',
-    pmg:      '164',
-    scripture:'D. y C. 88:81',
-    scriptText:'He aquí, os envié a testificar y amonestar al pueblo, y le corresponde a todo hombre que ha sido amonestado amonestar a su prójimo.'
-  },
-  // ── ENSEÑAR (Teaching) ──────────────────────────────────────────────────────
-  {
-    theme:    'Enseñar',
-    subject:  'Una Lección Más Cambia la Trayectoria',
-    body:     'Los amigos que reciben más de una lección por semana progresan a un ritmo notablemente más rápido. Mire los números de enseñanza de su zona y pregunte a sus líderes de distrito: ¿a qué amigos se les está viendo dos veces por semana, y cuáles llevan diez días sin una lección? Anime a sus misioneros a planificar dos visitas por amigo como norma, no como excepción.',
-    pmg:      '174',
-    scripture:'Alma 26:22',
-    scriptText:'Sí, aquel que se arrepiente y ejerce la fe, y produce buenas obras, y ora continuamente sin cesar — a tal se le concede conocer los misterios de Dios.'
-  },
-  {
-    theme:    'Enseñar',
-    subject:  'Las Lecciones con Miembro Presente Son el Estándar',
-    body:     'Un amigo que llega al bautismo sin haber estado nunca en una sala con un miembro del barrio es un amigo en riesgo. Esta semana, pida a cada compañerismo que identifique un miembro que llevarán a una lección antes del domingo — no necesita ser alguien del consejo de barrio, solo una persona amigable de la Iglesia que pueda sentarse con un nuevo amigo.',
-    pmg:      '85',
-    scripture:'D. y C. 11:21',
-    scriptText:'Escudriña las Escrituras; procura obtener sabiduría; asocíate con lo bueno, con lo que edifica.'
-  },
-  // ── INDICADORES CLAVE (Key Indicators) ──────────────────────────────────────
-  {
-    theme:    'Indicadores Clave',
-    subject:  'Una Fecha Bautismal Es una Promesa, No una Fecha Límite',
-    body:     'Fijar una fecha no es presión — es el regalo de una meta. Cuando un amigo se compromete con una fecha bautismal, cada cita posterior, cada visita a la reunión sacramental, cada presentación con un miembro cobra más sentido. Mire las invitaciones al bautismo de su zona y pregunte a sus líderes: ¿cómo se extendieron esas invitaciones? ¿Fueron pedidas con fe, ligadas al testimonio que el amigo ya está desarrollando?',
-    pmg:      '205',
-    scripture:'Moroni 10:4',
-    scriptText:'Y cuando recibáis estas cosas, quisiera exhortaros a que preguntaseis a Dios, el Padre Eterno, en el nombre de Cristo, si no son verdaderas estas cosas.'
-  },
-  {
-    theme:    'Indicadores Clave',
-    subject:  'Pida un Compromiso Cada Vez',
-    body:     'Toda lección debería terminar con un compromiso claro y específico — no una invitación vaga a pensarlo, sino una petición real con una respuesta. Practique en su próxima reunión de zona o distrito: ¿pueden sus misioneros pedir una fecha bautismal con naturalidad, sin dudar, sin disculparse por la pregunta? Un misionero que no pregunta priva a sus amigos de la oportunidad de decir que sí.',
-    pmg:      '205',
-    scripture:'2 Nefi 31:17',
-    scriptText:'Por tanto, haced las cosas que os he dicho que he visto que haría vuestro Señor y vuestro Redentor.'
-  },
-  // ── CULTURA DE ZONA (Zone Culture) ──────────────────────────────────────────
-  {
-    theme:    'Cultura de Zona',
-    subject:  'El Informe Nocturno Es Rendir Cuentas al Señor',
-    body:     'La constancia en el informe refleja la cultura de la zona. Cuando los misioneros informan cada noche, rinden cuentas al Señor, a usted y entre ellos — no solo llenan un formulario. Revise el patrón de informes de esta semana y aborde con amor cualquier área inconstante, ayudando a los misioneros a entender que un informe nocturno honesto es parte de su convenio de servir con integridad.',
-    pmg:      null,
-    scripture:'D. y C. 59:21',
-    scriptText:'Y en nada ofende el hombre a Dios, ni se enciende su ira, sino contra aquellos que no confiesan su mano en todas las cosas, ni obedecen sus mandamientos.'
-  },
-  {
-    theme:    'Cultura de Zona',
-    subject:  'Reconozca a Sus Misioneros por lo que Hacen Bien',
-    body:     'Esta semana, encuentre algo específico que cada compañerismo de su zona está haciendo bien — y dígalo en voz alta. No un ánimo genérico, sino un reconocimiento concreto: "Contactaron esa referencia el mismo día que llegó. Ese es el estándar." Los misioneros que se sienten genuinamente vistos por sus líderes trabajan con más ánimo y se mantienen espiritualmente más fuertes.',
-    pmg:      null,
-    scripture:'D. y C. 121:41',
-    scriptText:'Ningún poder o influencia puede o debe mantenerse en virtud del sacerdocio, sino por medio de la persuasión, de la longanimidad, de la benignidad y la mansedumbre, y del amor sincero.'
-  },
-  // ── FE (Faith) ───────────────────────────────────────────────────────────────
-  {
-    theme:    'Fe',
-    subject:  'Su Zona Sigue Su Fe',
-    body:     'El tono espiritual de su zona lo marca usted. Cuando testifica con sencillez, cuando habla de sus amigos con amor genuino en lugar de tratarlos como un número, cuando modela lo que significa trabajar con esfuerzo y confiar en Dios con los resultados — sus misioneros lo absorben y lo llevan a sus áreas. Esta semana, pregúntese con honestidad: ¿qué cree posible mi zona? Luego enséñeles a creer un poco más.',
-    pmg:      null,
-    scripture:'Alma 26:12',
-    scriptText:'Sé que no soy nada; en cuanto a mi propia fuerza, soy débil; por tanto, no me jactaré de mí mismo, sino que me jactaré de mi Dios, porque en su fuerza puedo hacer todas las cosas.'
-  },
-  {
-    theme:    'Fe',
-    subject:  'La Obra Es de Él',
-    body:     'Cada amigo que se enseña en su zona es un hijo de Dios que el Señor ha estado preparando desde mucho antes de que sus misioneros tocaran su puerta. Su labor no es fabricar la conversión — es presentarse, enseñar con el Espíritu, extender invitaciones con fe, y dejar el resultado en manos de Él. Si los números de esta semana no son los que esperaba, llévelo al Señor en oración y pregunte qué ve Él que usted no ve.',
-    pmg:      null,
-    scripture:'D. y C. 18:15',
-    scriptText:'Y si sucede que trabajáis todos vuestros días clamando arrepentimiento a este pueblo, y me traéis, aunque sea una sola alma, ¡cuán grande será vuestro gozo!'
-  }
-];
+//
+// Content used to be a hardcoded array here; it now lives in the
+// LEADERSHIP_MESSAGE_BANK sheet tab (CcsmData.gs CCSM_TAB_SPECS) so mission
+// leadership (AP/president) can edit the wording directly without a code
+// deploy. Read via CCSM_Helpers.gs's getLeadershipMessageBank() — see
+// a1c_pickRelevantLeadershipMsg_ below. The original 10 messages were seeded
+// into the tab verbatim by seedCcsmLeadershipMessageBank() (CCSM_SeedContent.gs).
 
 // ─── MAIN ENTRY POINT ──────────────────────────────────────────────────────────
 function runAgent1C() {
@@ -2029,8 +1949,9 @@ function a1c_buildConsistencyBlock_(cons, C, weekEnd) {
 /**
  * Renders one coaching message block (subject, body, PMG page, scripture).
  * All text comes directly from MESSAGE_BANK (via getMessageBank()'s camelCase
- * shape — see file header note #2) or from _LEADERSHIP_MSGS — nothing here
- * is AI-generated. `numbersHtml` (stat line + goal bar) is optional and
+ * shape — see file header note #2) or from LEADERSHIP_MESSAGE_BANK (via
+ * getLeadershipMessageBank()) — nothing here is AI-generated. `numbersHtml`
+ * (stat line + goal bar) is optional and
  * renders directly under the label, above the quoted message.
  */
 function a1c_buildMessageBlock(label, msg, C, accentColor, numbersHtml) {
@@ -2262,8 +2183,8 @@ function a1c_buildLeadershipSection(title, summaryTotals, areas, scope, weekEnd,
         // quoted alongside them. The coaching prose itself carries no direct
         // quote, so subject and body still render as written.
         //
-        // _LEADERSHIP_MSGS keeps pmg/scripture/scriptText untouched, so
-        // restoring the citations is a change to these three lines only.
+        // LEADERSHIP_MESSAGE_BANK keeps pmg/scripture/scriptText untouched,
+        // so restoring the citations is a change to these three lines only.
         // Passing empty values makes a1c_buildMessageBlock's
         // `if (pmgRef || scripture)` guard skip the whole citation line. The
         // missionary Fortaleza / Crecimiento cards share that function but
@@ -2300,9 +2221,14 @@ function a1c_buildLeadershipSection(title, summaryTotals, areas, scope, weekEnd,
  *   3. Fallback                        → Fe
  * Growth-key groupings mirror CCSM's actual metric set (A1A_RATE_METRICS +
  * QUESTIONS_CONFIG NIGHTLY NUMBER keys) — see file header note #1.
+ *
+ * Message pool comes from getLeadershipMessageBank() (CCSM_Helpers.gs), which
+ * reads the LEADERSHIP_MESSAGE_BANK sheet tab — see the comment above this
+ * file's now-removed _LEADERSHIP_MSGS array.
  */
 function a1c_pickRelevantLeadershipMsg_(summaryTotals, areaDetails) {
-  if (!_LEADERSHIP_MSGS || _LEADERSHIP_MSGS.length === 0) return null;
+  var allMsgs = getLeadershipMessageBank();
+  if (!allMsgs || allMsgs.length === 0) return null;
 
   var theme = 'Fe';
   var totals  = summaryTotals || {};
@@ -2331,8 +2257,8 @@ function a1c_pickRelevantLeadershipMsg_(summaryTotals, areaDetails) {
     if (best === 0) theme = 'Fe';
   }
 
-  var matching = _LEADERSHIP_MSGS.filter(function(m) { return m.theme === theme; });
-  if (matching.length === 0) matching = _LEADERSHIP_MSGS;
+  var matching = allMsgs.filter(function(m) { return m.theme === theme; });
+  if (matching.length === 0) matching = allMsgs;
   return matching[Math.floor(Math.random() * matching.length)];
 }
 
