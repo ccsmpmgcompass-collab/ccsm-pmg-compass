@@ -16,8 +16,13 @@
  * ── RUN ONCE (zero-argument, so the Apps Script Run button can call them) ───
  *   seedCcsmMessageBank()    — 193 rows
  *   seedCcsmKnowledgeBase()  — 10 rows
- * Both are safe to re-run: each rewrites its tab from scratch (header + rows),
- * so re-running can never duplicate content.
+ * Each rewrites its tab from scratch (header + rows), so a run can never
+ * duplicate content. ⚠️ seedCcsmMessageBank() is nonetheless INITIAL-SETUP
+ * ONLY, not routinely re-runnable: MESSAGE_BANK is mission-editable directly
+ * in the sheet (same as LEADERSHIP_MESSAGE_BANK — see CCSM_SeedContent.gs's
+ * seedCcsmLeadershipMessageBank()), and re-running would wipe any hand edits.
+ * seedCcsmKnowledgeBase() has no such editing workflow and stays safe to
+ * re-run any time its content changes in code.
  *
  * ── CONTENT MATRIX (193 MESSAGE_BANK rows) ─────────────────────────────────
  *   SUNDAY_COACHING_STRENGTH  25 metrics x 3 =  75
@@ -855,7 +860,13 @@ function csc_writeTab_(tabName, headers, rows) {
 /**
  * Seeds MESSAGE_BANK with the full Spanish content set (193 rows).
  * Zero-argument so it can be run straight from the Apps Script Run button.
- * Safe to re-run: the tab is rewritten from scratch every time.
+ * ⚠️ INITIAL SETUP ONLY — like seedCcsmLeadershipMessageBank(), this rewrites
+ * the tab from scratch. MESSAGE_BANK is mission-editable content, the same as
+ * LEADERSHIP_MESSAGE_BANK: once real coaching emails are going out and
+ * mission leadership may have hand-edited rows in the sheet, do NOT re-run
+ * this — it would silently wipe those edits back to the original seeded
+ * text. Run it once, on an empty tab, to populate the starting content; after
+ * that, edit MESSAGE_BANK directly in the sheet.
  */
 function seedCcsmMessageBank() {
   var spec = null;
@@ -957,11 +968,13 @@ function seedCcsmLeadershipMessageBank() {
 }
 
 /**
- * Convenience: seeds both re-seedable content tabs in one Run-button click.
- * LEADERSHIP_MESSAGE_BANK is deliberately excluded — see
- * seedCcsmLeadershipMessageBank()'s comment; run that one separately, once.
+ * Convenience: seeds KNOWLEDGE_BASE (the one tab still meant to be reseeded
+ * from code as its content changes). MESSAGE_BANK and LEADERSHIP_MESSAGE_BANK
+ * are deliberately excluded — both are mission-editable directly in the
+ * sheet once seeded once; see seedCcsmMessageBank()'s and
+ * seedCcsmLeadershipMessageBank()'s own comments. Run either of those
+ * separately, once, during initial setup only.
  */
 function seedCcsmContent() {
-  seedCcsmMessageBank();
   seedCcsmKnowledgeBase();
 }

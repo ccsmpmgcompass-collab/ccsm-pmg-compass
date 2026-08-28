@@ -56,7 +56,7 @@ Decision 1 has a trap. Read it before you touch triggers.
 
 # STEP 1 — Build the `COMPASS_CCSM` sheet
 
-The sheet is built by a script, not by hand. That guarantees all 23 tabs, every header, all 99 area rows and all 42 config rows are exactly what the agents expect.
+The sheet is built by a script, not by hand. That guarantees all 24 tabs, every header, all 99 area rows and all 42 config rows are exactly what the agents expect.
 
 This step uses a **standalone** script project — one that is not attached to any spreadsheet. You will throw it away afterwards.
 
@@ -84,7 +84,7 @@ Order matters: `BuildCcsmSheet` reads variables that `CcsmData` defines.
 1. In the toolbar, open the function dropdown (it will say `buildCcsmSheet` or the name of another function) and select **`buildCcsmSheet`**.
 2. Click **Run**.
 3. Google will ask you to authorize. Click through: Review permissions → choose the CCSM account → "Google hasn't verified this app" → **Advanced** → **Go to (project name) (unsafe)** → **Allow**. This warning is expected for a script you wrote yourself.
-4. Wait. It creates 23 tabs and then re-reads every one of them to check nothing was dropped.
+4. Wait. It creates 24 tabs and then re-reads every one of them to check nothing was dropped.
 
 ### 1.4 Read the log
 
@@ -100,7 +100,7 @@ NEXT STEPS: ...
   If it says `VERIFY WARNING: see fix log above`, **stop** and get help — do not continue on a sheet that failed verification.
 - [ ] **Save the spreadsheet URL** from the log. You need it constantly from here on.
 
-Open the sheet. It should be named `COMPASS_CCSM` and have 23 tabs. `MISSION_ORG` should be full of Chilean area names; `AGENT_CONFIG` should have a `Key`/`Value` list starting with `MISSION_NAME`.
+Open the sheet. It should be named `COMPASS_CCSM` and have 24 tabs. `MISSION_ORG` should be full of Chilean area names; `AGENT_CONFIG` should have a `Key`/`Value` list starting with `MISSION_NAME`.
 
 > Re-running `buildCcsmSheet()` never edits an existing sheet — it creates a brand new one each time. If you run it twice by accident you get two sheets; delete the extra one and be careful which URL you keep.
 
@@ -247,7 +247,7 @@ Without a key: the Q&A agent logs `GEMINI_API_KEY not set in Script Properties` 
 
 # STEP 5 — Seed the content and score weights
 
-Run each of these from the Apps Script editor: pick the function in the dropdown, click **Run**, then read the Execution log. All three are zero-argument and safe to re-run.
+Run each of these from the Apps Script editor: pick the function in the dropdown, click **Run**, then read the Execution log. All three are zero-argument.
 
 ### 5.1 `seedCcsmMessageBank()`
 
@@ -255,15 +255,17 @@ Writes 193 Spanish message rows into `MESSAGE_BANK` (75 coaching-strength, 75 co
 
 - [ ] Log says `MESSAGE_BANK written and verified — 193 rows.`
 
+⚠️ **Run this ONCE, on an empty tab, during initial setup only.** `MESSAGE_BANK` is mission-editable content — once real coaching emails are going out and mission leadership may be editing rows directly in the sheet (that's the intended ongoing workflow, no deploy needed), re-running this **rewrites the tab from scratch and silently wipes those edits**. There is no undo. If you need to reset a live mission's content back to the shipped defaults, that is a deliberate, rare action — make sure everyone editing the sheet knows first.
+
 ### 5.2 `seedCcsmKnowledgeBase()`
 
 Writes 10 starter Spanish Q&A rows into `KNOWLEDGE_BASE`.
 
 - [ ] Log says `KNOWLEDGE_BASE written and verified — 10 rows.`
 
-*(`seedCcsmContent()` runs both in one click, if you prefer.)*
+Unlike 5.1, this one is meant to be re-run whenever its content changes in `CCSM_SeedContent.gs` — `KNOWLEDGE_BASE` doesn't have a live-sheet-editing workflow.
 
-Both seeders **rewrite their tab from scratch** every run. If someone has hand-edited messages in the sheet, re-running wipes those edits. Make content edits in `CCSM_SeedContent.gs` and re-paste (Gotcha 1), not in the sheet.
+*(`seedCcsmContent()` runs just this one — `seedCcsmMessageBank()` and `seedCcsmLeadershipMessageBank()` are deliberately excluded from it; each is run separately, once, by itself.)*
 
 ### 5.3 `setupCcsmScoreConfig()`
 
@@ -338,7 +340,7 @@ Everything here happens with `TEST_MODE = TRUE`, so **no missionary can receive 
 
 The pre-flight check. **Read-only: it sends no email and writes nothing.** Run it and read the Execution log.
 
-It checks: the sheet opens by ID; all 23 tabs exist; the two raw form tabs exist; the required config keys are non-blank; the timezone and language are as expected; **the Apps Script project timezone matches `MISSION_TIMEZONE`**; whether `TEST_MODE` is on; the `WEEKLY_REMINDER_OWNER` value is valid; `MISSION_ORG` has active rows and reachable emails; `QUESTIONS_CONFIG`, `MESSAGE_BANK`, `SCORE_CONFIG`, `KNOWLEDGE_BASE` are populated; and the full trigger inventory, **including duplicate form-submit triggers**.
+It checks: the sheet opens by ID; all 24 tabs exist; the two raw form tabs exist; the required config keys are non-blank; the timezone and language are as expected; **the Apps Script project timezone matches `MISSION_TIMEZONE`**; whether `TEST_MODE` is on; the `WEEKLY_REMINDER_OWNER` value is valid; `MISSION_ORG` has active rows and reachable emails; `QUESTIONS_CONFIG`, `MESSAGE_BANK`, `LEADERSHIP_MESSAGE_BANK`, `SCORE_CONFIG`, `KNOWLEDGE_BASE` are populated; and the full trigger inventory, **including duplicate form-submit triggers**.
 
 > **Gotcha 2 is now caught here.** The project-timezone check compares Project Settings against `MISSION_TIMEZONE` and reports an **ERROR** naming both values. That mismatch used to be invisible — it produced dates a day off with no error anywhere — so if you see it, fix Project Settings before doing anything else. It is not cosmetic and it will not "sort itself out".
 >
@@ -423,6 +425,8 @@ Before go-live, delete the dummy rows you created: the test rows in `NIGHTLY_FOR
 The seeded content banks — plus the hardcoded leadership messages — are listed in **`CONTENT_REVIEW.md`** in this folder. Selection from the banks is *pick-not-generate*: the agents choose a row by ID and send it verbatim. Nothing in the banks is invented at send time.
 
 > **`CONTENT_REVIEW.md` used to claim it listed every missionary-facing word. It did not,** and that false claim is what hid the problem in 8.3 below. The banks are only part of the outgoing text: individual agents also build subjects and bodies from hardcoded Spanish templates. The leadership messages are now included; roughly 27 reminder, escalation, validation and duplicate templates are still **not** listed and still want a Spanish read.
+>
+> ⚠️ **This whole gate — and `CONTENT_REVIEW.md` itself — describes the CODE's version of `MESSAGE_BANK`/`LEADERSHIP_MESSAGE_BANK`, generated locally (`node tools/gen_content_review.js`) from `CCSM_SeedContent.gs` without ever touching the live Sheet.** That's accurate only up to the point either tab starts being hand-edited in the live sheet (the normal state after go-live — see 5.1). After that, `CONTENT_REVIEW.md` reflects what the tabs *originally shipped with*, not what's actually live. There is no equivalent generated document for live-edited content; to review what a mission is really sending, read the tabs in the Sheet directly.
 
 **Budget for this step: 4–6 hours, one Spanish speaker, one sitting.** Scripture texts 45–90min · native pass 60–90min · leadership scriptures 60–90min · template polish 60–90min.
 
@@ -434,10 +438,12 @@ Every message row has a scripture **reference** but an empty **`Scripture_Text`*
 
 The 193 blanks resolve to only **20 distinct references** (listed with their row counts in `CONTENT_REVIEW.md`). Fill those 20 from the real Spanish edition and every row is covered.
 
-Because the seeders rewrite `MESSAGE_BANK` from scratch, put the verse text into **`CCSM_SeedContent.gs`** and re-paste + re-run `seedCcsmMessageBank()` (Gotcha 1) — not straight into the sheet, or the next seed run erases it. After editing the `.gs`, regenerate the review document with `node tools/gen_content_review.js` so the two cannot drift.
+**Before the mission has gone live and before anyone has hand-edited `MESSAGE_BANK` in the sheet:** put the verse text into **`CCSM_SeedContent.gs`** and re-paste + re-run `seedCcsmMessageBank()` (Gotcha 1) — not straight into the sheet, since a later seed run would erase it. After editing the `.gs`, regenerate the review document with `node tools/gen_content_review.js` so the two cannot drift.
 
-- [ ] All 20 distinct scripture references filled with exact Spanish-edition wording
-- [ ] `seedCcsmMessageBank()` re-run and `MESSAGE_BANK` shows the verse text
+**Once the mission is live and `MESSAGE_BANK` may already carry hand edits** (the normal state after go-live — see 5.1's warning): fill the verse text directly in the sheet's `Scripture_Text` column instead. `seedCcsmMessageBank()` must not be re-run at that point for any reason — see 5.1.
+
+- [ ] All 20 distinct scripture references filled with exact Spanish-edition wording, in the sheet
+- [ ] `MESSAGE_BANK` shows the verse text (confirmed by reading the tab — not by re-running the seeder)
 
 ### 8.2 Native-speaker review of the Spanish
 
@@ -667,9 +673,10 @@ All of these take **no arguments**, because the Apps Script Run button cannot pa
 
 | Function | Effect | Re-runnable? |
 |---|---|---|
-| `seedCcsmMessageBank()` | Writes 193 Spanish message rows | Yes — **overwrites** the tab |
+| `seedCcsmMessageBank()` | Writes 193 Spanish message rows | **No — initial setup only.** Overwrites the tab; wipes any hand edits made in the live sheet. See 5.1. |
+| `seedCcsmLeadershipMessageBank()` | Writes 10 leadership message rows | **No — initial setup only.** Same reason. |
 | `seedCcsmKnowledgeBase()` | Writes 10 Q&A rows | Yes — **overwrites** the tab |
-| `seedCcsmContent()` | Both of the above | Yes — overwrites both |
+| `seedCcsmContent()` | `seedCcsmKnowledgeBase()` only — the two above are deliberately excluded | Yes |
 | `setupCcsmScoreConfig()` | Writes default scoring weights | Yes — **skips** if already populated |
 | `setupAllCcsmTriggers()` | Converges all triggers to the schedule | Yes — this is the intended repair action |
 | `deleteAllCcsmTriggers()` | Removes every trigger, form-submit ones included | Yes |
@@ -690,14 +697,15 @@ All of these take **no arguments**, because the Apps Script Run button cannot pa
 
 `onNightlyFormSubmit` and `onQAFormSubmit` are the two form-submit handlers. They expect an event from Google and should be left to their triggers, not run from the dropdown.
 
-## The 23 tabs
+## The 24 tabs
 
 | Tab | Filled by | Notes |
 |---|---|---|
 | `MISSION_ORG` | Builder | 99 area rows, names + leadership flags. **Email columns blank — you fill them.** |
 | `AGENT_CONFIG` | Builder | 42 key/value rows; 4 required blanks you fill (Step 6) |
 | `QUESTIONS_CONFIG` | Builder | Maps Spanish form headers to metric keys. Do not hand-edit. |
-| `MESSAGE_BANK` | `seedCcsmMessageBank()` | 193 Spanish messages |
+| `MESSAGE_BANK` | `seedCcsmMessageBank()` once | 193 Spanish messages. Mission-editable in the sheet after that — see 5.1. |
+| `LEADERSHIP_MESSAGE_BANK` | `seedCcsmLeadershipMessageBank()` once | 10 messages to zone/district leaders, APs, president. Mission-editable in the sheet after that. `PMG_Page`/`Scripture`/`Scripture_Text` columns are withheld at render until verified (`CCSM_Agent1C.gs`) — see 8.3. |
 | `KNOWLEDGE_BASE` | `seedCcsmKnowledgeBase()` | 10 Q&A rows |
 | `SCORE_CONFIG` | `setupCcsmScoreConfig()` | Weights — mission-tunable in the sheet |
 | `GOALS_CONFIG` | You (optional) | Per-area goals |
@@ -719,7 +727,7 @@ All of these take **no arguments**, because the Apps Script Run button cannot pa
 | `SUGGESTIONS` / `SUGGESTIONS_REVIEW` | AgentQA | |
 | `NOTES` | The mission | Notes + reminders |
 
-*(`NIGHTLY_FORM_RAW` and `WEEKLY_FORM_RAW` are not part of the 23 — they are created by Google Forms, which brings the live sheet to 25 tabs.)*
+*(`NIGHTLY_FORM_RAW` and `WEEKLY_FORM_RAW` are not part of the 24 — they are created by Google Forms, which brings the live sheet to 26 tabs.)*
 
 ## Troubleshooting
 
