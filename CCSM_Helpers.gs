@@ -104,10 +104,53 @@ function getSpreadsheet() {
 }
 
 /**
- * Returns a tab (sheet) by name. Throws a clear error if the tab does not exist.
+ * Tabs that can be split out of COMPASS_CCSM into their own spreadsheet — see
+ * ccsmSpreadsheetForTab_() just below. Both are mission-editable content
+ * (MESSAGE_BANK/LEADERSHIP_MESSAGE_BANK docstrings in CCSM_SeedContent.gs);
+ * every other tab always resolves to the bound spreadsheet.
+ */
+var CCSM_SPLIT_TABS = ['MESSAGE_BANK', 'LEADERSHIP_MESSAGE_BANK'];
+
+/**
+ * The spreadsheet holding MESSAGE_BANK/LEADERSHIP_MESSAGE_BANK content.
+ * Google ties "can edit this spreadsheet" to "can open its bound Apps Script
+ * project" — there is no native way to share edit access to just two tabs of
+ * COMPASS_CCSM without also exposing every .gs file and Script Properties
+ * (including GEMINI_API_KEY) to whoever gets that access. Setting
+ * MESSAGE_BANK_SPREADSHEET_ID in AGENT_CONFIG (via
+ * splitMessageBanksToOwnSpreadsheet(), CCSM_SeedContent.gs) moves those two
+ * tabs to a separate, script-free spreadsheet that mission leadership can be
+ * given Editor access to directly. Unset (the default) means "not split" —
+ * everything resolves to the bound spreadsheet exactly as before this existed.
+ *
+ * Cached for the execution the same way _configCache is: this can be called
+ * once per tab access across a run and the config value cannot change mid-run.
+ */
+var _messageBankSpreadsheetCache = null;
+function ccsmMessageBankSpreadsheet_() {
+  if (_messageBankSpreadsheetCache) return _messageBankSpreadsheetCache;
+  var id = getConfig('MESSAGE_BANK_SPREADSHEET_ID');
+  _messageBankSpreadsheetCache = id ? SpreadsheetApp.openById(id) : getSpreadsheet();
+  return _messageBankSpreadsheetCache;
+}
+
+/** Which spreadsheet a given tab name currently lives in. */
+function ccsmSpreadsheetForTab_(tabName) {
+  return CCSM_SPLIT_TABS.indexOf(tabName) !== -1 ? ccsmMessageBankSpreadsheet_() : getSpreadsheet();
+}
+
+/**
+ * Returns a tab (sheet) by name. Throws a clear error if the tab does not
+ * exist. This is the single chokepoint every other tab-access helper in this
+ * file routes through (getTabData, getTabHeaders, appendRow, overwriteTab,
+ * and by extension col_/getHeaders_) — resolving the spreadsheet here via
+ * ccsmSpreadsheetForTab_() is what makes MESSAGE_BANK/LEADERSHIP_MESSAGE_BANK
+ * split-awareness apply everywhere automatically, with no other call site
+ * needing to know or care which spreadsheet a tab actually lives in.
  */
 function getTab(tabName) {
-  var sheet = getSpreadsheet().getSheetByName(tabName);
+  var ss    = ccsmSpreadsheetForTab_(tabName);
+  var sheet = ss.getSheetByName(tabName);
   if (!sheet) {
     // Names the actual spreadsheet rather than a hardcoded one: this error is
     // read by whoever is on call, and it used to say "COMPASS_Main" — Utah
@@ -115,7 +158,7 @@ function getTab(tabName) {
     // real time looking for. Falls back to the CCSM name if the spreadsheet
     // handle is somehow unavailable, since this path is already an error path.
     var ssName = 'COMPASS_CCSM';
-    try { ssName = getSpreadsheet().getName() || ssName; } catch (e) {}
+    try { ssName = ss.getName() || ssName; } catch (e) {}
     throw new Error(
       'Tab not found: "' + tabName + '". ' +
       'Verify the tab exists in ' + ssName + ' and matches the name in AGENT_CONFIG.'

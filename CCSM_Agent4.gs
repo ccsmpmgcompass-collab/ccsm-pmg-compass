@@ -811,6 +811,17 @@ function a4_check12_requiredTabs(selfHealLog) {
     var existingNames = ss.getSheets().map(function(s) { return s.getName(); });
     var missing       = requiredTabs.filter(function(t) { return existingNames.indexOf(t) < 0; });
 
+    // MESSAGE_BANK / LEADERSHIP_MESSAGE_BANK may have been split into their
+    // own spreadsheet (CCSM_SeedContent.gs splitMessageBanksToOwnSpreadsheet())
+    // precisely so mission leadership never needs access to this bound
+    // project. "Missing" from COMPASS_CCSM alone is the wrong test for them —
+    // self-healing here would recreate a stray, unused local placeholder tab
+    // every week this check runs.
+    missing = missing.filter(function(t) {
+      if (CCSM_SPLIT_TABS.indexOf(t) === -1) return true;
+      try { return !ccsmSpreadsheetForTab_(t).getSheetByName(t); } catch (e) { return true; }
+    });
+
     if (missing.length === 0) {
       return { label: label, status: 'OK', detail: 'All ' + requiredTabs.length + ' required tabs present.' };
     }

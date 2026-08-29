@@ -277,6 +277,20 @@ Unlike the seeders this one is **skip-if-populated**: if `SCORE_CONFIG` already 
 
 > The shipped weights are **starting defaults**, not mission policy. Leadership should look at them once real scores appear and retune directly in the `SCORE_CONFIG` tab (that is a normal sheet edit — no re-paste needed).
 
+### 5.4 (Optional) `splitMessageBanksToOwnSpreadsheet()` — give mission leadership edit access without exposing the code
+
+**The problem this solves:** Google ties "can edit this spreadsheet" to "can open its bound Apps Script project." There is no native way to share Editor access to just `MESSAGE_BANK`/`LEADERSHIP_MESSAGE_BANK` (via Data → Protect sheets and ranges or otherwise) without ALSO giving whoever you share it with the ability to open Extensions → Apps Script and see every `.gs` file, the trigger schedule, and **Project Settings → Script Properties — where `GEMINI_API_KEY` is stored in plain view.** Tab protection only restricts which cells someone can *type into*; it does nothing about the script.
+
+**The fix:** run `splitMessageBanksToOwnSpreadsheet()` once, after 5.1 (and after running `seedCcsmLeadershipMessageBank()` — see 8.3) — it copies both tabs' **live content, verbatim** (whatever is actually in them right now, including any hand edits — it does not re-seed from code) into a brand-new spreadsheet named "CCSM Mission Trainings" that has **no script attached at all**.
+
+- [ ] Log gives a spreadsheet ID and URL — save both.
+- [ ] Add a new row to `AGENT_CONFIG`: `MESSAGE_BANK_SPREADSHEET_ID` = the ID from the log. (This key does not exist by default — add the row yourself, same as any other config value.)
+- [ ] Run `smokeTestPipeline()` again and confirm it's still all green — this proves every agent is now reading the new spreadsheet, not the old local tabs.
+- [ ] **Only after that passes:** delete the old `MESSAGE_BANK` and `LEADERSHIP_MESSAGE_BANK` tabs from `COMPASS_CCSM` by hand, so nobody edits the now-inert local copy by mistake.
+- [ ] Share the **new** spreadsheet (Editor) with mission leadership. **Never share `COMPASS_CCSM` itself for this purpose** — that's the whole point.
+
+This is entirely optional and skippable — without it, everything works exactly as in 5.1/8.3, just with the tradeoff that giving anyone Editor access to `COMPASS_CCSM` also gives them the code.
+
 ---
 
 # STEP 6 — Fill in the blanks in `AGENT_CONFIG`
@@ -314,6 +328,7 @@ Open `COMPASS_CCSM` → `AGENT_CONFIG` tab. It has two columns, `Key` and `Value
 |---|---|
 | `RELAY_1_URL`, `RELAY_2_URL`, `RELAY_SECRET` | The email-relay system. CCSM does not use it; blank is correct and the health check knows that. |
 | `GOAL_*` (20 rows) | Mission-wide fallback goals per metric. Blank means the agents fall back to their own defaults. Fill later once real numbers exist. |
+| `MESSAGE_BANK_SPREADSHEET_ID` | Only set if you ran `splitMessageBanksToOwnSpreadsheet()` (Step 5.4) — the id of the separate spreadsheet holding `MESSAGE_BANK`/`LEADERSHIP_MESSAGE_BANK`. Blank (the default) means both tabs stay in `COMPASS_CCSM`. Not created automatically — add the row yourself. |
 
 There is no `AGENT_CONFIG` row for the Gemini key — it goes in Script Properties only (Step 4).
 
@@ -677,6 +692,7 @@ All of these take **no arguments**, because the Apps Script Run button cannot pa
 | `seedCcsmLeadershipMessageBank()` | Writes 10 leadership message rows | **No — initial setup only.** Same reason. |
 | `seedCcsmKnowledgeBase()` | Writes 10 Q&A rows | Yes — **overwrites** the tab |
 | `seedCcsmContent()` | `seedCcsmKnowledgeBase()` only — the two above are deliberately excluded | Yes |
+| `splitMessageBanksToOwnSpreadsheet()` | Copies MESSAGE_BANK/LEADERSHIP_MESSAGE_BANK's live content into a brand-new, script-free spreadsheet — see 5.4 | **No — creates ANOTHER new spreadsheet every run.** Doesn't touch the source tabs either way. |
 | `setupCcsmScoreConfig()` | Writes default scoring weights | Yes — **skips** if already populated |
 | `setupAllCcsmTriggers()` | Converges all triggers to the schedule | Yes — this is the intended repair action |
 | `deleteAllCcsmTriggers()` | Removes every trigger, form-submit ones included | Yes |
@@ -704,8 +720,8 @@ All of these take **no arguments**, because the Apps Script Run button cannot pa
 | `MISSION_ORG` | Builder | 99 area rows, names + leadership flags. **Email columns blank — you fill them.** |
 | `AGENT_CONFIG` | Builder | 42 key/value rows; 4 required blanks you fill (Step 6) |
 | `QUESTIONS_CONFIG` | Builder | Maps Spanish form headers to metric keys. Do not hand-edit. |
-| `MESSAGE_BANK` | `seedCcsmMessageBank()` once | 193 Spanish messages. Mission-editable in the sheet after that — see 5.1. |
-| `LEADERSHIP_MESSAGE_BANK` | `seedCcsmLeadershipMessageBank()` once | 10 messages to zone/district leaders, APs, president. Mission-editable in the sheet after that. `PMG_Page`/`Scripture`/`Scripture_Text` columns are withheld at render until verified (`CCSM_Agent1C.gs`) — see 8.3. |
+| `MESSAGE_BANK` | `seedCcsmMessageBank()` once | 193 Spanish messages. Mission-editable in the sheet after that — see 5.1. Optionally lives in its own spreadsheet instead — see 5.4. |
+| `LEADERSHIP_MESSAGE_BANK` | `seedCcsmLeadershipMessageBank()` once | 10 messages to zone/district leaders, APs, president. Mission-editable in the sheet after that. `PMG_Page`/`Scripture`/`Scripture_Text` columns are withheld at render until verified (`CCSM_Agent1C.gs`) — see 8.3. Optionally lives in its own spreadsheet instead — see 5.4. |
 | `KNOWLEDGE_BASE` | `seedCcsmKnowledgeBase()` | 10 Q&A rows |
 | `SCORE_CONFIG` | `setupCcsmScoreConfig()` | Weights — mission-tunable in the sheet |
 | `GOALS_CONFIG` | You (optional) | Per-area goals |

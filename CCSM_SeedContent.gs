@@ -832,8 +832,12 @@ function csc_buildKnowledgeRows_() {
  * naive read-back would "verify" a write that never landed.
  */
 function csc_writeTab_(tabName, headers, rows) {
-  var ssId  = getSpreadsheet().getId();
   var sheet = getTab(tabName);
+  // The tab's OWN parent, not getSpreadsheet() — MESSAGE_BANK/
+  // LEADERSHIP_MESSAGE_BANK can live in a different spreadsheet from the
+  // bound one once split (see CCSM_Helpers.gs ccsmSpreadsheetForTab_()), and
+  // getSpreadsheet() would silently verify against the wrong file for those.
+  var ssId = sheet.getParent().getId();
 
   sheet.clearContents();
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
@@ -965,6 +969,78 @@ function seedCcsmLeadershipMessageBank() {
   CCSM_TAB_SPECS.forEach(function(t) { if (t.name === 'LEADERSHIP_MESSAGE_BANK') spec = t; });
   if (!spec) throw new Error('CCSM_SeedContent: LEADERSHIP_MESSAGE_BANK is not defined in CCSM_TAB_SPECS.');
   return csc_writeTab_('LEADERSHIP_MESSAGE_BANK', spec.headers, csc_buildLeadershipMessageRows_());
+}
+
+/**
+ * ONE-TIME MIGRATION: creates a brand-new spreadsheet named "CCSM Mission
+ * Trainings" holding only MESSAGE_BANK and LEADERSHIP_MESSAGE_BANK, copied
+ * verbatim from wherever they currently live (their live content — including
+ * any hand edits — not the code's original seed text).
+ *
+ * WHY THIS EXISTS: Google ties "can edit this spreadsheet" to "can open its
+ * bound Apps Script project" — sharing Editor access to COMPASS_CCSM so
+ * mission leadership can edit these two tabs also hands them every .gs file
+ * and Script Properties (including GEMINI_API_KEY). This gives them their own
+ * spreadsheet, with no script attached, to edit instead.
+ *
+ * Skips a source tab that doesn't exist yet (e.g. LEADERSHIP_MESSAGE_BANK
+ * before its own seeder has been run once) rather than failing outright —
+ * logs which ones it copied.
+ *
+ * AFTER RUNNING:
+ *   1. Copy the logged spreadsheet ID into a new MESSAGE_BANK_SPREADSHEET_ID
+ *      row in AGENT_CONFIG. From then on getTab() (CCSM_Helpers.gs) resolves
+ *      both tab names to the NEW spreadsheet automatically — nothing else to
+ *      change in code.
+ *   2. Confirm it actually reads from the new location — smokeTestPipeline()
+ *      or previewOneCoachingEmail() both go through getTab().
+ *   3. THEN delete the old MESSAGE_BANK / LEADERSHIP_MESSAGE_BANK tabs from
+ *      COMPASS_CCSM by hand, so nobody edits the now-inert local copy by
+ *      mistake. Not automatic — do this only after step 2 confirms the split
+ *      is really live.
+ *   4. Share the NEW spreadsheet (Editor) with mission leadership. Never
+ *      share COMPASS_CCSM itself for this purpose.
+ *
+ * Do not run this more than once on purpose — it always creates ANOTHER new
+ * spreadsheet rather than reusing one. If you do by accident, delete the
+ * extra file; it never touches the source tabs, so nothing is lost either way.
+ */
+function splitMessageBanksToOwnSpreadsheet() {
+  var newSs = SpreadsheetApp.create('CCSM Mission Trainings');
+  var copied = [];
+
+  ['MESSAGE_BANK', 'LEADERSHIP_MESSAGE_BANK'].forEach(function(tabName) {
+    var sourceSheet;
+    try {
+      // Reads from wherever the tab lives TODAY — the bound sheet, since this
+      // function is how the split itself happens.
+      sourceSheet = getTab(tabName);
+    } catch (e) {
+      Logger.log('splitMessageBanksToOwnSpreadsheet: skipping ' + tabName + ' — ' + e.message);
+      return;
+    }
+    var values = sourceSheet.getDataRange().getValues();
+    var dest = newSs.insertSheet(tabName);
+    if (values.length) {
+      dest.getRange(1, 1, values.length, values[0].length).setValues(values);
+      dest.getRange(1, 1, 1, values[0].length).setFontWeight('bold').setBackground('#173A72').setFontColor('#FFFFFF');
+      dest.setFrozenRows(1);
+    }
+    copied.push(tabName);
+  });
+
+  var def = newSs.getSheetByName('Sheet1') || newSs.getSheetByName('Hoja 1');
+  if (def) newSs.deleteSheet(def);
+  SpreadsheetApp.flush();
+
+  Logger.log('CCSM_SeedContent: copied ' + copied.join(', ') + ' into a new spreadsheet.');
+  Logger.log('New spreadsheet: ' + newSs.getUrl());
+  Logger.log('Spreadsheet ID: ' + newSs.getId());
+  Logger.log('NEXT STEPS: (1) add MESSAGE_BANK_SPREADSHEET_ID = ' + newSs.getId() + ' to AGENT_CONFIG; ' +
+             '(2) confirm with smokeTestPipeline() or previewOneCoachingEmail(); ' +
+             '(3) delete the old MESSAGE_BANK/LEADERSHIP_MESSAGE_BANK tabs from COMPASS_CCSM; ' +
+             '(4) share the NEW spreadsheet (Editor) with mission leadership — never COMPASS_CCSM itself.');
+  return newSs.getId();
 }
 
 /**

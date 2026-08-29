@@ -468,10 +468,26 @@ function smokeTestPipeline() {
   var present = {};
   ss.getSheets().forEach(function(s) { present[s.getName()] = s; });
 
-  var missingTabs = CCSM_TAB_SPECS.filter(function(t) { return !present[t.name]; })
-                                  .map(function(t) { return t.name; });
-  if (missingTabs.length) fail('Missing tab(s): ' + missingTabs.join(', ') + '. Run buildCcsmSheet().');
-  else ok('All ' + CCSM_TAB_SPECS.length + ' required tabs present.');
+  // MESSAGE_BANK / LEADERSHIP_MESSAGE_BANK may have been split into their own
+  // spreadsheet (CCSM_SeedContent.gs splitMessageBanksToOwnSpreadsheet()) —
+  // ss.getSheets() above only sees the bound spreadsheet, so those two need a
+  // second, split-aware lookup layered on top rather than being judged solely
+  // by whether they're in COMPASS_CCSM.
+  CCSM_SPLIT_TABS.forEach(function(name) {
+    try {
+      var sheet = ccsmSpreadsheetForTab_(name).getSheetByName(name);
+      if (sheet) present[name] = sheet;
+    } catch (e) { /* bad/unreadable MESSAGE_BANK_SPREADSHEET_ID — treat as missing below */ }
+  });
+
+  var missingTabs  = CCSM_TAB_SPECS.filter(function(t) { return !present[t.name]; })
+                                   .map(function(t) { return t.name; });
+  var missingSplit = missingTabs.filter(function(n) { return CCSM_SPLIT_TABS.indexOf(n) !== -1; });
+  var missingOther = missingTabs.filter(function(n) { return CCSM_SPLIT_TABS.indexOf(n) === -1; });
+  if (missingOther.length) fail('Missing tab(s): ' + missingOther.join(', ') + '. Run buildCcsmSheet().');
+  if (missingSplit.length) fail('Missing tab(s): ' + missingSplit.join(', ') + '. If these were split ' +
+    'into their own spreadsheet, check MESSAGE_BANK_SPREADSHEET_ID in AGENT_CONFIG is set and correct.');
+  if (!missingTabs.length) ok('All ' + CCSM_TAB_SPECS.length + ' required tabs present.');
 
   // The two raw form tabs only appear once the Google Forms are attached.
   ['NIGHTLY_FORM_RAW', 'WEEKLY_FORM_RAW'].forEach(function(name) {

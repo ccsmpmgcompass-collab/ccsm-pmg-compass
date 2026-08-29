@@ -156,13 +156,22 @@ function makeGasEnv(options = {}) {
 
   // ---- Sheet ---------------------------------------------------------------
   // sheetRecord is the true stored state: { name, data: [][] , lastRow, lastCol, frozenRows }
-  // The Sheet wrapper class is a thin API over a sheetRecord.
+  // The Sheet wrapper class is a thin API over a sheetRecord. parentId (the
+  // owning spreadsheet's id) is threaded through so getParent() can hand back
+  // a real Spreadsheet wrapper — needed by code that discovers a sheet via
+  // one spreadsheet handle and then needs its OWN id (CCSM_SeedContent.gs's
+  // csc_writeTab_ does exactly this for its reopen-and-verify step, and that
+  // matters once a tab can live in a spreadsheet other than the caller's own
+  // getSpreadsheet()).
   class Sheet {
-    constructor(sheetRecord) {
+    constructor(sheetRecord, parentId) {
       this._rec = sheetRecord;
+      this._parentId = parentId;
     }
 
     getName() { return this._rec.name; }
+
+    getParent() { return SpreadsheetApp.openById(this._parentId); }
 
     getLastRow() { return this._rec.data.length; }
 
@@ -238,7 +247,7 @@ function makeGasEnv(options = {}) {
 
     getSheetByName(name) {
       const rec = this._rec.sheets[name];
-      return rec ? new Sheet(rec) : null;
+      return rec ? new Sheet(rec, this._rec.id) : null;
     }
 
     insertSheet(name) {
@@ -246,7 +255,7 @@ function makeGasEnv(options = {}) {
         this._rec.sheets[name] = { name, data: [], frozenRows: 0 };
         this._rec.sheetOrder.push(name);
       }
-      return new Sheet(this._rec.sheets[name]);
+      return new Sheet(this._rec.sheets[name], this._rec.id);
     }
 
     deleteSheet(sheet) {
@@ -257,7 +266,7 @@ function makeGasEnv(options = {}) {
     }
 
     getSheets() {
-      return this._rec.sheetOrder.map((name) => new Sheet(this._rec.sheets[name]));
+      return this._rec.sheetOrder.map((name) => new Sheet(this._rec.sheets[name], this._rec.id));
     }
   }
 
