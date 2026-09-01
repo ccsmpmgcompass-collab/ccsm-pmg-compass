@@ -34,7 +34,7 @@ from app.config.metric_catalog import nightly_metrics
 from app.config.theme import CHART_COLORS
 from app.db.queries import get_config_value, get_daily_log, get_zones
 from app.i18n import t
-from app.i18n.formats import NA, fmt_date, fmt_int, fmt_number, fmt_percent
+from app.i18n.formats import NA, fmt_date, fmt_int, fmt_number
 
 st.set_page_config(
     page_title="CCSM · Referencias — PMG Compass",
@@ -129,22 +129,32 @@ if _received is not None:
 if _tiles:
     render_kpi_row(_tiles)
 
-if _asked and _received is not None:
-    st.caption(
-        t("{rate} of referrals asked for came back as a member referral "
-          "({received} from {asked} asks).",
-          rate=fmt_percent(_received / _asked * 100, 1),
-          received=fmt_int(_received), asked=fmt_int(_asked))
-    )
-elif _asked == 0 and _received is not None:
-    # Guarding the ratio, not just the division: 0 asks with referrals still
-    # arriving is a real and interesting state, and "—%" says that honestly
-    # where a 0% would read as failure.
-    st.caption(
-        t("No referrals were asked for in this window, so there is no "
-          "ask-to-referral rate to report ({received} referral(s) received).",
-          received=fmt_int(_received))
-    )
+# B7 (AUDIT-IA-2026-08-22.md): this used to divide received by asked and call
+# it a conversion rate — but the two are independent nightly counts, not a
+# funnel (a companionship can receive a referral from a member it never asked
+# that night, or the reverse), so the "rate" could exceed 100% and did, live.
+# The page's own "What this page counts" note already says as much ("There is
+# no referral feed to reconcile against"); the headline used to contradict it.
+# Two counts and a gap, not a ratio — same fix as the per-area table below.
+if _asked is not None and _received is not None:
+    _gap = int(_received - _asked)
+    if _gap > 0:
+        st.caption(
+            t("{received} referral(s) received against {asked} asked for — "
+              "{gap} more received than asked.",
+              received=fmt_int(_received), asked=fmt_int(_asked), gap=fmt_int(_gap))
+        )
+    elif _gap < 0:
+        st.caption(
+            t("{received} referral(s) received against {asked} asked for — "
+              "{gap} fewer received than asked.",
+              received=fmt_int(_received), asked=fmt_int(_asked), gap=fmt_int(-_gap))
+        )
+    else:
+        st.caption(
+            t("{received} referral(s) received, matching the {asked} asked for.",
+              received=fmt_int(_received), asked=fmt_int(_asked))
+        )
 
 # ── Trend ─────────────────────────────────────────────────────────────────────
 
@@ -189,11 +199,14 @@ else:
             t("Area"): _r["Area"],
             METRIC_LABELS.get(ASKED, ASKED): fmt_int(_a) if _a is not None else NA,
             METRIC_LABELS.get(RECEIVED, RECEIVED): fmt_int(_rv) if _rv is not None else NA,
-            # An area that asked nobody has no rate — not a 0% one. Ranking by
-            # a fabricated 0 would push those areas to the bottom as though
-            # they had tried and failed.
-            t("Rate"): (fmt_percent(_rv / _a * 100, 1)
-                        if _a and _rv is not None else NA),
+            # B7 (AUDIT-IA-2026-08-22.md): this column used to be Received÷Asked
+            # as a percent — asked and received are independent nightly counts,
+            # not a funnel, so that "rate" could exceed 100% and did live
+            # (Almirante Latorre 400%, Los Huertos 250%). A gap is honest about
+            # what these two counts can actually say about each other; a rate
+            # implied a conversion relationship the data doesn't have.
+            t("Gap (Received − Asked)"): (fmt_int(_rv - _a)
+                                          if _a is not None and _rv is not None else NA),
         })
 
     _tbl = pd.DataFrame(_rows)
@@ -207,11 +220,7 @@ else:
         _tbl = _tbl.sort_values("_o").drop(columns="_o")
     render_table(_tbl)
 
-    st.caption(
-        t("Ranked by referrals received. An area that asked for none has no "
-          "rate rather than a 0% one — it has not tried and failed, it has "
-          "not tried.")
-    )
+    st.caption(t("Ranked by referrals received."))
 
 # ── Context ───────────────────────────────────────────────────────────────────
 

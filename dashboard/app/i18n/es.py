@@ -921,6 +921,7 @@ ES: dict[str, str] = {
     "SELECT CADENCE": "ELIJA LA FRECUENCIA",
     "SELECT INDICATOR": "ELIJA EL INDICADOR",
     "Target": "Meta",
+    "Rate": "Tasa",
     "Add Category": "Agregar Categoría",
     "Add another indicator to this category:":
         "Agregar otro indicador a esta categoría:",
@@ -1771,22 +1772,20 @@ ES: dict[str, str] = {
         "DAILY_LOG no tiene columna para: {cols}. Esas cifras se omiten en "
         "lugar de mostrarse como cero.",
     "Last {days} days": "Últimos {days} días",
-    "{rate} of referrals asked for came back as a member referral ({received} "
-    "from {asked} asks).":
-        "El {rate} de las referencias solicitadas se convirtió en una "
-        "referencia de un miembro ({received} de {asked} solicitudes).",
-    "No referrals were asked for in this window, so there is no "
-    "ask-to-referral rate to report ({received} referral(s) received).":
-        "No se solicitaron referencias en este período, así que no hay una "
-        "tasa de solicitud a referencia que informar ({received} "
-        "referencia(s) recibida(s)).",
+    "{received} referral(s) received against {asked} asked for — {gap} more "
+    "received than asked.":
+        "{received} referencia(s) recibida(s) contra {asked} solicitada(s) — "
+        "{gap} más recibidas que solicitadas.",
+    "{received} referral(s) received against {asked} asked for — {gap} fewer "
+    "received than asked.":
+        "{received} referencia(s) recibida(s) contra {asked} solicitada(s) — "
+        "{gap} menos recibidas que solicitadas.",
+    "{received} referral(s) received, matching the {asked} asked for.":
+        "{received} referencia(s) recibida(s), igualando las {asked} "
+        "solicitada(s).",
     "Referrals per day": "Referencias por día",
-    "Rate": "Tasa",
-    "Ranked by referrals received. An area that asked for none has no rate "
-    "rather than a 0% one — it has not tried and failed, it has not tried.":
-        "Ordenado por referencias recibidas. Un área que no solicitó ninguna "
-        "no tiene tasa, en lugar de tener un 0% — no lo intentó y falló, "
-        "simplemente no lo intentó.",
+    "Gap (Received − Asked)": "Diferencia (Recibidas − Solicitadas)",
+    "Ranked by referrals received.": "Ordenado por referencias recibidas.",
     "What this page counts": "Qué cuenta esta página",
     "- **{asked}** — how many times companionships asked a member for someone "
     "to teach, from the nightly form.\n- **{received}** — how many referrals "
