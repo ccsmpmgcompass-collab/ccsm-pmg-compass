@@ -955,8 +955,14 @@ def _render_action_bell(user: dict) -> None:
         f'margin-left:0.35rem;">{total}</span>'
         if total > 0 else ""
     )
+    # B5 (AUDIT-IA-2026-08-22.md): this pointed at /Action_Center, which does
+    # not exist — the real page is pages/17_Centro_de_Acción.py, so Streamlit
+    # silently served Home instead of the Action Center on every click.
+    # Streamlit derives a page's URL from its filename stem verbatim
+    # (source_util.page_icon_and_name / navigation/page.py's inferred_name) —
+    # no ASCII transliteration — so the path keeps the accent.
     st.markdown(
-        f'<a href="/Action_Center" target="_self" style="position:fixed;'
+        f'<a href="/Centro_de_Acción" target="_self" style="position:fixed;'
         f'top:0.75rem;right:1.25rem;z-index:999;text-decoration:none;'
         f'background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);'
         f'border-radius:999px;padding:0.3rem 0.7rem;font-size:0.95rem;'
