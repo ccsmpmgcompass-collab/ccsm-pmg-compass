@@ -13,7 +13,7 @@ Public functions:
   load_kb_context()              — KNOWLEDGE_BASE tab → formatted str
   load_live_data_context()       — current-week mission/zone/area data → str
   load_supplemental_contexts()   — dict of all the other labeled data blocks
-  ask_gemini(...)                — call Gemini 2.5 Flash, return answer str
+  ask_gemini(...)                — call Gemini 3.6 Flash, return answer str
 
 Individual supplemental loaders (each returns "" on any failure, never raises):
   load_goals_context, load_org_context, load_daily_context,
@@ -863,7 +863,7 @@ def ask_gemini(
     api_key: str,
     extra_contexts: dict = None,
 ) -> str:
-    """Call Gemini 2.5 Flash and return the answer string.
+    """Call Gemini 3.6 Flash and return the answer string.
 
     history: prior messages as [{"role": "user"|"assistant", "content": str}]
     extra_contexts: {label: content} of supplemental data blocks (goals, org,
@@ -877,7 +877,7 @@ def ask_gemini(
     for attempt in range(3):  # one call + up to 2 retries on transient overload
         try:
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3.6-flash",
                 contents=prompt,
                 config={
                     "max_output_tokens": _MAX_OUTPUT_TOKENS,
