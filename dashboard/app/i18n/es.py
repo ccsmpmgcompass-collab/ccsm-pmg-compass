@@ -630,6 +630,12 @@ ES: dict[str, str] = {
     "Maintenance": "Mantenimiento",
     "No maintenance issues detected.":
         "No se detectaron problemas de mantenimiento.",
+    "{count} agent run(s) failed in the last 14 days":
+        "{count} ejecución(es) de agente fallaron en los últimos 14 días",
+    "DAILY_LOG hasn't been written in {days} day(s)":
+        "DAILY_LOG no se ha actualizado en {days} día(s)",
+    "WEEKLY_KI's latest week ended {days} day(s) ago":
+        "La última semana de WEEKLY_KI terminó hace {days} día(s)",
     "Task": "Tarea",
     "Add Task": "Agregar Tarea",
     "Add a Task": "Agregar una Tarea",
@@ -1573,6 +1579,7 @@ ES: dict[str, str] = {
     "**{followups_count} note follow-up(s) due**":
         "**{followups_count} seguimiento(s) de notas pendientes**",
     "**My Tasks — {count} open**": "**Mis Tareas — {count} abiertas**",
+    "**{count} maintenance issue(s)**": "**{count} problema(s) de mantenimiento**",
     "- **{task_name}** — assigned to {assigned_to} by {assigned_by}{due}":
         "- **{task_name}** — asignada a {assigned_to} por {assigned_by}{due}",
     "{task_name} — _assigned by {assigned_by}{due}_":

@@ -97,6 +97,22 @@ if not my_tasks.empty:
                 resolve_leadership_task(task_id)
                 st.rerun()
 
+# B6 (AUDIT-IA-2026-08-22.md): the bell badge counts maintenance_issues into
+# its total (see get_action_center_summary), but this section never checked
+# it — so a leadership user could see the bell say "1" and land here on
+# "Nothing needs your action right now," with the actual item sitting,
+# unmentioned, in the Maintenance section below. Folding it in here keeps this
+# section's "nothing needs action" claim consistent with what the bell counted
+# to get you here; the detail (each issue's own text) still lives only in the
+# Maintenance section, not duplicated.
+if summary["maintenance_issues"]:
+    _any_items = True
+    with st.container(border=True):
+        st.markdown(t('**{count} maintenance issue(s)**',
+                       count=len(summary["maintenance_issues"])))
+        if st.button(t("Open Maintenance page"), key="ac_go_maintenance_from_needs"):
+            st.switch_page("pages/18_Mantenimiento.py")
+
 if not _any_items:
     st.success(t("Nothing needs your action right now."))
 

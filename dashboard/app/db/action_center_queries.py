@@ -20,6 +20,7 @@ from app.db.queries import (
     get_suggestions,
     get_due_follow_ups,
 )
+from app.i18n import t
 
 _TASKS_TAB = "LEADERSHIP_TASKS"
 _TASKS_HEADER = [
@@ -129,7 +130,11 @@ def _latest_date(tab: str, marker: str, candidates: tuple):
 
 def _maintenance_issues() -> list[str]:
     """Re-run the same two health signals 18_Mantenimiento.py surfaces (agent
-    failures, stale data) as short messages for the Action Center."""
+    failures, stale data) as short messages for the Action Center.
+
+    B6 (AUDIT-IA-2026-08-22.md): these used to be bare f-strings, so they were
+    the one place on an otherwise-Spanish page that rendered in English — the
+    same signal Mantenimiento.py's own copies already run through t()."""
     issues: list[str] = []
 
     log = read_tab("AGENT_RUN_LOG", header_marker="Agent")
@@ -140,15 +145,18 @@ def _maintenance_issues() -> list[str]:
             ts = pd.to_datetime(fails[ts_col], errors="coerce")
             fails = fails[ts >= datetime.now() - timedelta(days=14)]
         if not fails.empty:
-            issues.append(f"{len(fails)} agent run(s) failed in the last 14 days")
+            issues.append(t("{count} agent run(s) failed in the last 14 days",
+                             count=len(fails)))
 
     dl_date = _latest_date("DAILY_LOG", "Date", ("date",))
     if dl_date is not None and (datetime.now() - dl_date).days > 2:
-        issues.append(f"DAILY_LOG hasn't been written in {(datetime.now() - dl_date).days} day(s)")
+        issues.append(t("DAILY_LOG hasn't been written in {days} day(s)",
+                         days=(datetime.now() - dl_date).days))
 
     wk_date = _latest_date("WEEKLY_KI", "Area_Code", ("week_end_date", "week_ending_date", "week_end"))
     if wk_date is not None and (datetime.now() - wk_date).days > 9:
-        issues.append(f"WEEKLY_KI's latest week ended {(datetime.now() - wk_date).days} day(s) ago")
+        issues.append(t("WEEKLY_KI's latest week ended {days} day(s) ago",
+                         days=(datetime.now() - wk_date).days))
 
     return issues
 
