@@ -1102,6 +1102,12 @@ elif _sec == _TAB_SYSTEM:
     st.markdown(
         t("- **COMPASS_CCSM (Google Sheet)** — the only data store. Every tab the "
         "agents and this app read or write lives there (link above).\n"
+        "- **Google Drive (Tableau Detail export)** — a gzipped CSV file, not a "
+        "Sheet tab (17.4 MB uncompressed, too large to move as a tab quickly). "
+        "Its file id lives in **AGENT_CONFIG → TABLEAU_DETAIL_FILE_ID**. The "
+        "service account can only overwrite it, not create or re-share it — if "
+        "it's ever deleted, a human must upload a new one and share it Editor "
+        "with the service account again, then update that config key.\n"
         "- **Google Forms** — the nightly + weekly report forms (links above) "
         "write into NIGHTLY_FORM_RAW / WEEKLY_FORM_RAW; the Questions & "
         "Suggestions form feeds AgentQA.\n"
