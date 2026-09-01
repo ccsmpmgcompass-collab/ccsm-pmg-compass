@@ -737,8 +737,9 @@ def get_area_weekly_goals() -> dict:
     return out
 
 
-def get_ki_goals_for_week(week_end) -> tuple:
-    """Mission-wide Key Indicator goals for the week ending ``week_end``.
+def get_ki_goals_for_week(week_end, areas: set | None = None) -> tuple:
+    """Key Indicator goals for the week ending ``week_end``, mission-wide by
+    default or restricted to ``areas`` (a set of area names) when given.
 
     Returns ``(goals, set_by, source_week, source_areas)``:
     ``goals`` maps a ``ki_*_real`` key to the summed goal, ``set_by`` maps the
@@ -780,6 +781,8 @@ def get_ki_goals_for_week(week_end) -> tuple:
 
     source_week = pd.to_datetime(week_end).date() - timedelta(days=7)
     rows = df[df["week_end_date"].astype(str) == str(source_week)]
+    if areas is not None and "area" in rows.columns:
+        rows = rows[rows["area"].astype(str).isin(areas)]
     if rows.empty:
         return {}, {}, source_week, 0
 

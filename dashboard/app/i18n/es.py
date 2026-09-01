@@ -1650,6 +1650,9 @@ ES: dict[str, str] = {
     "% of goal": "% de la meta",
     "No weekly Key Indicator data for this week and scope.":
         "No hay datos de Indicadores Clave para esta semana y alcance.",
+    "Goals shown are what areas set on the {week} form, for this week.":
+        "Las metas mostradas son las que las áreas fijaron en el formulario "
+        "del {week}, para esta semana.",
     "No nightly data for this week.":
         "No hay datos diarios para esta semana.",
     "{start} to {end}": "{start} al {end}",

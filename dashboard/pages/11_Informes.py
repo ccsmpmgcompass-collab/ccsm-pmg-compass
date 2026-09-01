@@ -28,12 +28,11 @@ from app.components.design_system import (
 )
 from app.config.flavor_loader import METRIC_LABELS, flavor
 from app.config.metric_catalog import (
-    goal_metric_key, key_indicator_metrics, non_numeric_metrics,
-    nightly_metrics,
+    key_indicator_metrics, non_numeric_metrics, nightly_metrics,
 )
 from app.db.queries import (
-    get_areas_df, get_config_value, get_daily_log, get_scored_weeks, get_scores,
-    get_weekly_ki,
+    get_areas_df, get_config_value, get_daily_log, get_ki_goals_for_week,
+    get_scored_weeks, get_scores, get_weekly_ki,
 )
 from app.i18n import t
 from app.i18n.formats import NA, fmt_date, fmt_int, fmt_number, fmt_percent
@@ -105,6 +104,16 @@ if _scoped and not _ki_week.empty and "area" in _ki_week.columns:
 
 _ki_metrics = key_indicator_metrics()
 
+# B3 (AUDIT-IA-2026-08-22.md): a week's goal is written on the PREVIOUS week's
+# form — the weekly form's own section help says results are "de la semana
+# pasada" while the goal is "para la semana siguiente" — so reading the meta
+# off THIS week's row (the same _ki_week used for the achieved numbers, above)
+# grades every area against the target it set for the week after this one.
+# get_ki_goals_for_week does the W-7 lookup by date, the same fix already
+# shipped on the Panel page; Informes was the last caller of the old pattern.
+_ki_goals, _, _ki_goal_src, _ = get_ki_goals_for_week(
+    _week, areas=_area_names if _scoped else None)
+
 if _ki_week.empty or not _ki_metrics:
     st.info(t("No weekly Key Indicator data for this week and scope."))
 else:
@@ -116,9 +125,7 @@ else:
         # The companionship's own goal for the week, when the form collects
         # one. A goal sits BESIDE a result as a target — never added to it,
         # and never presented as an achievement.
-        _goal_key = goal_metric_key(_key)
-        _goal = (pd.to_numeric(_ki_week[_goal_key], errors="coerce").sum()
-                 if _goal_key and _goal_key in _ki_week.columns else None)
+        _goal = _ki_goals.get(_key)
         _rows.append({
             t("Key Indicator"): _label,
             t("Achieved"): fmt_int(_real),
@@ -128,6 +135,9 @@ else:
         })
     if _rows:
         render_table(pd.DataFrame(_rows))
+        if _ki_goal_src is not None:
+            st.caption(t("Goals shown are what areas set on the {week} form, "
+                         "for this week.", week=fmt_date(_ki_goal_src)))
     else:
         st.info(t("No weekly Key Indicator data for this week and scope."))
 

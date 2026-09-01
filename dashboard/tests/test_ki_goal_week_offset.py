@@ -130,6 +130,29 @@ def test_real_columns_are_never_mistaken_for_goals(form_data):
     assert goals["ki_new_people_real"] == 25
 
 
+# ── Scoping to a zone/district (B3, AUDIT-IA-2026-08-22.md — 11_Informes.py) ───
+
+def test_areas_filter_restricts_the_goal_sum_to_that_scope(form_data):
+    form_data([
+        (W2, "Alemania 1", 12, 25),   # in scope
+        (W2, "Collipulli", 8, 15),    # not in scope
+    ])
+    goals, _, _, areas = get_ki_goals_for_week(date(2026, 8, 23), areas={"Alemania 1"})
+    assert goals["ki_new_people_real"] == 25
+    assert areas == 1
+
+
+def test_areas_filter_none_is_mission_wide_unchanged(form_data):
+    """The default must not change Panel's existing unscoped call."""
+    form_data([
+        (W2, "Alemania 1", 12, 25),
+        (W2, "Collipulli", 8, 15),
+    ])
+    goals, _, _, areas = get_ki_goals_for_week(date(2026, 8, 23))
+    assert goals["ki_new_people_real"] == 40
+    assert areas == 2
+
+
 # ── Degenerate inputs ─────────────────────────────────────────────────────────
 
 def test_no_week_asked_for_returns_empty(form_data):
