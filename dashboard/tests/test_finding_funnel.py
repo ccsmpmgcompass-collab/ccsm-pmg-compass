@@ -21,6 +21,7 @@ from app.analytics.finding_funnel import (
     compute_funnel_stage_counts,
     data_date_bounds,
     filter_by_range,
+    full_month_range,
     preset_range,
     resolve_col,
     trend_series,
@@ -113,6 +114,39 @@ def test_filter_by_range_is_inclusive_at_both_ends():
 def test_filter_by_range_with_no_bounds_keeps_blank_dated_rows():
     df = _detail([{"event_date_selected": "2026-08-01"}, {"event_date_selected": ""}])
     assert len(filter_by_range(df, None, None)) == 2
+
+
+# ── full_month_range: is a window a whole number of calendar months? ─────────
+# TABLEAU_BAPTISMS only has monthly figures, so this decides whether the
+# Finding Funnel's Official Baptisms KPI has a certified total to show.
+
+def test_full_month_range_true_for_one_whole_month():
+    assert full_month_range(date(2025, 1, 1), date(2025, 1, 31)) is True
+
+
+def test_full_month_range_true_for_several_whole_months():
+    assert full_month_range(date(2025, 1, 1), date(2025, 12, 31)) is True
+
+
+def test_full_month_range_handles_february_and_leap_years():
+    assert full_month_range(date(2025, 2, 1), date(2025, 2, 28)) is True
+    assert full_month_range(date(2024, 2, 1), date(2024, 2, 29)) is True
+    # 2025 is not a leap year -- Feb 29 doesn't exist, so this range must not
+    # match (would only pass if the day arithmetic were wrong).
+    assert full_month_range(date(2025, 2, 1), date(2025, 3, 1)) is False
+
+
+def test_full_month_range_false_when_start_is_not_the_first():
+    assert full_month_range(date(2025, 1, 5), date(2025, 1, 31)) is False
+
+
+def test_full_month_range_false_when_end_is_not_the_last_day():
+    assert full_month_range(date(2025, 1, 1), date(2025, 1, 30)) is False
+
+
+def test_full_month_range_false_for_a_preset_style_window():
+    """The 7/14/30-day presets almost never land on month boundaries."""
+    assert full_month_range(date(2026, 7, 5), date(2026, 8, 3)) is False
 
 
 # ── 3.2b: one stage list, and it ends in the outcome ──────────────────────────

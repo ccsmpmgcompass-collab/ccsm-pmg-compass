@@ -3210,6 +3210,39 @@ def get_baptisms_actual(month_start: str) -> int | None:
         return None
 
 
+def get_baptisms_actual_for_range(start_date, end_date) -> int | None:
+    """Certified mission-wide baptisms for an arbitrary [start_date, end_date],
+    summed from TABLEAU_BAPTISMS one whole calendar month at a time.
+
+    Returns None — never a partial sum — when the range isn't a whole number
+    of calendar months (TABLEAU_BAPTISMS only has monthly figures to offer),
+    or when ANY covered month has no capture yet. A partial sum would read
+    LOW and look like a real total, which is exactly the silent-undercount
+    failure this function exists to avoid (see the Finding Funnel's Baptized
+    stage, which counts Detail's confirmation_date instead and was found to
+    disagree with Tableau's own certified number by ~25% over a full year).
+
+    start_date/end_date: date or 'YYYY-MM-DD' string.
+    """
+    from app.analytics.finding_funnel import full_month_range
+    start = start_date if isinstance(start_date, date) else date.fromisoformat(str(start_date)[:10])
+    end = end_date if isinstance(end_date, date) else date.fromisoformat(str(end_date)[:10])
+    if not full_month_range(start, end):
+        return None
+    total = 0
+    y, m = start.year, start.month
+    while (y, m) <= (end.year, end.month):
+        val = get_baptisms_actual(f"{y:04d}-{m:02d}-01")
+        if val is None:
+            return None
+        total += val
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+    return total
+
+
 def get_baptisms_since_launch(start_date: str) -> int:
     """
     Total real mission-wide baptisms (get_baptisms_actual, the Tableau-sourced

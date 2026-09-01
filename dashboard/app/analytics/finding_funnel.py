@@ -81,6 +81,20 @@ def preset_range(preset: str, lo: date, hi: date):
     return (max(start, lo), hi)
 
 
+def full_month_range(start: date, end: date) -> bool:
+    """True when [start, end] is exactly one or more WHOLE calendar months.
+
+    TABLEAU_BAPTISMS is built from monthly PDF summaries, so it can only ever
+    answer for a range that starts on the 1st and ends on the last day of a
+    month — a 7/14/30-day preset or an arbitrary custom range has no certified
+    total to compare against and must fall back to the Detail-derived count.
+    """
+    if start.day != 1:
+        return False
+    next_month = (end.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return end == next_month - timedelta(days=1)
+
+
 def filter_by_range(det_df: pd.DataFrame, start, end) -> pd.DataFrame:
     """Keep Detail rows whose event_date_selected falls in [start, end]
     (inclusive). start/end are datetime.date or None. When BOTH are None

@@ -12,7 +12,8 @@ from app.components.design_system import (
 )
 from app.db.drive_blob import save_dataframe_blob
 from app.db.queries import (
-    get_tableau_detail, get_tableau_detail_file_id, get_tableau_ranking,
+    get_baptisms_actual_for_range, get_tableau_detail, get_tableau_detail_file_id,
+    get_tableau_ranking,
 )
 from app.db.sheets_client import read_tab, save_dataframe
 from app.ingestion.tableau_detail_transform import clean_detail
@@ -386,6 +387,16 @@ referred = int(_date(det_df, REFERRED_STAGE[1]).notna().sum()) \
 # KPI row and the whole Contact Performance section reported 0.
 stage_counts = compute_funnel_stage_counts(det_df)
 
+# ── Official baptisms — from Tableau's own certified monthly PDFs, NOT from
+# Detail's confirmation_date (the funnel's "Baptized" stage below). Detail only
+# has a row for people whose finding record made it into the app, so it
+# undercounts anyone baptized before that tracking caught up — found live:
+# 301 tracked vs. 403 certified over one full year. Only available when the
+# selected range is a whole number of calendar months, since the PDFs are
+# monthly; see get_baptisms_actual_for_range's docstring for why a partial
+# sum is refused rather than silently returned.
+official_baptisms = get_baptisms_actual_for_range(sel_start, sel_end)
+
 found = len(det_df)
 attempted = stage_counts.get("Contact Attempted", 0)
 contacted = stage_counts.get("Successfully Contacted", 0)
@@ -422,6 +433,10 @@ render_kpi_row([
     {"label": "Contacted",      "value": int(contacted)},
     {"label": "Being Taught",   "value": int(teaching)},
     {"label": "New Referrals",  "value": int(referred)},
+    {"label": "Official Baptisms",
+     "value": int(official_baptisms) if official_baptisms is not None else "—",
+     "note": (t("Certified — Tableau summary PDF") if official_baptisms is not None
+              else t("Pick a range of full calendar months to see this"))},
 ])
 
 
@@ -461,6 +476,16 @@ with fcol:
         st.caption(t("Each stage = people found in range who reached at least that "
                      "far. A milestone that was never logged is inherited from a "
                      "later one, so the funnel never widens."))
+        if official_baptisms is not None and official_baptisms != stage_counts.get("Baptized", 0):
+            st.caption(t(
+                "⚠️ Baptized here only counts people with a tracked finding "
+                "record — {tracked} here vs. {official} certified by Tableau's "
+                "own monthly summary for this period. The gap is people "
+                "baptized before their finding record existed in the app. "
+                "Official Baptisms above is the number that matters for "
+                "reporting.",
+                tracked=fmt_int(stage_counts.get("Baptized", 0)),
+                official=fmt_int(official_baptisms)))
     else:
         st.caption(t("Detail records needed to build the pipeline funnel."))
 
@@ -604,6 +629,9 @@ with st.expander(t("Area Rankings (per-area table)"), expanded=False):
         disp = disp.rename(columns={c: t(c) for c in disp.columns})
         st.caption(t("{n} areas with activity · sorted by people found "
                      "· reflects the selected date range", n=disp.shape[0]))
+        st.caption(t("Baptized here is a lower bound — Tableau only certifies "
+                     "mission/zone totals, not a per-area breakdown (see "
+                     "Official Baptisms above)."))
         render_table(disp.reset_index(drop=True))
         st.download_button(t("Download Rankings CSV"),
                            data=ranks.to_csv(index=False).encode("utf-8"),

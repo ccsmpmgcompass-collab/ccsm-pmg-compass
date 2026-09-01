@@ -426,6 +426,28 @@ ES: dict[str, str] = {
         "Cada etapa = personas encontradas en el rango que llegaron al menos "
         "hasta ahí. Un hito que nunca se registró se hereda de uno posterior, "
         "así que el embudo nunca se ensancha.",
+    "Official Baptisms": "Bautismos Oficiales",
+    "Certified — Tableau summary PDF": "Certificado — PDF resumen de Tableau",
+    "Pick a range of full calendar months to see this":
+        "Elija un rango de meses calendario completos para ver esto",
+    "⚠️ Baptized here only counts people with a tracked finding "
+    "record — {tracked} here vs. {official} certified by Tableau's "
+    "own monthly summary for this period. The gap is people "
+    "baptized before their finding record existed in the app. "
+    "Official Baptisms above is the number that matters for "
+    "reporting.":
+        "⚠️ Bautizado aquí solo cuenta a las personas con un registro de "
+        "búsqueda rastreado — {tracked} aquí vs. {official} certificado por "
+        "el resumen mensual de Tableau para este período. La diferencia son "
+        "personas bautizadas antes de que existiera su registro de búsqueda "
+        "en la aplicación. Bautismos Oficiales arriba es el número que "
+        "importa para los reportes.",
+    "Baptized here is a lower bound — Tableau only certifies "
+    "mission/zone totals, not a per-area breakdown (see "
+    "Official Baptisms above).":
+        "Bautizado aquí es un límite inferior — Tableau solo certifica "
+        "totales de misión/zona, no un desglose por área (ver Bautismos "
+        "Oficiales arriba).",
     "Detail records needed to build the pipeline funnel.":
         "Se requieren registros de detalle para construir el embudo del proceso.",
     "Finding Mix": "Composición de Hallazgos",
