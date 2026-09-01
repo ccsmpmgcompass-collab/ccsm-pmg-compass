@@ -27,7 +27,7 @@ from app.db.queries import (
     get_mission_totals,
     get_zone_totals,
     get_daily_effort_log,
-    get_weekly_ki_trends,
+    get_nightly_weekly_trends,
     get_weekly_ki_totals,
     get_weekly_ki_reporting,
     select_reporting_week,
@@ -92,7 +92,7 @@ st.caption(
 
 mission_df = get_mission_totals()
 zone_df    = get_zone_totals()
-trends_df  = get_weekly_ki_trends(8)
+nightly_trends_df = get_nightly_weekly_trends(8)
 daily_df   = get_daily_summary(7)
 ki_df      = get_weekly_ki_totals(8)
 app_goals  = get_mission_goals()
@@ -100,7 +100,7 @@ app_goals  = get_mission_goals()
 all_empty = (
     mission_df.empty
     and zone_df.empty
-    and trends_df.empty
+    and nightly_trends_df.empty
     and daily_df.empty
     and ki_df.empty
 )
@@ -878,57 +878,73 @@ else:
 # ═══════════════════════════════════════════════════════════════════════════════
 # 4. EIGHT-WEEK TRENDS (mission totals)
 # ═══════════════════════════════════════════════════════════════════════════════
+# B2 (AUDIT-IA-2026-08-22.md): this section used to plot flavor.nightly_highlights
+# (e.g. contacts_attempted) against get_weekly_ki_trends(), which only ever
+# returns the seven ki_* columns from the WEEKLY form — those nightly keys can
+# never be present there, so the left chart silently drew zero traces. Nightly
+# metrics have to come from get_nightly_weekly_trends() (bucketed off
+# DAILY_LOG), same fix already applied to the Effort score's per-area source.
+# The two charts are also independent questions with independent sources, so
+# a missing one no longer blanks out the other — each has its own guard.
 render_section_label(t("8-Week Trend — Mission Totals"))
 
-trends_chart = exclude_current_week(trends_df)
-ki_chart     = exclude_current_week(ki_df)
-if trends_chart.empty or "week_end_date" not in trends_chart.columns:
+nightly_chart = exclude_current_week(nightly_trends_df)
+ki_chart      = exclude_current_week(ki_df)
+_has_nightly_trend = not nightly_chart.empty and "week_end_date" in nightly_chart.columns
+_has_ki_trend      = not ki_chart.empty and "week_end_date" in ki_chart.columns
+
+if not _has_nightly_trend and not _has_ki_trend:
     st.info(_EMPTY_MSG)
 else:
-    weeks = trends_chart["week_end_date"].astype(str)
-
     col_a, col_b = st.columns(2)
 
     with col_a:
-        fig1 = go.Figure()
-        for i, key in enumerate(flavor.nightly_highlights):
-            if key in trends_chart.columns:
-                fig1.add_trace(go.Scatter(
-                    x=weeks, y=trends_chart[key], mode="lines+markers",
-                    name=METRIC_LABELS.get(key, key),
-                    line=dict(color=CHART_COLORS[i % len(CHART_COLORS)], width=2),
-                    marker=dict(size=6),
-                ))
-        fig1.update_layout(
-            title=t("Nightly Activity"),
-            xaxis_title=t("Week Ending"), yaxis_title=t("Count"),
-            xaxis_type="category", hovermode="x unified",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            margin=dict(t=50, b=40, l=40, r=20),
-            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        )
-        st.plotly_chart(fig1, use_container_width=True)
+        if _has_nightly_trend:
+            weeks = nightly_chart["week_end_date"].astype(str)
+            fig1 = go.Figure()
+            for i, key in enumerate(flavor.nightly_highlights):
+                if key in nightly_chart.columns:
+                    fig1.add_trace(go.Scatter(
+                        x=weeks, y=nightly_chart[key], mode="lines+markers",
+                        name=METRIC_LABELS.get(key, key),
+                        line=dict(color=CHART_COLORS[i % len(CHART_COLORS)], width=2),
+                        marker=dict(size=6),
+                    ))
+            fig1.update_layout(
+                title=t("Nightly Activity"),
+                xaxis_title=t("Week Ending"), yaxis_title=t("Count"),
+                xaxis_type="category", hovermode="x unified",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                margin=dict(t=50, b=40, l=40, r=20),
+                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+            )
+            st.plotly_chart(fig1, use_container_width=True)
+        else:
+            st.info(_EMPTY_MSG)
 
     with col_b:
-        fig2 = go.Figure()
-        ki_weeks = ki_chart["week_end_date"].astype(str) if not ki_chart.empty else weeks
-        for i, key in enumerate(key_indicator_metrics()):
-            if not ki_chart.empty and key in ki_chart.columns:
-                fig2.add_trace(go.Scatter(
-                    x=ki_weeks, y=ki_chart[key], mode="lines+markers",
-                    name=METRIC_LABELS.get(key, key),
-                    line=dict(color=CHART_COLORS[(i + 2) % len(CHART_COLORS)], width=2),
-                    marker=dict(size=6),
-                ))
-        fig2.update_layout(
-            title=t("Key Indicators"),
-            xaxis_title=t("Week Ending"), yaxis_title=t("Count"),
-            xaxis_type="category", hovermode="x unified",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            margin=dict(t=50, b=40, l=40, r=20),
-            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        )
-        st.plotly_chart(fig2, use_container_width=True)
+        if _has_ki_trend:
+            ki_weeks = ki_chart["week_end_date"].astype(str)
+            fig2 = go.Figure()
+            for i, key in enumerate(key_indicator_metrics()):
+                if key in ki_chart.columns:
+                    fig2.add_trace(go.Scatter(
+                        x=ki_weeks, y=ki_chart[key], mode="lines+markers",
+                        name=METRIC_LABELS.get(key, key),
+                        line=dict(color=CHART_COLORS[(i + 2) % len(CHART_COLORS)], width=2),
+                        marker=dict(size=6),
+                    ))
+            fig2.update_layout(
+                title=t("Key Indicators"),
+                xaxis_title=t("Week Ending"), yaxis_title=t("Count"),
+                xaxis_type="category", hovermode="x unified",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                margin=dict(t=50, b=40, l=40, r=20),
+                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+            )
+            st.plotly_chart(fig2, use_container_width=True)
+        else:
+            st.info(_EMPTY_MSG)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # THE NIGHTLY WINDOW — shared by sections 5 and 6

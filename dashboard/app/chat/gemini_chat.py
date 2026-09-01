@@ -33,7 +33,7 @@ from app.db.sheets_client import read_tab
 from app.db.queries import (
     get_meta, get_mission_totals, get_zone_totals, get_live_snapshot,
     get_goals_df, get_areas_df, get_daily_log,
-    get_weekly_ki_trends, get_weekly_ki_totals, get_alltime_compliance,
+    get_nightly_weekly_trends, get_weekly_ki_totals, get_alltime_compliance,
     get_notes, get_question_metrics, get_config_value,
 )
 
@@ -374,7 +374,11 @@ def load_weekly_trends_context() -> str:
         parts = []
         monday = _current_week_monday_str()
 
-        nightly = get_weekly_ki_trends(8)
+        # B2's root cause (AUDIT-IA-2026-08-22.md) also reached here:
+        # get_weekly_ki_trends() only ever returns the weekly form's ki_*
+        # columns, never a nightly metric, so this was silently handing the
+        # model an empty "nightly form" section every time.
+        nightly = get_nightly_weekly_trends(8)
         if not nightly.empty and "week_end_date" in nightly.columns:
             metric_cols = [c for c in nightly.columns if c != "week_end_date"]
             lines = []
@@ -572,7 +576,6 @@ def load_analytics_context() -> str:
 
         # ── Baptism-pipeline funnel + conversion rates ───────────────────────
         ki = get_weekly_ki_totals(8)
-        tr = get_weekly_ki_trends(8)
         if not ki.empty and "week_end_date" in ki.columns:
             monday = _current_week_monday_str()
             ki_sorted = ki.sort_values("week_end_date")
