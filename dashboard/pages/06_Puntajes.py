@@ -37,6 +37,7 @@ from app.config.metric_catalog import (
     weekly_metrics as _weekly_metrics,
 )
 from app.config.theme import series_style, CHART_COLORS
+from app.analytics.effort_breakdown import normalize_level
 from app.db.queries import (
     compute_effort_score_breakdown,
     compute_mission_president_effort_scores,
@@ -46,9 +47,9 @@ from app.db.queries import (
     get_area_effort_expectations_weekly,
     get_areas_df,
     get_config_value,
+    get_daily_effort_log,
     get_daily_log,
     get_districts,
-    get_effort_data,
     get_score_component_weights,
     get_submitting_areas,
     get_zones,
@@ -809,9 +810,9 @@ def _load_districts(zone: str) -> list:
 
 
 @st.cache_data(ttl=300)
-def _load_effort() -> pd.DataFrame:
+def _load_daily_effort(days: int) -> pd.DataFrame:
     try:
-        return get_effort_data()
+        return get_daily_effort_log(days)
     except Exception:
         return pd.DataFrame()
 
@@ -1672,34 +1673,59 @@ def _render_daily_tab():
     # ═══════════════════════════════════════════════════════════════════════════════
     # `effort` is a CHOICE question (Todo / La mayor parte / Algo), so it is
     # excluded from the totals and charts above — summing it would produce a
-    # number with no meaning. The agents bucket it into counts instead, which is
-    # what this section reads.
+    # number with no meaning. The agents bucket it into counts instead.
+    #
+    # B4 (AUDIT-IA-2026-08-22.md): this used to read DASHBOARD_SUMMARY's EFFORT
+    # rows, which CCSM_Agent5A.gs's a5a_getEffortBreakdown computes mission-wide
+    # over a hardcoded last-7-days window — no Zone/District column exists on
+    # those rows at all, so selecting a zone above did nothing to this section.
+    # Reading DAILY_LOG's own `effort` text (get_daily_effort_log) instead lets
+    # this section share the same Zone/District/Days filter as the rest of the
+    # tab. normalize_level is the same Todo/La mayor parte/Algo mapping
+    # CCSM_Helpers.gs's ccsmEffortScore uses — reused, not re-derived.
     render_section_label(t("Effort Reporting"))
 
-    effort_df = _load_effort()
-    _effort_cols = (
-        [c for c in ("all_count", "most_count", "some_count") if c in effort_df.columns]
-        if not effort_df.empty else []
-    )
-    if not _effort_cols:
+    effort_log = _load_daily_effort(int(days))
+    if selected_zone != "All" and "Zone" in effort_log.columns:
+        effort_log = effort_log[effort_log["Zone"] == selected_zone]
+        if selected_district != "All" and "District" in effort_log.columns:
+            effort_log = effort_log[effort_log["District"] == selected_district]
+
+    _effort_labels = {
+        "all_count":  t("Full Effort"),
+        "most_count": t("Most Effort"),
+        "some_count": t("Some Effort"),
+    }
+    _LEVEL_COL = {"all": "all_count", "most": "most_count", "some": "some_count"}
+
+    _answered = pd.DataFrame()
+    if not effort_log.empty and "effort" in effort_log.columns:
+        _levels = effort_log["effort"].apply(normalize_level)
+        _answered = effort_log.assign(_level=_levels).dropna(subset=["_level"])
+
+    if _answered.empty:
         st.info(t("No effort responses recorded for this window yet."))
     else:
-        _effort_labels = {
-            "all_count":  t("Full Effort"),
-            "most_count": t("Most Effort"),
-            "some_count": t("Some Effort"),
-        }
-        totals = effort_df[_effort_cols].sum()
+        _counts = _answered["_level"].value_counts()
+        _effort_cols = [_LEVEL_COL[lvl] for lvl in ("all", "most", "some") if lvl in _counts.index]
         ecols = st.columns(len(_effort_cols))
         for i, col in enumerate(_effort_cols):
-            ecols[i].metric(_effort_labels.get(col, col), int(totals[col]))
+            lvl = next(k for k, v in _LEVEL_COL.items() if v == col)
+            ecols[i].metric(_effort_labels[col], int(_counts[lvl]))
 
-        if "date" in effort_df.columns:
+        if "Date" in _answered.columns:
+            daily = _answered.groupby(["Date", "_level"]).size().unstack(fill_value=0)
+            for lvl in ("all", "most", "some"):
+                if lvl not in daily.columns:
+                    daily[lvl] = 0
+            daily = daily.rename(columns=_LEVEL_COL).reset_index()
+            daily = daily.rename(columns={"Date": "date"}).sort_values("date")
+
             fig_effort = go.Figure()
             for i, col in enumerate(_effort_cols):
                 fig_effort.add_trace(go.Bar(
-                    x=effort_df["date"],
-                    y=effort_df[col],
+                    x=daily["date"],
+                    y=daily[col],
                     name=_effort_labels.get(col, col),
                     marker_color=CHART_COLORS[i % len(CHART_COLORS)],
                 ))
