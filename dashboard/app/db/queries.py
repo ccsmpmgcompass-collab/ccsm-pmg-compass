@@ -259,7 +259,13 @@ _WKI_BASE_COLS = ["week_end_date", "area", "zone", "district"]
 @st.cache_data(ttl=300)
 def get_weekly_ki() -> pd.DataFrame:
     """All WEEKLY_KI rows. week_end_date column normalised to string YYYY-MM-DD."""
-    df = read_tab("WEEKLY_KI", header_marker="week_end_date")
+    # CCSM_Agent5A.gs's a5a_writeWeeklyKI writes the header as
+    # Week_End_Date|Area|Zone|District (see CCSM_Agent5A.gs:739) — header_marker
+    # match is case-sensitive (sheets_client.py), so this must match that case
+    # exactly, not the lowercase name the rest of this module uses internally.
+    df = read_tab("WEEKLY_KI", header_marker="Week_End_Date")
+    df = df.rename(columns={"Week_End_Date": "week_end_date", "Area": "area",
+                             "Zone": "zone", "District": "district"})
     if df.empty or "week_end_date" not in df.columns:
         return pd.DataFrame(columns=_WKI_BASE_COLS)
     df["week_end_date"] = df["week_end_date"].astype(str).str.strip().str[:10]
