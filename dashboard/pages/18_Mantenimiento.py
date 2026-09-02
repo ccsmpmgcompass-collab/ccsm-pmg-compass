@@ -139,13 +139,13 @@ st.markdown(
 
 if hasattr(st, "segmented_control"):
     _sec = st.segmented_control(
-        "Maintenance section", _SECTIONS,
+        t("Maintenance section"), _SECTIONS, format_func=t,
         key="maint_section", default=_TAB_HEALTH,
         label_visibility="collapsed",
     )
 else:  # Streamlit < 1.40 fallback
     _sec = st.radio(
-        t("Maintenance section"), _SECTIONS,
+        t("Maintenance section"), _SECTIONS, format_func=t,
         horizontal=True, key="maint_section", label_visibility="collapsed",
     )
 _sec = _sec or _TAB_HEALTH

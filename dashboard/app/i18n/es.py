@@ -902,6 +902,8 @@ ES: dict[str, str] = {
         "semana más reciente en WEEKLY_KI. Color: verde ≥ 100%  ámbar ≥ 75%  rojo < 75%.",
     "Area Goal Customization": "Personalización de Metas por Área",
     "Area Expectation Settings": "Configuración de Expectativas por Área",
+    "Mission Goals": "Metas de la Misión",
+    "Goal Settings": "Configuración de Metas",
     "Area expectations saved.": "Expectativas de área guardadas.",
     "Save Area Expectations": "Guardar Expectativas de Área",
     "Add Area Override": "Agregar Excepción de Área",
@@ -1097,6 +1099,11 @@ ES: dict[str, str] = {
     "Quick Links": "Enlaces Rápidos",
     "Maintenance section": "Sección de mantenimiento",
     "Section": "Sección",
+    "✅ To-Do & Health": "✅ Tareas y Estado",
+    "📚 Knowledge Base": "📚 Base de Conocimiento",
+    "⚙️ Agent Settings": "⚙️ Configuración de Agentes",
+    "📝 Form Questions": "📝 Preguntas del Formulario",
+    "🔧 System": "🔧 Sistema",
     "Clear data cache": "Borrar la caché de datos",
     "Data cache cleared — pages will refetch on next load.":
         "Caché de datos borrada — las páginas volverán a consultar en la próxima carga.",
@@ -2110,6 +2117,8 @@ ES: dict[str, str] = {
 
     # ── 12_Traslados.py — Schedule/Roster Update tabs + checklist +
     # Emergency update (added 2026-08-06) ────────────────────────────────
+    "Schedule": "Calendario de Traslados",
+    "Roster Update": "Actualizar Nómina",
     "**Transfer day checklist**\n"
     "1. **Pull roster from IMOS** — wait for the success message.\n"
     "2. **Preview** — review New/Deactivating/Changed/Reactivating below; "

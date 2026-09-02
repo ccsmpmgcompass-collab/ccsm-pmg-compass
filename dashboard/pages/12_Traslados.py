@@ -462,7 +462,8 @@ st.markdown(
 )
 with st.container(key="traslados_section_picker"):
     _active_section = st.radio(
-        t("Section"), _TRASLADOS_SECTIONS, key="traslados_active_section",
+        t("Section"), _TRASLADOS_SECTIONS, format_func=t,
+        key="traslados_active_section",
         horizontal=True, label_visibility="collapsed",
     )
 

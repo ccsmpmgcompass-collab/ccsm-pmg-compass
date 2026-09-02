@@ -238,6 +238,7 @@ with st.container(key="goals_section_picker"):
     selected_section = st.radio(
         t("Section"),
         _GOALS_SECTIONS,
+        format_func=t,
         key="goals_active_section",
         horizontal=True,
         label_visibility="collapsed",
