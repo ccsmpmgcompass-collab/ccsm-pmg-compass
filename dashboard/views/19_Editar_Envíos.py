@@ -19,7 +19,7 @@ import streamlit as st
 
 from app.auth.auth import is_leadership, require_auth
 from app.components.design_system import (
-    inject_global_css, render_page_header, render_section_label, render_sidebar,
+    render_page_header, render_section_label,
     render_table,
 )
 from app.config.flavor_loader import METRIC_LABELS, flavor

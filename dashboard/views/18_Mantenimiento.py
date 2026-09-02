@@ -24,9 +24,7 @@ import streamlit as st
 from app.config.flavor_loader import flavor
 from app.auth.auth import is_leadership, require_auth
 from app.components.design_system import (
-    inject_global_css,
     render_page_header,
-    render_sidebar,
     render_section_label,
 )
 from app.db.queries import (

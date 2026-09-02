@@ -638,6 +638,9 @@ ES: dict[str, str] = {
     "Filter Notes": "Filtrar Notas",
     "Show Resolved Notes": "Mostrar Notas Resueltas",
     "New Note": "Nota Nueva",
+    # The expander under the "Nota Nueva" section label. Both read "Nota
+    # Nueva" until 2026-09-02; the expander's job is to name the ACTION.
+    "Write a note": "Escribir una nota",
     "Notes List": "Lista de Notas",
     "Search notes": "Buscar notas",
     "Search content…": "Buscar contenido…",

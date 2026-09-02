@@ -23,7 +23,7 @@ import streamlit as st
 
 from app.auth.auth import require_auth
 from app.components.design_system import (
-    inject_global_css, render_page_header, render_sidebar,
+    render_page_header,
     render_section_label, render_status_pill, render_kpi_row, render_table,
 )
 from app.components.scope_selector import ANY as SCOPE_ANY

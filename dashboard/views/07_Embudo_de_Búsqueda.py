@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 
 from app.auth.auth import require_auth
 from app.components.design_system import (
-    inject_global_css, render_page_header, render_sidebar, render_section_label,
+    render_page_header, render_section_label,
     render_table, render_kpi_row, PALETTE,
 )
 from app.db.drive_blob import save_dataframe_blob

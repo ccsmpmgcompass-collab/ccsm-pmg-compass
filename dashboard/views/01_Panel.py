@@ -13,7 +13,7 @@ import plotly.graph_objects as go
 
 from app.auth.auth import require_auth
 from app.components.design_system import (
-    inject_global_css, render_page_header, render_sidebar,
+    render_page_header,
     render_section_label, render_kpi_row, render_table,
 )
 from app.config.flavor_loader import flavor, METRIC_LABELS

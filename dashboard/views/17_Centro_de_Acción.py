@@ -16,9 +16,7 @@ import streamlit as st
 
 from app.auth.auth import require_auth, is_leadership
 from app.components.design_system import (
-    inject_global_css,
     render_page_header,
-    render_sidebar,
     render_section_label,
 )
 from app.db.action_center_queries import (

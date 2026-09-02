@@ -41,11 +41,12 @@ from app.breakdowns_engine import (
     render_lineage_marker,
 )
 from app.components.design_system import (
+    # Still needed even though the router owns the page's chrome now: the
+    # fragment below re-injects the CSS on its own reruns (see _scope_body).
     inject_global_css,
     render_companionship_card,
     render_page_header,
     render_section_label,
-    render_sidebar,
 )
 from app.components.scope_selector import render_scope_selectors
 from app.config.flavor_loader import flavor

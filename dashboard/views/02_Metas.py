@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from datetime import date, timedelta
 from app.auth.auth import require_auth
 from app.components.design_system import (
-    inject_global_css, render_page_header, render_sidebar, render_section_label,
+    render_page_header, render_section_label,
     render_table, render_companionship_card,
 )
 from app.config.flavor_loader import flavor, METRIC_LABELS, GOAL_LABELS, GOAL_TO_ACTUAL

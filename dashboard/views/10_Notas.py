@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 from app.auth.auth import require_auth
-from app.components.design_system import inject_global_css, render_page_header, render_sidebar, render_section_label
+from app.components.design_system import render_page_header, render_section_label
 from app.db.queries import (
     get_zones,
     get_areas_df,
@@ -118,7 +118,11 @@ render_section_label(t("New Note"))
 # SECTION 2: New Note Form
 # ══════════════════════════════════════════════════════════════════════════════
 
-with st.expander(t("New Note"), expanded=False):
+# The expander's own label is the ACTION, not the section name. Both used to
+# read "Nueva Nota", stacked one on the other, which is the duplicate chrome
+# the audit flagged (step 1.6) — the second line told the reader nothing the
+# first had not.
+with st.expander(t("Write a note"), expanded=False):
     with st.form("new_note_form", clear_on_submit=True):
         new_content = st.text_area(t("Note *"), height=120, placeholder=t("Enter note content..."))
         new_tags = st.text_input(
