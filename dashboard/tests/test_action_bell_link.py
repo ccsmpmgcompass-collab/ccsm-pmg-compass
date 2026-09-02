@@ -40,7 +40,12 @@ def test_bell_links_to_the_real_action_center_page(monkeypatch):
     monkeypatch.setattr(auth, "is_leadership", lambda email: True)
     monkeypatch.setattr(acq, "get_action_center_summary", lambda email: {"total": 3})
 
-    at = AppTest.from_function(_render)
+    # AppTest.from_function defaults to a 3-second script timeout, which this
+    # test spent most of on the first import of app.components.design_system.
+    # It passed alone and failed inside the full suite for no reason connected
+    # to the bell — a timing flake, not a signal. Every other AppTest in this
+    # suite already sets an explicit timeout for the same reason.
+    at = AppTest.from_function(_render, default_timeout=30)
     at.run()
     assert not at.exception, f"_render_action_bell raised: {at.exception}"
 

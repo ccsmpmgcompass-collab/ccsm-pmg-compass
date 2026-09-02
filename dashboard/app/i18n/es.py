@@ -329,6 +329,73 @@ ES: dict[str, str] = {
         "sobre las noches en que el área respondió. Un área que no envió "
         "nada no tiene puntaje, no un cero.",
     "Submission Compliance": "Cumplimiento de Envíos",
+
+    # ── Panel ⑨ Submission Compliance — the headline and its arithmetic ──────
+    # Added 2026-09-02. This whole section rendered in English in production
+    # (AUDIT-IA-2026-08-22.md, "Language"): all four tiles, both calendar
+    # legends, both captions and the combined line. It is also the most
+    # scrolled part of the page.
+    "How compliance is calculated": "Cómo se calcula el cumplimiento",
+    "Every submitting area owes one nightly form per day from the day this "
+    "mission started tracking. All-time compliance is the mission's total "
+    "forms divided by its total owed — a ratio of totals, not the average of "
+    "each area's own percentage, so a large area counts for more than a small "
+    "one.":
+        "Cada área que informa debe un formulario nocturno por día desde el "
+        "día en que esta misión comenzó a registrar. El cumplimiento histórico "
+        "es el total de formularios de la misión dividido por el total debido "
+        "— una razón de totales, no el promedio del porcentaje de cada área, "
+        "de modo que un área grande pesa más que una pequeña.",
+    "{submitted} of {possible} area-days since tracking began":
+        "{submitted} de {possible} días-área desde que comenzó el registro",
+    "Total Forms Submitted": "Formularios Enviados en Total",
+    "Days Tracked": "Días Registrados",
+    "Areas at 100%": "Áreas al 100%",
+
+    # Weekday abbreviations for the nightly calendar header. Through t()
+    # because strftime follows the server's locale, not the mission's.
+    "Mon": "Lun",
+    "Tue": "Mar",
+    "Wed": "Mié",
+    "Thu": "Jue",
+    "Fri": "Vie",
+    "Sat": "Sáb",
+    "Sun": "Dom",
+
+    "Upcoming": "Próximo",
+    "Before tracking started": "Antes del inicio del registro",
+    "{date} — upcoming": "{date} — próximo",
+    "{date} — before tracking started":
+        "{date} — antes del inicio del registro",
+    "{date} — {n}/{total} areas submitted ({pct}%)":
+        "{date} — {n}/{total} áreas enviaron ({pct}%)",
+    "Week ending {date} — {n}/{total} areas submitted ({pct}%)":
+        "Semana que termina el {date} — {n}/{total} áreas enviaron ({pct}%)",
+    "Each box is the share of the mission's {total} submitting areas that "
+    "turned in the nightly form that day. Window average: {avg}%.":
+        "Cada casilla es la proporción de las {total} áreas que informan de la "
+        "misión que entregaron el formulario nocturno ese día. Promedio del "
+        "período: {avg}%.",
+    "Each box is the share of the mission's {total} areas that submitted the "
+    "weekly form for that Mon–Sun week (credited by the day it arrived). "
+    "Window average: {avg}%.":
+        "Cada casilla es la proporción de las {total} áreas de la misión que "
+        "enviaron el formulario semanal de esa semana lun–dom (acreditado por "
+        "el día en que llegó). Promedio del período: {avg}%.",
+    "Combined submission compliance (nightly + weekly, averaged):":
+        "Cumplimiento de envíos combinado (nocturno + semanal, promediado):",
+    "— nightly {nightly}%, weekly {weekly}%":
+        "— nocturno {nightly}%, semanal {weekly}%",
+
+    # ── Panel ⑫ Compliance Rankings — the top 5 / bottom 5 fold ──────────────
+    "{n} more": "{n} más",
+    "See all {n} areas": "Ver las {n} áreas",
+    "See all {n} zones": "Ver las {n} zonas",
+    "Best {head} and last {tail} of {n} areas · {span}":
+        "Las {head} mejores y las {tail} últimas de {n} áreas · {span}",
+    "Last {head} and best {tail} of {n} areas · {span}":
+        "Las {head} últimas y las {tail} mejores de {n} áreas · {span}",
+
     "Nightly Submission Compliance — Daily %":
         "Cumplimiento de Envíos Nocturnos — % Diario",
     "No nightly compliance data yet.":
