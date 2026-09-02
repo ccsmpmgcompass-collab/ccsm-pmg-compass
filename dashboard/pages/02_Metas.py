@@ -959,7 +959,7 @@ if selected_section == "Area Goal Customization":
     st.caption(
         t("Set a weekly goal for every nightly and weekly form metric for this area. "
         "Saved goals appear on the Breakdowns page's area view and roll up into "
-        "zone-level goals on its zone view. Gate, Date, New, Pew, Renew, and Mate "
+        "zone-level goals on its zone view. The mission's Key Indicators "
         "additionally get a MONTHLY goal further down, stored separately.")
     )
 

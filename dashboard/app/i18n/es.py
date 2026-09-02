@@ -1029,12 +1029,12 @@ ES: dict[str, str] = {
         "100%. Se aplica en toda la misión, dondequiera que aparezca un distintivo REC.",
     "Set a weekly goal for every nightly and weekly form metric for this area. "
     "Saved goals appear on the Breakdowns page's area view and roll up into "
-    "zone-level goals on its zone view. Gate, Date, New, Pew, Renew, and Mate "
+    "zone-level goals on its zone view. The mission's Key Indicators "
     "additionally get a MONTHLY goal further down, stored separately.":
         "Fije una meta semanal para cada métrica de los formularios nocturno y semanal "
         "de esta área. Las metas guardadas aparecen en la vista de área de la página "
-        "Desgloses y se suman en metas por zona en su vista de zona. Gate, Date, New, "
-        "Pew, Renew y Mate además reciben una meta MENSUAL más abajo, guardada aparte.",
+        "Desgloses y se suman en metas por zona en su vista de zona. Los Indicadores "
+        "Clave de la misión además reciben una meta MENSUAL más abajo, guardada aparte.",
     "Weekly and monthly expectations by area category — the single source of "
     "truth for the Goals pages' \"/N\" fractions (including Monthly Goals' Gate "
     "and Mission Goals' totals), the Breakdowns trend chart's expectation lines "
