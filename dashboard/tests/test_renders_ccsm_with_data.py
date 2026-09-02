@@ -369,8 +369,8 @@ def test_traslados_roster_update_tab_renders():
     alone no longer touches the checklist box or the Pull/Preview/Apply/Sync
     UI — those only render when Roster Update is selected. Exercise it
     explicitly, same session_state convention as
-    test_goals_duplicate_metric_keys.py's goals_active_section."""
-    at = _run("views/12_Traslados.py", traslados_active_section="Roster Update")
+    test_goals_duplicate_metric_keys.py's goals_section_val."""
+    at = _run("views/12_Traslados.py", traslados_section_val="Roster Update")
     body = _text(at)
     assert len(body) > 400, f"Roster Update tab rendered almost nothing:\n{body}"
     assert "Lista de verificación del día de traslado" in body

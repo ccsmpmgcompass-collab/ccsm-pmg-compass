@@ -26,6 +26,7 @@ from app.auth.auth import is_leadership, require_auth
 from app.components.design_system import (
     render_page_header,
     render_section_label,
+    render_section_tabs,
 )
 from app.db.queries import (
     get_alltime_compliance,
@@ -95,7 +96,8 @@ def _set_config_value(key: str, value: str) -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 # Not st.tabs: the editors below call st.rerun() constantly (schedule pencils,
 # config saves, KB submits) and st.tabs snaps back to the first tab on every
-# rerun. A keyed segmented control keeps the selection sticky.
+# rerun. The shared control below is backed by a plain session value, so the
+# selection is sticky across all of them.
 
 _TAB_HEALTH = "✅ To-Do & Health"
 _TAB_KB = "📚 Knowledge Base"
@@ -104,44 +106,13 @@ _TAB_QUESTIONS = "📝 Form Questions"
 _TAB_SYSTEM = "🔧 System"
 _SECTIONS = [_TAB_HEALTH, _TAB_KB, _TAB_AGENTS, _TAB_QUESTIONS, _TAB_SYSTEM]
 
-# The switcher must read as real page tabs — at its default size it renders as
-# a row of small pills that's easy to miss entirely.
-st.markdown(
-    """
-    <style>
-    div[class*="st-key-maint_section"] button,
-    div[data-testid="stSegmentedControl"] button,
-    div[data-testid="stButtonGroup"] button {
-        font-size: 1rem !important;
-        padding: 0.6rem 1.2rem !important;
-        border-radius: 10px !important;
-    }
-    div[class*="st-key-maint_section"] button p {
-        font-size: 1rem !important;
-        font-weight: 600 !important;
-    }
-    div[class*="st-key-maint_section"] {
-        border-bottom: 1px solid rgba(255,255,255,0.10);
-        padding-bottom: 0.6rem;
-        margin-bottom: 0.5rem;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-if hasattr(st, "segmented_control"):
-    _sec = st.segmented_control(
-        t("Maintenance section"), _SECTIONS, format_func=t,
-        key="maint_section", default=_TAB_HEALTH,
-        label_visibility="collapsed",
-    )
-else:  # Streamlit < 1.40 fallback
-    _sec = st.radio(
-        t("Maintenance section"), _SECTIONS, format_func=t,
-        horizontal=True, key="maint_section", label_visibility="collapsed",
-    )
-_sec = _sec or _TAB_HEALTH
+# The one shared sub-navigation control (audit step 1.7). This page was the
+# app's fifth idiom: st.segmented_control with an st.radio fallback, plus a
+# CSS block enlarging it, because at its default size the segmented control
+# renders as a row of small pills that is easy to miss entirely -- and it
+# refuses to fill the row width at all (see render_section_tabs).
+_sec = render_section_tabs(
+    {s: t(s) for s in _SECTIONS}, key="maint_section_val", per_row=5)
 
 # Flash message from the previous run's save (st.rerun() drops normal output)
 _flash_msg = st.session_state.pop("_maint_flash", "")

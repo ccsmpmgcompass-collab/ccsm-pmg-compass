@@ -207,7 +207,7 @@ def test_monthly_goals_offers_every_key_indicator():
     """
     at = AppTest.from_file("views/02_Metas.py", default_timeout=90)
     at.session_state["pmg_lang"] = "es"
-    at.session_state["goals_active_section"] = "Area Goal Customization"
+    at.session_state["goals_section_val"] = "Area Goal Customization"
     at.run()
     assert not at.exception, at.exception
 
@@ -229,7 +229,7 @@ def test_goals_offers_ccsm_metrics_by_name():
     end-to-end proof that a QUESTIONS_CONFIG edit reaches a rendered widget."""
     at = AppTest.from_file("views/02_Metas.py", default_timeout=90)
     at.session_state["pmg_lang"] = "es"
-    at.session_state["goals_active_section"] = "Mission Goals"
+    at.session_state["goals_section_val"] = "Mission Goals"
     at.run()
     assert not at.exception, at.exception
 

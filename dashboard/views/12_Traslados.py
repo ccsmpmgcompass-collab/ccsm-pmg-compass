@@ -42,7 +42,8 @@ import streamlit as st
 
 from app.auth.auth import is_leadership, require_auth
 from app.components.design_system import (
-    render_kpi_row, render_page_header, render_section_label, render_table,
+    render_kpi_row, render_page_header, render_section_label,
+    render_section_tabs, render_table,
 )
 from app.config.flavor_loader import METRIC_LABELS, flavor
 from app.config.metric_catalog import non_numeric_metrics, nightly_metrics
@@ -430,36 +431,15 @@ def _render_roster_tab() -> None:
                 st.session_state.pop("tf_preview", None)
 
 
-# st.tabs() renders every tab's body on every single script run regardless of
-# which one is visually active (see views/02_Metas.py and
-# views/18_Mantenimiento.py for the same fix + full explanation). st.radio()
-# + CSS reads as a tab row but only runs the selected section's render
-# function per rerun.
-_TRASLADOS_SECTIONS = ["Schedule", "Roster Update"]
-st.markdown(
-    "<style>"
-    "div[class*='st-key-traslados_section_picker'] div[data-testid='stRadio'] > div{"
-    "flex-direction:row!important;gap:0.4rem!important;border-bottom:1px solid rgba(255,255,255,0.1);"
-    "padding-bottom:0!important;margin-bottom:1rem!important}"
-    "div[class*='st-key-traslados_section_picker'] div[data-testid='stRadio'] label{"
-    "background:transparent!important;border:none!important;border-radius:0!important;"
-    "padding:0.5rem 0.2rem!important;margin-right:1.2rem!important;cursor:pointer!important}"
-    "div[class*='st-key-traslados_section_picker'] div[data-testid='stRadio'] label > div:first-child{display:none!important}"
-    "div[class*='st-key-traslados_section_picker'] div[data-testid='stRadio'] label div[data-testid='stMarkdownContainer'] p{"
-    "font-size:0.95rem!important;font-weight:600!important;color:#9ca3af!important}"
-    "div[class*='st-key-traslados_section_picker'] div[data-testid='stRadio'] label:has(input:checked){"
-    "border-bottom:2px solid #a5b4fc!important}"
-    "div[class*='st-key-traslados_section_picker'] div[data-testid='stRadio'] label:has(input:checked) "
-    "div[data-testid='stMarkdownContainer'] p{color:#f4f4f8!important}"
-    "</style>",
-    unsafe_allow_html=True,
-)
-with st.container(key="traslados_section_picker"):
-    _active_section = st.radio(
-        t("Section"), _TRASLADOS_SECTIONS, format_func=t,
-        key="traslados_active_section",
-        horizontal=True, label_visibility="collapsed",
-    )
+# The app's one sub-navigation control (audit step 1.7). This was st.tabs(),
+# which renders every tab's body on every script run regardless of which is
+# visually active, then st.radio() repainted as a tab row by a block of CSS
+# copy-pasted verbatim from views/02_Metas.py. render_section_tabs' docstring
+# holds the full reasoning for all three forms; only the selected section's
+# render function runs, as before.
+_TRASLADOS_SECTIONS = {s: t(s) for s in ("Schedule", "Roster Update")}
+_active_section = render_section_tabs(
+    _TRASLADOS_SECTIONS, key="traslados_section_val", per_row=2)
 
 if _active_section == "Schedule":
     _render_schedule_tab()

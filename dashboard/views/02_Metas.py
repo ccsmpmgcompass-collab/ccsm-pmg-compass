@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from datetime import date, timedelta
 from app.auth.auth import require_auth
 from app.components.design_system import (
-    render_page_header, render_section_label,
+    render_page_header, render_section_label, render_section_tabs,
     render_table, render_companionship_card,
 )
 from app.config.flavor_loader import flavor, METRIC_LABELS, GOAL_LABELS, GOAL_TO_ACTUAL
@@ -194,51 +194,27 @@ def _current_month_weeks() -> float:
 
 
 # ── Main "tabs" ───────────────────────────────────────────────────────────────
-# st.tabs() has NO server-side memory of which tab is active — Streamlit's own
-# docs confirm ALL tab content renders on every rerun regardless, and the
-# selected tab is purely a client-side/browser concept with no `key` param to
-# persist it. So ANY widget-triggered rerun (e.g. clicking Mission Goals' FILL
-# ALL RECOMMENDED) can snap the visible tab back to the first one — and now
-# that BOTH Area Goals and Mission Goals have real interactive widgets (REC
-# pills, FILL ALL), "make the busy tab first" (the old workaround) can't cover
-# both at once. Fixed by replacing st.tabs() with st.radio(), which — unlike
-# st.tabs() — IS backed by st.session_state[key], so the selected section
-# reliably survives any rerun no matter which widget triggered it. Styled via
-# CSS below to read as a row of tab-like segments instead of default radio
-# buttons.
-_GOALS_SECTIONS = [
-    "Area Goal Customization", "Mission Goals", "Goal Settings",
-    "Area Expectation Settings",
-]
-if "goals_active_section" not in st.session_state:
-    st.session_state["goals_active_section"] = _GOALS_SECTIONS[0]
-st.markdown(
-    "<style>"
-    "div[class*='st-key-goals_section_picker'] div[data-testid='stRadio'] > div{"
-    "flex-direction:row!important;gap:0.4rem!important;border-bottom:1px solid rgba(255,255,255,0.1);"
-    "padding-bottom:0!important;margin-bottom:1rem!important}"
-    "div[class*='st-key-goals_section_picker'] div[data-testid='stRadio'] label{"
-    "background:transparent!important;border:none!important;border-radius:0!important;"
-    "padding:0.5rem 0.2rem!important;margin-right:1.2rem!important;cursor:pointer!important}"
-    "div[class*='st-key-goals_section_picker'] div[data-testid='stRadio'] label > div:first-child{display:none!important}"
-    "div[class*='st-key-goals_section_picker'] div[data-testid='stRadio'] label div[data-testid='stMarkdownContainer'] p{"
-    "font-size:0.95rem!important;font-weight:600!important;color:#9ca3af!important}"
-    "div[class*='st-key-goals_section_picker'] div[data-testid='stRadio'] label:has(input:checked){"
-    "border-bottom:2px solid #a5b4fc!important}"
-    "div[class*='st-key-goals_section_picker'] div[data-testid='stRadio'] label:has(input:checked) "
-    "div[data-testid='stMarkdownContainer'] p{color:#f4f4f8!important}"
-    "</style>",
-    unsafe_allow_html=True,
-)
-with st.container(key="goals_section_picker"):
-    selected_section = st.radio(
-        t("Section"),
-        _GOALS_SECTIONS,
-        format_func=t,
-        key="goals_active_section",
-        horizontal=True,
-        label_visibility="collapsed",
+# Was st.tabs(), then st.radio() repainted as tabs by a block of CSS, and now
+# the app's one shared sub-navigation control (audit step 1.7). Both earlier
+# forms are described in render_section_tabs' docstring, including why st.tabs
+# had to go: it has no server-side memory of which tab is active, so ANY
+# widget-triggered rerun — clicking Mission Goals' FILL ALL RECOMMENDED, say —
+# snapped the view back to the first tab, and with interactive widgets on two
+# tabs the old "put the busy tab first" workaround could not cover both.
+#
+# The CSS this replaces was copy-pasted verbatim into Traslados, and depended
+# on Streamlit's internal st-key- class names to repaint radio labels.
+#
+# The stored value is still the English id, so a mid-session language switch
+# cannot strand a Spanish string in the option list.
+_GOALS_SECTIONS = {
+    s: t(s) for s in (
+        "Area Goal Customization", "Mission Goals", "Goal Settings",
+        "Area Expectation Settings",
     )
+}
+selected_section = render_section_tabs(
+    _GOALS_SECTIONS, key="goals_section_val", per_row=4)
 
 # An UNSAVED Area Expectation Settings draft dies the moment the editor is
 # left (Carson, 2026-07-19: an added-but-not-saved indicator was still

@@ -24,7 +24,8 @@ import streamlit as st
 from app.auth.auth import require_auth
 from app.components.design_system import (
     render_page_header,
-    render_section_label, render_status_pill, render_kpi_row, render_table,
+    render_section_label, render_section_tabs, render_status_pill,
+    render_kpi_row, render_table,
 )
 from app.components.scope_selector import ANY as SCOPE_ANY
 from app.components.scope_selector import render_scope_selectors
@@ -1465,6 +1466,14 @@ def _render_scores_tab():
             "proportions are what matter.")
         )
 
+        # DELIBERATELY still st.tabs, and not the shared render_section_tabs.
+        # These three are not sub-navigation — they are three parts of ONE
+        # form. All three _render_weight_inputs calls must execute so that
+        # edited_effort/edited_skill/edited_ki all exist for the single save
+        # below, and st.tabs' "every body renders" behaviour — the thing that
+        # disqualified it everywhere else — is exactly what makes that work.
+        # Switching this to a control that runs only the visible section would
+        # save two of the three weight sets as empty.
         tab_effort, tab_skill, tab_ki = st.tabs(
             [t("Effort Metrics"), t("Skill Metrics"), t("Key Indicator Metrics")]
         )
@@ -2024,10 +2033,28 @@ def _render_analyze_tab():
                     )
 
 
-tab_scores, tab_daily, tab_analyze = st.tabs([t("Scores"), t("Daily Activity"), t("Analyze")])
-with tab_scores:
+# The app's one sub-navigation control (audit step 1.7). This was the last
+# st.tabs() used as page navigation, and the switch is not cosmetic: st.tabs
+# runs EVERY tab's body on every script run, so opening this page fired the
+# Daily Activity explorer's and the Analyze tab's queries whether or not
+# anyone looked at them. Now only the selected section runs.
+#
+# It also fixes the sticky-selection bug the other three pages each hit
+# independently: st.tabs keeps the active tab client-side with no key, so any
+# widget-triggered rerun inside a tab snapped the view back to Scores.
+_active_tab = render_section_tabs(
+    {
+        "scores":  t("Scores"),
+        "daily":   t("Daily Activity"),
+        "analyze": t("Analyze"),
+    },
+    key="scores_page_section",
+    per_row=3,
+)
+
+if _active_tab == "scores":
     _render_scores_tab()
-with tab_daily:
+elif _active_tab == "daily":
     _render_daily_tab()
-with tab_analyze:
+else:
     _render_analyze_tab()

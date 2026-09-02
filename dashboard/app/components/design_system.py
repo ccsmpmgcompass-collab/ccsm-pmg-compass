@@ -867,6 +867,111 @@ def render_section_label(text: str, *, emphasis: bool = False,
     )
 
 
+def render_section_tabs(options: dict, *, key: str, per_row: int = 5) -> str:
+    """The app's one sub-navigation control. Returns the active option's id.
+
+    ``options`` maps a STABLE id to its display label:
+
+        active = render_section_tabs(
+            {"scores": t("Scores"), "daily": t("Daily Activity")},
+            key="scores_section")
+
+    Ids are what gets stored, so a mid-session language switch cannot strand a
+    Spanish label in an English option list — the same stable-id discipline the
+    section-tab translations already run on.
+
+    WHY THIS SHAPE, AND NOT ONE OF THE FOUR IT REPLACED
+    The app had five sub-navigation idioms (AUDIT-IA-2026-08-22.md step 1.7).
+    They are not interchangeable:
+
+    * ``st.tabs`` renders EVERY tab's body on every script run — on this app
+      that means every hidden section's queries fire too — and has no
+      server-side memory of which tab is active, so any widget inside it snaps
+      the view back to the first tab on rerun. Metas, Traslados and
+      Mantenimiento each discovered this independently and each left it.
+    * ``st.segmented_control`` renders inside a flex row carrying
+      ``max-width: fit-content`` and refuses to fill the width: measured live,
+      a 780px row with two flex-grow:1 children whose buttons stayed 167px.
+    * ``st.radio`` + a CSS block that repaints radios as tabs works, but the
+      block was copy-pasted verbatim between Metas and Traslados, and it
+      depends on Streamlit's internal ``st-key-`` class names.
+
+    Real buttons in real columns fill their share by construction, only the
+    active section's body runs, and the state is a plain session value nothing
+    else owns.
+
+    ``key`` should not reuse a name that was previously a WIDGET key on the
+    same page. This is a plain session value, and Streamlit keeps a retired
+    widget's own cached state under its key; the Panel hit that collision when
+    it replaced an st.segmented_control and deliberately moved to a new name
+    (see its `panel_rank_scope_val` comment). Every page migrated here follows
+    that precedent with a fresh ``*_section_val`` name, as a precaution rather
+    than in response to an observed failure.
+
+    The selected state is drawn here rather than left to ``type="primary"``
+    because this design system sets ``background`` on ``.stButton > button``
+    with ``!important``, which flattens Streamlit's own primary styling — both
+    halves would render identically and nothing would look selected.
+    """
+    ids = list(options)
+    if not ids:
+        return ""
+    if key not in st.session_state or st.session_state[key] not in ids:
+        st.session_state[key] = ids[0]
+
+    active = st.session_state[key]
+
+    # Keyed on the ACTIVE button's own st-key- class, which is known before any
+    # button is drawn.
+    #
+    # The suffix is the option's INDEX, not its id. Streamlit turns a widget
+    # key into a CSS class by replacing everything non-alphanumeric with "-",
+    # so an id like "✅ To-Do & Health" or "Area Goal Customization" produced a
+    # selector that matched nothing and left every button looking unselected —
+    # measured live on Mantenimiento, five buttons, none highlighted. An index
+    # is CSS-safe by construction, and the id stays what gets stored.
+    active_idx = ids.index(active)
+    st.markdown(
+        f"""
+        <style>
+        div[class*="st-key-{key}__{active_idx}"] button {{
+            background: linear-gradient(135deg, rgba(99,102,241,0.28),
+                                        rgba(139,92,246,0.28)) !important;
+            border: 1px solid rgba(99,102,241,0.70) !important;
+            box-shadow: 0 0 14px rgba(99,102,241,0.28) !important;
+        }}
+        div[class*="st-key-{key}__{active_idx}"] button p {{
+            color: #ffffff !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Wrapped past `per_row` so a page with many sections gets a second row of
+    # readable buttons rather than one row of unreadably narrow ones.
+    for start in range(0, len(ids), per_row):
+        chunk = ids[start:start + per_row]
+        cols = st.columns(per_row)
+        for offset, (col, opt) in enumerate(zip(cols, chunk)):
+            with col:
+                if st.button(
+                    options[opt],
+                    key=f"{key}__{start + offset}",
+                    use_container_width=True,
+                    type=("primary" if st.session_state[key] == opt
+                          else "secondary"),
+                ):
+                    st.session_state[key] = opt
+                    # Rerun rather than falling through: `type=` for every
+                    # button was evaluated from the OLD value earlier in this
+                    # same run, so without this the body would switch while the
+                    # highlight stayed put until the next interaction.
+                    st.rerun()
+
+    return active
+
+
 def render_table(data, *, index: bool = False, align_first_left: bool = True) -> None:
     """Render a DataFrame or pandas Styler as a themed HTML table.
 

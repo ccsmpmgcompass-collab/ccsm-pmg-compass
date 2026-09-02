@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 from app.auth.auth import require_auth
 from app.components.design_system import (
     render_page_header,
-    render_section_label, render_kpi_row, render_table,
+    render_section_label, render_section_tabs, render_kpi_row, render_table,
 )
 from app.config.flavor_loader import flavor, METRIC_LABELS
 from app.config.metric_catalog import key_indicator_metrics, nightly_metrics
@@ -1506,89 +1506,21 @@ if _nightly_avg is not None and _weekly_avg is not None:
 # judgement of how well they teach. The rule still stands for performance.
 render_section_label(t("Compliance Rankings"))
 
-# The scope switch is two half-width buttons, as in the reference design.
-#
-# It was st.segmented_control, which cannot be made to do this. That widget
-# renders its buttons inside a flex row carrying `max-width: fit-content`, and
-# even with the row forced to 100% the buttons refuse to take the free space --
-# measured live: a 780px row with two flex-grow:1 children that stayed 167px
-# each. Rather than keep overriding emotion-generated internals that a Streamlit
-# upgrade would quietly change underneath us, this uses two real buttons in two
-# columns, which fill their halves by construction.
-#
-# The active half is type="primary", whose indigo fill is already the app's
-# accent -- the same distinction the reference draws between the selected and
-# unselected tab, achieved with no colour CSS of our own.
+# The scope switch. This block WAS the app's button-pair recipe, written here
+# first and then generalised into design_system.render_section_tabs for audit
+# step 1.7 -- so it now calls the component it fathered rather than keeping a
+# second copy of it. The reasoning that produced the shape (st.segmented_control
+# refusing to fill the row; the design system's !important background flattening
+# Streamlit's own primary styling) moved into that docstring with it.
 _SCOPE_AREA, _SCOPE_ZONE = "area", "zone"
-_scope_labels = {
-    _SCOPE_AREA: t("Area Rankings"),
-    _SCOPE_ZONE: t("Zone Rankings"),
-}
-
-# A plain session value, not a widget key: the two buttons write it, and nothing
-# else owns it. (The old segmented_control held its state under the same name as
-# a WIDGET key, so this deliberately uses a different one -- reusing it would
-# collide with whatever Streamlit still has cached for the retired widget.)
-if "panel_rank_scope_val" not in st.session_state:
-    st.session_state["panel_rank_scope_val"] = _SCOPE_AREA
-
-# type="primary" alone is not enough: the design system sets `background` on
-# `.stButton > button` with !important, which flattens Streamlit's own primary
-# styling, so both halves render identically and nothing looks selected. The
-# selected state is therefore drawn here, keyed on the active button's
-# st-key- class -- which the page knows before it draws either button.
-_rank_scope = st.session_state["panel_rank_scope_val"]
-
-st.markdown(
-    """
-    <style>
-    div[class*="st-key-panel_rank_tab_"] button {
-        min-height: 3.4rem !important;
-        border-radius: 10px !important;
-    }
-    div[class*="st-key-panel_rank_tab_"] button p {
-        font-size: 1.05rem !important; font-weight: 600 !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
+_rank_scope = render_section_tabs(
+    {
+        _SCOPE_AREA: t("Area Rankings"),
+        _SCOPE_ZONE: t("Zone Rankings"),
+    },
+    key="panel_rank_scope_val",
+    per_row=2,
 )
-# The app's own accent gradient, at the strength the section-label accent bars
-# use -- selected reads as "this one", not as a call to action.
-st.markdown(
-    f"""
-    <style>
-    div[class*="st-key-panel_rank_tab_{_rank_scope}"] button {{
-        background: linear-gradient(135deg, rgba(99,102,241,0.28),
-                                    rgba(139,92,246,0.28)) !important;
-        border: 1px solid rgba(99,102,241,0.70) !important;
-        box-shadow: 0 0 14px rgba(99,102,241,0.28) !important;
-    }}
-    div[class*="st-key-panel_rank_tab_{_rank_scope}"] button p {{
-        color: #ffffff !important;
-    }}
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-_sc_left, _sc_right = st.columns(2)
-for _col, _scope_key in ((_sc_left, _SCOPE_AREA), (_sc_right, _SCOPE_ZONE)):
-    with _col:
-        if st.button(
-            _scope_labels[_scope_key],
-            key=f"panel_rank_tab_{_scope_key}",
-            use_container_width=True,
-            type=("primary"
-                  if st.session_state["panel_rank_scope_val"] == _scope_key
-                  else "secondary"),
-        ):
-            st.session_state["panel_rank_scope_val"] = _scope_key
-            # Rerun rather than falling through: `type=` for both buttons was
-            # evaluated from the OLD value earlier in this same run, so without
-            # this the list below would switch while the highlight stayed on the
-            # other button until the next interaction.
-            st.rerun()
 
 st.write("")
 
