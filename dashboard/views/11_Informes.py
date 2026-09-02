@@ -25,6 +25,7 @@ from app.auth.auth import require_auth
 from app.components.design_system import (
     render_kpi_row, render_page_header, render_section_label, render_table,
 )
+from app.components.scope_selector import render_scope_selectors
 from app.config.flavor_loader import METRIC_LABELS, flavor
 from app.config.metric_catalog import (
     key_indicator_metrics, non_numeric_metrics, nightly_metrics,
@@ -63,28 +64,61 @@ if not _weeks:
     st.stop()
 
 _ALL = t("Whole mission")
-_zones = sorted({z for z in get_areas_df().get("Zone", pd.Series(dtype=str))
-                 .astype(str) if z and z != "nan"})
+_areas_all = get_areas_df()
 
-_c1, _c2 = st.columns(2)
-with _c1:
-    _week = st.selectbox(t("Week ending"), _weeks, format_func=fmt_date,
-                         key="rep_week")
-with _c2:
-    _zone = st.selectbox(t("Scope"), [_ALL] + _zones, key="rep_zone")
+# ── The shared scope bar ──────────────────────────────────────────────────────
+#
+# This page used to roll its own scope control: a single "Scope" selectbox
+# listing the mission and its zones. Desgloses and Puntajes were meanwhile
+# using render_scope_selectors — Zone → District → Area, cascading, plus a
+# find-by-missionary box. Same question, three coordinates, two different
+# controls (AUDIT-IA-2026-08-22.md, "Structural diagnosis"). Extending the
+# existing shared component rather than inventing a second one is the whole
+# point of audit step 1.4, and it is purely additive here: this page could
+# only ever be scoped to a zone, and now reaches a district or a single area.
+#
+# The selection is NOT shared with the other pages. Each keeps its own via a
+# distinct `prefix`, so opening Informes never inherits a filter you set on
+# Desgloses and forgot about.
+_week = st.selectbox(t("Week ending"), _weeks, format_func=fmt_date,
+                     key="rep_week")
+_zone, _district, _area, _level = render_scope_selectors(
+    _areas_all, prefix="rep",
+)
 
-_scoped = _zone != _ALL
+_scoped = _level is not None
 
 # Areas in scope, from the roster — so an area that reported nothing still
 # counts against compliance instead of vanishing from the denominator.
-_areas_df = get_areas_df()
-if _scoped and "Zone" in _areas_df.columns:
-    _areas_df = _areas_df[_areas_df["Zone"].astype(str) == _zone]
-_area_names = set(_areas_df.get("Area_Name", pd.Series(dtype=str)).astype(str))
+#
+# Membership is decided on MISSION_ORG's roster at every level, never on a
+# data row's own Zone column: those record where an area was when the row was
+# written, so an area that has since transferred would otherwise keep showing
+# up under its old zone (the same rule breakdowns_engine._scope_to_areas
+# documents).
+if _level == "area":
+    _scope_label = _area
+    _in_scope = _areas_all.get("Area_Name", pd.Series(dtype=str)).astype(str) == _area
+elif _level == "district":
+    _scope_label = _district
+    _in_scope = _areas_all.get("District", pd.Series(dtype=str)).astype(str) == _district
+elif _level == "zone":
+    _scope_label = _zone
+    _in_scope = _areas_all.get("Zone", pd.Series(dtype=str)).astype(str) == _zone
+else:
+    _scope_label = _ALL
+    _in_scope = None
+
+_areas_df = _areas_all if _in_scope is None else _areas_all[_in_scope]
+# Stripped once here, so every membership test below compares like with like —
+# SCORES and DAILY_LOG both carry names with stray whitespace.
+_area_names = set(
+    _areas_df.get("Area_Name", pd.Series(dtype=str)).astype(str).str.strip()
+)
 
 st.caption(
     t("Week ending {week} · {scope} · {areas} area(s)",
-      week=fmt_date(_week), scope=_zone if _scoped else _ALL,
+      week=fmt_date(_week), scope=_scope_label,
       areas=fmt_int(len(_area_names)))
 )
 
@@ -94,7 +128,7 @@ render_section_label(t("Key Indicators"))
 
 _ki_week = _ki[_ki["week_end_date"].astype(str).str[:10] == _week] if not _ki.empty else pd.DataFrame()
 if _scoped and not _ki_week.empty and "area" in _ki_week.columns:
-    _ki_week = _ki_week[_ki_week["area"].astype(str).isin(_area_names)]
+    _ki_week = _ki_week[_ki_week["area"].astype(str).str.strip().isin(_area_names)]
 
 _ki_metrics = key_indicator_metrics()
 
@@ -158,7 +192,7 @@ else:
         & (_daily["Date"].astype(str) <= _end.isoformat())
     ]
     if _scoped and "Area" in _d.columns:
-        _d = _d[_d["Area"].astype(str).isin(_area_names)]
+        _d = _d[_d["Area"].astype(str).str.strip().isin(_area_names)]
 
     _skip = non_numeric_metrics()
     _cols = [k for k in nightly_metrics() if k not in _skip and k in _d.columns]
@@ -182,8 +216,11 @@ else:
 render_section_label(t("Scores"))
 
 _sc = get_scores(_week)
-if _scoped and not _sc.empty and "Zone" in _sc.columns:
-    _sc = _sc[_sc["Zone"].astype(str) == _zone]
+# Filtered on the roster's area names, not on the score row's own Zone column.
+# That is what makes district and area scope work at all here, and it is the
+# same membership rule every other section on this page already used.
+if _scoped and not _sc.empty and "Area_Name" in _sc.columns:
+    _sc = _sc[_sc["Area_Name"].astype(str).str.strip().isin(_area_names)]
 
 if _sc.empty:
     st.info(
