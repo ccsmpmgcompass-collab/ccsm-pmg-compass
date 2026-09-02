@@ -42,8 +42,9 @@ from app.breakdowns_engine import (
 )
 from app.components.design_system import (
     # Still needed even though the router owns the page's chrome now: the
-    # fragment below re-injects the CSS on its own reruns (see _scope_body).
-    inject_global_css,
+    # fragment below re-injects the stylesheet on its own reruns (see
+    # _scope_body). The stylesheet only — the banner stays with the router.
+    inject_stylesheet,
     render_companionship_card,
     render_page_header,
     render_section_label,
@@ -58,6 +59,7 @@ from app.db.queries import (
     get_district_goals,
     get_lineage_visible_areas,
     get_live_snapshot,
+    get_mission_goals,
     get_notes,
     get_zone_goals,
 )
@@ -192,7 +194,13 @@ def _scope_body() -> None:
     # stayed inside that same now-unstyled fragment (only a real navigation to
     # another page and back re-runs the page module and restores it). This
     # call is the guard so the fragment can never end up CSS-less again.
-    inject_global_css()
+    #
+    # inject_stylesheet(), NOT inject_global_css(): the latter also draws the
+    # TEST MODE banner, so calling it here put a SECOND banner on this page.
+    # That is the audit's duplicate-chrome finding, and it outlived two
+    # attempts at a fix because the duplication was inside one function doing
+    # two jobs with different lifetimes.
+    inject_stylesheet()
 
     # Load areas once, exclude leadership rows (by Area_Name pattern — a
     # leadership flag can legitimately be TRUE on a real area row, see
@@ -213,16 +221,7 @@ def _scope_body() -> None:
 
     st.divider()
 
-    if _level is None:
-        st.info(
-            t("Pick a Zone, District or Area above — type in any box to search. "
-              "The deepest selection is what gets broken down: choose a zone for the "
-              "zone view, add a district to drill into it, add an area for the "
-              "single-area deep-dive.")
-        )
-        return
-
-    # ── Scope — all three levels share the group body ─────────────────────────
+    # ── Scope — all FOUR levels share the group body ──────────────────────────
     # A single area is just a group of one (Carson, 2026-07-17: "I want the area
     # and district pages to look exactly like the zone one"); the area level
     # adds a companionship card above the shared body and Notes below it. Every
@@ -256,11 +255,41 @@ def _scope_body() -> None:
         # the district's submitting areas (Carson, 2026-07-24 — wants the same
         # Key Indicators goal bars zone/area already have).
         group_goals = get_district_goals(selected_district)
-    else:
+    elif _level == "zone":
         scope_kind, scope_value = "Zone", selected_zone
         group_areas = _group_area_names(_areas_all, "Zone", selected_zone)
         snap_scope = _scope_to_areas(get_live_snapshot(), "Area", group_areas)
         group_goals = get_zone_goals(selected_zone)
+    else:
+        # ── Nothing picked: the whole mission ─────────────────────────────────
+        # This page used to open on an st.info telling you to choose a scope,
+        # and nothing else — a blank first screen on a page that had a perfectly
+        # good answer available (AUDIT-IA-2026-08-22.md step 1.5: every page
+        # should show something on arrival).
+        #
+        # Mission is the honest superset of the three scopes below it, and the
+        # group body needs nothing new to draw it: `scope_kind` only feeds
+        # labels and an `== "Area"` test in breakdowns_engine, `group_areas` is
+        # simply "all of them", and get_mission_goals() already sums per-area
+        # goals mission-wide exactly as get_zone_goals does for one zone.
+        scope_kind = "Mission"
+        scope_value = get_config_value("MISSION_NAME", flavor.display_name)
+        # Guarded exactly as _group_area_names guards the other three levels:
+        # MISSION_ORG can come back empty, and the early return this branch
+        # replaced used to hide that. An empty set falls through to the "no
+        # active areas" notice below rather than raising a KeyError.
+        group_areas = (
+            set(_areas_all["Area_Name"].astype(str).str.strip())
+            if not _areas_all.empty and "Area_Name" in _areas_all.columns
+            else set()
+        )
+        snap_scope = _scope_to_areas(get_live_snapshot(), "Area", group_areas)
+        group_goals = get_mission_goals()
+        st.caption(
+            t("Showing the whole mission. Pick a Zone, District or Area above "
+              "to drill in — type in any box to search, and the deepest "
+              "selection is what gets broken down.")
+        )
 
     # The companionship card sits ABOVE the data guards on purpose: an area with
     # no submissions yet should still show who is serving there.

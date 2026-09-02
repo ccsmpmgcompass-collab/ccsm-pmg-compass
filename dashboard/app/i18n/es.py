@@ -328,6 +328,12 @@ ES: dict[str, str] = {
         "{n} áreas activas · Todo=3, La mayor parte=2, Algo=1, promediado "
         "sobre las noches en que el área respondió. Un área que no envió "
         "nada no tiene puntaje, no un cero.",
+    # Panel ⑥ — shown only while the 8-week trend has fewer than 8 weeks.
+    "Building history — {n} of {total} complete weeks so far. The chart fills "
+    "in as each week closes.":
+        "Construyendo el historial — {n} de {total} semanas completas hasta "
+        "ahora. El gráfico se completa a medida que cierra cada semana.",
+
     "Submission Compliance": "Cumplimiento de Envíos",
 
     # ── Panel ⑨ Submission Compliance — the headline and its arithmetic ──────
@@ -439,14 +445,15 @@ ES: dict[str, str] = {
     "Breakdowns": "Desgloses",
     "{mission} — Zone, District & Area Performance":
         "{mission} — Desempeño por Zona, Distrito y Área",
-    "Pick a Zone, District or Area above — type in any box to search. "
-    "The deepest selection is what gets broken down: choose a zone for the "
-    "zone view, add a district to drill into it, add an area for the "
-    "single-area deep-dive.":
-        "Elija una Zona, Distrito o Área arriba — escriba en cualquier casilla "
-        "para buscar. Se desglosa la selección más específica: elija una zona "
-        "para la vista de zona, agregue un distrito para profundizar en él, o "
-        "agregue un área para el análisis detallado de esa área.",
+    # Replaced the blank-page prompt on 2026-09-02: the page now opens on the
+    # whole mission and this line says so, rather than asking for a choice
+    # before showing anything (audit step 1.5).
+    "Showing the whole mission. Pick a Zone, District or Area above to drill "
+    "in — type in any box to search, and the deepest selection is what gets "
+    "broken down.":
+        "Mostrando toda la misión. Elija una Zona, Distrito o Área arriba para "
+        "profundizar — escriba en cualquier casilla para buscar; se desglosa la "
+        "selección más específica.",
     "Companionship": "Compañerismo",
     "Companionship info not found in MISSION_ORG.":
         "No se encontró información del compañerismo en MISSION_ORG.",

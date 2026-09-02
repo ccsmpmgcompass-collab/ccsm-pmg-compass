@@ -452,10 +452,28 @@ def _register_plotly_template() -> None:
     pio.templates.default = "pmg_dark"
 
 
-def inject_global_css() -> None:
-    """Inject design system CSS. Call once per page after require_auth()."""
+def inject_stylesheet() -> None:
+    """The stylesheet and the Plotly template, and nothing else.
+
+    Split out of inject_global_css on 2026-09-02. The two things that function
+    did — style the page, and announce TEST MODE — have different lifetimes: a
+    fragment rerun loses the <style> block and must re-add it, but re-adding
+    the banner draws a SECOND one. That was the audit's double-banner finding
+    (step 1.6), and it survived the navigation rebuild because Desgloses'
+    fragment legitimately needs the CSS back.
+    """
     st.markdown(_CSS, unsafe_allow_html=True)
     _register_plotly_template()
+
+
+def inject_global_css() -> None:
+    """Page chrome: the stylesheet plus the TEST MODE banner if it applies.
+
+    Called exactly once per script run, by Home.py's navigation router. A page
+    that needs the stylesheet back after a fragment rerun wants
+    inject_stylesheet() instead — this one would duplicate the banner.
+    """
+    inject_stylesheet()
     try:
         from app.db.queries import get_config_value
         if get_config_value("TEST_MODE", "FALSE").upper() == "TRUE":

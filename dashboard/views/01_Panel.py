@@ -942,6 +942,22 @@ else:
         else:
             st.info(_EMPTY_MSG)
 
+    # "8-Week Trend" over three points is not a lie, but it does invite the
+    # reader to wonder what happened to the other five weeks. Say it: the
+    # mission started tracking in August, and the chart fills in as the weeks
+    # arrive (audit step 1.5 — a thin section should state that it is thin
+    # rather than look broken). Silent once there are eight.
+    _TREND_WEEKS = 8
+    _weeks_plotted = max(
+        len(nightly_chart) if _has_nightly_trend else 0,
+        len(ki_chart) if _has_ki_trend else 0,
+    )
+    if 0 < _weeks_plotted < _TREND_WEEKS:
+        st.caption(t(
+            "Building history — {n} of {total} complete weeks so far. The "
+            "chart fills in as each week closes.",
+            n=fmt_int(_weeks_plotted), total=fmt_int(_TREND_WEEKS)))
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # THE NIGHTLY WINDOW — shared by sections 5 and 6
 # ═══════════════════════════════════════════════════════════════════════════════
