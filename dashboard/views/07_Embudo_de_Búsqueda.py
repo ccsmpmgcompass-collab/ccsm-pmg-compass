@@ -30,11 +30,10 @@ from app.analytics.finding_funnel import (
 from app.i18n import t
 from app.i18n.formats import NA, fmt_date_range, fmt_day_month, fmt_int, fmt_percent
 
-st.set_page_config(page_title="CCSM · Finding Funnel — PMG Compass", page_icon="", layout="wide")
-
+# Page chrome (set_page_config / inject_global_css / render_sidebar) is
+# owned by Home.py's st.navigation router since 2026-09-02 — the router and
+# this page share one script run, so calling them here would render twice.
 user = require_auth()
-inject_global_css()
-render_sidebar(user)
 
 render_page_header(
     t("Finding Funnel"),

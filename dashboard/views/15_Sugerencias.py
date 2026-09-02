@@ -11,15 +11,10 @@ from app.components.design_system import (
 from app.db.queries import get_suggestions, set_suggestion_status, get_config_value
 from app.i18n import t
 
-st.set_page_config(
-    page_title="CCSM · Suggestions — PMG Compass",
-    page_icon="",
-    layout="wide",
-)
-
+# Page chrome (set_page_config / inject_global_css / render_sidebar) is
+# owned by Home.py's st.navigation router since 2026-09-02 — the router and
+# this page share one script run, so calling them here would render twice.
 user = require_auth()
-inject_global_css()
-render_sidebar(user)
 
 current_email = user["email"]
 

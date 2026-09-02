@@ -1,7 +1,7 @@
 """
 breakdowns_engine.py
 ────────────────────────────────────────────────────────────────────────────────
-Rendering engine for pages/04_Desgloses.py: the metric catalogue, cached data
+Rendering engine for views/04_Desgloses.py: the metric catalogue, cached data
 loaders, chart helpers, and the shared group-breakdown / teaching-pipeline /
 compliance-calendar renderers. Extracted from the page 2026-07-18 so the page
 file is just scope-selector dispatch + notes.

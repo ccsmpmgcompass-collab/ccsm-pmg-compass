@@ -3,7 +3,7 @@
 Two separate defects, both in the Action Center:
 
 1. The bell badge counts summary["maintenance_issues"] into its total (see
-   get_action_center_summary), but pages/17_Centro_de_Acción.py's "Needs Your
+   get_action_center_summary), but views/17_Centro_de_Acción.py's "Needs Your
    Action" section only checked suggestions/follow-ups/tasks — never
    maintenance_issues. A leadership user could see the bell say "1", click
    through, and land on "Nothing needs your action right now," with the one
@@ -47,7 +47,7 @@ def _run_action_center(maintenance_issues):
     auth.is_leadership = lambda email: True
     acq.get_action_center_summary = lambda email: _stub_summary(maintenance_issues)
 
-    at = AppTest.from_file("pages/17_Centro_de_Acción.py", default_timeout=60)
+    at = AppTest.from_file("views/17_Centro_de_Acción.py", default_timeout=60)
     at.run()
     assert not at.exception, f"Action Center raised: {at.exception}"
     return at

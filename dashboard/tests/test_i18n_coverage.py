@@ -22,12 +22,15 @@ from app.i18n.es import ES
 from tools.extract_ui_strings import extract, extract_unwrapped
 
 GROUPS = {
-    "task9":  ["Home.py", "pages/01_Panel.py", "pages/04_Desgloses.py"],
-    "task10": ["pages/07_Embudo_de_Búsqueda.py", "pages/10_Notas.py",
-               "pages/15_Sugerencias.py", "pages/17_Centro_de_Acción.py"],
-    "task11": ["pages/06_Puntajes.py", "app/components/design_system.py",
+    # Home.py is the st.navigation router since 2026-09-02 and carries no UI
+    # copy of its own; the assistant page it used to be is 00_Asistente.py.
+    "task9":  ["views/00_Asistente.py", "views/01_Panel.py",
+               "views/04_Desgloses.py"],
+    "task10": ["views/07_Embudo_de_Búsqueda.py", "views/10_Notas.py",
+               "views/15_Sugerencias.py", "views/17_Centro_de_Acción.py"],
+    "task11": ["views/06_Puntajes.py", "app/components/design_system.py",
                "app/components/scope_selector.py"],
-    "task12": ["pages/02_Metas.py", "pages/18_Mantenimiento.py"],
+    "task12": ["views/02_Metas.py", "views/18_Mantenimiento.py"],
     "leftovers": ["app/breakdowns_engine.py", "app/auth/auth.py"],
     # Query modules render their own st.error/st.warning on failure, so their
     # messages are user-facing even though they live in the data layer.

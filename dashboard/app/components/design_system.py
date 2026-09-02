@@ -387,8 +387,14 @@ hr {
     color: #f4f4f8 !important;
 }
 [data-testid="uploadedFileData"] * { color: #f4f4f8 !important; }
+/* Sidebar page labels are written out in Home.py's st.navigation now, so they
+   arrive already cased correctly. This used to be `text-transform: capitalize`,
+   which was there to tidy up labels Streamlit derived from filenames — and it
+   title-cased every word, turning "Embudo de Búsqueda" into "Embudo De
+   Búsqueda" and "Centro de Acción" into "Centro De Acción". Spanish does not
+   capitalise its prepositions; leave the declared label alone. */
 [data-testid="stSidebarNavLink"] span {
-    text-transform: capitalize !important;
+    text-transform: none !important;
 }
 </style>
 """
@@ -831,7 +837,7 @@ def render_companionship_card(area_row, zone: str = "", district: str = "") -> N
     `area_row` is one MISSION_ORG row (a pandas Series — e.g.
     `get_submitting_areas()` filtered to the selected Area_Name, `.iloc[0]`).
 
-    Sole implementation of this card: pages/02_Metas.py and the Breakdowns
+    Sole implementation of this card: views/02_Metas.py and the Breakdowns
     page's area view both call it. (The old 05_Area_Breakdown.py carried a
     duplicate inline copy of this markup; combining the breakdown pages
     retired that copy, so there is no longer a second version to keep in sync.)
@@ -956,7 +962,7 @@ def _render_action_bell(user: dict) -> None:
         if total > 0 else ""
     )
     # B5 (AUDIT-IA-2026-08-22.md): this pointed at /Action_Center, which does
-    # not exist — the real page is pages/17_Centro_de_Acción.py, so Streamlit
+    # not exist — the real page is views/17_Centro_de_Acción.py, so Streamlit
     # silently served Home instead of the Action Center on every click.
     # Streamlit derives a page's URL from its filename stem verbatim
     # (source_util.page_icon_and_name / navigation/page.py's inferred_name) —

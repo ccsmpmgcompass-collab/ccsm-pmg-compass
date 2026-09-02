@@ -42,7 +42,7 @@ def _questions_config_with_duplicates(monkeypatch):
 
 
 def _run_mission_goals(lang="en"):
-    at = AppTest.from_file("pages/02_Metas.py", default_timeout=90)
+    at = AppTest.from_file("views/02_Metas.py", default_timeout=90)
     at.session_state["pmg_lang"] = lang
     at.session_state["goals_active_section"] = "Mission Goals"
     at.run()

@@ -1711,7 +1711,7 @@ def get_mission_weekly_expectation_total(metric: str) -> int:
     categories included, monthly indicators converted to a weekly-
     equivalent), summed. Used as the fixed denominator on Mission Goals'
     fractions — the caller scales this weekly figure up to a monthly one
-    (see _weeks_in_month in pages/02_Metas.py, dynamic per calendar month).
+    (see _weeks_in_month in views/02_Metas.py, dynamic per calendar month).
     """
     areas = get_submitting_areas()
     if areas.empty or "Area_Name" not in areas.columns:
@@ -1798,7 +1798,7 @@ def get_mission_monthly_expectation_total(metric: str, month_start: str) -> int:
 #
 # Backs get_area_weekly_expectation/get_mission_weekly_expectation_total
 # above (nm_lessons/new_found/mmm_sent) AND the Effort score on
-# pages/06_Puntajes.py (nm_lessons/new_found/mmm_sent/pew/gate) — ONE table
+# views/06_Puntajes.py (nm_lessons/new_found/mmm_sent/pew/gate) — ONE table
 # for both, editable from the Goals page's "Area Expectation Settings" tab
 # (Carson, 2026-07-18) via save_area_type_expectations() below.
 #
@@ -2120,7 +2120,7 @@ def save_area_type_expectations(indicators: list[dict]) -> str | None:
     categories' indicators PLUS any custom categories/indicators — back to
     the sheet in one batched overwrite_tab() call, the same clear-and-
     rewrite-cleanly convention SCORE_CONFIG uses (see _rewrite_score_config
-    in pages/06_Puntajes.py), appropriate here too since this is a small,
+    in views/06_Puntajes.py), appropriate here too since this is a small,
     whole-table config tab, not append-only data.
 
     `indicators` is an ORDERED list of {"category":, "metric":, "cadence":,
@@ -2158,7 +2158,7 @@ def save_area_type_expectations(indicators: list[dict]) -> str | None:
     # for up to 5 minutes. (get_area_language_group needs no clear: it
     # reads the MISSION_ORG roster, not this tab. The Scores page's cached
     # Effort scores re-key themselves off these rows via _exp_fingerprint
-    # in pages/06_Puntajes.py rather than needing a clear from here.)
+    # in views/06_Puntajes.py rather than needing a clear from here.)
     get_mission_weekly_expectation_total.clear()
     get_mission_monthly_expectation_total.clear()
     return None
@@ -2437,7 +2437,7 @@ def _mp_weeks_in_month(day: date) -> float:
     """
     Number of 7-day weeks in the calendar month containing `day`, e.g.
     31/7 ≈ 4.43 for a 31-day month, 4.0 for a 28-day February. Same
-    monthly-to-weekly conversion pages/02_Metas.py uses for its Goal
+    monthly-to-weekly conversion views/02_Metas.py uses for its Goal
     fractions (_weeks_in_month there).
     """
     month_start = day.replace(day=1)

@@ -46,15 +46,10 @@ from app.i18n import t
 from app.i18n.formats import fmt_date, fmt_day_month, fmt_int
 from app.utils.area_helpers import mission_today
 
-st.set_page_config(
-    page_title="CCSM · Maintenance — PMG Compass",
-    page_icon="",
-    layout="wide",
-)
-
+# Page chrome (set_page_config / inject_global_css / render_sidebar) is
+# owned by Home.py's st.navigation router since 2026-09-02 — the router and
+# this page share one script run, so calling them here would render twice.
 user = require_auth()
-inject_global_css()
-render_sidebar(user)
 
 render_page_header(
     t("Maintenance"),
@@ -1023,7 +1018,7 @@ elif _sec == _TAB_SYSTEM:
     if _wf_link:
         _l3.link_button(t("Weekly form ↗"), _wf_link, use_container_width=True)
     st.page_link(
-        "pages/06_Puntajes.py",
+        "views/06_Puntajes.py",
         label="Effectiveness score weights are edited on the **Scores** page →",
     )
 

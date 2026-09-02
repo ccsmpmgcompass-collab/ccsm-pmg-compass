@@ -44,7 +44,7 @@ import pandas as pd
 
 # ── The columns the app actually reads ────────────────────────────────────────
 # Every entry here is resolved somewhere in app/analytics/finding_funnel.py or
-# pages/07_Embudo_de_Búsqueda.py. Names are post-normalisation (see
+# views/07_Embudo_de_Búsqueda.py. Names are post-normalisation (see
 # normalize_headers) and are matched by resolve_col()'s substring rule, so
 # `latest_zone_name` satisfies a lookup for `latest_zone`.
 GROUPING_COLUMNS = (

@@ -13,36 +13,52 @@ already the mission's shared vocabulary are left as they are.
 # Kept as a named constant so the key matches the extractor byte for byte: it
 # records strings stripped, and this block reaches t() with its surrounding
 # newlines intact.
-_APP_GUIDE_EN = """**Overview & assistant**
-- **Home** — Mission Assistant. Ask natural-language questions about mission data, procedures, or performance.
-- **Dashboard** — Mission pulse: weekly KPIs, submission compliance (with per-area detail), zone summary, and trend charts.
-- **Goals** — Every area's progress against weekly and transfer goals, color-coded.
+#
+# Rewritten 2026-09-02 with the navigation rebuild. The previous text described
+# a Provo-era app: it named Dashboard, Goals, Breakdowns, Scores and Finding
+# Funnel — five pages that had already been renamed to Spanish — and listed
+# nine of the app's fourteen pages. It now mirrors the sidebar's own four
+# groups, so the guide and the navigation cannot drift apart again.
+_APP_GUIDE_EN = """**VER — what happened**
+- **Panel** — The mission right now: nightly activity, conversion rates, Key Indicators, zone comparison, 8-week trend, effort and submission compliance.
+- **Desgloses** — The same picture cut by zone, district or area, with period comparisons and the teaching pipeline.
+- **Informes** — One chosen week, at any scope, with a CSV export.
 
-**Drill down (mission → zone → district → area)**
-- **Breakdowns** — Zone, district, or area in one place: pick a zone for period comparisons and pipeline data, add a district to drill in, or pick an area for the single-area view (compliance calendar, anomaly flags, notes).
+**ANALIZAR — why**
+- **Puntajes** — Weekly Effort / Skill / KI / Effectiveness scores per area, plus a day-by-day nightly-form explorer and anomaly detection with next-week projections.
+- **Embudo de Búsqueda** — The person-level finding-to-baptism funnel built from the Tableau exports.
+- **Referencias** — Referrals received against referrals asked for, by area.
 
-**Performance & analysis**
-- **Scores** — Weekly composite Effort / Skill / KI / Effectiveness scores per area, with a configurable weight editor. Also has Daily Activity (day-by-day nightly-form explorer) and Analyze (anomaly detection + next-week projections) tabs.
-- **Finding Funnel** — Upload Tableau exports to see the finding-to-baptism pipeline and area rankings.
+**DIRIGIR — decide and act**
+- **Metas** — Every area's progress against weekly and transfer goals, color-coded.
+- **Centro de Acción** — Everything waiting on you: suggestions, follow-ups, tasks and maintenance issues.
+- **Notas** — Area notes with tags, search and email follow-up reminders.
 
-**Operations**
-- **Notes** — Area notes with tags, search, and email follow-up reminders.
-- **Maintenance** — System health, weekly to-do, knowledge base, agent settings, and form-question configuration."""
+**OPERAR — run the system**
+- **Traslados** — Transfer roster and schedule.
+- **Editar Envíos** — Correct a submitted nightly or weekly report.
+- **Sugerencias** — Suggestions submitted by missionaries.
+- **Mantenimiento** — System health, weekly to-do, knowledge base, agent settings and form-question configuration."""
 
-_APP_GUIDE_ES = """**Vista general y asistente**
-- **Inicio** — Asistente de la Misión. Haga preguntas en lenguaje natural sobre los datos, procedimientos o desempeño de la misión.
-- **Panel** — El pulso de la misión: indicadores semanales, cumplimiento de envíos (con detalle por área), resumen por zona y gráficos de tendencia.
+_APP_GUIDE_ES = """**VER — qué pasó**
+- **Panel** — La misión en este momento: actividad nocturna, tasas de conversión, Indicadores Clave, comparación por zona, tendencia de 8 semanas, esfuerzo y cumplimiento de envíos.
+- **Desgloses** — El mismo panorama cortado por zona, distrito o área, con comparaciones de períodos y el proceso de enseñanza.
+- **Informes** — Una semana determinada, en cualquier alcance, con exportación a CSV.
+
+**ANALIZAR — por qué**
+- **Puntajes** — Puntajes semanales de Esfuerzo / Habilidad / IC / Efectividad por área, más un explorador día por día del formulario nocturno y detección de anomalías con proyecciones para la próxima semana.
+- **Embudo de Búsqueda** — El proceso desde el hallazgo hasta el bautismo, persona por persona, construido con las exportaciones de Tableau.
+- **Referencias** — Referencias recibidas frente a referencias solicitadas, por área.
+
+**DIRIGIR — decidir y actuar**
 - **Metas** — El progreso de cada área frente a las metas semanales y de traslado, con códigos de color.
-
-**Análisis detallado (misión → zona → distrito → área)**
-- **Desgloses** — Zona, distrito o área en un solo lugar: elija una zona para comparar períodos y ver el proceso, agregue un distrito para profundizar, o elija un área para la vista individual (calendario de cumplimiento, alertas de anomalías, notas).
-
-**Desempeño y análisis**
-- **Puntajes** — Puntajes semanales combinados de Esfuerzo / Habilidad / IC / Efectividad por área, con un editor de pesos configurable. También incluye las pestañas Actividad Diaria (explorador día por día del formulario nocturno) y Analizar (detección de anomalías + proyecciones para la próxima semana).
-- **Embudo de Búsqueda** — Cargue las exportaciones de Tableau para ver el proceso desde el hallazgo hasta el bautismo y la clasificación de áreas.
-
-**Operaciones**
+- **Centro de Acción** — Todo lo que espera por usted: sugerencias, seguimientos, tareas y problemas de mantenimiento.
 - **Notas** — Notas por área con etiquetas, búsqueda y recordatorios de seguimiento por correo.
+
+**OPERAR — operar el sistema**
+- **Traslados** — Lista y calendario de traslados.
+- **Editar Envíos** — Corregir un informe nocturno o semanal ya enviado.
+- **Sugerencias** — Sugerencias enviadas por los misioneros.
 - **Mantenimiento** — Estado del sistema, tareas semanales, base de conocimiento, configuración de agentes y configuración de preguntas del formulario."""
 
 ES: dict[str, str] = {

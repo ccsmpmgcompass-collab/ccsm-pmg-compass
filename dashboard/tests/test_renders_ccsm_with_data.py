@@ -264,7 +264,7 @@ def _clear_query_caches() -> None:
     [[feedback-cache-data-pollution-across-pytest-tests]].
 
     Global, not per-module: the caches that actually broke these tests are
-    defined in the PAGE modules (pages/06_Puntajes.py::_load_daily), not in
+    defined in the PAGE modules (views/06_Puntajes.py::_load_daily), not in
     app.db.queries. Another test file renders that page against an empty
     DAILY_LOG, `_load_daily(14)` memoises the empty frame, and Daily Activity
     then renders its "no metrics" branch here — every vocabulary assertion
@@ -327,14 +327,14 @@ PROVO_LABELS = [
 ]
 
 PAGES = [
-    "pages/01_Panel.py",
-    "pages/06_Puntajes.py",
+    "views/01_Panel.py",
+    "views/06_Puntajes.py",
     # The Phase 4 pages. Included here rather than only in the "does it render"
     # audit, because those run on empty fixtures and every one of these pages
     # has an empty-state branch that would swallow a vocabulary mistake whole.
-    "pages/11_Informes.py",
-    "pages/12_Traslados.py",
-    "pages/14_Referencias.py",
+    "views/11_Informes.py",
+    "views/12_Traslados.py",
+    "views/14_Referencias.py",
 ]
 
 
@@ -365,12 +365,12 @@ def test_page_is_not_empty(page):
 
 def test_traslados_roster_update_tab_renders():
     """The Schedule/Roster Update tab split (2026-08-06) made Schedule the
-    default radio selection, so test_page_is_not_empty[pages/12_Traslados.py]
+    default radio selection, so test_page_is_not_empty[views/12_Traslados.py]
     alone no longer touches the checklist box or the Pull/Preview/Apply/Sync
     UI — those only render when Roster Update is selected. Exercise it
     explicitly, same session_state convention as
     test_goals_duplicate_metric_keys.py's goals_active_section."""
-    at = _run("pages/12_Traslados.py", traslados_active_section="Roster Update")
+    at = _run("views/12_Traslados.py", traslados_active_section="Roster Update")
     body = _text(at)
     assert len(body) > 400, f"Roster Update tab rendered almost nothing:\n{body}"
     assert "Lista de verificación del día de traslado" in body
@@ -411,7 +411,7 @@ _KI_PANEL_LABELS = [
 def test_dashboard_shows_ccsms_key_indicators():
     """The KI row was a fixed Pew / Date / Gate / Renew, all reading 0. Every
     one of CCSM's seven must be named instead."""
-    body = _text(_run("pages/01_Panel.py"))
+    body = _text(_run("views/01_Panel.py"))
     missing = [label for label in _KI_PANEL_LABELS if label not in body]
     assert missing == [], f"Key Indicators absent from the Dashboard: {missing}"
 
@@ -420,7 +420,7 @@ def test_dashboard_ki_tiles_drop_the_forms_real_suffix():
     """"(Real)" distinguishes a form column from its "(Meta)" twin. A tile has
     no twin, and on the in-progress row the values come from the nightly form,
     so the suffix would be wrong as well as noisy."""
-    body = _text(_run("pages/01_Panel.py"))
+    body = _text(_run("views/01_Panel.py"))
     assert "(Real)" not in body
 
 
@@ -430,7 +430,7 @@ def test_dashboard_headline_row_shows_outcomes_not_effort_inputs():
     member_contacts. Those weights exist to score effort, not to choose what a
     president sees first, and two of the three are inputs rather than outcomes
     (audit H1). The row is now three outcomes, fixed in the page."""
-    body = _text(_run("pages/01_Panel.py"))
+    body = _text(_run("views/01_Panel.py"))
     for label in ("Libros de Mormón Entregados", "Invitaciones a la Iglesia",
                   "Invitaciones al Bautismo"):
         assert label in body, f"{label!r} missing from the headline row"
@@ -444,7 +444,7 @@ def test_dashboard_shows_the_four_conversion_rates():
     and not one of them appeared anywhere in the dashboard. They are derived on
     the page from DAILY_LOG, because the agent keeps them in Script Properties
     and never writes them to a tab."""
-    body = _text(_run("pages/01_Panel.py"))
+    body = _text(_run("views/01_Panel.py"))
     assert "Tasas de Conversión" in body
     for label in ("Contacto", "Significativas", "Lecciones",
                   "Invitación Bautismal"):
@@ -456,7 +456,7 @@ def test_rate_targets_fall_back_to_the_agents_own_defaults():
     a new mission starts in. The targets must come from CCSM_Agent1A.gs's
     declared defaults — never from zero, which would paint every rate as
     comfortably met."""
-    body = _text(_run("pages/01_Panel.py"))
+    body = _text(_run("views/01_Panel.py"))
     # contact_rate and mc_rate both default to 0.50.
     assert "de la meta de 50%" in body
 
@@ -465,7 +465,7 @@ def test_a_rate_with_no_denominator_shows_its_target_not_a_zero():
     """friend_lessons is absent from this fixture, so the baptismal-invitation
     rate divides by nothing. The card must show the target on its own rather
     than report a 0,0% the mission never had the chance to avoid."""
-    body = _text(_run("pages/01_Panel.py"))
+    body = _text(_run("views/01_Panel.py"))
     assert "Meta: 25%" in body
 
 
@@ -479,7 +479,7 @@ def test_daily_activity_totals_every_nightly_metric():
     appears somewhere on the page even when Daily Activity itself rendered five
     "No data for this category" panels.
     """
-    at = _run("pages/06_Puntajes.py")
+    at = _run("views/06_Puntajes.py")
     tile_labels = {m.label for m in at.metric}
     missing = [
         label for _key, label, dtype in _NIGHTLY
@@ -495,7 +495,7 @@ def test_daily_activity_excludes_non_numeric_metrics():
     """`effort` is CHOICE and `exchanges` is YESNO. Summing either produces a
     number with no meaning, and _num() would coerce the words to 0 — a real
     zero and an unparseable answer would look identical."""
-    at = _run("pages/06_Puntajes.py")
+    at = _run("views/06_Puntajes.py")
     chart_pickers = [w for w in at.multiselect if w.key == "da_trend_metrics"]
     assert chart_pickers, "Daily Activity's metric picker did not render"
 
@@ -589,7 +589,7 @@ def test_key_indicator_headings_carry_the_emphasis_treatment():
     weight as "Desglose Diario de Esfuerzo" — audit H1's second half. The
     emphasis tier is identifiable by its indigo accent bar, which the plain
     tier does not draw."""
-    at = _run("pages/01_Panel.py")
+    at = _run("views/01_Panel.py")
     accent = "linear-gradient(180deg,#6366f1,#8b5cf6)"
     emphasized = [
         m.value for m in at.markdown
@@ -604,7 +604,7 @@ def test_key_indicator_headings_carry_the_emphasis_treatment():
 def test_the_zone_table_ends_with_a_mission_row():
     """The ranked zones are parts of a whole, and the whole was not on the page.
     It carries no rank — it is not a fifth zone."""
-    at = _run("pages/01_Panel.py")
+    at = _run("views/01_Panel.py")
     tables = [str(m.value) for m in at.markdown if "pmg-tbl" in str(m.value)]
     zone_tbl = next((h for h in tables if "POSICIÓN" in h.upper()), None)
     assert zone_tbl is not None, "zone table did not render"

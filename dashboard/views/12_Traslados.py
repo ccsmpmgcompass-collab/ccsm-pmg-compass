@@ -59,15 +59,10 @@ from app.ingestion import transfer_apply_service as tas
 from app.integrations.transfer_bridge import FormSyncError, form_sync
 from app.utils.area_helpers import mission_today
 
-st.set_page_config(
-    page_title="CCSM · Traslados — PMG Compass",
-    page_icon="",
-    layout="wide",
-)
-
+# Page chrome (set_page_config / inject_global_css / render_sidebar) is
+# owned by Home.py's st.navigation router since 2026-09-02 — the router and
+# this page share one script run, so calling them here would render twice.
 user = require_auth()
-inject_global_css()
-render_sidebar(user)
 
 render_page_header(
     t("Transfers"),
@@ -437,8 +432,8 @@ def _render_roster_tab() -> None:
 
 
 # st.tabs() renders every tab's body on every single script run regardless of
-# which one is visually active (see pages/02_Metas.py and
-# pages/18_Mantenimiento.py for the same fix + full explanation). st.radio()
+# which one is visually active (see views/02_Metas.py and
+# views/18_Mantenimiento.py for the same fix + full explanation). st.radio()
 # + CSS reads as a tab row but only runs the selected section's render
 # function per rerun.
 _TRASLADOS_SECTIONS = ["Schedule", "Roster Update"]

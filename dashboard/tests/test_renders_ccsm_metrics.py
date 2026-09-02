@@ -172,11 +172,11 @@ def test_metric_labels_resolve_instead_of_falling_through_to_raw_keys():
 # ── Rendered pages ────────────────────────────────────────────────────────────
 
 PAGES = [
-    "pages/01_Panel.py",
-    "pages/02_Metas.py",
-    "pages/04_Desgloses.py",
-    "pages/06_Puntajes.py",
-    "pages/18_Mantenimiento.py",
+    "views/01_Panel.py",
+    "views/02_Metas.py",
+    "views/04_Desgloses.py",
+    "views/06_Puntajes.py",
+    "views/18_Mantenimiento.py",
 ]
 
 
@@ -205,7 +205,7 @@ def test_monthly_goals_offers_every_key_indicator():
     arbitrary indicator would have rendered under the heading "Monthly Goals",
     looking entirely deliberate.
     """
-    at = AppTest.from_file("pages/02_Metas.py", default_timeout=90)
+    at = AppTest.from_file("views/02_Metas.py", default_timeout=90)
     at.session_state["pmg_lang"] = "es"
     at.session_state["goals_active_section"] = "Area Goal Customization"
     at.run()
@@ -227,7 +227,7 @@ def test_monthly_goals_offers_every_key_indicator():
 def test_goals_offers_ccsm_metrics_by_name():
     """The Goals page builds its inputs from the catalogue, so this is the
     end-to-end proof that a QUESTIONS_CONFIG edit reaches a rendered widget."""
-    at = AppTest.from_file("pages/02_Metas.py", default_timeout=90)
+    at = AppTest.from_file("views/02_Metas.py", default_timeout=90)
     at.session_state["pmg_lang"] = "es"
     at.session_state["goals_active_section"] = "Mission Goals"
     at.run()

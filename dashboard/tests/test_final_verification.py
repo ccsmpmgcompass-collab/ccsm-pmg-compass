@@ -67,11 +67,11 @@ def test_no_translation_is_left_blank():
 
 
 @pytest.mark.parametrize("group", [
-    ["Home.py"], ["pages/01_Panel.py"], ["pages/02_Metas.py"],
-    ["pages/04_Desgloses.py"], ["pages/06_Puntajes.py"],
-    ["pages/07_Embudo_de_Búsqueda.py"], ["pages/10_Notas.py"],
-    ["pages/15_Sugerencias.py"], ["pages/17_Centro_de_Acción.py"],
-    ["pages/18_Mantenimiento.py"],
+    ["Home.py"], ["views/01_Panel.py"], ["views/02_Metas.py"],
+    ["views/04_Desgloses.py"], ["views/06_Puntajes.py"],
+    ["views/07_Embudo_de_Búsqueda.py"], ["views/10_Notas.py"],
+    ["views/15_Sugerencias.py"], ["views/17_Centro_de_Acción.py"],
+    ["views/18_Mantenimiento.py"],
 ])
 def test_each_page_individually_complete(group):
     assert extract_unwrapped(group) == []

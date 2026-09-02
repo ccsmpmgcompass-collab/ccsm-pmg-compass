@@ -61,14 +61,10 @@ from app.db.queries import (
     get_zone_goals,
 )
 
-st.set_page_config(
-    page_title="CCSM · Breakdowns — PMG Compass",
-    layout="wide",
-)
-
+# Page chrome (set_page_config / inject_global_css / render_sidebar) is
+# owned by Home.py's st.navigation router since 2026-09-02 — the router and
+# this page share one script run, so calling them here would render twice.
 user = require_auth()
-inject_global_css()
-render_sidebar(user)
 
 # The pure-white selectbox CSS moved into render_scope_selectors (the shared
 # scope component injects it), so the Breakdowns and Scores dropdowns match.

@@ -2,8 +2,10 @@
 
 Two things a source scan cannot settle:
 
-* what the sidebar will actually say — that comes from Streamlit's own page
-  discovery over the real pages/ directory, not from any string in this repo;
+* what the sidebar will actually say — which since the 2026-09-02 navigation
+  rebuild comes from the `st.Page` declarations in Home.py rather than from
+  Streamlit's filesystem discovery, so it IS a string in this repo now and can
+  be asserted directly;
 * whether a number or date reached the screen in Chilean form, since the
   formatting happens at the call site and the wrong answer is a valid-looking
   number rather than an error.
@@ -16,7 +18,6 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
-from streamlit.source_util import get_pages
 
 from app.config import metric_catalog as mc
 from tests.test_renders_ccsm_with_data import (  # reuse the realistic fixtures
@@ -29,8 +30,8 @@ DASHBOARD = Path(__file__).resolve().parent.parent
 
 # ── Sidebar navigation ────────────────────────────────────────────────────────
 
-#: filename stem -> what the sidebar must read. Streamlit derives the label from
-#: the filename (underscores become spaces), so this IS the navigation.
+#: filename stem -> what the sidebar must read. Home.py declares these labels
+#: explicitly now; before 2026-09-02 Streamlit derived them from the filename.
 EXPECTED_NAV = {
     "01_Panel.py":              "Panel",
     "02_Metas.py":              "Metas",
@@ -48,27 +49,73 @@ ENGLISH_NAV_WORDS = ("dashboard", "Goals", "Breakdowns", "Scores",
                      "Action", "Center", "Maintenance")
 
 
-def _discovered_pages():
-    return get_pages(str(DASHBOARD / "Home.py"))
+#: Home.py builds every entry through one `_page("<file>", t("<label>"))`
+#: helper, so the declared navigation can be read straight out of its source.
+#: Parsing the file rather than importing it is deliberate: Home.py is a
+#: Streamlit script that calls st.set_page_config and require_auth at import
+#: time, and importing it under pytest would try to authenticate.
+#: Neither the page titles nor the group headers go through t() — they are
+#: proper nouns that stay Spanish with the interface in English. See Home.py.
+_PAGE_CALL = re.compile(r'_page\(\s*"([^"]+)"\s*,\s*"([^"]+)"')
+_GROUP_HEADER = re.compile(r'^\s*"([A-ZÁÉÍÓÚÑ]+)":\s*\[', re.M)
+
+#: The four groups from the 2026-08-22 IA audit, in the order they must appear.
+EXPECTED_GROUPS = ["VER", "ANALIZAR", "DIRIGIR", "OPERAR"]
+
+
+def _home_source() -> str:
+    return (DASHBOARD / "Home.py").read_text(encoding="utf-8")
+
+
+def _declared_nav() -> dict:
+    """{"01_Panel.py": "Panel", ...} as declared in Home.py."""
+    return {m.group(1): m.group(2) for m in _PAGE_CALL.finditer(_home_source())}
 
 
 def test_sidebar_labels_are_spanish():
-    labels = {
-        Path(info["script_path"]).name: info["page_name"].replace("_", " ")
-        for info in _discovered_pages().values()
-    }
+    labels = _declared_nav()
     for filename, expected in EXPECTED_NAV.items():
-        assert filename in labels, f"{filename} was not discovered by Streamlit"
+        assert filename in labels, f"{filename} is not declared in Home.py's navigation"
         assert labels[filename] == expected, \
             f"{filename} renders as {labels[filename]!r}, expected {expected!r}"
 
 
 def test_no_english_page_name_survives():
     leaked = {
-        info["page_name"] for info in _discovered_pages().values()
-        if any(w in info["page_name"] for w in ENGLISH_NAV_WORDS)
+        label for label in _declared_nav().values()
+        if any(w in label for w in ENGLISH_NAV_WORDS)
     }
     assert leaked == set(), f"English nav labels remain: {sorted(leaked)}"
+
+
+def test_every_view_file_appears_in_the_navigation():
+    """The failure mode the old discovery-based test could not have: with the
+    nav declared by hand, a page can exist on disk and be reachable by URL
+    while appearing nowhere in the sidebar."""
+    on_disk = {p.name for p in (DASHBOARD / "views").glob("*.py")
+               if p.name != "__init__.py"}
+    declared = set(_declared_nav())
+    assert on_disk == declared, (
+        f"on disk but not in the nav: {sorted(on_disk - declared)}; "
+        f"in the nav but not on disk: {sorted(declared - on_disk)}"
+    )
+
+
+def test_navigation_groups_are_the_four_audit_groups():
+    found = _GROUP_HEADER.findall(_home_source())
+    assert found == EXPECTED_GROUPS, \
+        f"sidebar groups are {found}, expected {EXPECTED_GROUPS}"
+
+
+def test_exactly_one_page_is_the_default_landing_page():
+    """`default=True` is what makes the app open on the Panel instead of the
+    assistant. Two defaults is a Streamlit error; zero silently falls back to
+    the first page declared, which would put the assistant back in front."""
+    # Count inside _page(...) calls only — the file explains `default=True` in
+    # prose as well, and counting raw occurrences would score the docstring.
+    defaults = re.findall(r'_page\(\s*"([^"]+)"[^)]*default=True', _home_source())
+    assert defaults == ["01_Panel.py"], \
+        f"expected the Panel to be the one default page, got {defaults}"
 
 
 def test_accented_filenames_are_nfc_normalised():
@@ -77,7 +124,7 @@ def test_accented_filenames_are_nfc_normalised():
     other means Streamlit finds no page at that path at all — a blank sidebar
     entry on Cloud that never reproduces locally. Pin the encoding.
     """
-    for path in (DASHBOARD / "pages").glob("*.py"):
+    for path in (DASHBOARD / "views").glob("*.py"):
         assert unicodedata.is_normalized("NFC", path.name), \
             f"{path.name!r} is not NFC-normalised"
 
@@ -87,7 +134,7 @@ def test_every_page_file_is_importable_after_the_rename():
     import. tests/test_isolation.py checks the targets resolve; this checks the
     files themselves still parse."""
     import ast
-    for path in (DASHBOARD / "pages").glob("*.py"):
+    for path in (DASHBOARD / "views").glob("*.py"):
         ast.parse(path.read_text(encoding="utf-8"))
 
 
@@ -181,7 +228,7 @@ def test_kpi_numbers_use_chilean_separators():
     _TABS["DASHBOARD_SUMMARY"] = _big_number_summary()
     _TABS["DAILY_LOG"] = _big_number_daily_log()
 
-    at = AppTest.from_file("pages/01_Panel.py", default_timeout=120)
+    at = AppTest.from_file("views/01_Panel.py", default_timeout=120)
     at.session_state["pmg_lang"] = "es"
     at.run()
     assert not at.exception, at.exception
@@ -201,7 +248,7 @@ def test_kpi_numbers_stay_anglo_in_english():
     _TABS["DASHBOARD_SUMMARY"] = _big_number_summary()
     _TABS["DAILY_LOG"] = _big_number_daily_log()
 
-    at = AppTest.from_file("pages/01_Panel.py", default_timeout=120)
+    at = AppTest.from_file("views/01_Panel.py", default_timeout=120)
     at.session_state["pmg_lang"] = "en"
     at.run()
     assert not at.exception, at.exception
@@ -212,7 +259,7 @@ def test_kpi_numbers_stay_anglo_in_english():
 def test_language_defaults_to_spanish_from_agent_config():
     """MISSION_LANGUAGE is ES. Nobody should have to find the toggle to read
     their own mission's dashboard in their own language."""
-    at = AppTest.from_file("pages/01_Panel.py", default_timeout=120)
+    at = AppTest.from_file("views/01_Panel.py", default_timeout=120)
     at.run()          # deliberately NOT setting pmg_lang
     assert not at.exception, at.exception
     assert at.session_state["pmg_lang_default"] == "es"
@@ -220,7 +267,7 @@ def test_language_defaults_to_spanish_from_agent_config():
 
 def test_spanish_page_shows_no_english_month_names():
     """strftime('%B')/'%b' emit English whatever the interface language is."""
-    at = AppTest.from_file("pages/02_Metas.py", default_timeout=120)
+    at = AppTest.from_file("views/02_Metas.py", default_timeout=120)
     at.session_state["pmg_lang"] = "es"
     at.run()
     assert not at.exception, at.exception

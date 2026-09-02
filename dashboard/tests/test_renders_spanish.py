@@ -40,28 +40,31 @@ def _run(page, lang):
     return at
 
 
-def test_home_renders_spanish():
-    es = _text(_run("Home.py", "es"))
+# The assistant was Home.py until the 2026-09-02 navigation rebuild made that
+# file the st.navigation router. Its content — and therefore its translations —
+# now live in views/00_Asistente.py.
+def test_assistant_renders_spanish():
+    es = _text(_run("views/00_Asistente.py", "es"))
     assert "Asistente de la Misión" in es
     assert "Guía de la Aplicación" in es
     assert "Recargar" in es
     assert "Mission Assistant" not in es
 
 
-def test_home_still_renders_english():
-    en = _text(_run("Home.py", "en"))
+def test_assistant_still_renders_english():
+    en = _text(_run("views/00_Asistente.py", "en"))
     assert "Mission Assistant" in en
     assert "Asistente de la Misión" not in en
 
 
 def test_dashboard_renders_spanish():
-    es = _text(_run("pages/01_Panel.py", "es"))
+    es = _text(_run("views/01_Panel.py", "es"))
     assert "Panel Ejecutivo" in es
     assert "Executive Dashboard" not in es
 
 
 def test_breakdowns_renders_spanish():
-    es = _text(_run("pages/04_Desgloses.py", "es"))
+    es = _text(_run("views/04_Desgloses.py", "es"))
     assert "Desgloses" in es
     assert "Zone, District & Area Performance" not in es
 
@@ -71,14 +74,24 @@ def _all_pages() -> list[str]:
 
     This was a hardcoded list, which meant a page added later was not audited
     in either language until somebody remembered to add it here — and the
-    symptom of forgetting is a silently unchecked page, not a failure. Reading
-    the directory makes coverage automatic.
+    symptom of forgetting is a silently unchecked page, not a failure.
+
+    Reading the directory makes coverage automatic — but it also makes the
+    coverage silently vanish if the directory is renamed and this glob is not,
+    which is precisely what happened when `pages/` became `views/` on
+    2026-09-02: the list collapsed to Home.py alone and 13 pages stopped being
+    audited without a single test failing. Hence the assertion below.
     """
     from pathlib import Path
-    pages_dir = Path(__file__).resolve().parent.parent / "pages"
+    views_dir = Path(__file__).resolve().parent.parent / "views"
     found = sorted(
-        f"pages/{p.name}" for p in pages_dir.glob("*.py")
+        f"views/{p.name}" for p in views_dir.glob("*.py")
         if p.name != "__init__.py"
+    )
+    assert len(found) >= 10, (
+        f"only {len(found)} page(s) found in {views_dir} — this list drives two "
+        "parametrised suites, and an empty glob would quietly stop auditing "
+        "every page instead of failing"
     )
     return ["Home.py"] + found
 
@@ -95,8 +108,8 @@ def test_every_page_survives_both_languages(page):
 
 
 def test_notes_and_suggestions_render_spanish():
-    assert "Filtrar Notas" in _text(_run("pages/10_Notas.py", "es"))
-    assert "Sugerencias" in _text(_run("pages/15_Sugerencias.py", "es"))
+    assert "Filtrar Notas" in _text(_run("views/10_Notas.py", "es"))
+    assert "Sugerencias" in _text(_run("views/15_Sugerencias.py", "es"))
 
 
 def test_suggestion_status_filter_sends_english_to_the_sheet(monkeypatch):
@@ -114,7 +127,7 @@ def test_suggestion_status_filter_sends_english_to_the_sheet(monkeypatch):
         return real(*a, **k)
 
     monkeypatch.setattr(q, "get_suggestions", spy)
-    at = AppTest.from_file("pages/15_Sugerencias.py", default_timeout=90)
+    at = AppTest.from_file("views/15_Sugerencias.py", default_timeout=90)
     at.session_state["pmg_lang"] = "es"
     at.run()
     assert not at.exception
@@ -125,7 +138,7 @@ def test_suggestion_status_filter_sends_english_to_the_sheet(monkeypatch):
 
 
 def test_scores_page_renders_spanish():
-    es = _text(_run("pages/06_Puntajes.py", "es"))
+    es = _text(_run("views/06_Puntajes.py", "es"))
     assert "Puntajes" in es
 
 

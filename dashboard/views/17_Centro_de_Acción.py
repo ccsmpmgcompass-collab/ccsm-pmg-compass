@@ -1,5 +1,5 @@
 """
-pages/17_Centro_de_Acción.py
+views/17_Centro_de_Acción.py
 PMG Compass | Leadership Action Center
 One bell-linked page pulling together everything mission leadership needs
 to act on: suggestions awaiting approval, note follow-ups due, custom
@@ -30,15 +30,10 @@ from app.db.action_center_queries import (
 )
 from app.i18n import t
 
-st.set_page_config(
-    page_title="CCSM · Action Center — PMG Compass",
-    page_icon="🔔",
-    layout="wide",
-)
-
+# Page chrome (set_page_config / inject_global_css / render_sidebar) is
+# owned by Home.py's st.navigation router since 2026-09-02 — the router and
+# this page share one script run, so calling them here would render twice.
 user = require_auth()
-inject_global_css()
-render_sidebar(user)
 
 current_email = user.get("email", "")
 
@@ -64,7 +59,7 @@ if summary["suggestions_ap_count"] > 0:
         st.markdown(t('**{suggestions_ap_count} suggestion(s) at AP Approval**', suggestions_ap_count=summary['suggestions_ap_count']))
         if st.button(t("Review in Suggestions"), key="ac_go_ap_approval"):
             st.session_state["sug_status"] = "AP Approval"
-            st.switch_page("pages/15_Sugerencias.py")
+            st.switch_page("views/15_Sugerencias.py")
 
 if summary["suggestions_mp_count"] > 0:
     _any_items = True
@@ -72,14 +67,14 @@ if summary["suggestions_mp_count"] > 0:
         st.markdown(t('**{suggestions_mp_count} suggestion(s) at Mission President Approval**', suggestions_mp_count=summary['suggestions_mp_count']))
         if st.button(t("Review in Suggestions"), key="ac_go_mp_approval"):
             st.session_state["sug_status"] = "Mission President Approval"
-            st.switch_page("pages/15_Sugerencias.py")
+            st.switch_page("views/15_Sugerencias.py")
 
 if summary["followups_count"] > 0:
     _any_items = True
     with st.container(border=True):
         st.markdown(t('**{followups_count} note follow-up(s) due**', followups_count=summary['followups_count']))
         if st.button(t("Review in Notes"), key="ac_go_notes"):
-            st.switch_page("pages/10_Notas.py")
+            st.switch_page("views/10_Notas.py")
 
 my_tasks = summary["my_tasks_df"]
 if not my_tasks.empty:
@@ -111,7 +106,7 @@ if summary["maintenance_issues"]:
         st.markdown(t('**{count} maintenance issue(s)**',
                        count=len(summary["maintenance_issues"])))
         if st.button(t("Open Maintenance page"), key="ac_go_maintenance_from_needs"):
-            st.switch_page("pages/18_Mantenimiento.py")
+            st.switch_page("views/18_Mantenimiento.py")
 
 if not _any_items:
     st.success(t("Nothing needs your action right now."))
@@ -178,6 +173,6 @@ if summary["maintenance_issues"]:
     for issue in summary["maintenance_issues"]:
         st.warning(issue)
     if st.button(t("Open Maintenance page"), key="ac_go_maintenance"):
-        st.switch_page("pages/18_Mantenimiento.py")
+        st.switch_page("views/18_Mantenimiento.py")
 else:
     st.success(t("No maintenance issues detected."))

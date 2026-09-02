@@ -26,25 +26,32 @@ def test_switch_sets_session_state():
 
 
 def test_language_persists_to_another_page():
-    at = AppTest.from_file("pages/01_Panel.py", default_timeout=60)
+    at = AppTest.from_file("views/01_Panel.py", default_timeout=60)
     at.session_state["pmg_lang"] = "es"
     at.run()
     assert not at.exception
     assert at.session_state["pmg_lang"] == "es"
 
 
-def test_mirrored_switches_agree_after_one_is_changed():
-    """Home and the sidebar render the SAME control twice under different
-    widget keys, and Streamlit stores each widget's value independently.
-    They agree only because `index` is recomputed from the active language
-    and counts toward widget identity, so the untouched mirror is re-created
-    with the corrected default. If that behavior ever changes, the untouched
-    mirror would report the old language and drive it back - an endless rerun
-    between the two. Assert both mirrors read Spanish after one was clicked."""
+def test_there_is_exactly_one_language_switch():
+    """Until 2026-09-02 this control was rendered TWICE — once at the top of
+    Home and once in the sidebar — under two different widget keys, which
+    Streamlit stores independently. The two only ever agreed because `index`
+    is recomputed from the active language on each run and counts toward
+    widget identity, so the untouched mirror got re-created with the corrected
+    default; the test here used to pin exactly that, because if Streamlit's
+    identity rule changed, the stale mirror would report the old language and
+    drive it back, in an endless rerun between the two.
+
+    The navigation rebuild removed Home's copy (the sidebar one is visible
+    from every page, so the second was duplicate chrome — audit step 1.6).
+    That deletes the failure mode rather than defending against it, so what is
+    worth pinning now is that the duplicate does not come back."""
     at = AppTest.from_file("Home.py", default_timeout=60)
     at.run()
-    assert len(at.radio) >= 2, "expected a language radio on Home and in the sidebar"
-    at.radio[0].set_value("Español").run()
+    lang_radios = [r for r in at.radio
+                   if "Language" in (r.label or "") or "Idioma" in (r.label or "")]
+    assert len(lang_radios) == 1, \
+        f"expected exactly one language switch, found {len(lang_radios)}"
+    lang_radios[0].set_value("Español").run()
     assert at.session_state["pmg_lang"] == "es"
-    assert [r.value for r in at.radio] == ["Español", "Español"], \
-        f"mirrors disagree: {[r.value for r in at.radio]}"

@@ -65,7 +65,7 @@ def _sheets(monkeypatch):
 
 
 def _run():
-    at = AppTest.from_file("pages/14_Referencias.py", default_timeout=60)
+    at = AppTest.from_file("views/14_Referencias.py", default_timeout=60)
     at.run()
     assert not at.exception, f"Referencias raised: {at.exception}"
     return at

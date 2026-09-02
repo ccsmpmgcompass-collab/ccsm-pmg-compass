@@ -2,7 +2,7 @@
 
 The notification bell (app/components/design_system.py's _render_action_bell)
 linked to "/Action_Center", a page that does not exist — the real file is
-pages/17_Centro_de_Acción.py. Streamlit has no 404: an unknown path silently
+views/17_Centro_de_Acción.py. Streamlit has no 404: an unknown path silently
 serves Home, so every leadership user who clicked the bell landed back where
 they started with no indication anything was wrong.
 
@@ -18,12 +18,12 @@ from pathlib import Path
 from streamlit.source_util import page_icon_and_name
 from streamlit.testing.v1 import AppTest
 
-PAGES_DIR = Path(__file__).resolve().parent.parent / "pages"
+VIEWS_DIR = Path(__file__).resolve().parent.parent / "views"
 
 
 def _action_center_expected_href() -> str:
-    matches = sorted(PAGES_DIR.glob("*Centro_de_Acci*.py"))
-    assert matches, "pages/17_Centro_de_Acción.py (or similar) not found"
+    matches = sorted(VIEWS_DIR.glob("*Centro_de_Acci*.py"))
+    assert matches, "views/17_Centro_de_Acción.py (or similar) not found"
     _icon, name = page_icon_and_name(matches[0])
     return f"/{name}"
 
