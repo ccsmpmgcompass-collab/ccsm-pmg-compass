@@ -506,6 +506,12 @@ def _render_leader_line_pie(pie_df: pd.DataFrame, color_map: dict[str, str], tit
         hole=0.35,
         title=title,
         hover_data=["Actual", "Expectation"],
+        labels={
+            "Metric": t("Metric"),
+            "Contribution": t("Contribution"),
+            "Actual": t("Actual"),
+            "Expectation": t("Expectation"),
+        },
     )
     fig.update_traces(
         textinfo="none",
@@ -871,10 +877,11 @@ def _render_scores_tab():
     def _stale_range_hint(time_range: str) -> str:
         if not _latest_computed_week:
             return ""
-        return (
-            f" The most recently computed week is {_latest_computed_week} — "
-            f"outside {time_range}. Try Transfer to Date or All Time, or confirm "
-            "AgentScores ran on schedule (Sundays, 11 PM Mountain Time)."
+        return t(
+            " The most recently computed week is {week} — outside {time_range}. "
+            "Try Transfer to Date or All Time, or confirm AgentScores ran on "
+            "schedule (Sundays, 11 PM Mountain Time).",
+            week=_latest_computed_week, time_range=t(time_range),
         )
 
     # ═══════════════════════════════════════════════════════════════════════════════
@@ -906,10 +913,10 @@ def _render_scores_tab():
     # nothing is picked (which is also where the Mission Score button above
     # lands you).
     _page_title = (
-        "Area Scores" if _level == "area"
-        else "District Scores" if _level == "district"
-        else "Zone Scores" if _level == "zone"
-        else "Mission Scores"
+        t("Area Scores") if _level == "area"
+        else t("District Scores") if _level == "district"
+        else t("Zone Scores") if _level == "zone"
+        else t("Mission Scores")
     )
     with _header_slot.container():
         render_page_header(_page_title, t('{mission_name} — weekly computed performance scores per area', mission_name=get_config_value('MISSION_NAME', flavor.display_name)), icon="")
@@ -934,22 +941,23 @@ def _render_scores_tab():
                     return "—"
                 return f"{pd.to_numeric(_ms_latest[col], errors='coerce').fillna(0).mean():.1f}"
 
-            render_section_label(t('Mission Score — Average Across All Areas ({ms_range})', ms_range=_ms_range))
+            render_section_label(t('Mission Score — Average Across All Areas ({ms_range})', ms_range=t(_ms_range)))
             render_kpi_row([
-                {"label": "Mission Effectiveness", "value": _ms_avg("Effectiveness_Score")},
-                {"label": "Effort",               "value": _ms_avg("Effort_Score")},
-                {"label": "Skill",                "value": _ms_avg("Skill_Score")},
-                {"label": "KI",                   "value": _ms_avg("KI_Score")},
+                {"label": t("Mission Effectiveness"), "value": _ms_avg("Effectiveness_Score")},
+                {"label": t("Effort"),               "value": _ms_avg("Effort_Score")},
+                {"label": t("Skill"),                "value": _ms_avg("Skill_Score")},
+                {"label": t("KI"),                   "value": _ms_avg("KI_Score")},
             ])
         else:
-            render_section_label(t('Mission Score — Average Across All Areas ({ms_range})', ms_range=_ms_range))
-            st.info(f"No scores fall inside {_ms_range}." + _stale_range_hint(_ms_range))
+            render_section_label(t('Mission Score — Average Across All Areas ({ms_range})', ms_range=t(_ms_range)))
+            st.info(t("No scores fall inside {ms_range}.", ms_range=t(_ms_range)) + _stale_range_hint(_ms_range))
 
     _tcol, _, _ = st.columns(3)
     with _tcol:
         time_range = st.selectbox(
             t("Time Range"),
             options=["Last 7 Days", "Transfer to Date", "All Time"],
+            format_func=t,
             key="time_range",
         )
 
@@ -973,13 +981,13 @@ def _render_scores_tab():
     # Computed once, ahead of both sections below: the chart title needs it first
     # now that the chart renders above the table.
     if _level == "area":
-        scope_label = f"Area: {sel_area}"
+        scope_label = t("Area: {sel_area}", sel_area=sel_area)
     elif _level == "district":
-        scope_label = f"District: {sel_district}"
+        scope_label = t("District: {sel_district}", sel_district=sel_district)
     elif _level == "zone":
-        scope_label = f"Zone: {sel_zone}"
+        scope_label = t("Zone: {sel_zone}", sel_zone=sel_zone)
     else:
-        scope_label = "Mission-Wide"
+        scope_label = t("Mission-Wide")
 
     # Moved to sit right above the graph (Carson, 2026-07-17) — was up by the
     # Mission Score cards at the top of the page, far from the chart it explains.
@@ -987,9 +995,9 @@ def _render_scores_tab():
     # OWN threshold, chosen independent of _color_score's 70/50 (still used by the
     # Skill/KI columns and the Score Summary table below).
     render_section_label(t("Score Tier Key"))
-    render_status_pill("≥ 75  Strong", "green")
-    render_status_pill("50–74  Developing", "amber")
-    render_status_pill("< 50  Needs Attention", "red")
+    render_status_pill(t("≥ 75  Strong"), "green")
+    render_status_pill(t("50–74  Developing"), "amber")
+    render_status_pill(t("< 50  Needs Attention"), "red")
 
     # ═══════════════════════════════════════════════════════════════════════════════
     # CHART — Effectiveness by Area, or (single-area drill-in) Effort Score
@@ -1050,7 +1058,9 @@ def _render_scores_tab():
             })
 
             fig = _render_leader_line_pie(
-                pie_df, _color_map, f"Effort Score Breakdown — {sel_area} ({time_range})"
+                pie_df, _color_map,
+                t("Effort Score Breakdown — {sel_area} ({time_range})",
+                  sel_area=sel_area, time_range=t(time_range))
             )
 
             # NOT use_container_width — the leader-line geometry in
@@ -1069,13 +1079,13 @@ def _render_scores_tab():
             ) if _wsum > 0 else ""
             st.caption(
                 t("Each slice is that metric's average share of this area's weekly Effort score across {count} week(s) in {time_range} (actual vs. expectation, weighted {weights}) — not raw activity volume.",
-                  count=len(_pie_weeks), time_range=time_range, weights=_weight_txt)
+                  count=len(_pie_weeks), time_range=t(time_range), weights=_weight_txt)
             )
     else:
         render_section_label(t("Effectiveness Score by Area"))
 
         if display_df.empty:
-            st.info("No data to chart." + _stale_range_hint(time_range))
+            st.info(t("No data to chart.") + _stale_range_hint(time_range))
         else:
             chart_df = display_df[
                 ["Area_Name", "Zone", "Effectiveness_Score"]
@@ -1096,24 +1106,25 @@ def _render_scores_tab():
                 color="_color",
                 color_discrete_map=color_map,
                 labels={
-                    "Area_Name":           "Area",
-                    "Effectiveness_Score": "Effectiveness Score",
-                    "_color":              "Score Range",
+                    "Area_Name":           t("Area"),
+                    "Effectiveness_Score": t("Effectiveness Score"),
+                    "_color":              t("Score Range"),
                 },
-                title=f"Effectiveness Score — {scope_label} ({time_range})",
+                title=t("Effectiveness Score — {scope_label} ({time_range})",
+                         scope_label=scope_label, time_range=t(time_range)),
                 hover_data={"Zone": True, "_color": False},
             )
 
             fig.update_layout(
                 xaxis_tickangle=-45,
                 yaxis_range=[0, 105],
-                legend_title_text="Score Range",
+                legend_title_text=t("Score Range"),
                 plot_bgcolor="rgba(0,0,0,0)",
                 paper_bgcolor="rgba(0,0,0,0)",
             )
 
-            fig.add_hline(y=75, line_dash="dot", line_color="#16a34a", annotation_text="75 (Good)")
-            fig.add_hline(y=50, line_dash="dot", line_color="#ca8a04", annotation_text="50 (Needs Work)")
+            fig.add_hline(y=75, line_dash="dot", line_color="#16a34a", annotation_text=t("75 (Good)"))
+            fig.add_hline(y=50, line_dash="dot", line_color="#ca8a04", annotation_text=t("50 (Needs Work)"))
 
             st.plotly_chart(fig, use_container_width=True)
 
@@ -1126,7 +1137,7 @@ def _render_scores_tab():
     render_section_label(t("Score Summary"))
 
     st.caption(
-        t("{scope_label}  |  {time_range}  |  {count} area(s) shown  |  Scores averaged across each area's weeks in this range", scope_label=scope_label, time_range=time_range, count=len(display_df))
+        t("{scope_label}  |  {time_range}  |  {count} area(s) shown  |  Scores averaged across each area's weeks in this range", scope_label=scope_label, time_range=t(time_range), count=len(display_df))
     )
 
     st.caption(
@@ -1136,7 +1147,7 @@ def _render_scores_tab():
     )
 
     if display_df.empty:
-        st.info("No scores match the current filters." + _stale_range_hint(time_range))
+        st.info(t("No scores match the current filters.") + _stale_range_hint(time_range))
     else:
         # Build display subset with friendly column names
         table_cols_raw  = ["Area_Name", "Zone", "Missionary_Names", "Week_Ending_Date", "Weeks"] + NUMERIC_SCORE_COLS
@@ -1145,17 +1156,17 @@ def _render_scores_tab():
 
         # Rename to friendly labels
         rename_map = {
-            "Area_Name":           "Area",
-            "Zone":                "Zone",
-            "Missionary_Names":    "Missionaries",
+            "Area_Name":           t("Area"),
+            "Zone":                t("Zone"),
+            "Missionary_Names":    t("Missionaries"),
             # Scores are averaged over the range; this column shows the newest week
             # that went into the average, and Weeks says how many did.
-            "Week_Ending_Date":    "Latest Week",
-            "Weeks":               "Weeks",
-            "Effort_Score":        "Effort",
-            "Skill_Score":         "Skill",
-            "KI_Score":            "KI",
-            "Effectiveness_Score": "Effectiveness",
+            "Week_Ending_Date":    t("Latest Week"),
+            "Weeks":               t("Weeks"),
+            "Effort_Score":        t("Effort"),
+            "Skill_Score":         t("Skill"),
+            "KI_Score":            t("KI"),
+            "Effectiveness_Score": t("Effectiveness"),
         }
         table_df = table_df.rename(columns={k: v for k, v in rename_map.items() if k in table_df.columns})
 
@@ -1202,19 +1213,19 @@ def _render_scores_tab():
         with legend_cols[0]:
             st.markdown(
                 f'<span style="background:{_GREEN};color:#86efac;padding:2px 8px;border-radius:4px;">'
-                "Strong — 70+</span>",
+                f'{t("Strong — 70+")}</span>',
                 unsafe_allow_html=True,
             )
         with legend_cols[1]:
             st.markdown(
                 f'<span style="background:{_YELLOW};color:#fcd34d;padding:2px 8px;border-radius:4px;">'
-                "Developing — 50–69</span>",
+                f'{t("Developing — 50–69")}</span>',
                 unsafe_allow_html=True,
             )
         with legend_cols[2]:
             st.markdown(
                 f'<span style="background:{_RED};color:#fca5a5;padding:2px 8px;border-radius:4px;">'
-                "Needs Attention — below 50</span>",
+                f'{t("Needs Attention — below 50")}</span>',
                 unsafe_allow_html=True,
             )
 
@@ -1832,18 +1843,19 @@ def _render_analyze_tab():
         }
         available = [c for c in display_cols if c in anomalies_df.columns]
         display = anomalies_df[available].copy()
-        display = display.rename(columns={c: display_cols[c] for c in available})
 
-        if "This Week" in display.columns:
-            display["This Week"] = display["This Week"].apply(
+        if "this_week" in display.columns:
+            display["this_week"] = display["this_week"].apply(
                 lambda v: int(v) if pd.notna(v) else 0
             )
-        if "4-Wk Avg" in display.columns:
-            display["4-Wk Avg"] = display["4-Wk Avg"].round(1)
-        if "% Change" in display.columns:
-            display["% Change"] = display["% Change"].apply(
+        if "avg_4wk" in display.columns:
+            display["avg_4wk"] = display["avg_4wk"].round(1)
+        if "pct_change" in display.columns:
+            display["pct_change"] = display["pct_change"].apply(
                 lambda v: f"{v:+.1f}%" if pd.notna(v) else "—"
             )
+
+        display = display.rename(columns={c: t(display_cols[c]) for c in available})
 
         # Color severity column
         def _severity_color(val):
@@ -1853,8 +1865,9 @@ def _render_analyze_tab():
                 return "background-color: #d97706; color: white;"
             return ""
 
-        if "Severity" in display.columns:
-            styled = display.style.map(_severity_color, subset=["Severity"])
+        _severity_col = t(display_cols["severity"])
+        if _severity_col in display.columns:
+            styled = display.style.map(_severity_color, subset=[_severity_col])
             render_table(styled)
         else:
             render_table(display)
@@ -1930,7 +1943,7 @@ def _render_analyze_tab():
                     fillcolor=band_fill,
                     line=dict(width=0),
                     hoverinfo="skip",
-                    name="80% range",
+                    name=t("80% range"),
                     showlegend=True,
                 )
             )
@@ -1941,7 +1954,7 @@ def _render_analyze_tab():
                 x=weeks,
                 y=actuals,
                 mode="lines+markers",
-                name="Actuals",
+                name=t("Actuals"),
                 line=dict(color="#3b82f6", width=2),
                 marker=dict(size=7),
             )
@@ -1964,7 +1977,7 @@ def _render_analyze_tab():
                     x=[proj_date],
                     y=[proj_val],
                     mode="markers+text",
-                    name="Projected",
+                    name=t("Projected"),
                     marker=dict(
                         size=12,
                         color=proj_color,
@@ -1978,8 +1991,9 @@ def _render_analyze_tab():
             )
 
         fig.update_layout(
-            title=f"{proj_label} — {len(weeks)} Completed Weeks + Projection",
-            xaxis_title="Week Ending",
+            title=t("{proj_label} — {count} Completed Weeks + Projection",
+                     proj_label=proj_label, count=len(weeks)),
+            xaxis_title=t("Week Ending"),
             yaxis_title=proj_label,
             plot_bgcolor=bg_color,
             paper_bgcolor=bg_color,

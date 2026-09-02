@@ -668,6 +668,8 @@ ES: dict[str, str] = {
     # ── Scores page ──────────────────────────────────────────────────────────
     "Scores": "Puntajes",
     "Area Scores": "Puntajes por Área",
+    "District Scores": "Puntajes por Distrito",
+    "Zone Scores": "Puntajes por Zona",
     "Mission Score": "Puntaje de la Misión",
     "Mission Scores": "Puntajes de la Misión",
     "Score Summary": "Resumen de Puntajes",
@@ -704,6 +706,52 @@ ES: dict[str, str] = {
         "de la montaña) mediante el motor AgentScores de Apps Script. Para forzar un "
         "recálculo inmediato, abra el editor de Google Apps Script de COMPASS_CCSM y "
         "ejecute computeAllAreaScores().",
+    "Mission Effectiveness": "Efectividad de la Misión",
+    "KI": "IC",
+    "Area: {sel_area}": "Área: {sel_area}",
+    "District: {sel_district}": "Distrito: {sel_district}",
+    "Zone: {sel_zone}": "Zona: {sel_zone}",
+    "Mission-Wide": "Toda la Misión",
+    "Last 7 Days": "Últimos 7 Días",
+    "Transfer to Date": "Traslado hasta la Fecha",
+    "The most recently computed week is {week} — outside {time_range}. "
+    "Try Transfer to Date or All Time, or confirm AgentScores ran on "
+    "schedule (Sundays, 11 PM Mountain Time).":
+        "La semana calculada más recientemente es {week} — fuera de {time_range}. "
+        "Pruebe Traslado hasta la Fecha o Desde el inicio, o confirme que "
+        "AgentScores se ejecutó según lo programado (domingos, 11 PM hora de "
+        "la montaña).",
+    "≥ 75  Strong": "≥ 75  Fuerte",
+    "50–74  Developing": "50–74  En desarrollo",
+    "< 50  Needs Attention": "< 50  Necesita atención",
+    "Effort Score Breakdown — {sel_area} ({time_range})":
+        "Desglose del Puntaje de Esfuerzo — {sel_area} ({time_range})",
+    "Effectiveness Score": "Puntaje de Efectividad",
+    "Score Range": "Rango de Puntaje",
+    "Effectiveness Score — {scope_label} ({time_range})":
+        "Puntaje de Efectividad — {scope_label} ({time_range})",
+    "75 (Good)": "75 (Bueno)",
+    "50 (Needs Work)": "50 (Necesita Mejorar)",
+    "No scores match the current filters.":
+        "Ningún puntaje coincide con los filtros actuales.",
+    "No scores fall inside {ms_range}.":
+        "Ningún puntaje cae dentro de {ms_range}.",
+    "No data to chart.": "No hay datos para graficar.",
+    "Missionaries": "Misioneros",
+    "Latest Week": "Última Semana",
+    "Strong — 70+": "Fuerte — 70+",
+    "Developing — 50–69": "En desarrollo — 50–69",
+    "Needs Attention — below 50": "Necesita atención — menos de 50",
+    "4-Wk Avg": "Prom. 4 Sem.",
+    "% Change": "% de Cambio",
+    "Severity": "Gravedad",
+    "80% range": "Rango del 80%",
+    "Actuals": "Datos Reales",
+    "Projected": "Proyectado",
+    "{proj_label} — {count} Completed Weeks + Projection":
+        "{proj_label} — {count} Semanas Completas + Proyección",
+    "Contribution": "Contribución",
+    "Expectation": "Expectativa",
 
     # ── Metric tabs and summaries ────────────────────────────────────────────
     "Lessons": "Lecciones",
