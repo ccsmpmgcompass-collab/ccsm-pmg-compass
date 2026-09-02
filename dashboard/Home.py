@@ -61,7 +61,11 @@ and the `st.page_link` in Mantenimiento keep working: `switch_page` matches on
 import streamlit as st
 
 from app.auth.auth import require_auth
-from app.components.design_system import inject_global_css, render_sidebar
+from app.components.design_system import (
+    inject_global_css,
+    render_sidebar,
+    reset_section_numbering,
+)
 
 st.set_page_config(
     page_title="CCSM · PMG Compass",
@@ -129,5 +133,11 @@ _selected = st.navigation(_nav, expanded=True)
 # After st.navigation so the language switch, the signed-in user and Sign Out
 # sit BELOW the page list rather than above it.
 render_sidebar(user)
+
+# Section labels number themselves ①②③ in render order; this restarts the
+# count so each page begins at ① rather than continuing the previous page's.
+# It belongs here, not in the pages, precisely because the router is the one
+# thing that runs exactly once per full script run.
+reset_section_numbering()
 
 _selected.run()

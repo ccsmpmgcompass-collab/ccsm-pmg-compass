@@ -749,8 +749,68 @@ def render_kpi_row(metrics: list[dict]) -> None:
     )
 
 
-def render_section_label(text: str, *, emphasis: bool = False) -> None:
+#: Section numbering state. Two keys, both reset by the router at the top of
+#: every full script run (see reset_section_numbering):
+#:   _ds_section_count   how many numbers have been handed out on this page
+#:   _ds_section_numbers label text -> the number it was given
+#:
+#: The label->number map exists for FRAGMENT reruns. Desgloses renders sections
+#: inside an @st.fragment, and a fragment rerun re-executes only that body —
+#: the router never runs, so the counter is never reset. Looking the label up
+#: means a section keeps the number it was first drawn with instead of
+#: climbing every time the user changes scope.
+_SECTION_COUNT_KEY = "_ds_section_count"
+_SECTION_NUMBERS_KEY = "_ds_section_numbers"
+
+#: ①-⑳. Past twenty, fall back to a plain digit rather than reaching for the
+#: ㉑-㊿ block, which is missing from many of the fonts in the app's stack and
+#: would render as a box. The longest page today has sixteen sections.
+_CIRCLED = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
+
+
+def reset_section_numbering() -> None:
+    """Start section numbers over at ①. Called once per full run by Home.py,
+    before the selected page executes."""
+    st.session_state[_SECTION_COUNT_KEY] = 0
+    st.session_state[_SECTION_NUMBERS_KEY] = {}
+
+
+def _section_marker(text: str) -> str:
+    """The circled number for this section, as an HTML span."""
+    numbers = st.session_state.setdefault(_SECTION_NUMBERS_KEY, {})
+    if text in numbers:
+        n = numbers[text]
+    else:
+        n = st.session_state.get(_SECTION_COUNT_KEY, 0) + 1
+        st.session_state[_SECTION_COUNT_KEY] = n
+        numbers[text] = n
+    glyph = _CIRCLED[n - 1] if n <= len(_CIRCLED) else str(n)
+    return (f'<span style="color:#818cf8;font-weight:700;flex:none;'
+            f'font-size:0.95rem;line-height:1;">{glyph}</span>')
+
+
+def render_section_label(text: str, *, emphasis: bool = False,
+                         numbered: bool = True) -> None:
     """Small uppercase label with extending horizontal rule — use between content sections.
+
+    Every section is numbered ①②③… in render order, restarting on each page.
+    The Panel is twelve sections over ten screens and these labels are its only
+    wayfinding (AUDIT-IA-2026-08-22.md); a number makes a section referable out
+    loud, and makes "further down" a measurable distance rather than a feeling.
+    Numbers are assigned automatically so a section inserted in the middle
+    cannot leave a stale hardcoded ⑦ behind it.
+
+    ``numbered=False`` is for a label that is a sub-heading rather than one of
+    the page's sections — repeated inside a loop, say. The only such caller is
+    Goals' area-type category loop, where numbering each category would imply
+    they were peers of the page's real sections.
+
+    The base tier used to be #6b7280 at 0.65rem, which is 4.13:1 on this
+    background — under the 4.5:1 AA floor, on the one element a reader
+    navigates a very long page by. It is now #9ca3af (7.9:1), the same muted
+    grey the app's captions already use, at 0.8rem.
+
+    ``emphasis=True`` is a stronger tier of the same pattern for labels that
 
     ``emphasis=True`` is a stronger tier of the same pattern for labels that
     must read as the page's primary groupings (e.g. each category on Goals >
@@ -764,12 +824,14 @@ def render_section_label(text: str, *, emphasis: bool = False) -> None:
     match; only caller is the Area Expectation Settings category loop, so
     this doesn't touch any other page.
     """
+    marker = _section_marker(text) if numbered else ""
     if emphasis:
         st.markdown(
             f'<div style="display:flex;align-items:center;gap:0.75rem;'
             f'margin:2rem 0 0.9rem 0;">'
             f'<span style="width:5px;height:1.4rem;border-radius:2px;flex:none;'
             f'background:linear-gradient(180deg,#6366f1,#8b5cf6);"></span>'
+            f'{marker}'
             f'<span style="font-size:1.05rem;font-weight:800;letter-spacing:0.12em;'
             f'color:#f4f4f8;text-transform:uppercase;white-space:nowrap;">{_html.escape(text)}</span>'
             f'<div style="flex:1;height:1px;background:rgba(99,102,241,0.35);"></div></div>',
@@ -777,10 +839,11 @@ def render_section_label(text: str, *, emphasis: bool = False) -> None:
         )
         return
     st.markdown(
-        f'<div style="display:flex;align-items:center;gap:0.75rem;'
+        f'<div style="display:flex;align-items:center;gap:0.6rem;'
         f'margin:1.5rem 0 0.75rem 0;">'
-        f'<span style="font-size:0.65rem;font-weight:700;letter-spacing:0.14em;'
-        f'color:#6b7280;text-transform:uppercase;white-space:nowrap;">{_html.escape(text)}</span>'
+        f'{marker}'
+        f'<span style="font-size:0.8rem;font-weight:700;letter-spacing:0.12em;'
+        f'color:#9ca3af;text-transform:uppercase;white-space:nowrap;">{_html.escape(text)}</span>'
         f'<div style="flex:1;height:1px;background:rgba(255,255,255,0.07);"></div></div>',
         unsafe_allow_html=True,
     )

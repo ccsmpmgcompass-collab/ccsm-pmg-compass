@@ -1927,7 +1927,11 @@ if selected_section == "Area Expectation Settings":
             )
             _hdr_col, _areas_col = st.columns([6, 1.6], vertical_alignment="bottom")
             with _hdr_col:
-                render_section_label(_display_category, emphasis=True)
+                # numbered=False: these are the area-type categories inside one
+                # section, drawn in a loop — numbering them would make each
+                # category read as a peer of the page's real sections.
+                render_section_label(_display_category, emphasis=True,
+                                     numbered=False)
             with _areas_col:
                 st.selectbox(
                     t("Areas Involved"),
