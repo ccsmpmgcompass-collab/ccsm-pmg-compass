@@ -981,6 +981,14 @@ ES: dict[str, str] = {
     "Your session has expired. Please sign in again.":
         "Su sesión ha expirado. Por favor inicie sesión nuevamente.",
 
+    # ── KPI card: landing estimate (progression work, 2026-09-03) ────────────
+    # "va camino a" — where this period is heading, not where it is. The tilde
+    # and the hedge both survive translation on purpose: this is the only
+    # figure on the card describing something that has not happened yet.
+    "on pace for ~{n}": "va camino a ~{n}",
+    "on pace for ~{n} (early estimate)":
+        "va camino a ~{n} (estimación temprana)",
+
     # ── Breakdowns engine: pace goals (progression work, 2026-09-03) ─────────
     # "lo esperado a hoy" and not "la meta": on the third of the month the bar
     # is judged against three days of the month's target, not the whole of it.

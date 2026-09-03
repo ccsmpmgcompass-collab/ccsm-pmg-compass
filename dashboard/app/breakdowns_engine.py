@@ -21,6 +21,7 @@ import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
 
+from app.analytics import trends
 from app.analytics.period_delta import (
     MIN_COMPARABLE_DAYS,
     days_in_window,
@@ -316,6 +317,92 @@ def _records_floor(hist: pd.DataFrame) -> date:
         except (ValueError, TypeError):
             pass
     return floor
+
+
+def _completed_weekly_series(hist: pd.DataFrame, key: str, before: date):
+    """(values, week_end_dates) for this group's COMPLETED Mon-Sun weeks in
+    `key`, oldest first, every week ending strictly before `before`.
+
+    Completed at BOTH ends, and the leading end is the one that actually bit.
+
+    A week that is three days old is a small number, not a low week, and
+    feeding it to a straight-line fit as though it were finished would drag
+    every projection down each Monday and let it recover by Sunday — a sawtooth
+    in the forecast that describes the calendar, not the mission.
+
+    The same is true of the first week, and there it was not hypothetical.
+    DAILY_LOG begins on Sunday 2026-08-09, so the week ending that day held one
+    area-day and a total of 7 where a real week holds ~240 and ~180. The series
+    read 7 → 197 → 127 → 159, the fit saw a mission exploding out of nothing,
+    and roleplays — 22 in three days — projected to land at 867 (seen live
+    2026-09-03; a straight pace says ~220). A week is only counted when its
+    whole Monday-to-Sunday span lies inside the records.
+    """
+    if hist is None or hist.empty or key not in hist.columns:
+        return [], []
+    if "Date" not in hist.columns:
+        return [], []
+    frame = hist[["Date", key]].copy()
+    frame["__d"] = pd.to_datetime(frame["Date"], errors="coerce")
+    frame = frame.dropna(subset=["__d"])
+    if frame.empty:
+        return [], []
+    # Sunday-ending weeks, matching the mission week the rest of the app uses
+    # (Agent5A.gs rolls back to Monday; the weekly report covers Mon-Sun).
+    frame["__wk"] = (frame["__d"] + pd.to_timedelta(
+        6 - frame["__d"].dt.weekday, unit="D")).dt.date
+    frame[key] = pd.to_numeric(frame[key], errors="coerce").fillna(0)
+    first = frame["__d"].min().date()
+    weekly = frame.groupby("__wk")[key].sum().sort_index()
+    weekly = weekly[[
+        w < before and (w - timedelta(days=6)) >= first for w in weekly.index]]
+    return [float(v) for v in weekly.values], [w.isoformat() for w in weekly.index]
+
+
+def _landing_estimate(value, elapsed_days, full_days, weekly_values, week_dates):
+    """Where this period is heading, and how much to believe it.
+
+    Returns ``{"value": float, "confidence": "high"|"low"}`` or None when there
+    is nothing honest to say.
+
+    Two methods, and which one runs depends on how much history exists:
+
+      * **Fewer than four completed weeks** — straight pace extrapolation. It
+        assumes the rest of the period looks like the part already run, which
+        is a weak assumption and is labelled as one ("early estimate").
+      * **Four or more** — the remaining days are projected from the fitted
+        weekly trend instead, so a mission that is climbing is not credited
+        with only its current average. compute_projection() reports whether
+        that slope is distinguishable from flat, and that is the confidence.
+
+    Either way the estimate is ``what has already happened`` plus ``what the
+    remaining days are expected to add`` — never a pure forecast. The days
+    already banked are facts and are not re-predicted.
+    """
+    try:
+        value = float(value)
+        elapsed_days = int(elapsed_days)
+        full_days = int(full_days)
+    except (TypeError, ValueError):
+        return None
+    if elapsed_days <= 0 or full_days <= 0 or elapsed_days > full_days:
+        return None
+    remaining = full_days - elapsed_days
+    if remaining <= 0:
+        return None   # the period is over; there is nothing left to project
+
+    if len(weekly_values) >= trends.MIN_WEEKS:
+        proj = trends.compute_projection(weekly_values, week_dates)
+        if proj.get("status") == "ok":
+            per_day = max(0.0, float(proj.get("projected", 0))) / 7.0
+            return {"value": value + per_day * remaining,
+                    "confidence": proj.get("confidence", "low")}
+
+    if value <= 0:
+        # Nothing has happened yet, so a pace extrapolation would project zero
+        # and print it as a forecast. Silence is the honest reading.
+        return None
+    return {"value": value / elapsed_days * full_days, "confidence": "low"}
 
 
 def _twin_label(label: str) -> str:
@@ -1410,6 +1497,16 @@ def render_group_breakdown(
                     _card["pace"] = _weekly_goal * _pace_factor
                     if _period_end_full is not None:
                         _card["goal_by"] = fmt_day_month(_period_end_full)
+
+            # Where the period is heading. Only for a running one — a completed
+            # period has already landed, and All Time has no end to land at.
+            if _elapsed_days is not None and p_days:
+                _wk_values, _wk_dates = _completed_weekly_series(
+                    _hist, _key, p_start)
+                _projection = _landing_estimate(
+                    _val, _elapsed_days, p_days, _wk_values, _wk_dates)
+                if _projection is not None:
+                    _card["projection"] = _projection
             # The expectation bar is the AREA-TYPE reference, a different thing
             # from the goal — but both fall back to AGENT_CONFIG's GOAL_* rows,
             # so with GOALS_CONFIG empty they resolve to the same number and the

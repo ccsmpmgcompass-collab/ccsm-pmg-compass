@@ -578,6 +578,32 @@ def goal_bar_color(grade_pct: float) -> str:
     return _GOAL_BAR_BELOW
 
 
+def projection_caption(projection, fmt) -> str:
+    """The "where this is heading" line under a goal bar, or "" for no line.
+
+    `fmt` writes a number the way the calling card writes numbers.
+
+    The tilde and the hedge are both load-bearing. A landing estimate is the
+    only figure on this page that describes something that has not happened, so
+    it must not be able to be mistaken for one that has: "~450" reads as an
+    estimate where "450" reads as a count, and a low-confidence estimate says
+    so in words rather than relying on the reader to know what a tilde implies.
+
+    "low" covers both of the ways an estimate can be weak — too little history
+    to fit a trend at all, and a fitted trend whose slope is not
+    distinguishable from flat. The reader's response to both is the same, so
+    they are not distinguished on the card.
+    """
+    if not projection:
+        return ""
+    value = projection.get("value")
+    if value is None:
+        return ""
+    if projection.get("confidence") == "high":
+        return t("on pace for ~{n}", n=fmt(value))
+    return t("on pace for ~{n} (early estimate)", n=fmt(value))
+
+
 def render_kpi_row(metrics: list[dict]) -> None:
     """
     Render a horizontal row of glass KPI cards using a single st.markdown HTML block.
@@ -807,6 +833,16 @@ def render_kpi_row(metrics: list[dict]) -> None:
             note_html = (
                 f'<div style="font-size:0.6rem;color:#4b5563;margin-top:1px;">{note}</div>'
                 if note else ""
+            )
+            # The landing line rides UNDER the goal caption rather than beside
+            # the big number: it belongs to the same question the bar asks
+            # ("will this period get there"), and putting it up top would give
+            # a projection the same visual weight as a fact.
+            proj_text = projection_caption(m.get("projection"), _card_number)
+            note_html += (
+                f'<div style="font-size:0.6rem;color:#6b7280;margin-top:1px;">'
+                f'{_html.escape(proj_text)}</div>'
+                if proj_text else ""
             )
             # The pace mark. overflow:hidden on the track would clip an
             # absolutely-positioned child, so the tick lives in a wrapper
