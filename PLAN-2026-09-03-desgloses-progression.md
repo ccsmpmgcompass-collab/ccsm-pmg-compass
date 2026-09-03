@@ -308,12 +308,17 @@ transfer is current.** The current transfer is the latest row whose start date
 has arrived. Gating on `Status == "Actual"` would pin the dashboard to the old
 cycle every time a new one began, until someone remembered to edit the tab.
 
-**Still open:** AGENT_CONFIG's `TRANSFER_START_DATE` reads `2026-08-09`, which
-is not on the six-week grid and looks like a launch-day placeholder. Agents 1A,
-2 and 3 all measure from it, so until it is set to `2026-07-27` the dashboard
-and the Apps Script side describe different windows. The Traslados page warns
-about the mismatch on screen; the warning disappears by itself once the config
-is updated.
+**Closed 2026-09-03:** AGENT_CONFIG's `TRANSFER_START_DATE` was `2026-08-09`
+— off the six-week grid, and almost certainly a launch-day placeholder, since
+it is a Sunday and is exactly DAILY_LOG's first date. It is now `2026-07-27`,
+so the dashboard and CCSM_Agent1A/2/3 measure the same transfer. The Traslados
+mismatch warning cleared itself, as designed.
+
+The per-area accountability floor is `max(SYSTEM_START_DATE,
+TRANSFER_START_DATE)` (`app/db/queries.py:146`). SYSTEM_START_DATE is
+`2026-08-10`, so that floor was `2026-08-10` before the change and is
+`2026-08-10` after it — compliance percentages are unaffected, verified live
+(window average 78% either side).
 
 ### Decisions taken during the build that amend the plan above
 
