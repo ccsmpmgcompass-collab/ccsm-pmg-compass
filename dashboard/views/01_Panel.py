@@ -58,6 +58,7 @@ from app.analytics.period_delta import (
     period_delta, point_delta, MIN_COMPARABLE_DAYS, WINDOW_DAYS,
 )
 from app.analytics.rate_metrics import rate_rows
+from app.utils.transfer_helpers import transfer_period_bounds
 from app.analytics import annual_baptisms as ab
 from app.analytics import effort_breakdown as eb
 from app.analytics import compliance_rankings as cr
@@ -1641,6 +1642,14 @@ _view_labels = {
     "worst": t("Worst → Best"),
     "name":  t("By name (A–Z)"),
 }
+# A transfer label the schedule cannot supply is dropped from the menu rather
+# than offered and left to resolve to nothing. Same rule as the Desgloses picker.
+_rk_transfers = transfer_period_bounds()
+_rk_periods = [p for p in cr.PERIODS
+               if p not in ("This Transfer So Far", "Last Transfer")
+               or p in _rk_transfers]
+_rk_default = ("This Transfer So Far" if "This Transfer So Far" in _rk_periods
+               else "This Month So Far")
 _period_labels = {p: t(p) for p in cr.PERIODS}
 
 _rc1, _rc2, _rc3 = st.columns(3)
@@ -1650,8 +1659,8 @@ with _rc1:
         format_func=lambda k: _ct_labels[k], key="panel_rank_type")
 with _rc2:
     _rk_period = st.selectbox(
-        t("Period"), list(cr.PERIODS), format_func=lambda k: _period_labels[k],
-        index=list(cr.PERIODS).index("This Month So Far"), key="panel_rank_period")
+        t("Period"), _rk_periods, format_func=lambda k: _period_labels[k],
+        index=_rk_periods.index(_rk_default), key="panel_rank_period")
 with _rc3:
     _rk_view = st.selectbox(
         t("View"), list(_view_labels),
@@ -1665,7 +1674,8 @@ with _rc3:
 # miss from the moment the page loads.
 _rk_sys_start = get_config_value("SYSTEM_START_DATE", "2026-06-08")[:10]
 _rk_transfer_start = get_config_value("TRANSFER_START_DATE", _rk_sys_start)[:10]
-_rk_start, _rk_end = cr.period_bounds(_rk_period, date.today())
+_rk_start, _rk_end = cr.period_bounds(_rk_period, date.today(),
+                                      transfers=_rk_transfers)
 _rk_floor = date.fromisoformat(_rk_sys_start)
 _rk_anchor = compliance_anchor_date()
 _rk_lo, _rk_hi = cr.clip_window(_rk_start, _rk_end, _rk_floor, _rk_anchor)

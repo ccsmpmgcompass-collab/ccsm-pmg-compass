@@ -27,6 +27,7 @@ from app.components.design_system import (
     render_section_label, render_section_tabs, render_status_pill,
     render_kpi_row, render_table,
 )
+from app.utils.transfer_helpers import transfer_window
 from app.components.scope_selector import ANY as SCOPE_ANY
 from app.components.scope_selector import render_scope_selectors
 from app.config.flavor_loader import flavor, METRIC_LABELS as _FLAVOR_METRIC_LABELS
@@ -378,11 +379,17 @@ def _filter_by_time(df: pd.DataFrame, time_range: str) -> pd.DataFrame:
     if time_range == "Last 7 Days":
         cutoff = (date.today() - timedelta(days=7)).strftime("%Y-%m-%d")
         df = df[df["Week_Ending_Date"] >= cutoff].copy()
-    elif time_range == "Transfer to Date":
-        # A transfer is 6 weeks; use the most recent Mon that started a 6-week block.
-        # Approximation: last 42 days from today.
-        cutoff = (date.today() - timedelta(days=42)).strftime("%Y-%m-%d")
-        df = df[df["Week_Ending_Date"] >= cutoff].copy()
+    elif time_range == "This Transfer So Far":
+        # The mission's REAL cycle, from TRANSFER_SCHEDULE. This used to be
+        # "the last 42 days from today", which its own comment admitted was an
+        # approximation — and once the schedule was filled in on 2026-09-03 it
+        # became a wrong one: the true cycle had run 39 days by then, so a
+        # 42-day cutoff reached back into the previous transfer and credited
+        # this one with the tail of the last.
+        _win = transfer_window(0)
+        if _win is not None:
+            df = df[(df["Week_Ending_Date"] >= _win["start"].isoformat())
+                    & (df["Week_Ending_Date"] <= _win["end"].isoformat())].copy()
     # "All Time" — no filter
 
     return df
@@ -929,7 +936,7 @@ def _render_scores_tab():
         # value survives in session_state across reruns, so these cards can
         # follow it from up here. First load (no pick yet) uses the widget's
         # own default.
-        _ms_range = st.session_state.get("time_range", "Last 7 Days")
+        _ms_range = st.session_state.get("time_range", "This Transfer So Far")
         _ms_latest = _avg_over_window(_filter_by_time(_load_scores_mp_effort(_exp_fingerprint()), _ms_range))
         if not _ms_latest.empty:
             def _ms_avg(col: str) -> str:
@@ -952,7 +959,12 @@ def _render_scores_tab():
     with _tcol:
         time_range = st.selectbox(
             t("Time Range"),
-            options=["Last 7 Days", "Transfer to Date", "All Time"],
+            # Same label and same window as every other period picker in the
+            # app. This page used to say "Traslado hasta la Fecha" over a
+            # rolling 42 days while Desgloses said "Este cambio hasta hoy" over
+            # the real cycle — two names for what a reader would reasonably
+            # assume was one thing.
+            options=["This Transfer So Far", "Last 7 Days", "All Time"],
             format_func=t,
             key="time_range",
         )

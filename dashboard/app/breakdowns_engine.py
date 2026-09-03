@@ -55,6 +55,7 @@ from app.db.queries import (
     is_within_last_transfers,
     resolve_area_category_label,
 )
+from app.utils.transfer_helpers import transfer_period_bounds, transfer_window
 from app.utils.area_helpers import (
     build_calendar_data,
     compliance_anchor_date,
@@ -179,6 +180,13 @@ _ANY = "— any —"
 # row per area per day), which is the only source that can answer an arbitrary
 # range — LIVE_SNAPSHOT only stores fixed 7d/14d/28d/transfer rollups.
 _KPI_PERIODS = [
+    # The transfer leads, because the transfer is the unit the mission actually
+    # plans and is judged in — a week is a reporting rhythm and a month is an
+    # accident of the calendar. Filled in on 2026-09-03, once TRANSFER_SCHEDULE
+    # held the mission's real cycles; before that these two labels would have
+    # rested on a six-week guess from TRANSFER_START_DATE.
+    "This Transfer So Far",
+    "Last Transfer",
     "This Week",
     "Last Week",
     "This Month So Far",
@@ -193,7 +201,9 @@ _KPI_PERIODS = [
 _KPI_HISTORY_DAYS = 3650
 
 
-def _kpi_period_bounds(label: str, today: date) -> tuple[date | None, date | None, int | None]:
+def _kpi_period_bounds(
+    label: str, today: date, transfers: dict | None = None
+) -> tuple[date | None, date | None, int | None]:
     """(start, end, days_in_full_period) for a KPI period label — both ends
     inclusive. Returns (None, None, None) for "All Time": no bounds, and no
     goal, since a goal over unbounded history is meaningless.
@@ -205,6 +215,24 @@ def _kpi_period_bounds(label: str, today: date) -> tuple[date | None, date | Non
     so an in-progress period's card reads as "progress toward this week's /
     this month's goal" rather than silently lowering the bar.
     """
+    # The two transfer windows are resolved from TRANSFER_SCHEDULE by the
+    # caller and handed in, rather than read here: this function is pure and is
+    # held to `compliance_rankings.period_bounds` by a drift test, and a sheet
+    # read inside it would make both of those false.
+    if label in ("This Transfer So Far", "Last Transfer"):
+        bounds = (transfers or {}).get(label)
+        if not bounds:
+            return None, None, None
+        start, end = bounds
+        if label == "Last Transfer":
+            # A completed cycle: its full length IS its length.
+            return start, end, (end - start).days + 1
+        # In progress. days_in_full_period is the WHOLE cycle, so the goal is
+        # the transfer's goal rather than a fortnight's worth of it — the same
+        # rule "This Month So Far" follows.
+        full = (transfers or {}).get("_this_transfer_full")
+        return start, end, ((full - start).days + 1 if full else None)
+
     if label == "This Week":
         return today - timedelta(days=today.weekday()), today, 7
     if label == "Last Week":
@@ -231,7 +259,7 @@ def _kpi_period_bounds(label: str, today: date) -> tuple[date | None, date | Non
 
 def _kpi_prior_bounds(
     label: str, cur_start: date | None, cur_end: date | None, today: date,
-    floor: date | None = None,
+    floor: date | None = None, transfers: dict | None = None,
 ) -> tuple[date, date] | None:
     """The TWIN of a KPI period: the same-shaped window immediately before it,
     both ends inclusive — or None when the period has no honest twin.
@@ -278,6 +306,26 @@ def _kpi_prior_bounds(
     if label == "Last Month":
         last_day_prev = cur_start - timedelta(days=1)
         return last_day_prev.replace(day=1), last_day_prev
+
+    if label == "This Transfer So Far":
+        # The same elapsed days of the previous cycle. Six weeks against
+        # eighteen days would report a collapse on every card.
+        prev = (transfers or {}).get("Last Transfer")
+        if not prev:
+            return None
+        p_start, p_end = prev
+        twin_end = p_start + (cur_end - cur_start)
+        return (p_start, min(twin_end, p_end)) if twin_end >= p_start else None
+
+    if label == "Last Transfer":
+        # Would need the cycle before the previous one. TRANSFER_SCHEDULE
+        # reaches back to 2026-06-15 and no further, so there is none — and an
+        # absent twin is reported as absent rather than guessed at by
+        # subtracting six weeks from a date the schedule never recorded.
+        prev2 = (transfers or {}).get("_transfer_before_last")
+        if not prev2:
+            return None
+        return prev2
 
     if label == "Custom":
         # An arbitrary range's twin is the equal-length window ending the day
@@ -425,6 +473,8 @@ def _twin_label(label: str) -> str:
         "Last Week": t("vs the week before"),
         "This Month So Far": t("vs same days last month"),
         "Last Month": t("vs the month before"),
+        "This Transfer So Far": t("vs same days last transfer"),
+        "Last Transfer": t("vs the transfer before"),
     }.get(label, t("vs the period before"))
 
 
@@ -1624,13 +1674,38 @@ def render_group_breakdown(
     _is_area = (scope_kind == "Area")
 
     # ── Period — drives every section below ───────────────────────────────────
+    # ── The transfer windows this picker can offer ───────────────────────────
+    # Resolved once, here, and handed to both bounds functions. A transfer
+    # label the schedule cannot supply is REMOVED from the picker rather than
+    # offered and left to resolve to nothing — an option that does nothing is
+    # worse than an absent one.
+    _transfers = transfer_period_bounds()
+    _cur_tw = transfer_window(0)
+    if _cur_tw:
+        # The whole cycle's end, so an in-progress transfer scales its goal by
+        # six weeks rather than by however much of it has run.
+        _transfers["_this_transfer_full"] = _cur_tw["end"]
+    _prev2 = transfer_window(2)
+    if _prev2:
+        _transfers["_transfer_before_last"] = (_prev2["start"], _prev2["end"])
+
+    _periods = [
+        _p for _p in _KPI_PERIODS
+        if _p not in ("This Transfer So Far", "Last Transfer") or _p in _transfers
+    ]
+    # The transfer is the unit the mission plans in, so it is what the page
+    # opens on (Zackary, 2026-09-03). Falls back to the running month on a
+    # mission whose TRANSFER_SCHEDULE cannot yet name a cycle.
+    _default_period = ("This Transfer So Far" if "This Transfer So Far" in _periods
+                       else "This Month So Far")
+
     _p_col, _, _ = st.columns(3)
     with _p_col:
         # Defaults to the running month (Carson, 2026-07-17) — index only sets
         # the FIRST render; the widget's own state wins after that.
         kpi_period = st.selectbox(
-            t("Period"), _KPI_PERIODS,
-            index=_KPI_PERIODS.index("This Month So Far"),
+            t("Period"), _periods,
+            index=_periods.index(_default_period),
             # The VALUE stays the English key — _kpi_period_bounds, the twin
             # table and this widget's session state are all keyed on it. Only
             # the displayed label is translated, which is why es.py has had
@@ -1639,7 +1714,8 @@ def render_group_breakdown(
             format_func=lambda p: t(p),
             key="bd_kpi_period",
         )
-    p_start, p_end, p_days = _kpi_period_bounds(kpi_period, mission_today())
+    p_start, p_end, p_days = _kpi_period_bounds(kpi_period, mission_today(),
+                                                transfers=_transfers)
 
     _hist = daily_hist if daily_hist is not None else pd.DataFrame()
 
@@ -1688,7 +1764,7 @@ def render_group_breakdown(
     # no honest twin (All Time), and empty when the twin predates the mission's
     # own records, which is a different fact and is reported differently.
     prior_bounds = _kpi_prior_bounds(kpi_period, p_start, p_end, mission_today(),
-                                     floor=_floor)
+                                     floor=_floor, transfers=_transfers)
     if prior_bounds is None:
         pr_start, pr_end = None, None
         rows_prior = pd.DataFrame()
@@ -1712,7 +1788,8 @@ def render_group_breakdown(
     # An in-progress period holds only part of its days, so a vs-goal delta on it
     # would call a zone 4 days into a 7-day week "-33%" when it's actually ahead
     # of pace. Judge against the goal only once the period is complete.
-    in_progress = kpi_period in ("This Week", "This Month So Far")
+    in_progress = kpi_period in ("This Week", "This Month So Far",
+                                 "This Transfer So Far")
 
     if not has_rows:
         st.info(

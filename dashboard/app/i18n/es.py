@@ -1119,6 +1119,8 @@ ES: dict[str, str] = {
     "vs the week before": "vs. la semana anterior",
     "vs same days last month": "vs. los mismos días del mes pasado",
     "vs the month before": "vs. el mes anterior",
+    "vs same days last transfer": "vs. los mismos días del cambio pasado",
+    "vs the transfer before": "vs. el cambio anterior",
     "vs the period before": "vs. el período anterior",
     "{label} has no earlier period to compare against.":
         "{label} no tiene un período anterior con el cual compararse.",
@@ -1147,6 +1149,21 @@ ES: dict[str, str] = {
     "Overall (Daily + Weekly)": "General (Diario + Semanal)",
     "Daily only": "Solo diario",
     "Weekly only": "Solo semanal",
+    # The transfer is the unit the mission plans in, so it leads the picker and
+    # is what every period-driven page now opens on (Zackary, 2026-09-03).
+    "TRANSFER_SCHEDULE says this transfer began {schedule}, but AGENT_CONFIG's "
+    "TRANSFER_START_DATE still says {config}. The week count above uses the "
+    "schedule; the totals below come from CCSM_Agent3, which uses the config "
+    "value — so the two currently describe different windows. Update "
+    "TRANSFER_START_DATE to {schedule} to bring them back together.":
+        "TRANSFER_SCHEDULE indica que este traslado comenzó el {schedule}, "
+        "pero TRANSFER_START_DATE en AGENT_CONFIG todavía dice {config}. El "
+        "conteo de semanas de arriba usa el calendario; los totales de abajo "
+        "vienen de CCSM_Agent3, que usa el valor de configuración — así que "
+        "ambos describen períodos distintos. Actualice TRANSFER_START_DATE a "
+        "{schedule} para volver a alinearlos.",
+    "This Transfer So Far": "Este cambio hasta hoy",
+    "Last Transfer": "Cambio pasado",
     "This Week": "Esta semana",
     "Last Week": "Semana pasada",
     "This Month So Far": "Este mes hasta hoy",

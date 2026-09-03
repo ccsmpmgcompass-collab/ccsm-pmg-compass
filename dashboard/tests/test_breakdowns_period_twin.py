@@ -107,7 +107,7 @@ def test_an_unknown_period_gets_no_twin_rather_than_a_wrong_one():
     None. The alternative — defaulting to "the seven days before" — would put a
     confident arrow on a window nobody defined."""
     assert _kpi_prior_bounds(
-        "This Transfer So Far", date(2026, 8, 9), date(2026, 9, 3), date(2026, 9, 3)
+        "Since Training", date(2026, 8, 9), date(2026, 9, 3), date(2026, 9, 3)
     ) is None
 
 
@@ -200,8 +200,9 @@ def test_every_period_has_a_twin_label(english):
 
 def test_an_unlabelled_period_still_gets_an_honest_label(english):
     """A period added later gets a true-but-vague label rather than a KeyError
-    or a blank space beside an arrow."""
-    assert _twin_label("This Transfer So Far") == "vs the period before"
+    or a blank space beside an arrow. ("This Transfer So Far" used to stand in
+    here; it has had a label of its own since the transfer periods landed.)"""
+    assert _twin_label("Since Training") == "vs the period before"
 
 
 # ── _comparison_note: a missing arrow always says why ────────────────────────
@@ -319,3 +320,95 @@ def test_custom_falls_through_to_an_honest_twin_label(english):
     thing rather than claiming a week or a month."""
     from app.breakdowns_engine import _twin_label
     assert _twin_label("Custom") == "vs the period before"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Step 5 (A1) — the two transfer periods, unblocked 2026-09-03
+# ══════════════════════════════════════════════════════════════════════════════
+# The windows come from TRANSFER_SCHEDULE and are handed in by the caller
+# rather than read here, so both bounds functions stay pure and the drift test
+# in test_compliance_rankings can hold them to the same days.
+
+_TRANSFERS = {
+    "This Transfer So Far": (date(2026, 7, 27), date(2026, 9, 3)),
+    "Last Transfer": (date(2026, 6, 15), date(2026, 7, 26)),
+    "_this_transfer_full": date(2026, 9, 6),
+}
+
+
+def test_this_transfer_so_far_runs_from_the_cycle_start_to_today():
+    start, end, days = _kpi_period_bounds(
+        "This Transfer So Far", date(2026, 9, 3), transfers=_TRANSFERS)
+    assert (start, end) == (date(2026, 7, 27), date(2026, 9, 3))
+
+
+def test_an_in_progress_transfer_is_measured_against_the_WHOLE_cycle():
+    """days_in_full_period is the full six weeks, not the 39 days elapsed. It
+    is what scales the goal, and scaling by the elapsed part instead would
+    quietly lower the bar every morning — the same rule "This Month So Far"
+    already follows."""
+    _, _, days = _kpi_period_bounds(
+        "This Transfer So Far", date(2026, 9, 3), transfers=_TRANSFERS)
+    assert days == 42
+
+
+def test_last_transfer_is_a_completed_cycle_and_its_length_is_its_own():
+    start, end, days = _kpi_period_bounds(
+        "Last Transfer", date(2026, 9, 3), transfers=_TRANSFERS)
+    assert (start, end) == (date(2026, 6, 15), date(2026, 7, 26))
+    assert days == 42
+
+
+def test_a_transfer_period_with_no_window_resolves_to_nothing():
+    """Rather than silently falling through to All Time's unbounded window,
+    which would render the mission's entire history under a transfer label."""
+    assert _kpi_period_bounds("This Transfer So Far", date(2026, 9, 3)) == (None, None, None)
+
+
+def test_the_transfer_twin_matches_the_elapsed_shape():
+    """39 days into the current cycle, the twin is the FIRST 39 days of the
+    previous one — not all six weeks of it. Six weeks against 39 days would
+    report a collapse on every card on the page's new default view."""
+    twin = _kpi_prior_bounds(
+        "This Transfer So Far", date(2026, 7, 27), date(2026, 9, 3),
+        date(2026, 9, 3), transfers=_TRANSFERS)
+    assert twin == (date(2026, 6, 15), date(2026, 7, 23))
+    assert (twin[1] - twin[0]).days == (date(2026, 9, 3) - date(2026, 7, 27)).days
+
+
+def test_the_transfer_twin_never_spills_past_the_previous_cycle():
+    """A cycle that has run longer than the one before it clamps at that one's
+    end rather than reaching forward into the current transfer's own days."""
+    twin = _kpi_prior_bounds(
+        "This Transfer So Far", date(2026, 7, 27), date(2026, 9, 6),
+        date(2026, 9, 6),
+        transfers={**_TRANSFERS,
+                   "Last Transfer": (date(2026, 6, 15), date(2026, 7, 10))})
+    assert twin[1] <= date(2026, 7, 10)
+
+
+def test_last_transfer_has_no_twin_when_the_schedule_stops_there():
+    """TRANSFER_SCHEDULE reaches back to 2026-06-15 and no further. Subtracting
+    six weeks to manufacture a cycle the mission never recorded would be a
+    guess wearing the shape of a fact."""
+    assert _kpi_prior_bounds(
+        "Last Transfer", date(2026, 6, 15), date(2026, 7, 26),
+        date(2026, 9, 3), transfers=_TRANSFERS) is None
+
+
+def test_last_transfer_gets_its_twin_once_an_earlier_cycle_exists():
+    twin = _kpi_prior_bounds(
+        "Last Transfer", date(2026, 6, 15), date(2026, 7, 26), date(2026, 9, 3),
+        transfers={**_TRANSFERS,
+                   "_transfer_before_last": (date(2026, 5, 4), date(2026, 6, 14))})
+    assert twin == (date(2026, 5, 4), date(2026, 6, 14))
+
+
+def test_both_transfer_periods_are_offered_by_the_picker():
+    assert _KPI_PERIODS[0] == "This Transfer So Far"
+    assert _KPI_PERIODS[1] == "Last Transfer"
+
+
+def test_the_transfer_periods_have_their_own_twin_labels(english):
+    assert _twin_label("This Transfer So Far") == "vs same days last transfer"
+    assert _twin_label("Last Transfer") == "vs the transfer before"

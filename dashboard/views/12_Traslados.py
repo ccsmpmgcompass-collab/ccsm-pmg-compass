@@ -58,6 +58,7 @@ from app.components.cloud_job_ui import CloudJobFailed, CloudJobTimeout, run_clo
 from app.ingestion import transfer_apply_service as tas
 from app.integrations.transfer_bridge import FormSyncError, form_sync
 from app.utils.area_helpers import mission_today
+from app.utils.transfer_helpers import transfer_rows, transfer_window
 
 # Page chrome (set_page_config / inject_global_css / render_sidebar) is
 # owned by Home.py's st.navigation router since 2026-09-02 — the router and
@@ -77,47 +78,21 @@ _TODAY = mission_today()   # mission-local, not the server's UTC date
 
 def _render_schedule_tab() -> None:
     # ── Which transfer are we in ────────────────────────────────────────────
-    def _transfer_rows() -> list[dict]:
-        """TRANSFER_SCHEDULE as dicts, oldest first. Rows without a usable
-        Start_Date are dropped — a schedule row that cannot be placed on a
-        calendar cannot tell anyone which week it is."""
-        df = read_tab("TRANSFER_SCHEDULE")
-        if df.empty or "Start_Date" not in df.columns:
-            return []
-        out = []
-        for _, r in df.iterrows():
-            start = str(r.get("Start_Date", "")).strip()[:10]
-            try:
-                start_d = date.fromisoformat(start)
-            except ValueError:
-                continue
-            try:
-                weeks = int(float(str(r.get("Weeks", "")).strip() or 6))
-            except (TypeError, ValueError):
-                weeks = 6
-            out.append({
-                "number": str(r.get("Transfer_Number", "")).strip(),
-                "start": start_d,
-                "weeks": max(1, weeks),
-                "status": str(r.get("Status", "")).strip(),
-            })
-        return sorted(out, key=lambda x: x["start"])
+    # This page used to carry its own copy of the schedule reader and the
+    # "which one is current" rule. Two other places now ask the same question
+    # — the Desgloses period picker and the Panel's compliance rankings — so
+    # the logic lives in app/utils/transfer_helpers and this page reads it
+    # like everyone else (audit item E2: never let a second copy exist).
+    rows = transfer_rows()
 
-    rows = _transfer_rows()
-
-    # Fall back to AGENT_CONFIG when TRANSFER_SCHEDULE has not been filled in.
-    # That is the same value CCSM_Agent3 uses for its transfer-to-date
-    # totals, so the window described here and the numbers below always agree.
-    fallback_start = (get_config_value("TRANSFER_START_DATE", "") or "").strip()[:10]
-
-    current = next((r for r in reversed(rows) if r["start"] <= _TODAY), None)
-
-    if current is None and fallback_start:
-        try:
-            current = {"number": "", "start": date.fromisoformat(fallback_start),
-                       "weeks": 6, "status": ""}
-        except ValueError:
-            current = None
+    _win = transfer_window(0, _TODAY)
+    current = None
+    if _win is not None:
+        current = {"number": _win["number"], "start": _win["start"],
+                   "weeks": _win["weeks"], "status": _win["status"]}
+    # transfer_window falls back to AGENT_CONFIG's TRANSFER_START_DATE on its
+    # own; `source` is how it says which of the two answered.
+    fallback_start = (_win or {}).get("source") == "config"
 
     if current is None:
         st.info(
@@ -134,7 +109,7 @@ def _render_schedule_tab() -> None:
     week_no = max(1, min(weeks, elapsed_days // 7 + 1))
     days_left = (end - _TODAY).days
 
-    if not rows and fallback_start:
+    if fallback_start:
         st.caption(
             t("TRANSFER_SCHEDULE is empty, so this uses TRANSFER_START_DATE "
               "from AGENT_CONFIG and assumes a {weeks}-week cycle.",
@@ -157,6 +132,28 @@ def _render_schedule_tab() -> None:
           start=fmt_date(start), end=fmt_date(end), weeks=fmt_int(weeks),
           status=f" · {current['status']}" if current["status"] else "")
     )
+
+    # AGENT_CONFIG's TRANSFER_START_DATE is what CCSM_Agent1A, Agent2 and
+    # Agent3 measure their own transfer windows from — including the
+    # LIVE_SNAPSHOT totals in the table further down THIS page. When it
+    # disagrees with the schedule, the header above and the numbers below
+    # describe different stretches of time and nothing on screen says so.
+    _cfg_start = (get_config_value("TRANSFER_START_DATE", "") or "").strip()[:10]
+    if _win and _win["source"] == "schedule" and _cfg_start:
+        try:
+            _cfg_date = date.fromisoformat(_cfg_start)
+        except ValueError:
+            _cfg_date = None
+        if _cfg_date and _cfg_date != start:
+            st.warning(
+                t("TRANSFER_SCHEDULE says this transfer began {schedule}, but "
+                  "AGENT_CONFIG's TRANSFER_START_DATE still says {config}. The "
+                  "week count above uses the schedule; the totals below come "
+                  "from CCSM_Agent3, which uses the config value — so the two "
+                  "currently describe different windows. Update "
+                  "TRANSFER_START_DATE to {schedule} to bring them back "
+                  "together.", schedule=fmt_date(start), config=fmt_date(_cfg_date))
+            )
 
     if days_left < 0:
         st.warning(

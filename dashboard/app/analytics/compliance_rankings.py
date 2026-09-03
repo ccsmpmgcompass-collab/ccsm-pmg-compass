@@ -45,6 +45,8 @@ import pandas as pd
 #: who reads "This Week" on two pages of one dashboard is entitled to the same
 #: seven days on both.
 PERIODS: tuple[str, ...] = (
+    "This Transfer So Far",
+    "Last Transfer",
     "This Week",
     "Last Week",
     "This Month So Far",
@@ -75,13 +77,22 @@ def status_of(pct: float | None) -> str:
     return "red"
 
 
-def period_bounds(label: str, today: date) -> tuple[date | None, date | None]:
+def period_bounds(label: str, today: date,
+                  transfers: dict | None = None) -> tuple[date | None, date | None]:
     """(start, end) for a period label, both ends inclusive.
 
     (None, None) for "All Time" -- the caller floors it at SYSTEM_START_DATE.
     The mission week runs Monday-Sunday (CCSM_Agent5A.gs rolls back to Monday
     and the weekly report covers Mon-Sun), so weeks anchor on Monday.
+
+    ``transfers`` carries the two transfer windows, already resolved from
+    TRANSFER_SCHEDULE by the caller (app.utils.transfer_helpers). They are
+    passed in rather than read here so this stays a pure function of its
+    arguments -- which is what lets the drift test in test_compliance_rankings
+    hold it and breakdowns_engine._kpi_period_bounds to the same days.
     """
+    if label in ("This Transfer So Far", "Last Transfer"):
+        return (transfers or {}).get(label) or (None, None)
     if label == "This Week":
         return today - timedelta(days=today.weekday()), today
     if label == "Last Week":
