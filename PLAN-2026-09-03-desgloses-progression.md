@@ -274,8 +274,8 @@ not just state).
 
 ## STATUS — updated 2026-09-03, end of build
 
-**Twelve of the thirteen steps are built, tested and verified in the running
-app.** One commit per step, all on `main`:
+**All thirteen steps are built, tested and verified in the running app.**
+One commit per step, all on `main`:
 
 | Step | Commit | What landed |
 |---|---|---|
@@ -288,15 +288,32 @@ app.** One commit per step, all on `main`:
 | 8 + 12 (D1/D2) | `52abc46` | progression header with coverage badge |
 | 9, 10, 11 (C2/C3/B3) | `7071a2b` | movement on both charts, honest bases |
 | 13 (E1) | `87a9991` | the last English on a Spanish page |
+| 5 (A1+E2) | `e6318e5` | transfer periods; "Este cambio hasta hoy" the default |
 | — | `e122f79` | Panel: the year against the 527 baptismal goal |
 
-**Step 5 (A1, transfer periods) is DEFERRED, not skipped.** `TRANSFER_SCHEDULE`
-was checked live on 2026-09-03 and holds a header row and nothing else — no
-`Actual` rows at all. `TRANSFER_START_DATE` = `2026-08-09` in AGENT_CONFIG is
-the only anchor that exists, so "Last Transfer" would be a guess presented as a
-fact. Fill the schedule in, then do Step 5 exactly as written above; the shared
-`transfer_window()` helper and the `views/12_Traslados.py` refactor (E2) are
-still the right shape and still unbuilt.
+**Step 5 (A1+E2) landed later the same day** (`e6318e5`), once Zackary supplied
+the real cycle: transfers run six weeks, the next begins 2026-09-07.
+TRANSFER_SCHEDULE was filled in with 2026-06-15 and 2026-07-27 (`Actual`) and
+2026-09-07 (`Scheduled`), numbered by position within the year. **All thirteen
+steps are now built.**
+
+`app/utils/transfer_helpers.py` is the single answer to "which transfer are we
+in"; `views/12_Traslados.py` reads it instead of its own private copy, which
+discharges E2. **"Este cambio hasta hoy" is the default period everywhere** —
+Desgloses, the Panel's compliance rankings, and Puntajes (which also stopped
+approximating the window as a rolling 42 days).
+
+The rule to protect if this is ever refactored: **Status does not decide which
+transfer is current.** The current transfer is the latest row whose start date
+has arrived. Gating on `Status == "Actual"` would pin the dashboard to the old
+cycle every time a new one began, until someone remembered to edit the tab.
+
+**Still open:** AGENT_CONFIG's `TRANSFER_START_DATE` reads `2026-08-09`, which
+is not on the six-week grid and looks like a launch-day placeholder. Agents 1A,
+2 and 3 all measure from it, so until it is set to `2026-07-27` the dashboard
+and the Apps Script side describe different windows. The Traslados page warns
+about the mismatch on screen; the warning disappears by itself once the config
+is updated.
 
 ### Decisions taken during the build that amend the plan above
 
