@@ -184,6 +184,23 @@ def fmt_month_year(value) -> str:
     return f"{_MONTHS_EN[d.month - 1]} {d.year}"
 
 
+def fmt_month_abbr(month: int) -> str:
+    """`ago` / `Aug` — a bare month name from its NUMBER, 1-12.
+
+    Takes an int rather than a date because its caller is an axis of twelve
+    months belonging to no particular year. Reuses the same abbreviation tables
+    as fmt_day_month, so a month is spelled one way across the whole app.
+    """
+    try:
+        i = int(month)
+    except (TypeError, ValueError):
+        return NA
+    if not 1 <= i <= 12:
+        return NA
+    table = _MONTHS_ES_ABBR if get_lang() == "es" else _MONTHS_EN_ABBR
+    return table[i - 1]
+
+
 def fmt_day_month(value, with_year: bool = False) -> str:
     """`5 de ago` / `Aug 5` — the compact form used inside date ranges."""
     d = _as_date(value)

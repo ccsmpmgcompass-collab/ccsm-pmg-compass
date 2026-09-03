@@ -3219,6 +3219,37 @@ def get_baptisms_actual(month_start: str) -> int | None:
         return None
 
 
+def get_mission_baptisms_by_month() -> dict[str, int]:
+    """Every certified mission-wide monthly baptism figure TABLEAU_BAPTISMS
+    holds, as ``{"YYYY-MM": count}``.
+
+    The whole series in one read, for the annual-pace chart — get_baptisms_actual
+    answers one month at a time, and asking it thirty-six times to draw three
+    years would be thirty-six passes over the same frame.
+
+    MISSION rows only. The tab also carries per-zone rows in principle; as of
+    2026-09-03 it holds none, and a zone total summed in alongside the mission
+    total would double-count.
+
+    A row whose count will not parse is skipped rather than counted as zero: a
+    month that failed to capture is not a month with no baptisms.
+    """
+    df = read_tab("TABLEAU_BAPTISMS")
+    if df.empty or "month" not in df.columns or "zone" not in df.columns:
+        return {}
+    mission = df[df["zone"].astype(str).str.strip() == "MISSION"]
+    out: dict[str, int] = {}
+    for _, r in mission.iterrows():
+        key = str(r.get("month", "")).strip()[:7]
+        if len(key) != 7:
+            continue
+        try:
+            out[key] = int(float(str(r.get("baptisms", "")).strip()))
+        except (ValueError, TypeError):
+            continue
+    return out
+
+
 def get_baptisms_actual_for_range(start_date, end_date) -> int | None:
     """Certified mission-wide baptisms for an arbitrary [start_date, end_date],
     summed from TABLEAU_BAPTISMS one whole calendar month at a time.

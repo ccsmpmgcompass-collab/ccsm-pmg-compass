@@ -21,9 +21,11 @@ from app.config.metric_catalog import key_indicator_metrics, nightly_metrics
 from app.i18n import t
 from app.i18n.formats import (
     fmt_int, fmt_number, fmt_percent, fmt_week_span, fmt_day_month,
+    fmt_month_abbr,
 )
 from app.config.theme import CHART_COLORS
 from app.db.queries import (
+    get_mission_baptisms_by_month,
     get_mission_totals,
     get_zone_totals,
     get_daily_effort_log,
@@ -56,6 +58,7 @@ from app.analytics.period_delta import (
     period_delta, point_delta, MIN_COMPARABLE_DAYS, WINDOW_DAYS,
 )
 from app.analytics.rate_metrics import rate_rows
+from app.analytics import annual_baptisms as ab
 from app.analytics import effort_breakdown as eb
 from app.analytics import compliance_rankings as cr
 from app.components.scope_selector import render_scope_selectors, ANY as scope_ANY
@@ -870,6 +873,101 @@ else:
             "because a week's KI goals are set on the previous week's form.",
             n=fmt_int(ki_scored_area_count(_zone_scores)),
             total=fmt_int(_active_areas)))
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 3b. THE YEAR AGAINST THE BAPTISMAL GOAL
+# ═══════════════════════════════════════════════════════════════════════════════
+# Numbered 3b for the same reason 1b is: the audit and the build queue refer to
+# this page's sections by number, and renumbering five of them to insert one
+# would silently invalidate every reference.
+#
+# Every other number on this page describes a week. This is the year the mission
+# is actually judged on, and until now nothing on the dashboard showed it. The
+# goal lives in AGENT_CONFIG (GOAL_ANNUAL_baptisms) rather than in this file so
+# next year's number is a sheet edit, not a deploy — with no row, the chart
+# still draws the year and simply has no line to aim at.
+_ab_monthly = get_mission_baptisms_by_month()
+if _ab_monthly:
+    _ab_year = _today.year
+    try:
+        _ab_goal = float((get_config_value("GOAL_ANNUAL_baptisms", "") or "").strip())
+    except (TypeError, ValueError):
+        _ab_goal = 0.0
+
+    _ab_series = ab.cumulative(_ab_monthly, _ab_year)
+    _ab_n = ab.months_covered(_ab_series)
+
+    if _ab_n:
+        render_section_label(
+            t("{year} Baptisms — Year to Date", year=_ab_year))
+
+        _ab_pace = ab.goal_pace(_ab_goal)
+        _ab_landing = ab.landing_estimate(_ab_series, _ab_goal)
+        _ab_gap = ab.pace_gap(_ab_series, _ab_goal)
+        _ab_x = [fmt_month_abbr(m) for m in range(1, ab.MONTHS_IN_YEAR + 1)]
+
+        fig_ab = go.Figure()
+        # Prior years first, so they sit behind. Two of them, because one is an
+        # anecdote: 2024 and 2025 finished 385 and 403, close enough that the
+        # pair reads as the mission's normal range rather than as a target.
+        for _off, _dim in ((2, "rgba(203,203,210,0.22)"), (1, "rgba(203,203,210,0.40)")):
+            _prev = ab.cumulative(_ab_monthly, _ab_year - _off)
+            if ab.months_covered(_prev) < 1:
+                continue
+            fig_ab.add_trace(go.Scatter(
+                x=_ab_x, y=_prev, mode="lines",
+                name=str(_ab_year - _off),
+                line=dict(color=_dim, width=1.5),
+                hovertemplate="%{y:.0f}<extra>" + str(_ab_year - _off) + "</extra>",
+            ))
+        if _ab_pace:
+            fig_ab.add_trace(go.Scatter(
+                x=_ab_x, y=_ab_pace, mode="lines",
+                name=t("Goal pace ({goal})", goal=fmt_int(_ab_goal)),
+                line=dict(color="#6366f1", width=2, dash="dash"),
+                hovertemplate="%{y:.0f}<extra>" + t("goal pace") + "</extra>",
+            ))
+        # The current year last, so it draws on top of everything it is being
+        # compared against.
+        fig_ab.add_trace(go.Scatter(
+            x=_ab_x[:_ab_n], y=_ab_series[:_ab_n],
+            mode="lines+markers",
+            name=str(_ab_year),
+            line=dict(color="#22c55e", width=3),
+            marker=dict(size=7),
+            hovertemplate="%{y:.0f}<extra>" + str(_ab_year) + "</extra>",
+            cliponaxis=False,
+        ))
+        fig_ab.update_layout(
+            xaxis=dict(type="category"),
+            yaxis=dict(title=t("Baptisms, cumulative"), rangemode="tozero"),
+            hovermode="x unified",
+            legend=dict(orientation="h", yanchor="top", y=-0.18, x=0),
+            margin=dict(t=20, b=60, l=60, r=20),
+            height=340,
+        )
+        st.plotly_chart(fig_ab, use_container_width=True)
+
+        # The line stops where the capture stops. Said plainly, because a
+        # cumulative line that simply ends is easy to read as a mission that
+        # stopped rather than an export that has not run.
+        _ab_last = fmt_month_abbr(_ab_n)
+        _ab_bits = [t("{n} baptisms through {month}",
+                      n=fmt_int(_ab_series[_ab_n - 1]), month=_ab_last)]
+        if _ab_gap is not None:
+            _ab_bits.append(
+                t("{n} ahead of goal pace", n=fmt_int(abs(round(_ab_gap))))
+                if _ab_gap >= 0 else
+                t("{n} behind goal pace", n=fmt_int(abs(round(_ab_gap)))))
+        if _ab_landing:
+            _ab_bits.append(
+                t("on pace for ~{n} by year end", n=fmt_int(_ab_landing["value"])))
+        st.caption(" · ".join(_ab_bits))
+        st.caption(t(
+            "Certified monthly totals from the Tableau export, which reaches "
+            "{month}. The weekly form's own baptism field is not used here — it "
+            "undercounts by roughly half.", month=_ab_last))
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 4. EIGHT-WEEK TRENDS (mission totals)

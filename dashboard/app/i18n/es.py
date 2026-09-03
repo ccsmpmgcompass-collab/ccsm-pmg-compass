@@ -1094,6 +1094,22 @@ ES: dict[str, str] = {
     "{n} of {m} areas filed a weekly report · {pct}%":
         "{n} de {m} áreas enviaron informe semanal · {pct}%",
 
+    # ── Panel §3b: the year against the baptismal goal (2026-09-03) ──────────
+    "{year} Baptisms — Year to Date": "Bautismos {year} — Acumulado del Año",
+    "Baptisms, cumulative": "Bautismos, acumulado",
+    "Goal pace ({goal})": "Ritmo meta ({goal})",
+    "goal pace": "ritmo meta",
+    "{n} baptisms through {month}": "{n} bautismos hasta {month}",
+    "{n} ahead of goal pace": "{n} por sobre el ritmo meta",
+    "{n} behind goal pace": "{n} bajo el ritmo meta",
+    "on pace for ~{n} by year end": "va camino a ~{n} al cierre del año",
+    "Certified monthly totals from the Tableau export, which reaches {month}. "
+    "The weekly form's own baptism field is not used here — it undercounts by "
+    "roughly half.":
+        "Totales mensuales certificados de la exportación de Tableau, que "
+        "llega hasta {month}. El campo de bautismos del formulario semanal no "
+        "se usa aquí — subcuenta aproximadamente a la mitad.",
+
     # ── Breakdowns engine: period twins (progression work, 2026-09-03) ───────
     # Each label names the twin the arrow is measured against. "los mismos días
     # del mes pasado" and not "el mes pasado": three days into September the
