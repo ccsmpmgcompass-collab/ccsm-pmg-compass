@@ -981,6 +981,24 @@ ES: dict[str, str] = {
     "Your session has expired. Please sign in again.":
         "Su sesión ha expirado. Por favor inicie sesión nuevamente.",
 
+    # ── Breakdowns engine: pace goals (progression work, 2026-09-03) ─────────
+    # "lo esperado a hoy" and not "la meta": on the third of the month the bar
+    # is judged against three days of the month's target, not the whole of it.
+    "{value} of {pace} expected by today · full goal {goal} by {date}":
+        "{value} de {pace} esperado a hoy · meta completa {goal} al {date}",
+    "{value} of {pace} expected by today · full goal {goal}":
+        "{value} de {pace} esperado a hoy · meta completa {goal}",
+    "totals for the period — no goals at this level":
+        "totales del período — sin metas en este nivel",
+    "no goal for unbounded history":
+        "sin meta para el historial completo",
+    "the mark on each bar is where this period should stand today; the bar "
+    "fills toward the full goal":
+        "la marca en cada barra es donde debería estar este período hoy; la "
+        "barra avanza hacia la meta completa",
+    "measured against the weekly goal × {factor}":
+        "medido contra la meta semanal × {factor}",
+
     # ── Breakdowns engine: period twins (progression work, 2026-09-03) ───────
     # Each label names the twin the arrow is measured against. "los mismos días
     # del mes pasado" and not "el mes pasado": three days into September the

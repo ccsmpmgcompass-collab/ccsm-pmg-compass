@@ -496,6 +496,88 @@ def render_page_header(title: str, subtitle: str, icon: str = "") -> None:
     )
 
 
+#: Goal-bar tiers, and the one place they are written down. Four, not three:
+#: amber used to run all the way from 60% to nothing, so baptismal invitation
+#: at 39% of target -- the single most actionable fact the 2026-08-21 audit
+#: found (H2) -- drew the same colour as a metric sitting at 55%.
+_GOAL_BAR_TIERS = ((90, "#22c55e"), (60, "#6366f1"), (50, "#f59e0b"))
+_GOAL_BAR_BELOW = "#ef4444"
+
+
+def goal_bar_state(value, goal, *, pace=None, value_basis=None, goal_basis=None):
+    """How a goal bar should draw itself: how full, how graded, where the tick.
+
+    Pure arithmetic, lifted out of render_kpi_row so the rules below can be
+    tested without a Streamlit runtime or an HTML parse.
+
+    Returns a dict:
+      ``measured``  False when the value is not a number yet (the weekly form
+                    has not landed). Distinct from a value of zero, which is a
+                    real reading of nothing.
+      ``per_area``  whether the ratio was reduced to per-area rates first
+      ``v_rate`` / ``g_rate``  those rates, when it was
+      ``pct``       value against the FULL goal, for the caption. Never clamped:
+                    a goal set far too low must be able to read 196%.
+      ``width``     the bar's fill, value against the full goal, clamped 0-100
+      ``grade_pct`` what the COLOUR is judged on -- value against ``pace`` when
+                    a pace is given, else the same as ``pct``
+      ``tick``      where the pace mark sits on the track, 0-100, or None
+
+    The split between ``width`` and ``grade_pct`` is the whole point. Two days
+    into a thirty-day month a zone exactly on pace has produced 7% of the
+    month's goal; grading that 7% paints it red and tells the mission it is
+    failing when it is precisely on track. The bar still fills to 7%, because
+    that is true -- the tick sits at 7% too, and the colour comes from the
+    comparison between them.
+    """
+    measured = isinstance(value, (int, float))
+    per_area = bool(value_basis) and bool(goal_basis) and measured
+    v_rate = g_rate = None
+
+    def _ratio(numerator_total, denominator_total):
+        """`numerator_total` over `denominator_total`, per-area when the two
+        rest on different numbers of areas. On 2026-08-21 the week ending 08-16
+        held 33 areas' results (204 new people) over 1 area's goal (10) and a
+        tile read 2.040%; reducing both to rates first cancels the mismatch."""
+        if per_area:
+            return (float(numerator_total) / float(value_basis)) / (
+                float(denominator_total) / float(goal_basis))
+        return float(numerator_total) / float(denominator_total)
+
+    try:
+        if per_area:
+            v_rate = float(value) / float(value_basis)
+            g_rate = float(goal) / float(goal_basis)
+        pct = round(_ratio(value, goal) * 100) if measured else 0
+    except (TypeError, ZeroDivisionError, ValueError):
+        return {"measured": False, "per_area": False, "v_rate": None,
+                "g_rate": None, "pct": 0, "width": 0, "grade_pct": 0,
+                "tick": None}
+
+    grade_pct, tick = pct, None
+    try:
+        if measured and pace is not None and float(pace) > 0:
+            grade_pct = round(_ratio(value, pace) * 100)
+            tick = max(0, min(100, round(float(pace) / float(goal) * 100)))
+    except (TypeError, ZeroDivisionError, ValueError):
+        grade_pct, tick = pct, None
+
+    return {
+        "measured": measured, "per_area": per_area,
+        "v_rate": v_rate, "g_rate": g_rate,
+        "pct": pct, "width": max(0, min(100, pct)) if measured else 0,
+        "grade_pct": grade_pct, "tick": tick,
+    }
+
+
+def goal_bar_color(grade_pct: float) -> str:
+    """The tier colour for a graded percentage."""
+    for threshold, color in _GOAL_BAR_TIERS:
+        if grade_pct >= threshold:
+            return color
+    return _GOAL_BAR_BELOW
+
+
 def render_kpi_row(metrics: list[dict]) -> None:
     """
     Render a horizontal row of glass KPI cards using a single st.markdown HTML block.
@@ -512,6 +594,13 @@ def render_kpi_row(metrics: list[dict]) -> None:
     two must read as clearly different things, not two goal bars) — fixed violet
     #8b5cf6 rather than performance-graded, and its caption says "expectation" not
     "goal", so the difference doesn't rely on color alone.
+
+    pace (optional int/float) is what the goal would be if the period ended
+    today — a thirty-day goal three days in. When present the bar grows a tick
+    at pace/goal, its COLOUR is graded on value/pace instead of value/goal, and
+    the caption states the pace rather than a percentage of a full-period goal
+    the reader has not yet had time to meet. goal_by (optional str, already
+    formatted) names the date the full goal is due, for that caption.
 
     note (optional str) prints a small caption directly under the value — for a
     card whose big number is a share and whose count would otherwise be lost
@@ -534,7 +623,8 @@ def render_kpi_row(metrics: list[dict]) -> None:
     the neutral band, -5 points for red. All of them live in period_delta.
 
     Goal bar colors: green at 90% of goal or better, indigo down to 60%, amber to
-    50%, red below half.
+    50%, red below half — of the PACE where one is given, of the goal otherwise.
+    See goal_bar_state() for the arithmetic and why the two are separated.
     """
     cards = ""
     for m in metrics:
@@ -661,28 +751,14 @@ def render_kpi_row(metrics: list[dict]) -> None:
             # nothing and only ever rescues the mismatched case.
             v_basis = m.get("value_basis")
             g_basis = m.get("goal_basis")
-            per_area = bool(v_basis) and bool(g_basis) and measured
-            try:
-                if per_area:
-                    v_rate = float(value) / float(v_basis)
-                    g_rate = float(goal) / float(g_basis)
-                    pct = round(v_rate / g_rate * 100)
-                elif measured:
-                    pct = round(float(value) / float(goal) * 100)
-                else:
-                    pct = 0
-            except (TypeError, ZeroDivisionError, ValueError):
-                measured, per_area, pct = False, False, 0
-            width = max(0, min(100, pct)) if measured else 0
-
-            # Four tiers, not three. Amber used to run all the way down from 60%
-            # to nothing, so the mission's worst number -- baptismal invitation
-            # at 39% of its target, the single most actionable fact the audit
-            # found (H2) -- drew the same colour as a metric sitting at 55%.
-            # Red below half the goal says the difference out loud, and matches
-            # the change arrow above it, which has had a red tier all along.
-            bar = ("#22c55e" if pct >= 90 else "#6366f1" if pct >= 60
-                   else "#f59e0b" if pct >= 50 else "#ef4444")
+            pace = m.get("pace")
+            state = goal_bar_state(value, goal, pace=pace,
+                                   value_basis=v_basis, goal_basis=g_basis)
+            measured = state["measured"]
+            per_area = state["per_area"]
+            v_rate, g_rate = state["v_rate"], state["g_rate"]
+            pct, width = state["pct"], state["width"]
+            bar = goal_bar_color(state["grade_pct"])
 
             # A goal is normally a whole number even on a card that prints
             # decimals -- the rate targets are 50, 20, 25 -- and "50,0%" under
@@ -694,6 +770,25 @@ def render_kpi_row(metrics: list[dict]) -> None:
 
             if not measured:
                 caption = t("Goal: {goal}", goal=_card_number(goal, goal_places))
+            elif state["tick"] is not None:
+                # An in-progress period is judged against where it should be
+                # TODAY, so that is what the caption states. "23% of 168 goal"
+                # on the third of the month is a true number that reads as a
+                # failure; "18 of 17 expected by today" is the same data and
+                # the right verdict. The full goal stays visible so the card
+                # never hides what the period is ultimately for.
+                caption = (
+                    t("{value} of {pace} expected by today · full goal {goal} by {date}",
+                      value=_card_number(value, goal_places),
+                      pace=_card_number(pace, 0),
+                      goal=_card_number(goal, goal_places),
+                      date=_html.escape(str(m.get("goal_by", ""))))
+                    if m.get("goal_by") else
+                    t("{value} of {pace} expected by today · full goal {goal}",
+                      value=_card_number(value, goal_places),
+                      pace=_card_number(pace, 0),
+                      goal=_card_number(goal, goal_places))
+                )
             elif per_area:
                 # The per-area pair is printed, not just the percentage: the
                 # tile's own big number is a mission TOTAL, so without these two
@@ -713,12 +808,23 @@ def render_kpi_row(metrics: list[dict]) -> None:
                 f'<div style="font-size:0.6rem;color:#4b5563;margin-top:1px;">{note}</div>'
                 if note else ""
             )
+            # The pace mark. overflow:hidden on the track would clip an
+            # absolutely-positioned child, so the tick lives in a wrapper
+            # OUTSIDE the clipping box and the track keeps its rounded fill.
+            tick_html = (
+                f'<div style="position:absolute;left:{state["tick"]}%;top:-2px;'
+                f'width:2px;height:7px;background:rgba(244,244,248,0.85);'
+                f'border-radius:1px;"></div>'
+                if state["tick"] is not None else ""
+            )
             goal_html = (
                 f'<div style="margin-top:8px;">'
+                f'<div style="position:relative;">'
                 f'<div style="height:3px;background:rgba(255,255,255,0.08);'
                 f'border-radius:2px;overflow:hidden;">'
                 f'<div style="height:100%;width:{width}%;background:{bar};'
                 f'border-radius:2px;transition:width 0.4s ease;"></div></div>'
+                f'{tick_html}</div>'
                 f'<div style="font-size:0.65rem;color:#4b5563;margin-top:3px;">'
                 f'{_html.escape(caption)}'
                 f'</div>{note_html}</div>'

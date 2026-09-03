@@ -29,9 +29,10 @@ from app.analytics.period_delta import (
 )
 from app.components.design_system import render_kpi_row, render_section_label
 from app.config.theme import series_style
-from app.i18n.formats import fmt_day_month, fmt_int
+from app.i18n.formats import fmt_day_month, fmt_int, fmt_number
 from app.db.queries import (
     get_area_expectation_entry,
+    get_area_weekly_goals,
     get_area_type_category_labels,
     get_blitz_dates,
     get_config_value,
@@ -290,6 +291,41 @@ def _twin_label(label: str) -> str:
         "This Month So Far": t("vs same days last month"),
         "Last Month": t("vs the month before"),
     }.get(label, t("vs the period before"))
+
+
+def _resolve_group_goal(
+    metric: str, goals: dict | None, per_area_goals: dict, n_areas: int
+) -> tuple[float, str]:
+    """This group's WEEKLY goal for `metric`, and the arithmetic behind it.
+
+    Two sources, most-specific first — the same order `views/01_Panel.py`
+    applies mission-wide, and the reason it exists here is that Desgloses never
+    had the second one:
+
+      1. GOALS_CONFIG, summed across the group's areas by the caller. This is
+         what the Goals page edits, so an entered goal always wins.
+      2. AGENT_CONFIG's ``GOAL_<metric>`` rows, which are PER AREA PER WEEK, so
+         a group's goal is that number times how many areas are in it.
+
+    GOALS_CONFIG is an empty tab across the whole mission (checked live
+    2026-09-03), which is why no card on this page has ever drawn a goal bar —
+    Steps B1/B2/B3 would have shipped as three careful fixes to something
+    nobody could see. Falling back the way the Panel already does turns them
+    on, with no sheet edit and no second convention.
+
+    The returned note carries the multiplication because the product alone is
+    unreadable on screen: a bar saying "48% of 1.200" is 150 x 8 areas, and
+    nothing else on the card says so. It is empty for an entered goal, which is
+    its own explanation.
+    """
+    entered = float((goals or {}).get(metric, 0) or 0)
+    if entered > 0:
+        return entered, ""
+    per_area = float((per_area_goals or {}).get(metric, 0) or 0)
+    if per_area <= 0 or n_areas <= 0:
+        return 0.0, ""
+    return per_area * n_areas, t("{per_area} per area x {n}",
+                                 per_area=fmt_int(per_area), n=fmt_int(n_areas))
 
 
 def _comparison_note(
@@ -1150,6 +1186,12 @@ def render_group_breakdown(
         kpi_period = st.selectbox(
             t("Period"), _KPI_PERIODS,
             index=_KPI_PERIODS.index("This Month So Far"),
+            # The VALUE stays the English key — _kpi_period_bounds, the twin
+            # table and this widget's session state are all keyed on it. Only
+            # the displayed label is translated, which is why es.py has had
+            # these five strings since the compliance rankings work and this
+            # picker rendered them in English anyway.
+            format_func=lambda p: t(p),
             key="bd_kpi_period",
         )
     p_start, p_end, p_days = _kpi_period_bounds(kpi_period, mission_today())
@@ -1216,6 +1258,23 @@ def render_group_breakdown(
         # bars is what makes them directly comparable on one card.
         _goal_factor = (p_days / 7) if p_days else None
         _expectation_totals = get_group_weekly_expectation_totals(group_areas)
+        # AGENT_CONFIG's GOAL_* rows: the per-area weekly targets the mission
+        # itself set, and the fallback that actually fires — GOALS_CONFIG is an
+        # empty tab. Read once per render, not once per card.
+        _per_area_goals = get_area_weekly_goals()
+
+        # How much of the period has actually run, and when it ends. Both are
+        # None on a completed period and on All Time, which is what turns the
+        # pace tick off: there is no "should be here by now" for a period that
+        # is already over.
+        if in_progress and p_start is not None and p_days:
+            _elapsed_days = (p_end - p_start).days + 1
+            _pace_factor = _elapsed_days / 7
+            _period_end_full = p_start + timedelta(days=p_days - 1)
+        else:
+            _elapsed_days = None
+            _pace_factor = None
+            _period_end_full = None
 
         # ── What each side of the comparison rests on ─────────────────────────
         # A date counts as a day of data for THIS GROUP only when at least half
@@ -1250,20 +1309,50 @@ def render_group_breakdown(
                     _card["change"] = _change
                     _card["delta_label"] = _vs
 
-            _weekly_goal = float((goals or {}).get(_key, 0) or 0)
+            _weekly_goal, _derived_note = _resolve_group_goal(
+                _key, goals, _per_area_goals, len(group_areas))
             if _goal_factor and _weekly_goal > 0:
                 _card["goal"] = _weekly_goal * _goal_factor
+                if _derived_note:
+                    _card["goal_note"] = _derived_note
+                # A running period is graded against where it should be TODAY,
+                # not against a month's goal it has had three days to meet. Two
+                # days into a thirty-day month a zone exactly on pace has 7% of
+                # the month's target, and grading that 7% told it it was
+                # failing. The bar still fills toward the full goal; the tick
+                # marks the pace, and the colour comes from the gap between.
+                if _pace_factor is not None:
+                    _card["pace"] = _weekly_goal * _pace_factor
+                    if _period_end_full is not None:
+                        _card["goal_by"] = fmt_day_month(_period_end_full)
+            # The expectation bar is the AREA-TYPE reference, a different thing
+            # from the goal — but both fall back to AGENT_CONFIG's GOAL_* rows,
+            # so with GOALS_CONFIG empty they resolve to the same number and the
+            # card drew two bars saying one fact (seen live 2026-09-03: "meta
+            # completa 1.290" directly above "2% de la expectativa de 1.290").
+            # Two bars must mean two things; when they don't, only the goal —
+            # the one carrying the pace tick — is drawn. Populating GOALS_CONFIG
+            # separates them again and the expectation bar comes back on its own.
             _weekly_expectation = float(_expectation_totals.get(_key, 0) or 0)
-            if _goal_factor and _weekly_expectation > 0:
+            if (_goal_factor and _weekly_expectation > 0
+                    and round(_weekly_expectation) != round(_weekly_goal)):
                 _card["expectation"] = _weekly_expectation * _goal_factor
             _kpi_cards.append(_card)
 
+        # Whether a goal is SHOWN, not whether GOALS_CONFIG had a row: since
+        # _resolve_group_goal added the AGENT_CONFIG fallback, an empty
+        # GOALS_CONFIG no longer means an empty bar, and the old test on
+        # `goals` would have captioned a page full of goal bars "no goals at
+        # this level".
+        _any_goal = any("goal" in _c for _c in _kpi_cards)
         _goal_note = (
-            "totals for the period — no goals at this level" if not goals
-            else "no goal for unbounded history" if _goal_factor is None
-            else "bar shows progress toward this period's goal (period still in "
-                 "progress)" if in_progress
-            else f"measured against the weekly goal × {_goal_factor:.2f}"
+            t("totals for the period — no goals at this level") if not _any_goal
+            else t("no goal for unbounded history") if _goal_factor is None
+            else t("the mark on each bar is where this period should stand "
+                   "today; the bar fills toward the full goal")
+            if _pace_factor is not None
+            else t("measured against the weekly goal × {factor}",
+                   factor=fmt_number(_goal_factor, 2))
         )
         st.caption(f"{span}  |  {_goal_note}")
         st.caption(_comparison_note(kpi_period, pr_start, pr_end,
