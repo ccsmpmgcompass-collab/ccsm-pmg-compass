@@ -212,6 +212,79 @@ def _kpi_period_bounds(label: str, today: date) -> tuple[date | None, date | Non
     return None, None, None  # All Time
 
 
+def _kpi_prior_bounds(
+    label: str, cur_start: date | None, cur_end: date | None, today: date
+) -> tuple[date, date] | None:
+    """The TWIN of a KPI period: the same-shaped window immediately before it,
+    both ends inclusive — or None when the period has no honest twin.
+
+    "Same-shaped", not "same-named", and the difference matters on an
+    in-progress period. Three days into September, the twin of "This Month So
+    Far" is 1–3 August, not the whole of August: a ghost bar drawn from 31 days
+    of history standing beside a 3-day bar is not a comparison, it's a
+    guaranteed collapse. The same reading applies to "This Week" — four days
+    into the week, the twin is the first four days of last week.
+
+    (`period_delta` normalizes the prior side onto the current side's basis, so
+    the ARROW would survive a mismatched twin either way. The charts in Steps
+    C2/C3 draw the twin's raw per-bucket totals, and those would not.)
+
+    A completed period's twin is simply the whole period before it. "All Time"
+    has no twin at all — there is no earlier history to hold it against — and
+    says so by returning None rather than inventing one.
+
+    A twin that would start before the mission's own records is still returned;
+    the caller sees an empty slice and reports "no comparison yet", which is the
+    truth. Clamping it here would silently shorten the window instead.
+    """
+    if label == "All Time" or cur_start is None or cur_end is None:
+        return None
+
+    if label == "This Week":
+        # Same elapsed days of last week: last Monday .. last Monday + offset.
+        prior_monday = cur_start - timedelta(days=7)
+        return prior_monday, prior_monday + (cur_end - cur_start)
+
+    if label == "Last Week":
+        return cur_start - timedelta(days=7), cur_end - timedelta(days=7)
+
+    if label == "This Month So Far":
+        # Same elapsed days of last month. A month shorter than the elapsed
+        # window (31 March -> February) clamps at its own last day rather than
+        # spilling into March, which would double-count days already in `cur`.
+        last_day_prev = cur_start - timedelta(days=1)
+        p_start = last_day_prev.replace(day=1)
+        elapsed = (cur_end - cur_start).days
+        return p_start, min(p_start + timedelta(days=elapsed), last_day_prev)
+
+    if label == "Last Month":
+        last_day_prev = cur_start - timedelta(days=1)
+        return last_day_prev.replace(day=1), last_day_prev
+
+    # An unknown label (a period added to _KPI_PERIODS without a twin rule)
+    # gets no twin rather than a wrong one.
+    return None
+
+
+def _slice_to_window(
+    frame: pd.DataFrame, start: date | None, end: date | None
+) -> pd.DataFrame:
+    """`frame` cut to [start, end] on its Date column, both ends inclusive.
+
+    Date is a normalised YYYY-MM-DD string, so a lexicographic compare is a
+    correct date compare and needs no parsing. An empty frame, a missing Date
+    column or a None bound all return the frame unchanged — the same rule the
+    current-period slice has always applied.
+    """
+    if frame is None or frame.empty or "Date" not in frame.columns:
+        return frame if frame is not None else pd.DataFrame()
+    if start is None or end is None:
+        return frame
+    return frame[
+        (frame["Date"] >= start.isoformat()) & (frame["Date"] <= end.isoformat())
+    ]
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # CACHED LOADERS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1018,15 +1091,24 @@ def render_group_breakdown(
         )
     p_start, p_end, p_days = _kpi_period_bounds(kpi_period, mission_today())
 
-    rows = daily_hist if daily_hist is not None else pd.DataFrame()
-    if not rows.empty and "Date" in rows.columns and p_start is not None:
-        # Date is a normalised YYYY-MM-DD string, so a lexicographic compare is
-        # a correct date compare and needs no parsing.
-        rows = rows[
-            (rows["Date"] >= p_start.isoformat())
-            & (rows["Date"] <= p_end.isoformat())
-        ]
+    _hist = daily_hist if daily_hist is not None else pd.DataFrame()
+    rows = _slice_to_window(_hist, p_start, p_end)
     has_rows = not rows.empty
+
+    # ── The twin: the same-shaped window immediately before this one ──────────
+    # Every comparison on this page — the cards' arrows, the trend's dimmed
+    # overlay, the per-area bar's ghost — reads from this ONE slice, so they can
+    # never disagree about which days "before" means. None when the period has
+    # no honest twin (All Time), and empty when the twin predates the mission's
+    # own records, which is a different fact and is reported differently.
+    prior_bounds = _kpi_prior_bounds(kpi_period, p_start, p_end, mission_today())
+    if prior_bounds is None:
+        pr_start, pr_end = None, None
+        rows_prior = pd.DataFrame()
+    else:
+        pr_start, pr_end = prior_bounds
+        rows_prior = _slice_to_window(_hist, pr_start, pr_end)
+    has_prior = not rows_prior.empty
 
     span = (
         f"{rows['Date'].min()} → {rows['Date'].max()}" if has_rows and p_start is None
