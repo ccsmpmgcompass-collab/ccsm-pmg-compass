@@ -887,6 +887,28 @@ function previewOneCoachingEmail() {
     ' using MESSAGE_BANK rows ' + strength.messageId + ' / ' + growth.messageId + '.');
 }
 
+/**
+ * Read-only sanity check for the message-bank split. previewOneCoachingEmail()
+ * above and smokeTestPipeline() both only ever touch MESSAGE_BANK / row
+ * counts — neither exercises LEADERSHIP_MESSAGE_BANK's actual selection
+ * logic (a1c_pickRelevantLeadershipMsg_, the function the real weekly
+ * leadership letter calls). This calls it directly with harmless empty
+ * inputs. Sends no email, writes nothing — safe to run any time.
+ */
+function verifyLeadershipMessagePick() {
+  var msg = a1c_pickRelevantLeadershipMsg_({}, []);
+  if (!msg) {
+    Logger.log('verifyLeadershipMessagePick: FAILED — got null. Either ' +
+      'LEADERSHIP_MESSAGE_BANK read as empty through the split, or it has ' +
+      'no row with Active = TRUE.');
+    return;
+  }
+  Logger.log('verifyLeadershipMessagePick: OK — picked ' + msg.messageId +
+    ' (theme: ' + msg.theme + ')');
+  Logger.log('  Subject: ' + msg.subject);
+  Logger.log('  Body (first 80 chars): ' + String(msg.body).substring(0, 80) + '...');
+}
+
 /** Renders one MESSAGE_BANK row as an HTML block. Private to CCSM_Setup.gs. */
 function cs_messageBlock_(label, msg, accentColor) {
   var out = [];

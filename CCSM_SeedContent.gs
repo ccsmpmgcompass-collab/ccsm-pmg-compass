@@ -1044,6 +1044,52 @@ function splitMessageBanksToOwnSpreadsheet() {
 }
 
 /**
+ * Cosmetic only — touches no data. Makes LEADERSHIP_MESSAGE_BANK's column
+ * widths/wrap match MESSAGE_BANK's own style (splitMessageBanksToOwnSpreadsheet
+ * gives both tabs the same header styling, but never sets column widths or
+ * wrap — MESSAGE_BANK only looks right today because it was re-pasted by hand
+ * afterward, which carries formatting; a fresh seed like LEADERSHIP_MESSAGE_BANK
+ * does not). Safe to run more than once. Run this AFTER
+ * splitMessageBanksToOwnSpreadsheet() and seedCcsmLeadershipMessageBank(), since
+ * it reads through the same getTab() redirect they use.
+ */
+function formatLeadershipMessageBankSheet() {
+  var sheet = getTab('LEADERSHIP_MESSAGE_BANK');
+  var lastCol = sheet.getLastColumn();
+  var lastRow = sheet.getLastRow();
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+
+  sheet.getRange(1, 1, 1, lastCol)
+    .setFontWeight('bold')
+    .setBackground('#173A72')
+    .setFontColor('#FFFFFF')
+    .setFontFamily('Arial')
+    .setFontSize(10);
+  sheet.setFrozenRows(1);
+
+  sheet.setColumnWidths(1, lastCol, 100);
+
+  var bodyCol = headers.indexOf('Body_Text') + 1;
+  if (bodyCol > 0) {
+    sheet.setColumnWidth(bodyCol, 403);
+    if (lastRow > 1) {
+      sheet.getRange(2, bodyCol, lastRow - 1, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
+    }
+  }
+
+  var activeCol = headers.indexOf('Active') + 1;
+  if (activeCol > 0 && lastRow > 1) {
+    sheet.getRange(2, activeCol, lastRow - 1, 1).setHorizontalAlignment('center');
+  }
+
+  if (lastRow > 1) {
+    sheet.getRange(2, 1, lastRow - 1, lastCol).setFontFamily('Arial').setFontSize(10);
+  }
+
+  Logger.log('formatLeadershipMessageBankSheet: styled ' + lastCol + ' columns x ' + lastRow + ' rows.');
+}
+
+/**
  * Convenience: seeds KNOWLEDGE_BASE (the one tab still meant to be reseeded
  * from code as its content changes). MESSAGE_BANK and LEADERSHIP_MESSAGE_BANK
  * are deliberately excluded — both are mission-editable directly in the
