@@ -24,6 +24,8 @@ import streamlit.components.v1 as components
 from app.analytics import trends
 from app.analytics.period_delta import (
     MIN_COMPARABLE_DAYS,
+    REPORTING_MIN_SHARE,
+    SEVERE_DROP_PCT,
     days_in_window,
     period_delta,
     reporting_dates,
@@ -1273,6 +1275,212 @@ def render_lineage_marker(area: str, area_val_key: str) -> bool:
     return True
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# PROGRESSION HEADER — where this scope stands, above the fold
+# ══════════════════════════════════════════════════════════════════════════════
+# The audit's D1: the top of this page answered "what happened" and never "where
+# does this leave us". These four lines do, without scrolling.
+#
+# Baptisms lead because that is the outcome the mission is measured on (Zackary,
+# 2026-09-03) — but a zone baptises two or three people a month, so a
+# baptisms-only header would read "0 · sin cambio" most weeks and teach the
+# reader to skip it. The two indicators that PRECEDE a baptism ride underneath,
+# so a zone at zero still sees whether its pipeline is filling or emptying,
+# which is the fact it can act on this week.
+_HEADER_METRICS = (
+    "ki_baptized_confirmed_real",
+    "ki_baptismal_date_real",
+    "ki_friends_sacrament_real",
+)
+
+
+def _weeks_in(weekly: pd.DataFrame, start: date | None, end: date | None):
+    """`weekly` rows whose week_end_date falls inside [start, end]."""
+    if weekly is None or weekly.empty or "week_end_date" not in weekly.columns:
+        return weekly if weekly is not None else pd.DataFrame()
+    if start is None or end is None:
+        return weekly
+    return weekly[(weekly["week_end_date"] >= start.isoformat())
+                  & (weekly["week_end_date"] <= end.isoformat())]
+
+
+def _header_window(weekly: pd.DataFrame, p_start: date | None, p_end: date | None):
+    """Which weeks the header describes, and whether it had to look outside the
+    selected period to find them. Returns ``(rows, week_ends, fell_back)``.
+
+    These three indicators are collected once a week, on Sunday, so a period can
+    be perfectly valid and contain no weekly report at all — "This Month So Far"
+    on the third of the month is this page's own DEFAULT view, and the first
+    Sunday has not come. An empty header there would blank the page's most
+    prominent block on most days of most months.
+
+    So: the weeks inside the period when there are any, otherwise the most
+    recent completed week ending on or before the period's end. The caller
+    always prints WHICH week it is reading, and says so explicitly when it fell
+    back — that is what makes this honest rather than a quiet substitution. The
+    reader can see that the header and the cards below it describe different
+    windows, and why.
+    """
+    if weekly is None or weekly.empty or "week_end_date" not in weekly.columns:
+        return pd.DataFrame(), [], False
+    inside = _weeks_in(weekly, p_start, p_end)
+    if not inside.empty:
+        return inside, sorted(set(inside["week_end_date"])), False
+    if p_end is None:
+        return pd.DataFrame(), [], False
+    earlier = weekly[weekly["week_end_date"] <= p_end.isoformat()]
+    if earlier.empty:
+        return pd.DataFrame(), [], False
+    latest = max(earlier["week_end_date"])
+    return earlier[earlier["week_end_date"] == latest], [latest], True
+
+
+def _header_lines(weekly_cur: pd.DataFrame, weekly_prior: pd.DataFrame):
+    """One line per header metric: ``(label, value, change or None)``.
+
+    The basis is REPORTING AREAS, not days. A weekly indicator does not grow
+    with the number of days behind it, it grows with the number of
+    companionships that filed, so that is what period_delta normalizes on — a
+    week in which five fewer areas reported must not read as a mission that
+    fell.
+
+    Which means period_delta's own MIN_COMPARABLE_DAYS floor of 5 cannot be
+    used here: it counts DAYS, and applying it to areas would silence the arrow
+    on every district in the mission — CCSM's districts hold two to four areas,
+    so none of them could ever clear a floor of five. The floor that belongs to
+    this unit is relative: the prior week must carry at least half as many
+    reporting areas as the current one, so a week is never reconstructed by
+    scaling one companionship up to stand for eight. Same 0.5 share as
+    period_delta.REPORTING_MIN_SHARE, for the same reason.
+    """
+    cur_areas = (weekly_cur["area"].nunique()
+                 if not weekly_cur.empty and "area" in weekly_cur.columns else 0)
+    pri_areas = (weekly_prior["area"].nunique()
+                 if not weekly_prior.empty and "area" in weekly_prior.columns else 0)
+    lines = []
+    for key in _HEADER_METRICS:
+        if weekly_cur.empty or key not in weekly_cur.columns:
+            continue
+        value = int(pd.to_numeric(weekly_cur[key], errors="coerce").fillna(0).sum())
+        change = None
+        comparable = (pri_areas >= max(1, cur_areas * REPORTING_MIN_SHARE))
+        if (not weekly_prior.empty and key in weekly_prior.columns
+                and pri_areas and comparable):
+            prior = int(
+                pd.to_numeric(weekly_prior[key], errors="coerce").fillna(0).sum())
+            change = period_delta(value, prior, current_basis=cur_areas,
+                                  prior_basis=pri_areas, min_basis=1)
+        # The catalogue's labels end in "(Real)" to separate an achieved figure
+        # from the "(Meta)" the companionship set for itself — a distinction the
+        # weekly FORM needs and this header does not: nothing here is a goal, so
+        # the suffix is three characters of noise on all three lines.
+        label = format_metric_label(key)
+        for suffix in (" (Real)", " (real)"):
+            if label.endswith(suffix):
+                label = label[: -len(suffix)]
+        lines.append((label, value, change))
+    return lines
+
+
+def _change_chip(change) -> str:
+    """A change as one short coloured phrase, in the same visual language as the
+    arrows on the cards below — one page, one meaning for a red down-arrow."""
+    if not change:
+        return ""
+    direction = int(change.get("direction", 0))
+    pct, show = change.get("pct"), change.get("show")
+    severe = pct is not None and pct < SEVERE_DROP_PCT
+    if direction > 0:
+        color, arrow = "#22c55e", "↑"
+    elif direction == 0:
+        color, arrow = "#6b7280", "→"
+    else:
+        color, arrow = ("#ef4444" if severe else "#f59e0b"), "↓"
+    if show == "absolute" and change.get("change") is not None:
+        n = round(float(change["change"]))
+        text = f"{'+' if n > 0 else ''}{fmt_int(n)}"
+    elif pct is not None:
+        text = f"{fmt_int(abs(pct))}%"
+    else:
+        return ""
+    return (f'<span style="color:{color};font-weight:600;">{arrow} '
+            f'{html.escape(text)}</span>')
+
+
+def _render_progression_header(
+    scope_value: str, kpi_period: str, group_areas: set,
+    p_start: date | None, p_end: date | None,
+    pr_start: date | None, pr_end: date | None,
+) -> None:
+    """The block at the top of the page: outcome, pipeline, coverage."""
+    weekly = get_weekly_form_data()
+    if weekly.empty or "area" not in weekly.columns:
+        return
+    weekly = _scope_to_areas(weekly, "area", group_areas)
+    if weekly.empty:
+        return
+
+    cur, week_ends, fell_back = _header_window(weekly, p_start, p_end)
+    if cur.empty:
+        return
+
+    if fell_back and week_ends:
+        # A fallback on the current side against a period-accurate twin would
+        # compare two windows chosen by different rules. When the header falls
+        # back, its twin is the week before the one actually shown.
+        earlier = weekly[weekly["week_end_date"] < week_ends[0]]
+        prior = (earlier[earlier["week_end_date"] == max(earlier["week_end_date"])]
+                 if not earlier.empty else pd.DataFrame())
+    else:
+        prior, _, _ = _header_window(weekly, pr_start, pr_end)
+
+    lines = _header_lines(cur, prior)
+    if not lines:
+        return
+
+    reporting = cur["area"].nunique()
+    total = len(group_areas) or reporting
+    pct = round(reporting / total * 100) if total else 0
+
+    rows_html = "".join(
+        f'<div style="display:flex;align-items:baseline;gap:0.6rem;margin-top:3px;">'
+        f'<span style="flex:1;min-width:0;color:#9ca3af;font-size:0.78rem;">'
+        f'{html.escape(label)}</span>'
+        f'<span style="font-size:1.15rem;font-weight:800;color:#f4f4f8;'
+        f'font-variant-numeric:tabular-nums;">{fmt_int(value)}</span>'
+        f'<span style="font-size:0.75rem;min-width:5.5rem;text-align:right;">'
+        f'{_change_chip(change)}</span></div>'
+        for label, value, change in lines
+    )
+
+    last_week = fmt_day_month(date.fromisoformat(week_ends[-1]))
+    span = (t("week ending {d}", d=last_week) if len(week_ends) == 1
+            else t("{n} weeks to {d}", n=fmt_int(len(week_ends)), d=last_week))
+
+    coverage = t("{n} of {m} areas filed a weekly report · {pct}%",
+                 n=fmt_int(reporting), m=fmt_int(total), pct=fmt_int(pct))
+    if fell_back:
+        # On the footer line, in sentence case, rather than appended to the
+        # small-caps title: uppercased it ran to two shouted lines above the
+        # numbers and buried the scope name it was supposed to qualify.
+        coverage += " · " + t(
+            "{period} holds no weekly report yet", period=t(kpi_period).lower())
+
+    st.markdown(
+        f'<div style="background:rgba(255,255,255,0.04);'
+        f'border:1px solid rgba(255,255,255,0.08);border-radius:12px;'
+        f'padding:0.9rem 1.1rem;margin-bottom:1.25rem;">'
+        f'<div style="font-size:0.68rem;font-weight:700;letter-spacing:0.1em;'
+        f'color:#6b7280;text-transform:uppercase;">'
+        f'{html.escape(scope_value)} · {html.escape(span)}</div>'
+        f'{rows_html}'
+        f'<div style="font-size:0.65rem;color:#4b5563;margin-top:8px;'
+        f'border-top:1px solid rgba(255,255,255,0.06);padding-top:6px;">'
+        f'{html.escape(coverage)}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_group_breakdown(
     scope_kind: str,          # "Zone", "District" or "Area" — labels only
     scope_value: str,         # the selected zone/district/area name
@@ -1386,6 +1594,12 @@ def render_group_breakdown(
         pr_start, pr_end = prior_bounds
         rows_prior = _slice_to_window(_hist, pr_start, pr_end)
     has_prior = not rows_prior.empty
+
+    # The header goes here — after the period and its twin are known, before
+    # Section 1 — so the first thing on the page is where this scope stands,
+    # not the first of sixteen cards.
+    _render_progression_header(scope_value, kpi_period, group_areas,
+                               p_start, p_end, pr_start, pr_end)
 
     span = (
         f"{rows['Date'].min()} → {rows['Date'].max()}" if has_rows and p_start is None

@@ -1007,6 +1007,14 @@ ES: dict[str, str] = {
     "measured against the weekly goal × {factor}":
         "medido contra la meta semanal × {factor}",
 
+    # ── Breakdowns: the progression header (D1/D2, 2026-09-03) ───────────────
+    "week ending {d}": "semana al {d}",
+    "{n} weeks to {d}": "{n} semanas hasta el {d}",
+    "{period} holds no weekly report yet":
+        "{period} aún no tiene informe semanal",
+    "{n} of {m} areas filed a weekly report · {pct}%":
+        "{n} de {m} áreas enviaron informe semanal · {pct}%",
+
     # ── Breakdowns engine: period twins (progression work, 2026-09-03) ───────
     # Each label names the twin the arrow is measured against. "los mismos días
     # del mes pasado" and not "el mes pasado": three days into September the
