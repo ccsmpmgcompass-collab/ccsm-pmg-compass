@@ -21,8 +21,15 @@ import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
 
+from app.analytics.period_delta import (
+    MIN_COMPARABLE_DAYS,
+    days_in_window,
+    period_delta,
+    reporting_dates,
+)
 from app.components.design_system import render_kpi_row, render_section_label
 from app.config.theme import series_style
+from app.i18n.formats import fmt_day_month, fmt_int
 from app.db.queries import (
     get_area_expectation_entry,
     get_area_type_category_labels,
@@ -264,6 +271,62 @@ def _kpi_prior_bounds(
     # An unknown label (a period added to _KPI_PERIODS without a twin rule)
     # gets no twin rather than a wrong one.
     return None
+
+
+def _twin_label(label: str) -> str:
+    """What the arrow under a card is measured against, in words.
+
+    It sits beside the number ("↑ 12% vs last week"), so it names the twin the
+    way a person would say it out loud rather than printing its dates — the
+    dates are in the section caption, once, instead of on all sixteen cards.
+
+    Deliberately says "same days last month" and not "last month": the twin of
+    an in-progress period is the matching partial slice, and a label claiming
+    otherwise would misdescribe the arithmetic beneath it.
+    """
+    return {
+        "This Week": t("vs last week"),
+        "Last Week": t("vs the week before"),
+        "This Month So Far": t("vs same days last month"),
+        "Last Month": t("vs the month before"),
+    }.get(label, t("vs the period before"))
+
+
+def _comparison_note(
+    label: str, pr_start: date | None, pr_end: date | None,
+    cur_days: int, prior_days: int,
+) -> str:
+    """One line saying what the arrows are measured against — or why there
+    aren't any.
+
+    A missing arrow with no explanation is the IA audit's own M7 finding (empty
+    states that never say why), and on this page it would be actively
+    misleading: DAILY_LOG begins 2026-08-09, so "This Month So Far" has a twin
+    of 1-3 August that is legitimately empty. A reader seeing no arrows and no
+    note would reasonably conclude the mission had not moved.
+
+    Pure — it takes numbers and returns a string, so the four cases below are
+    tested directly rather than through a rendered page.
+    """
+    if pr_start is None or pr_end is None:
+        return t("{label} has no earlier period to compare against.", label=label)
+
+    window = t("{start}–{end}", start=fmt_day_month(pr_start), end=fmt_day_month(pr_end))
+
+    if prior_days < MIN_COMPARABLE_DAYS:
+        return t(
+            "No comparison yet: {window} holds {n} days on which at least half "
+            "this group's areas reported, and {need} are needed.",
+            window=window, n=fmt_int(prior_days), need=fmt_int(MIN_COMPARABLE_DAYS))
+    if cur_days < MIN_COMPARABLE_DAYS:
+        return t(
+            "No comparison yet: this period holds {n} reporting days so far, "
+            "and {need} are needed.",
+            n=fmt_int(cur_days), need=fmt_int(MIN_COMPARABLE_DAYS))
+    return t(
+        "Arrows compare against {window} — {n} reporting days, scaled onto this "
+        "period's {m}.",
+        window=window, n=fmt_int(prior_days), m=fmt_int(cur_days))
 
 
 def _slice_to_window(
@@ -1154,19 +1217,42 @@ def render_group_breakdown(
         _goal_factor = (p_days / 7) if p_days else None
         _expectation_totals = get_group_weekly_expectation_totals(group_areas)
 
+        # ── What each side of the comparison rests on ─────────────────────────
+        # A date counts as a day of data for THIS GROUP only when at least half
+        # its areas filed that night — period_delta's mission-wide rule, scoped
+        # down. Without it 2026-08-09, which holds one area's row out of 42,
+        # would count as a whole day and inflate every twin it falls inside.
+        _report_dates = reporting_dates(_hist, len(group_areas))
+        _cur_days = days_in_window(_report_dates, p_start, p_end)
+        _prior_days = days_in_window(_report_dates, pr_start, pr_end)
+        _vs = _twin_label(kpi_period)
+
         _kpi_cards = []
         for _key in _kpi_keys:
             if _key not in rows.columns:
                 continue  # active metric with no DAILY_LOG column yet
             _val = int(pd.to_numeric(rows[_key], errors="coerce").fillna(0).sum())
             _card: dict = {"label": format_metric_label(_key), "value": _val}
+
+            # The arrow means ONE thing on this page: movement against the twin.
+            # It used to mean distance from goal on a completed period and
+            # nothing at all on a running one, so the same glyph in the same
+            # place answered two different questions depending on the date. The
+            # goal keeps the bar and the caption beneath it, which is where a
+            # target belongs and where Steps B1/B2 make it honest.
+            if has_prior and _key in rows_prior.columns:
+                _prior_val = int(
+                    pd.to_numeric(rows_prior[_key], errors="coerce").fillna(0).sum())
+                _change = period_delta(
+                    _val, _prior_val,
+                    current_basis=_cur_days, prior_basis=_prior_days)
+                if _change is not None:
+                    _card["change"] = _change
+                    _card["delta_label"] = _vs
+
             _weekly_goal = float((goals or {}).get(_key, 0) or 0)
             if _goal_factor and _weekly_goal > 0:
-                _goal = _weekly_goal * _goal_factor
-                _card["goal"] = _goal
-                if not in_progress:
-                    _card["delta"] = round(_val / _goal * 100 - 100, 1)
-                    _card["delta_label"] = f"goal {int(round(_goal))}"
+                _card["goal"] = _weekly_goal * _goal_factor
             _weekly_expectation = float(_expectation_totals.get(_key, 0) or 0)
             if _goal_factor and _weekly_expectation > 0:
                 _card["expectation"] = _weekly_expectation * _goal_factor
@@ -1180,6 +1266,8 @@ def render_group_breakdown(
             else f"measured against the weekly goal × {_goal_factor:.2f}"
         )
         st.caption(f"{span}  |  {_goal_note}")
+        st.caption(_comparison_note(kpi_period, pr_start, pr_end,
+                                    _cur_days, _prior_days))
 
         if _kpi_cards:
             # render_kpi_row is a non-wrapping flex row, so cards shrink rather

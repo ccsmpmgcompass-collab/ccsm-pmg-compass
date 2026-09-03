@@ -164,3 +164,100 @@ def test_slice_of_a_window_before_the_records_is_empty_not_an_error():
 
 def test_slice_of_an_empty_frame_does_not_raise():
     assert _slice_to_window(pd.DataFrame(), date(2026, 8, 1), date(2026, 8, 3)).empty
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Step 2 (A3) — what the arrow under a card is allowed to say
+# ══════════════════════════════════════════════════════════════════════════════
+
+from app import i18n
+from app.analytics.period_delta import MIN_COMPARABLE_DAYS, UP, period_delta
+from app.breakdowns_engine import _comparison_note, _twin_label
+
+
+@pytest.fixture
+def english(monkeypatch):
+    """These assertions are about WHAT the page says, not which language it says
+    it in. CCSM's MISSION_LANGUAGE is ES, so t() returns Spanish by default and
+    an assertion on the English wording would fail for the wrong reason. The
+    Spanish side is held by test_i18n_coverage, which fails if any of these
+    strings is missing from es.py — as it did when they were first written."""
+    monkeypatch.setattr(i18n, "get_lang", lambda: "en")
+
+
+def test_the_twin_label_never_claims_a_whole_month_on_a_partial_one(english):
+    """"This Month So Far" is compared against the same ELAPSED days of last
+    month, so its label must not read "vs last month" — that would describe an
+    arithmetic the code does not perform."""
+    assert _twin_label("This Month So Far") == "vs same days last month"
+    assert _twin_label("Last Month") == "vs the month before"
+
+
+def test_every_period_has_a_twin_label(english):
+    for label in _KPI_PERIODS:
+        assert _twin_label(label), label
+
+
+def test_an_unlabelled_period_still_gets_an_honest_label(english):
+    """A period added later gets a true-but-vague label rather than a KeyError
+    or a blank space beside an arrow."""
+    assert _twin_label("This Transfer So Far") == "vs the period before"
+
+
+# ── _comparison_note: a missing arrow always says why ────────────────────────
+
+def test_all_time_says_it_has_nothing_to_compare_against(english):
+    note = _comparison_note("All Time", None, None, 25, 0)
+    assert "no earlier period" in note
+
+
+def test_a_twin_with_too_few_reporting_days_says_so_and_names_the_window(english):
+    """The live 2026-09-03 case: This Month So Far's twin is 1-3 August and
+    DAILY_LOG starts on the 9th, so the twin holds zero reporting days. The
+    reader must not be left to infer the mission stood still."""
+    note = _comparison_note("This Month So Far", date(2026, 8, 1), date(2026, 8, 3), 3, 0)
+    assert "No comparison yet" in note
+    assert "0" in note and str(MIN_COMPARABLE_DAYS) in note
+
+
+def test_a_thin_current_period_says_so_rather_than_blaming_the_twin(english):
+    """Two days into a month, the twin can be perfectly healthy and the
+    comparison still impossible. The note must name the side that is actually
+    short."""
+    note = _comparison_note("This Month So Far", date(2026, 8, 1), date(2026, 8, 2), 2, 30)
+    assert "this period holds" in note
+
+
+def test_a_usable_comparison_states_the_window_and_both_bases(english):
+    note = _comparison_note("Last Week", date(2026, 8, 17), date(2026, 8, 23), 7, 7)
+    assert "Arrows compare against" in note
+    assert "17" in note and "23" in note
+
+
+# ── The arrow itself ─────────────────────────────────────────────────────────
+
+def test_a_card_gets_an_arrow_once_both_sides_have_enough_days():
+    """The shape the engine hands render_kpi_row: period_delta's dict, not a
+    bare percentage — it has already chosen percent vs absolute and already
+    passed the move through the neutral band."""
+    change = period_delta(120, 100, current_basis=7, prior_basis=7)
+    assert change is not None
+    assert change["direction"] == UP
+    assert change["show"] in ("percent", "absolute")
+
+
+def test_no_arrow_below_the_minimum_basis():
+    """Four reporting days is not a week. The card shows its number and no
+    arrow, and _comparison_note explains the gap."""
+    assert period_delta(120, 100, current_basis=4, prior_basis=7) is None
+    assert period_delta(120, 100, current_basis=7, prior_basis=4) is None
+
+
+def test_an_empty_twin_produces_no_arrow_at_all():
+    """A twin window that predates DAILY_LOG sums to zero on every metric. Zero
+    prior with a positive current is a RISE FROM NOTHING to period_delta — true
+    for a real zero, a lie for a window the mission simply has no records for.
+    The engine's has_prior guard is what keeps the two apart, so it is asserted
+    here at the level the engine uses it."""
+    empty = _slice_to_window(_log("2026-08-23"), date(2026, 8, 1), date(2026, 8, 3))
+    assert empty.empty  # -> has_prior is False -> no "change" key on any card

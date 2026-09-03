@@ -981,6 +981,31 @@ ES: dict[str, str] = {
     "Your session has expired. Please sign in again.":
         "Su sesión ha expirado. Por favor inicie sesión nuevamente.",
 
+    # ── Breakdowns engine: period twins (progression work, 2026-09-03) ───────
+    # Each label names the twin the arrow is measured against. "los mismos días
+    # del mes pasado" and not "el mes pasado": three days into September the
+    # comparison is against 1-3 August, and a label saying otherwise would
+    # describe an arithmetic the code does not perform.
+    "vs last week": "vs. la semana pasada",
+    "vs the week before": "vs. la semana anterior",
+    "vs same days last month": "vs. los mismos días del mes pasado",
+    "vs the month before": "vs. el mes anterior",
+    "vs the period before": "vs. el período anterior",
+    "{label} has no earlier period to compare against.":
+        "{label} no tiene un período anterior con el cual compararse.",
+    "No comparison yet: {window} holds {n} days on which at least half "
+    "this group's areas reported, and {need} are needed.":
+        "Aún no hay comparación: {window} tiene {n} días en que informó al "
+        "menos la mitad de las áreas de este grupo, y se necesitan {need}.",
+    "No comparison yet: this period holds {n} reporting days so far, "
+    "and {need} are needed.":
+        "Aún no hay comparación: este período lleva {n} días con informe, y se "
+        "necesitan {need}.",
+    "Arrows compare against {window} — {n} reporting days, scaled onto this "
+    "period's {m}.":
+        "Las flechas comparan con {window} — {n} días con informe, ajustados a "
+        "los {m} de este período.",
+
     # ── Breakdowns engine ────────────────────────────────────────────────────
     # ── Panel §7: compliance rankings ─────────────────────────────────────────
     # The five period labels are shared with the Breakdowns page's KPI cards,
