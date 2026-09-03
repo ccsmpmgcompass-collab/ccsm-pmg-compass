@@ -179,6 +179,7 @@ _KPI_PERIODS = [
     "This Month So Far",
     "Last Month",
     "All Time",
+    "Custom",
 ]
 
 # DAILY_LOG history to pull for the cards. The `days` arg to get_daily_log is a
@@ -217,11 +218,15 @@ def _kpi_period_bounds(label: str, today: date) -> tuple[date | None, date | Non
             last_day,
             calendar.monthrange(last_day.year, last_day.month)[1],
         )
-    return None, None, None  # All Time
+    # "Custom" resolves from two date widgets, not from `today`; the caller
+    # overrides all three values. It is listed here so the fall-through below
+    # cannot silently hand it All Time's unbounded window.
+    return None, None, None  # All Time, and Custom before its widgets are read
 
 
 def _kpi_prior_bounds(
-    label: str, cur_start: date | None, cur_end: date | None, today: date
+    label: str, cur_start: date | None, cur_end: date | None, today: date,
+    floor: date | None = None,
 ) -> tuple[date, date] | None:
     """The TWIN of a KPI period: the same-shaped window immediately before it,
     both ends inclusive — or None when the period has no honest twin.
@@ -269,9 +274,48 @@ def _kpi_prior_bounds(
         last_day_prev = cur_start - timedelta(days=1)
         return last_day_prev.replace(day=1), last_day_prev
 
+    if label == "Custom":
+        # An arbitrary range's twin is the equal-length window ending the day
+        # before it starts. `floor` is where the mission's records begin: a twin
+        # reaching back past it would be measured against days that do not
+        # exist, and a partial twin would be worse than none — it would look
+        # like a real comparison. So there simply is no twin, and the caller
+        # says so, the same as All Time.
+        length = (cur_end - cur_start).days + 1
+        pr_end = cur_start - timedelta(days=1)
+        pr_start = pr_end - timedelta(days=length - 1)
+        if floor is not None and pr_start < floor:
+            return None
+        return pr_start, pr_end
+
     # An unknown label (a period added to _KPI_PERIODS without a twin rule)
     # gets no twin rather than a wrong one.
     return None
+
+
+def _records_floor(hist: pd.DataFrame) -> date:
+    """The earliest date this page may be asked about.
+
+    AGENT_CONFIG's SYSTEM_START_DATE is the mission's own answer and is
+    authoritative — but it is a hand-entered figure and is currently 2026-08-10,
+    one day AFTER DAILY_LOG's first row. Taking the earlier of the two means a
+    date picker can never exclude a day the mission actually has data for, which
+    is the only way this floor can be wrong in a direction anyone would notice.
+    """
+    floor = date(2026, 6, 8)   # the default used elsewhere in app/db/queries.py
+    try:
+        configured = str(get_config_value("SYSTEM_START_DATE", "") or "").strip()[:10]
+        if configured:
+            floor = date.fromisoformat(configured)
+    except (ValueError, TypeError):
+        pass
+    if hist is not None and not hist.empty and "Date" in hist.columns:
+        try:
+            earliest = date.fromisoformat(str(hist["Date"].min())[:10])
+            floor = min(floor, earliest)
+        except (ValueError, TypeError):
+            pass
+    return floor
 
 
 def _twin_label(label: str) -> str:
@@ -345,7 +389,11 @@ def _comparison_note(
     tested directly rather than through a rendered page.
     """
     if pr_start is None or pr_end is None:
-        return t("{label} has no earlier period to compare against.", label=label)
+        # t(label), not label: the period names are keys, and interpolating the
+        # raw key printed "Custom no tiene un período anterior…" on a Spanish
+        # page (seen live 2026-09-03).
+        return t("{label} has no earlier period to compare against.",
+                 label=t(label))
 
     window = t("{start}–{end}", start=fmt_day_month(pr_start), end=fmt_day_month(pr_end))
 
@@ -1197,6 +1245,42 @@ def render_group_breakdown(
     p_start, p_end, p_days = _kpi_period_bounds(kpi_period, mission_today())
 
     _hist = daily_hist if daily_hist is not None else pd.DataFrame()
+
+    # ── Custom: two dates instead of a named window ──────────────────────────
+    # Every other period answers a question the page already knows how to ask.
+    # This one exists for the questions it does not — a blitz week, the stretch
+    # since a companionship arrived, the run-up to a stake conference.
+    _floor = _records_floor(_hist)
+    if kpi_period == "Custom":
+        _today = mission_today()
+        _c1, _c2, _ = st.columns(3)
+        with _c1:
+            _from = st.date_input(
+                t("From"), value=max(_floor, _today - timedelta(days=27)),
+                min_value=_floor, max_value=_today, key="bd_kpi_from",
+            )
+        with _c2:
+            _to = st.date_input(
+                t("To"), value=_today,
+                min_value=_floor, max_value=_today, key="bd_kpi_to",
+            )
+        # st.date_input returns a tuple in range mode and a bare date otherwise;
+        # these are two single-date widgets, but normalise anyway so a Streamlit
+        # version change cannot turn p_start into a one-tuple and break every
+        # comparison below with a TypeError nobody would trace back to here.
+        _from = _from[0] if isinstance(_from, (list, tuple)) else _from
+        _to = _to[0] if isinstance(_to, (list, tuple)) else _to
+        if _to < _from:
+            # Backwards is a slip, not a request. Say so and use the day itself
+            # rather than rendering every section empty and blaming the data.
+            st.warning(t("The end date is before the start date — showing {d}.",
+                         d=fmt_day_month(_from)))
+            _to = _from
+        p_start, p_end = _from, _to
+        # A custom range IS its own full period: the reader chose both ends, so
+        # there is no larger window it is partway through and no pace to grade
+        # against. p_days is its true length, which is what scales the goal.
+        p_days = (p_end - p_start).days + 1
     rows = _slice_to_window(_hist, p_start, p_end)
     has_rows = not rows.empty
 
@@ -1206,7 +1290,8 @@ def render_group_breakdown(
     # never disagree about which days "before" means. None when the period has
     # no honest twin (All Time), and empty when the twin predates the mission's
     # own records, which is a different fact and is reported differently.
-    prior_bounds = _kpi_prior_bounds(kpi_period, p_start, p_end, mission_today())
+    prior_bounds = _kpi_prior_bounds(kpi_period, p_start, p_end, mission_today(),
+                                     floor=_floor)
     if prior_bounds is None:
         pr_start, pr_end = None, None
         rows_prior = pd.DataFrame()

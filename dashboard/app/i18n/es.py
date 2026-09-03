@@ -1041,6 +1041,14 @@ ES: dict[str, str] = {
     "This Month So Far": "Este mes hasta hoy",
     "Last Month": "Mes pasado",
     "All Time": "Desde el inicio",
+    # Added with the Custom range (progression work, 2026-09-03). The four
+    # above have existed since the compliance rankings; the Breakdowns picker
+    # only started rendering them through t() at the same time.
+    "Custom": "Personalizado",
+    "From": "Desde",
+    "To": "Hasta",
+    "The end date is before the start date — showing {d}.":
+        "La fecha final es anterior a la inicial — mostrando {d}.",
     "View": "Vista",
     "Best → Worst": "Mejor → Peor",
     "Worst → Best": "Peor → Mejor",

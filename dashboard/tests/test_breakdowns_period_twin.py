@@ -261,3 +261,61 @@ def test_an_empty_twin_produces_no_arrow_at_all():
     here at the level the engine uses it."""
     empty = _slice_to_window(_log("2026-08-23"), date(2026, 8, 1), date(2026, 8, 3))
     assert empty.empty  # -> has_prior is False -> no "change" key on any card
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Step 6 (A1b) — an arbitrary range, and the floor its twin may not cross
+# ══════════════════════════════════════════════════════════════════════════════
+
+_FLOOR = date(2026, 8, 9)   # DAILY_LOG's first row, live
+
+
+def test_a_custom_range_twins_the_equal_length_window_before_it():
+    """Seven days chosen by hand get the seven days immediately before them —
+    same rule as every named period, applied to a window nobody named."""
+    assert _kpi_prior_bounds(
+        "Custom", date(2026, 8, 24), date(2026, 8, 30), date(2026, 9, 3),
+        floor=_FLOOR) == (date(2026, 8, 17), date(2026, 8, 23))
+
+
+def test_a_one_day_custom_range_twins_the_day_before():
+    assert _kpi_prior_bounds(
+        "Custom", date(2026, 8, 20), date(2026, 8, 20), date(2026, 9, 3),
+        floor=_FLOOR) == (date(2026, 8, 19), date(2026, 8, 19))
+
+
+def test_a_custom_twin_reaching_past_the_records_is_no_twin_at_all():
+    """The live shape of this: DAILY_LOG begins 2026-08-09, so a range starting
+    on the 12th has only three days of history behind it and cannot have a
+    seven-day twin. A CLAMPED twin would be worse than none — three days
+    measured against seven looks like a real comparison and is not."""
+    assert _kpi_prior_bounds(
+        "Custom", date(2026, 8, 12), date(2026, 8, 18), date(2026, 9, 3),
+        floor=_FLOOR) is None
+
+
+def test_a_custom_twin_landing_exactly_on_the_floor_is_kept():
+    """The boundary is inclusive: a twin starting on the first day of records
+    is entirely inside them."""
+    assert _kpi_prior_bounds(
+        "Custom", date(2026, 8, 16), date(2026, 8, 22), date(2026, 9, 3),
+        floor=_FLOOR) == (date(2026, 8, 9), date(2026, 8, 15))
+
+
+def test_a_custom_twin_needs_no_floor_to_be_computed():
+    """`floor` is optional — without one, the arithmetic still holds and only
+    the records check is skipped."""
+    assert _kpi_prior_bounds(
+        "Custom", date(2026, 8, 24), date(2026, 8, 30), date(2026, 9, 3)
+    ) == (date(2026, 8, 17), date(2026, 8, 23))
+
+
+def test_custom_is_offered_in_the_picker():
+    assert "Custom" in _KPI_PERIODS
+
+
+def test_custom_falls_through_to_an_honest_twin_label(english):
+    """It has no name of its own to compare against, so it says the true, vague
+    thing rather than claiming a week or a month."""
+    from app.breakdowns_engine import _twin_label
+    assert _twin_label("Custom") == "vs the period before"

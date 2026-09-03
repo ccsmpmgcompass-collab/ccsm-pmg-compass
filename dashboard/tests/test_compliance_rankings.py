@@ -103,9 +103,19 @@ class TestPeriodBounds:
 
     def test_the_period_list_matches_the_breakdowns_page(self):
         """Both pages of one dashboard must mean the same seven days by "This
-        Week". breakdowns_engine owns the other copy of this list."""
+        Week". breakdowns_engine owns the other copy of this list.
+
+        A SUBSET, not an equality, since 2026-09-03: Breakdowns also offers
+        "Custom", which resolves from two date widgets rather than from `today`
+        and so has no bounds this section could share. The part that protects
+        the reader is unchanged and is the loop below — every label the two
+        pages both offer must cut the same days, in the same order, from the
+        same Monday. A label appearing here and NOT in Breakdowns is still a
+        failure: this list is the subset, and drift in that direction means one
+        of the two grew a period the other does not know about."""
         from app.breakdowns_engine import _KPI_PERIODS, _kpi_period_bounds
-        assert list(PERIODS) == list(_KPI_PERIODS)
+        assert set(PERIODS) <= set(_KPI_PERIODS)
+        assert [p for p in _KPI_PERIODS if p in PERIODS] == list(PERIODS),             "shared periods must stay in the same order on both pages"
         for label in PERIODS:
             mine = period_bounds(label, FRIDAY)
             theirs = _kpi_period_bounds(label, FRIDAY)[:2]
