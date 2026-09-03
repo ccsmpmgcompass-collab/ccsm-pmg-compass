@@ -269,3 +269,63 @@ through: **after Step 4** (every card on the default view now carries a real
 judgment — this alone is worth showing), **after Step 6** (the full period
 picker is complete), and **after Step 10** (every chart now shows movement,
 not just state).
+
+---
+
+## STATUS — updated 2026-09-03, end of build
+
+**Twelve of the thirteen steps are built, tested and verified in the running
+app.** One commit per step, all on `main`:
+
+| Step | Commit | What landed |
+|---|---|---|
+| 1 (A2) | `60ab7bf` | `_kpi_prior_bounds` — every period has a twin |
+| 2 (A3) | `5a2bd91` | the arrow on a card means progression, always |
+| 3 (B1) + goal fallback | `545772c` | pace-graded bar, tick, and a goal bar at all |
+| 4 (B2) | — | delivered by Step 3; see the decision below |
+| 6 (A1b) | `f8c1a58` | Custom date range |
+| 7 (C1) | `fff3a10` | landing estimate on every running card |
+| 8 + 12 (D1/D2) | `52abc46` | progression header with coverage badge |
+| 9, 10, 11 (C2/C3/B3) | `7071a2b` | movement on both charts, honest bases |
+| 13 (E1) | `87a9991` | the last English on a Spanish page |
+| — | `e122f79` | Panel: the year against the 527 baptismal goal |
+
+**Step 5 (A1, transfer periods) is DEFERRED, not skipped.** `TRANSFER_SCHEDULE`
+was checked live on 2026-09-03 and holds a header row and nothing else — no
+`Actual` rows at all. `TRANSFER_START_DATE` = `2026-08-09` in AGENT_CONFIG is
+the only anchor that exists, so "Last Transfer" would be a guess presented as a
+fact. Fill the schedule in, then do Step 5 exactly as written above; the shared
+`transfer_window()` helper and the `views/12_Traslados.py` refactor (E2) are
+still the right shape and still unbuilt.
+
+### Decisions taken during the build that amend the plan above
+
+- **Step 4 (B2) was rewritten, not dropped.** `render_kpi_row` has one delta
+  slot and `change` beats `delta` (`design_system.py:564`), so the twin
+  comparison and the vs-goal comparison could not both have it. Zackary chose:
+  the arrow always means the twin, the goal keeps the bar and its caption.
+  Step 3's pace caption ("22 de 129 esperado a hoy · meta completa 1.290 al 30
+  de sep") is therefore what closes F1, and there is no `delta` to turn back on.
+- **A goal-source fallback was added ahead of Group B.** `GOALS_CONFIG` is an
+  empty tab mission-wide, so no card on this page had ever drawn a goal bar and
+  B1/B2/B3 would have shipped invisible. `_resolve_group_goal` falls back to
+  AGENT_CONFIG's per-area `GOAL_*` × the group's area count, the way
+  `views/01_Panel.py:120` already does mission-wide.
+- **The twin of an in-progress period matches its ELAPSED shape**, not its name
+  — three days into September the twin of "This Month So Far" is 1-3 August.
+- **Steps 8 and 12 shipped as one block.** An arrow is only as good as the
+  share of areas behind it, so the coverage line belongs under the arrows it
+  qualifies rather than in a separate row.
+- **The header leads with baptisms plus the two indicators that precede them.**
+  Baptisms alone would read "0 · sin cambio" for most zones most weeks.
+- **i18n was done per step rather than saved for Step 13**, because the
+  coverage tests enforce it at commit time. Step 13 was then the leaks the
+  extractor cannot see: f-strings, and `t()`-wrapped sentences interpolating an
+  untranslated `kpi_period`.
+
+### Known state of the data, which shapes what the page can show
+
+`DAILY_LOG` runs 2026-08-09 → 2026-09-02. So "Last Week" is the only period
+with a full working twin today; "This Month So Far" correctly reports "Aún no
+hay comparación" because its twin (1-3 Aug) predates the records. That is the
+page being honest, not the page being broken.
