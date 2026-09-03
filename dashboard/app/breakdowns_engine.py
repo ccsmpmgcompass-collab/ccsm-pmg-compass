@@ -906,36 +906,34 @@ def _render_teaching_pipeline(
             # All Time means "as far back as each source goes" — and Taught's
             # source starts later than the other three, so say so rather than
             # let it read as a teaching drought in the mission's early months.
-            _coverage_note = (
-                f"All Time: Found, At Sacrament and Baptized run as far back as "
-                f"the mission's own reports go; Taught only to {_cs} (the "
-                f"Tableau export's start)."
-            )
+            _coverage_note = t(
+                "All Time: Found, At Sacrament and Baptized run as far back as "
+                "the mission's own reports go; Taught only to {start} (the "
+                "Tableau export's start).", start=_cs)
         elif _cs > p_start:
-            _coverage_warning = (
-                f"⚠ The Taught bar is undercounted — the current Tableau export "
-                f"only covers {_cs} → {_ce}, but {kpi_period.lower()} starts "
-                f"{p_start}. The other three bars come from the mission's own "
-                f"reports and are complete. Re-run the export with "
-                f"`--preset since_launch` to restore the full window."
-            )
+            _coverage_warning = t(
+                "⚠ The Taught bar is undercounted — the current Tableau export "
+                "only covers {start} → {end}, but {period} starts {p_start}. "
+                "The other three bars come from the mission's own reports and "
+                "are complete. Re-run the export with `--preset since_launch` "
+                "to restore the full window.",
+                start=_cs, end=_ce, period=t(kpi_period).lower(), p_start=p_start)
         elif _ce < p_end:
             _gap_days = (p_end - _ce).days
             if in_progress and _gap_days <= 1:
                 # The morning scrape simply hasn't run yet. A warning here would
                 # fire every day until people learned to ignore it.
-                _coverage_note = (
-                    f"Taught is current through {_ce}; today's records aren't in "
-                    f"the Tableau export yet."
-                )
+                _coverage_note = t(
+                    "Taught is current through {end}; today's records aren't "
+                    "in the Tableau export yet.", end=_ce)
             else:
-                _coverage_warning = (
-                    f"⚠ The Taught bar is undercounted — the current Tableau "
-                    f"export only reaches {_ce}, but {kpi_period.lower()} runs to "
-                    f"{p_end}. The other three bars come from the mission's own "
-                    f"reports and are complete. Re-run the export with "
-                    f"`--preset since_launch` to restore the full window."
-                )
+                _coverage_warning = t(
+                    "⚠ The Taught bar is undercounted — the current Tableau "
+                    "export only reaches {end}, but {period} runs to {p_end}. "
+                    "The other three bars come from the mission's own reports "
+                    "and are complete. Re-run the export with `--preset "
+                    "since_launch` to restore the full window.",
+                    end=_ce, period=t(kpi_period).lower(), p_end=p_end)
 
     if _taught_warning:
         st.warning(_taught_warning)
@@ -950,10 +948,10 @@ def _render_teaching_pipeline(
     # slot reading 0% rather than silently vanishing and making the funnel look
     # like it has fewer steps than it does.
     _funnel_vals = [
-        ("Found",        _found),
-        ("Taught",       _taught),
-        ("At Sacrament", _pew),
-        ("Baptized",     _gate),
+        (t("Found"),        _found),
+        (t("Taught"),       _taught),
+        (t("At Sacrament"), _pew),
+        (t("Baptized"),     _gate),
     ]
 
     if any(v for _, v in _funnel_vals):
@@ -975,7 +973,7 @@ def _render_teaching_pipeline(
         )
         st.plotly_chart(fig_funnel, use_container_width=True)
         st.caption(
-            t("{span}  |  {kpi_period} — counts what happened in this period. Found, At Sacrament and Baptized from the weekly Key Indicators, Taught from the Tableau export; the bars come from different reports and aren't subsets of each other.", span=span, kpi_period=kpi_period)
+            t("{span}  |  {kpi_period} — counts what happened in this period. Found, At Sacrament and Baptized from the weekly Key Indicators, Taught from the Tableau export; the bars come from different reports and aren't subsets of each other.", span=span, kpi_period=t(kpi_period))
         )
         # At Sacrament (pew) is a raw weekly headcount the missionaries type into
         # the Sunday form, not a roster of named people — over a period spanning
@@ -993,7 +991,7 @@ def _render_teaching_pipeline(
             st.caption(_coverage_note)
     else:
         st.info(
-            t('No pipeline activity recorded for {scope_value} in {kpi_period}.', scope_value=scope_value, kpi_period=kpi_period.lower())
+            t('No pipeline activity recorded for {scope_value} in {kpi_period}.', scope_value=scope_value, kpi_period=t(kpi_period).lower())
         )
 
 
@@ -1063,7 +1061,10 @@ def _render_compliance(
     _cal = build_calendar_data(set(), _win_end, n_weeks=5, anchor_date=_anchor)
     _hdr = "".join(
         f'<th style="text-align:center;padding:4px 8px;color:#9ca3af;'
-        f'font-size:0.72rem;font-weight:600;">{d}</th>'
+        f'font-size:0.72rem;font-weight:600;">{t(d)}</th>'
+        # es.py has carried Lun/Mar/Mié since the weekday work; this header
+        # simply never asked for them, so a Spanish calendar wore English
+        # column names.
         for d in _COMPLIANCE_DAYS
     )
 
@@ -1103,9 +1104,9 @@ def _render_compliance(
             bg, fg = _C_RED; return bg, f'<span style="color:{fg};font-weight:500;">{d[8:]}</span>', f"{d} — not submitted"
 
         _legend = _compliance_legend([
-            (_C_GREEN[0], "On time"), (_C_AMBER[0], "Late"),
-            (_C_BLITZ[0], "Blitz day"), (_C_RED[0], "Missed"),
-            (_C_UPCOMING[0], "Upcoming / pre-tracking"),
+            (_C_GREEN[0], t("On time")), (_C_AMBER[0], t("Late")),
+            (_C_BLITZ[0], t("Blitz day")), (_C_RED[0], t("Missed")),
+            (_C_UPCOMING[0], t("Upcoming / pre-tracking")),
         ])
         _summary = None
     else:
@@ -1141,7 +1142,7 @@ def _render_compliance(
 
         _legend = _compliance_legend([
             (_C_GREEN[0], "&ge;85%"), (_C_AMBER[0], "70–84%"),
-            (_C_RED[0], "&lt;70%"), (_C_UPCOMING[0], "Upcoming / pre-tracking"),
+            (_C_RED[0], "&lt;70%"), (_C_UPCOMING[0], t("Upcoming / pre-tracking")),
         ])
         _summary = _pcts  # filled as cells render
 
@@ -1165,10 +1166,13 @@ def _render_compliance(
     if not _is_area and _summary:
         _avg = round(sum(_summary) / len(_summary))
         st.markdown(
-            f'<p style="color:#9ca3af;font-size:0.82rem;margin-top:0;">Each box is the share of '
-            f'{scope_value}\'s <strong style="color:#f4f4f8;">{len(group_areas)}</strong> areas that '
-            f'turned in the nightly form that day. Window average: '
-            f'<strong style="color:#f4f4f8;">{_avg}%</strong>.</p>',
+            '<p style="color:#9ca3af;font-size:0.82rem;margin-top:0;">'
+            + t("Each box is the share of {scope}'s {n} areas that turned in "
+                "the nightly form that day. Window average: {avg}%.",
+                scope=html.escape(str(scope_value)),
+                n=f'<strong style="color:#f4f4f8;">{len(group_areas)}</strong>',
+                avg=f'<strong style="color:#f4f4f8;">{_avg}</strong>')
+            + '</p>',
             unsafe_allow_html=True,
         )
 
@@ -1226,9 +1230,10 @@ def _render_compliance(
         '<table style="border-collapse:separate;border-spacing:3px;margin-bottom:0.5rem;">'
         f'<tbody><tr>{_wk_cells}</tr></tbody></table>{_wk_legend}'
         '<p style="color:#9ca3af;font-size:0.75rem;margin-top:0;">'
-        'Each box is a Mon–Sun week, labeled by its ending Sunday. Submission is '
-        'credited by the day the weekly form arrived, not the date typed inside it.'
-        '</p>',
+        + t("Each box is a Mon–Sun week, labeled by its ending Sunday. "
+            "Submission is credited by the day the weekly form arrived, not "
+            "the date typed inside it.")
+        + '</p>',
         unsafe_allow_html=True,
     )
 
@@ -1711,7 +1716,7 @@ def render_group_breakdown(
 
     if not has_rows:
         st.info(
-            t('No {scope_value} activity recorded for {kpi_period} — the sections below cover this period only.', scope_value=scope_value, kpi_period=kpi_period.lower())
+            t('No {scope_value} activity recorded for {kpi_period} — the sections below cover this period only.', scope_value=scope_value, kpi_period=t(kpi_period).lower())
         )
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -1985,7 +1990,7 @@ def render_group_breakdown(
         # the weekly-empty early-return below, so a stale-Sunday gap on the
         # PICKED metric can't hide this — it doesn't read the picker at all.
         render_section_label(t('All Metrics — {scope_value}', scope_value=scope_value))
-        st.caption(t("{span}  |  {kpi_period}  |  every question this area has ever reported, totalled for this period (daily + weekly Sunday form; rates excluded — see the Metric picker below for a single metric's trend)", span=span, kpi_period=kpi_period))
+        st.caption(t("{span}  |  {kpi_period}  |  every question this area has ever reported, totalled for this period (daily + weekly Sunday form; rates excluded — see the Metric picker below for a single metric's trend)", span=span, kpi_period=t(kpi_period)))
 
         _area_color = series_style(0)[0]   # one area = the trend's own hue
         _all_vals = []
@@ -2064,10 +2069,10 @@ def render_group_breakdown(
         st.plotly_chart(fig_all, use_container_width=True)
     else:
         render_section_label(t('{m_label} by Area — {scope_value}', m_label=m_label, scope_value=scope_value))
-        st.caption(f"{span}  |  {kpi_period}"
-                   + ("  |  from the weekly Sunday form — one point per week, not per day"
+        st.caption(f"{span}  |  {t(kpi_period)}"
+                   + ("  |  " + t("from the weekly Sunday form — one point per week, not per day")
                       if metric in _weekly_keys
-                      else "  |  weekly totals — one point per week, not per day"
+                      else "  |  " + t("weekly totals — one point per week, not per day")
                       if _is_weekly else ""))
 
     if _is_weekly and _weekly_wk.empty:
@@ -2081,11 +2086,13 @@ def render_group_breakdown(
         # funnel down with it — invisible on "This Week" + the default "gate"
         # metric, i.e. the page's own default view.
         st.info(
-            f"No weekly form submitted yet for {kpi_period.lower()} — "
-            f"{m_label} reports once a week, on Sunday."
+            t("No weekly form submitted yet for {period} — {metric} reports "
+              "once a week, on Sunday.",
+              period=t(kpi_period).lower(), metric=m_label)
             if metric in _weekly_keys else
-            f"No weekly totals recorded yet for {kpi_period.lower()} — "
-            f"{m_label} is tallied once a week."
+            t("No weekly totals recorded yet for {period} — {metric} is "
+              "tallied once a week.",
+              period=t(kpi_period).lower(), metric=m_label)
         )
         _render_teaching_pipeline(
             scope_value=scope_value, kpi_period=kpi_period,
@@ -2175,7 +2182,7 @@ def render_group_breakdown(
         fig_bar.update_layout(
             # No in-chart title: the section label and caption above already say the
             # metric, scope and period.
-            xaxis_title="Area",
+            xaxis_title=t("Area"),
             # A legend only once there are two series to tell apart. With a
             # single one it said nothing, which is why it was off.
             showlegend=_has_ghosts,
@@ -2280,7 +2287,7 @@ def render_group_breakdown(
         # row is a missed Sunday form, not a zero.
         _t = _weekly_wk.copy()
         _t["_bucket"] = _t["week_end_date"]
-        _x_title = "Week Ending"
+        _x_title = t("Week Ending")
     else:
         _t = rows.copy()
         _t["Area"] = _t["Area"].astype(str).str.strip()  # match group_areas' names
@@ -2294,10 +2301,10 @@ def render_group_breakdown(
                 _d + pd.to_timedelta(6 - _d.dt.weekday, unit="D")
             ).dt.strftime("%Y-%m-%d")
             _t = _t[_t["_bucket"] <= _anchor_iso]
-            _x_title = "Week Ending"
+            _x_title = t("Week Ending")
         else:
             _t["_bucket"] = _t["Date"]
-            _x_title = "Date"
+            _x_title = t("Date")
 
     if _t.empty:
         st.info(t("No area data for the trend chart."))
@@ -2703,11 +2710,11 @@ def render_group_breakdown(
                        "from that area; a submitted form with nothing to "
                        "report shows as a dot at 0. " + _click_caption)
         elif _is_weekly:
-            st.caption("A gap in a line is a week with no recorded weekly "
-                       "total from that area. " + _click_caption)
+            st.caption(t("A gap in a line is a week with no recorded weekly "
+                         "total from that area. ") + _click_caption)
         else:
-            st.caption(f"A gap in a line is a {_unit} with no nightly report "
-                       "from that area. " + _click_caption)
+            st.caption(t("A gap in a line is a {unit} with no nightly report "
+                         "from that area. ", unit=_unit) + _click_caption)
 
     _render_teaching_pipeline(
         scope_value=scope_value, kpi_period=kpi_period,

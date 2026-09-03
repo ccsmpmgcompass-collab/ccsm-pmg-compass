@@ -1007,6 +1007,82 @@ ES: dict[str, str] = {
     "measured against the weekly goal × {factor}":
         "medido contra la meta semanal × {factor}",
 
+    # ── Breakdowns engine: the last English on the page (Step E1) ────────────
+    # These are the strings the extractor could not see because they were
+    # f-strings: st.caption/st.info built with interpolation slipped past the
+    # coverage gate, so the page rendered a Spanish header over English chart
+    # axes, funnel stages and compliance legends. The period name is also
+    # translated at every interpolation site now — it is a KEY, and dropping it
+    # raw into an otherwise-Spanish sentence printed "last week".
+    "from the weekly Sunday form — one point per week, not per day":
+        "del formulario semanal del domingo — un punto por semana, no por día",
+    "weekly totals — one point per week, not per day":
+        "totales semanales — un punto por semana, no por día",
+    "No weekly form submitted yet for {period} — {metric} reports once a week, "
+    "on Sunday.":
+        "Aún no se ha enviado el formulario semanal de {period} — {metric} se "
+        "informa una vez por semana, el domingo.",
+    "No weekly totals recorded yet for {period} — {metric} is tallied once a "
+    "week.":
+        "Aún no hay totales semanales de {period} — {metric} se contabiliza "
+        "una vez por semana.",
+    "A gap in a line is a week with no recorded weekly total from that area.":
+        "Un espacio en la línea es una semana sin total semanal registrado de "
+        "esa área.",
+    "A gap in a line is a {unit} with no nightly report from that area.":
+        "Un espacio en la línea es un {unit} sin informe nocturno de esa área.",
+
+    # Funnel stages. "Found" and "Baptized" are already in this file.
+    "Taught": "Enseñadas",
+    "At Sacrament": "En Sacramental",
+
+    # Compliance calendar legend.
+    "On time": "A tiempo",
+    "Late": "Atrasado",
+    "Blitz day": "Día de blitz",
+    "Missed": "No enviado",
+    "Upcoming / pre-tracking": "Próximo / antes del seguimiento",
+    "Each box is the share of {scope}'s {n} areas that turned in the nightly "
+    "form that day. Window average: {avg}%.":
+        "Cada casilla es la proporción de las {n} áreas de {scope} que "
+        "entregaron el formulario nocturno ese día. Promedio del período: "
+        "{avg}%.",
+    "Each box is a Mon–Sun week, labeled by its ending Sunday. Submission is "
+    "credited by the day the weekly form arrived, not the date typed inside it.":
+        "Cada casilla es una semana lun–dom, rotulada por su domingo final. El "
+        "envío se acredita por el día en que llegó el formulario semanal, no "
+        "por la fecha escrita dentro de él.",
+
+    # Teaching Pipeline — Tableau coverage caveats.
+    "All Time: Found, At Sacrament and Baptized run as far back as the "
+    "mission's own reports go; Taught only to {start} (the Tableau export's "
+    "start).":
+        "Desde el inicio: Encontradas, En Sacramental y Bautizadas llegan tan "
+        "atrás como los informes de la misión; Enseñadas solo hasta {start} "
+        "(el inicio de la exportación de Tableau).",
+    "Taught is current through {end}; today's records aren't in the Tableau "
+    "export yet.":
+        "Enseñadas está al día hasta {end}; los registros de hoy aún no están "
+        "en la exportación de Tableau.",
+    "⚠ The Taught bar is undercounted — the current Tableau export only "
+    "covers {start} → {end}, but {period} starts {p_start}. The other three "
+    "bars come from the mission's own reports and are complete. Re-run the "
+    "export with `--preset since_launch` to restore the full window.":
+        "⚠ La barra Enseñadas está subcontada — la exportación actual de "
+        "Tableau solo cubre {start} → {end}, pero {period} comienza el "
+        "{p_start}. Las otras tres barras provienen de los informes de la "
+        "misión y están completas. Vuelva a ejecutar la exportación con "
+        "`--preset since_launch` para restaurar el período completo.",
+    "⚠ The Taught bar is undercounted — the current Tableau export only "
+    "reaches {end}, but {period} runs to {p_end}. The other three bars come "
+    "from the mission's own reports and are complete. Re-run the export with "
+    "`--preset since_launch` to restore the full window.":
+        "⚠ La barra Enseñadas está subcontada — la exportación actual de "
+        "Tableau solo llega a {end}, pero {period} se extiende hasta {p_end}. "
+        "Las otras tres barras provienen de los informes de la misión y están "
+        "completas. Vuelva a ejecutar la exportación con `--preset "
+        "since_launch` para restaurar el período completo.",
+
     # ── Breakdowns: the progression header (D1/D2, 2026-09-03) ───────────────
     "This period": "Este período",
     "{scope_value} total": "Total {scope_value}",
