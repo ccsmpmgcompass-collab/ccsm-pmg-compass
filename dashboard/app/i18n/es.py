@@ -1008,6 +1008,9 @@ ES: dict[str, str] = {
         "medido contra la meta semanal × {factor}",
 
     # ── Breakdowns: the progression header (D1/D2, 2026-09-03) ───────────────
+    "This period": "Este período",
+    "{scope_value} total": "Total {scope_value}",
+    "total": "total",
     "week ending {d}": "semana al {d}",
     "{n} weeks to {d}": "{n} semanas hasta el {d}",
     "{period} holds no weekly report yet":

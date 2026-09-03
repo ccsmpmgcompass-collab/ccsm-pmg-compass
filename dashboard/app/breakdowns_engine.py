@@ -24,8 +24,10 @@ import streamlit.components.v1 as components
 from app.analytics import trends
 from app.analytics.period_delta import (
     MIN_COMPARABLE_DAYS,
+    NEUTRAL_BAND_PCT,
     REPORTING_MIN_SHARE,
     SEVERE_DROP_PCT,
+    SMALL_COUNT_MAX,
     days_in_window,
     period_delta,
     reporting_dates,
@@ -428,8 +430,9 @@ def _twin_label(label: str) -> str:
 
 def _resolve_group_goal(
     metric: str, goals: dict | None, per_area_goals: dict, n_areas: int
-) -> tuple[float, str]:
-    """This group's WEEKLY goal for `metric`, and the arithmetic behind it.
+) -> tuple[float, str, int]:
+    """This group's WEEKLY goal for `metric`, the arithmetic behind it, and how
+    many areas that goal covers.
 
     Two sources, most-specific first — the same order `views/01_Panel.py`
     applies mission-wide, and the reason it exists here is that Desgloses never
@@ -450,15 +453,23 @@ def _resolve_group_goal(
     unreadable on screen: a bar saying "48% of 1.200" is 150 x 8 areas, and
     nothing else on the card says so. It is empty for an entered goal, which is
     its own explanation.
+
+    The third value is the goal's BASIS — how many areas it is the goal FOR.
+    render_kpi_row needs it beside the value's own basis, because a total from
+    38 reporting areas over a goal set for 43 is not a percentage anyone should
+    read (audit F8). Reduce both to per-area rates first and the mismatched
+    denominators cancel.
     """
     entered = float((goals or {}).get(metric, 0) or 0)
     if entered > 0:
-        return entered, ""
+        return entered, "", n_areas
     per_area = float((per_area_goals or {}).get(metric, 0) or 0)
     if per_area <= 0 or n_areas <= 0:
-        return 0.0, ""
-    return per_area * n_areas, t("{per_area} per area x {n}",
-                                 per_area=fmt_int(per_area), n=fmt_int(n_areas))
+        return 0.0, "", 0
+    return (per_area * n_areas,
+            t("{per_area} per area x {n}",
+              per_area=fmt_int(per_area), n=fmt_int(n_areas)),
+            n_areas)
 
 
 def _comparison_note(
@@ -1382,6 +1393,92 @@ def _header_lines(weekly_cur: pd.DataFrame, weekly_prior: pd.DataFrame):
     return lines
 
 
+def _totals_axis_spec(title: str, top: float) -> dict:
+    """The right-hand y-axis the group total and its twin ride on.
+
+    Split out of the layout so a test can hand it to plotly and find out
+    whether plotly accepts it. The first cut used `titlefont`, which this build
+    rejects outright — "Invalid property ... Did you mean tickfont?" — and that
+    took the whole trend chart down with a ValueError printed where the chart
+    should have been. Nothing in the suite touched the trend layout, so only
+    opening the page found it.
+    """
+    dtick = _nice_count_dtick(top)
+    return dict(
+        title=dict(text=title, font=dict(color="#f4f4f8", size=11)),
+        overlaying="y", side="right", rangemode="tozero",
+        range=[0, max(top * 1.1, dtick)], dtick=dtick,
+        showgrid=False,
+        tickfont=dict(color="#f4f4f8", size=10),
+    )
+
+
+def _bucketed_totals(frame, metric: str, is_weekly: bool, granularity: str):
+    """Group-wide totals per bucket, oldest first, for the twin overlay.
+
+    Returns a bare list of numbers with no dates attached, and that is the
+    point: the overlay is aligned by bucket INDEX against the current period —
+    day 1 against day 1, week 1 against week 1 — so the twin's own dates are
+    not merely unnecessary, they would be actively wrong to plot.
+
+    Buckets are built the same three ways the trend chart builds its own
+    (weekly form, Mon-Sun weeks, or single days), because a twin bucketed by a
+    different rule than the line it sits behind is not a comparison.
+    """
+    if frame is None or frame.empty or metric not in frame.columns:
+        return []
+    f = frame.copy()
+    if is_weekly:
+        if "week_end_date" not in f.columns:
+            return []
+        f["_b"] = f["week_end_date"]
+    else:
+        if "Date" not in f.columns:
+            return []
+        if granularity == "Weeks":
+            d = pd.to_datetime(f["Date"], errors="coerce")
+            f["_b"] = (d + pd.to_timedelta(6 - d.dt.weekday, unit="D")
+                       ).dt.strftime("%Y-%m-%d")
+        else:
+            f["_b"] = f["Date"]
+    f[metric] = pd.to_numeric(f[metric], errors="coerce")
+    totals = f.groupby("_b")[metric].sum(min_count=1).sort_index()
+    return [None if pd.isna(v) else float(v) for v in totals.values]
+
+
+def _bar_delta_chip(current: float, prior: float | None) -> str:
+    """One area's movement, short enough to sit under its bar.
+
+    Returns "" when there is nothing to say — no twin value at all, or a twin
+    of zero, where a percentage has no denominator and "+4" beside a bar
+    already labelled 4 is a second copy of the same number.
+
+    Plain text, not HTML: this goes into a Plotly text label, which does not
+    render markup. That also rules out colour, so direction is carried by the
+    arrow alone — which is the right call anyway at this size, where fifteen
+    coloured chips across one axis would fight the bars for attention.
+
+    Percentages on small counts are noise dressed as a trend, so the same
+    SMALL_COUNT_MAX rule the KPI cards use applies here: below it, the absolute
+    change is both truer and shorter.
+    """
+    if prior is None:
+        return ""
+    try:
+        current, prior = float(current), float(prior)
+    except (TypeError, ValueError):
+        return ""
+    change = current - prior
+    if round(change) == 0:
+        return "→ 0"
+    if prior <= 0 or prior < SMALL_COUNT_MAX:
+        return f"{'↑' if change > 0 else '↓'} {'+' if change > 0 else '−'}{fmt_int(abs(round(change)))}"
+    pct = change / prior * 100.0
+    if abs(pct) < NEUTRAL_BAND_PCT:
+        return "→"
+    return f"{'↑' if pct > 0 else '↓'} {fmt_int(abs(pct))}%"
+
+
 def _change_chip(change) -> str:
     """A change as one short coloured phrase, in the same visual language as the
     arrows on the cards below — one page, one meaning for a red down-arrow."""
@@ -1649,6 +1746,11 @@ def render_group_breakdown(
         # empty tab. Read once per render, not once per card.
         _per_area_goals = get_area_weekly_goals()
 
+        # How many of the group's areas actually filed anything this period.
+        # The denominator behind every card's VALUE, as against the goal's own.
+        _value_basis = (int(rows["Area"].nunique())
+                        if "Area" in rows.columns else 0)
+
         # How much of the period has actually run, and when it ends. Both are
         # None on a completed period and on All Time, which is what turns the
         # pace tick off: there is no "should be here by now" for a period that
@@ -1695,12 +1797,23 @@ def render_group_breakdown(
                     _card["change"] = _change
                     _card["delta_label"] = _vs
 
-            _weekly_goal, _derived_note = _resolve_group_goal(
+            _weekly_goal, _derived_note, _goal_basis = _resolve_group_goal(
                 _key, goals, _per_area_goals, len(group_areas))
             if _goal_factor and _weekly_goal > 0:
                 _card["goal"] = _weekly_goal * _goal_factor
                 if _derived_note:
                     _card["goal_note"] = _derived_note
+                # Audit F8: the value is a total across the areas that REPORTED
+                # and the goal is a total across the areas that HAVE one. When
+                # those two counts differ, the ratio between the totals is not a
+                # percentage of anything — on 2026-08-21 a Panel tile read
+                # 2.040% for exactly this reason. Passing both bases lets
+                # render_kpi_row reduce each side to a per-area rate first, at
+                # which point the mismatch cancels. In the steady state they are
+                # equal and this changes nothing.
+                if _value_basis and _goal_basis:
+                    _card["value_basis"] = _value_basis
+                    _card["goal_basis"] = _goal_basis
                 # A running period is graded against where it should be TODAY,
                 # not against a month's goal it has had three days to meet. Two
                 # days into a thirty-day month a zone exactly on pace has 7% of
@@ -1796,12 +1909,22 @@ def render_group_breakdown(
         for k in _weekly_keys
     }
 
+    def _weekly_slice(start, end):
+        """The weekly frame cut to [start, end] on week_end_date."""
+        if _weekly_wk_all.empty or start is None or end is None:
+            return _weekly_wk_all
+        return _weekly_wk_all[
+            (_weekly_wk_all["week_end_date"] >= start.isoformat())
+            & (_weekly_wk_all["week_end_date"] <= end.isoformat())
+        ]
+
     _weekly_wk = _weekly_wk_all
     if any(_weekly_has.values()) and p_start is not None:
-        _weekly_wk = _weekly_wk_all[
-            (_weekly_wk_all["week_end_date"] >= p_start.isoformat())
-            & (_weekly_wk_all["week_end_date"] <= p_end.isoformat())
-        ]
+        _weekly_wk = _weekly_slice(p_start, p_end)
+    # The twin, on the same source, so a weekly metric's ghost bar comes from
+    # the weekly form and a nightly one's from DAILY_LOG — never a mix.
+    _weekly_wk_prior = (_weekly_slice(pr_start, pr_end)
+                        if pr_start is not None else pd.DataFrame())
 
     _catalog = metric_options()
     _primary = _primary_metrics()
@@ -1989,26 +2112,74 @@ def render_group_breakdown(
             .sort_values(metric, ascending=False)
         )
         _bar_styles = [_style_of.get(str(a), _fallback) for a in by_area["Area"]]
-        fig_bar = go.Figure(go.Bar(
+
+        # ── Movement, per area (audit C3) ────────────────────────────────────
+        # A ghost bar at each area's twin-period value, and the change written
+        # into its label. The SORT does not change: the chart still ranks by
+        # this period's value, so an area does not move on the x-axis because
+        # its past moved. This adds direction to the ranking; it does not
+        # re-rank it.
+        _prior_src = _weekly_wk_prior if _is_weekly else rows_prior
+        _prior_by_area = {}
+        if (_prior_src is not None and not _prior_src.empty
+                and metric in _prior_src.columns):
+            _pa_col = "Area" if "Area" in _prior_src.columns else "area"
+            if _pa_col in _prior_src.columns:
+                _prior_by_area = {
+                    str(k): float(v) for k, v in
+                    _prior_src.groupby(_pa_col)[metric].sum().items()
+                }
+        _prior_vals = [_prior_by_area.get(str(a)) for a in by_area["Area"]]
+        _has_ghosts = any(v is not None for v in _prior_vals)
+
+        _bar_text = []
+        for _area_name, _cur_v in zip(by_area["Area"], by_area[metric]):
+            _pv = _prior_by_area.get(str(_area_name))
+            _chip = _bar_delta_chip(float(_cur_v), _pv)
+            _bar_text.append(f"{fmt_int(_cur_v)}<br>{_chip}" if _chip
+                             else fmt_int(_cur_v))
+
+        fig_bar = go.Figure()
+        if _has_ghosts:
+            # Drawn FIRST and wider, so the current bar sits inside it and the
+            # outline reads as "where this area was" rather than as a second
+            # measurement competing for the same space.
+            fig_bar.add_trace(go.Bar(
+                x=by_area["Area"],
+                y=[0 if v is None else v for v in _prior_vals],
+                name=_twin_label(kpi_period),
+                width=0.82,
+                marker=dict(color="rgba(0,0,0,0)",
+                            line=dict(color="rgba(203,203,210,0.5)", width=1)),
+                hovertemplate="%{x}<br>%{y:.0f}<extra>" +
+                              html.escape(_twin_label(kpi_period)) + "</extra>",
+            ))
+        fig_bar.add_trace(go.Bar(
             x=by_area["Area"],
             y=by_area[metric],
+            name=t("This period"),
+            width=0.5 if _has_ghosts else 0.8,
             marker=dict(
                 color=[s[0] for s in _bar_styles],
                 # Only ever non-empty past the 8th area, where hues start reusing —
                 # the pattern is what keeps those bars from reading as duplicates.
                 pattern=dict(shape=[s[2] for s in _bar_styles], fgcolor="#08080e", size=4),
             ),
-            text=by_area[metric],
+            text=_bar_text,
             textposition="outside",
             # Without this an outside label on the tallest bar gets clipped by
             # the plot area's top edge instead of drawing over it.
             cliponaxis=False,
         ))
+        fig_bar.update_layout(barmode="overlay")
         fig_bar.update_layout(
             # No in-chart title: the section label and caption above already say the
             # metric, scope and period.
             xaxis_title="Area",
-            showlegend=False,          # single series — a legend would say nothing
+            # A legend only once there are two series to tell apart. With a
+            # single one it said nothing, which is why it was off.
+            showlegend=_has_ghosts,
+            legend=dict(orientation="h", y=1.12, x=0, font=dict(size=10)),
             hovermode="x unified",
             margin=dict(t=30, b=80, l=50, r=20),
             yaxis=dict(
@@ -2018,7 +2189,13 @@ def render_group_breakdown(
                 # label text floating above them, so the top number still gets
                 # cut off without this (same fix as the trend chart's fixed
                 # range, and the funnel bars' *1.18/1.2 padding).
-                range=[0, max(float(by_area[metric].max()) * 1.15, 1) if not by_area.empty else 1],
+                # 1.15 fitted a one-line label. The delta chip added a second
+                # line, and the tallest bar's number went back to being clipped.
+                range=[0, max(
+                    float(max(list(by_area[metric]) +
+                              [v for v in _prior_vals if v is not None] or [0]))
+                    * (1.24 if _has_ghosts else 1.15), 1)
+                    if not by_area.empty else 1],
             ),
         )
 
@@ -2339,6 +2516,66 @@ def render_group_breakdown(
                               + "<extra>" + str(_area) + "</extra>",
             ))
 
+        # ── The group's own line, and the twin behind it (audit C2) ──────────
+        # Fifteen area lines answer "which area", never "is the zone up". The
+        # bold total answers the second question, and the dimmed twin behind it
+        # answers "compared to when".
+        #
+        # The twin is aligned by BUCKET INDEX, not by date: day 1 of this period
+        # against day 1 of the one before, week 1 against week 1. Plotted on
+        # absolute dates the twin would sit in its own stretch of the axis,
+        # beside the current line rather than behind it, and the eye would have
+        # to travel to make the comparison the chart exists to make.
+        _y2 = None
+        _totals = pivot.sum(axis=1, min_count=1)
+        _has_total = int(_totals.notna().sum()) > 1
+        if _has_total and not _is_area:
+            _prior_frame = _weekly_wk_prior if _is_weekly else rows_prior
+            _prior_totals = _bucketed_totals(
+                _prior_frame, metric, _is_weekly, granularity)
+            # Both ride a SECOND y-axis on the right. Forty-three areas summed
+            # is an order of magnitude above any one of them — on the shared
+            # axis the total topped 1.000 while the tallest area line sat at
+            # 316, and all forty-three were pressed into the bottom eighth of
+            # the plot (seen live 2026-09-03). They are also different
+            # quantities: "how much did Huequen do" and "how much did the
+            # mission do" are not two readings of one scale. The twin shares
+            # the total's axis because the twin is a total.
+            if _prior_totals:
+                # Truncated to the shorter of the two: a twin one bucket longer
+                # would draw a point with nothing to compare it against.
+                _n = min(len(_buckets), len(_prior_totals))
+                fig_trend.add_trace(go.Scatter(
+                    x=_buckets[:_n],
+                    y=_prior_totals[:_n],
+                    mode="lines",
+                    name=_twin_label(kpi_period),
+                    yaxis="y2",
+                    line=dict(color="rgba(203,203,210,0.45)", width=2, dash="dot"),
+                    hovertemplate="%{y:.0f}<extra>"
+                                  + html.escape(_twin_label(kpi_period))
+                                  + "</extra>",
+                    cliponaxis=False,
+                ))
+            fig_trend.add_trace(go.Scatter(
+                x=_buckets,
+                y=[None if pd.isna(v) else float(v) for v in _totals],
+                mode="lines",
+                name=t("{scope_value} total", scope_value=scope_value),
+                yaxis="y2",
+                line=dict(color="#f4f4f8", width=3),
+                hovertemplate="%{y:.0f}<extra>" + t("total") + "</extra>",
+                cliponaxis=False,
+            ))
+            # Both total lines share one range, or the comparison between them
+            # — the only reason either is drawn — would be a lie told with two
+            # scales.
+            _t_max = float(_totals.max()) if _totals.notna().any() else 0.0
+            _pt = [v for v in _prior_totals if v is not None]
+            _t_max = max([_t_max] + _pt) if _pt else _t_max
+            _y2 = _totals_axis_spec(
+                t("{scope_value} total", scope_value=scope_value), _t_max)
+
         # ── Expectation reference line(s) ─────────────────────────────────────
         # A light-grey horizontal line at each area's expectation pace for the
         # selected metric, so you can see at a glance whether an area is hitting
@@ -2424,8 +2661,12 @@ def render_group_breakdown(
                 orientation="h", yanchor="top", y=-0.25, xanchor="left", x=0,
                 itemclick=False, itemdoubleclick=False,
             ),
-            margin=dict(t=30, b=50, l=50, r=20),
+            # r=20 fitted a chart with nothing on its right edge. The totals'
+            # axis lives there now and its tick labels need room.
+            margin=dict(t=30, b=50, l=50, r=(60 if _y2 else 20)),
         )
+        if _y2:
+            fig_trend.update_layout(yaxis2=_y2)
         _isolating_trend_chart(fig_trend, enable_isolate=not _is_area)
 
         # X-axis granularity toggle, drawn UNDER the chart it controls

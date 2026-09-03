@@ -185,3 +185,40 @@ def test_a_card_can_carry_a_goal_bar_and_an_expectation_bar(rendered):
                       "expectation": 250}])
     assert "#8b5cf6" in html          # the expectation bar's violet
     assert "expectation" in html or "expectativa" in html
+
+
+# ── Audit F8: a total from 38 areas over a goal set for 43 ───────────────────
+
+def test_a_group_goal_reports_how_many_areas_it_covers():
+    """_resolve_group_goal's third value. render_kpi_row needs it beside the
+    value's own basis or the two totals get divided directly."""
+    from app.breakdowns_engine import _resolve_group_goal
+    goal, note, basis = _resolve_group_goal(
+        "new_people_found", {}, {"new_people_found": 8}, 43)
+    assert goal == 8 * 43
+    assert basis == 43
+    assert "43" in note          # the arithmetic is shown, not just the product
+
+
+def test_an_entered_goal_needs_no_explanatory_note():
+    from app.breakdowns_engine import _resolve_group_goal
+    goal, note, basis = _resolve_group_goal(
+        "new_people_found", {"new_people_found": 300}, {"new_people_found": 8}, 43)
+    assert goal == 300 and note == ""
+
+
+def test_a_metric_with_no_goal_anywhere_yields_no_bar():
+    from app.breakdowns_engine import _resolve_group_goal
+    assert _resolve_group_goal("exchanges", {}, {}, 43) == (0.0, "", 0)
+
+
+def test_mismatched_bases_are_reduced_before_being_divided(rendered):
+    """38 areas reporting 190 against a goal of 8 per area for 43 areas (344).
+    Divided directly that is 55%; per area it is 5,0 against 8,0 — 62%. The
+    second is the one that describes the mission. (62 and not 63: round()
+    breaks a .5 to even, which is a rounding convention, not an error.)"""
+    html = rendered([{"label": "Nuevas personas", "value": 190, "goal": 344,
+                      "value_basis": 38, "goal_basis": 43}])
+    caption = _CAPTION.search(html).group(1)
+    assert "62" in caption
+    assert "per area" in caption or "por área" in caption
