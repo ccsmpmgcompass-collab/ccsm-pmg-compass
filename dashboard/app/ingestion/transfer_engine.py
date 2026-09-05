@@ -284,6 +284,39 @@ def rows_to_grid(rows: list[dict], headers: list[str]) -> list[list]:
 
 # ── transfer schedule ───────────────────────────────────────────────────────────
 
+#: A Transfer_Number's trailing integer, and whatever prefix precedes it.
+#: "2026-4" -> ("2026-", "4"); "5" -> ("", "5"); "Cambio 12" -> ("Cambio ", "12").
+_TRANSFER_NUMBER_TAIL = re.compile(r"^(.*?)(\d+)\s*$")
+
+
+def next_transfer_number(schedule_rows: list[dict]) -> str:
+    """The label to give a cycle appended after `schedule_rows`.
+
+    Transfer_Number has no enforced format. CCSM writes "2026-4", "2026-5", …,
+    so the `int()` this replaces threw on every live row; the exception was
+    caught and `max_num` stayed 0, which would have appended a cycle numbered
+    "1" to a tab whose other rows read 2026-4 through 2026-8.
+
+    The trailing integer is incremented and its prefix kept, so "2026-8" becomes
+    "2026-9" and a mission numbering plainly from "5" still gets "6". The LAST
+    row carrying digits sets the pattern — the rows arrive in sheet order, which
+    is the order the cycles run. A tab with no usable number at all falls back
+    to "1".
+
+    This deliberately does NOT know that a mission may renumber at the calendar
+    year: 2026-8 ends 2027-01-10, and whether its successor is "2026-9" or
+    "2027-1" is the mission's convention, not a fact the sheet records. Raised
+    with Zackary 2026-09-05, unanswered — and cosmetic either way, because every
+    keyed lookup in this app uses Start_Date, never the number (PLAN §7.2).
+    """
+    prefix, last = "", 0
+    for r in schedule_rows:
+        m = _TRANSFER_NUMBER_TAIL.match(str(r.get("Transfer_Number", "")).strip())
+        if m:
+            prefix, last = m.group(1), int(m.group(2))
+    return f"{prefix}{last + 1}"
+
+
 def next_schedule_update(schedule_rows: list[dict], today: dt.date) -> list[dict]:
     """Mirror at_updateTransferSchedule_: flip the earliest still-'Planned' row
     to Actual with today's date; if none is Planned, append a new Actual row.
@@ -297,15 +330,8 @@ def next_schedule_update(schedule_rows: list[dict], today: dt.date) -> list[dict
             r["Status"] = "Actual"
             return rows
 
-    max_num = 0
-    for r in rows:
-        try:
-            n = int(str(r.get("Transfer_Number", "")).strip())
-            max_num = max(max_num, n)
-        except (ValueError, TypeError):
-            pass
     rows.append({
-        "Transfer_Number": str(max_num + 1),
+        "Transfer_Number": next_transfer_number(schedule_rows),
         "Start_Date": today_str,
         "Weeks": "",
         "Status": "Actual",

@@ -3840,16 +3840,31 @@ def get_lineage_visible_areas() -> pd.DataFrame:
 
 def get_recent_transfer_dates(n: int = 2) -> list:
     """Start_Date of the n most recent 'Actual' TRANSFER_SCHEDULE rows, most
-    recent (highest Transfer_Number) first. Empty if the tab is missing/empty
-    or has no Actual rows."""
+    recent first. Empty if the tab is missing/empty or has no Actual rows.
+
+    Ordered by START DATE, not by Transfer_Number. The number is a LABEL with no
+    enforced format anywhere in this app or in the Apps Script that writes it —
+    CCSM's live values read "2026-4", "2026-5", … — so the `pd.to_numeric` this
+    replaces coerced every one of them to NaN and then dropped the lot.
+    Verified live 2026-09-05: this function returned `[]` and
+    `is_within_last_transfers()` was False for every date in the mission.
+
+    A start date is unambiguous, sorts correctly whatever a mission calls its
+    cycles, and is what `utils.transfer_helpers.transfer_window()` already
+    identifies a cycle by.
+    """
     df = read_tab("TRANSFER_SCHEDULE")
-    if df.empty or "Status" not in df.columns:
+    if df.empty or "Status" not in df.columns or "Start_Date" not in df.columns:
         return []
     actual = df[df["Status"].astype(str).str.strip() == "Actual"].copy()
     if actual.empty:
         return []
-    actual["_num"] = pd.to_numeric(actual["Transfer_Number"], errors="coerce")
-    actual = actual.dropna(subset=["_num"]).sort_values("_num", ascending=False)
+    # str[:10] before parsing: a Start_Date carrying a time component ("2026-06-15
+    # 00:00:00") is still a date, and dropping a real cycle over its formatting is
+    # the same class of bug as the numeric parse above.
+    actual["_start"] = pd.to_datetime(
+        actual["Start_Date"].astype(str).str.strip().str[:10], errors="coerce")
+    actual = actual.dropna(subset=["_start"]).sort_values("_start", ascending=False)
     return actual["Start_Date"].astype(str).head(n).tolist()
 
 
