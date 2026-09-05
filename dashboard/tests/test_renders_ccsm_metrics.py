@@ -78,6 +78,19 @@ MISSION_ORG = pd.DataFrame([
 ])
 
 
+# Goals are set per TRANSFER CYCLE, so the Goals page needs a schedule to hang
+# them on — without one it renders a "no cycles" warning and no boxes at all.
+# CCSM's own live rows.
+TRANSFER_SCHEDULE = pd.DataFrame([
+    {"Transfer_Number": "2026-4", "Start_Date": "2026-06-15", "Weeks": "6",
+     "Status": "Actual"},
+    {"Transfer_Number": "2026-5", "Start_Date": "2026-07-27", "Weeks": "6",
+     "Status": "Actual"},
+    {"Transfer_Number": "2026-6", "Start_Date": "2026-09-07", "Weeks": "6",
+     "Status": "Scheduled"},
+])
+
+
 @pytest.fixture(autouse=True)
 def _sheets(monkeypatch):
     def fake(tab_name, header_marker=None):
@@ -85,6 +98,8 @@ def _sheets(monkeypatch):
             return QUESTIONS.copy()
         if tab_name == "MISSION_ORG":
             return MISSION_ORG.copy()
+        if tab_name == "TRANSFER_SCHEDULE":
+            return TRANSFER_SCHEDULE.copy()
         return pd.DataFrame()
 
     monkeypatch.setattr("app.db.sheets_client._read_tab_cached", fake)
@@ -194,16 +209,20 @@ def test_no_raw_provo_key_reaches_the_screen(page):
     assert leaked == [], f"{page} displays Provo metric key(s): {leaked}"
 
 
-def test_monthly_goals_offers_every_key_indicator():
-    """The Monthly Goals section used to pick its boxes by KEYWORD — matching
+def test_transfer_goals_offer_every_key_indicator():
+    """The per-cycle goal boxes used to pick themselves by KEYWORD — matching
     "gate", "date", "renew", "pew" anywhere in a metric's key or label, plus the
     exact keys "new_found" and "member_lessons".
 
     Against CCSM's metrics that collapses to exactly ONE box: nothing matches
     gate/renew/pew/new_found/member_lessons, and "date" matches
     `ki_baptismal_date_real` purely by coincidence of spelling. A single
-    arbitrary indicator would have rendered under the heading "Monthly Goals",
-    looking entirely deliberate.
+    arbitrary indicator would have rendered under the section heading, looking
+    entirely deliberate.
+
+    Renamed from test_monthly_goals_offers_every_key_indicator when the goals
+    moved from a calendar month to a transfer cycle (PLAN §7.4b). The widget key
+    prefix moved with them, `mgoal_` -> `tgoal_`; what the test is about did not.
     """
     at = AppTest.from_file("views/02_Metas.py", default_timeout=90)
     at.session_state["pmg_lang"] = "es"
@@ -211,17 +230,37 @@ def test_monthly_goals_offers_every_key_indicator():
     at.run()
     assert not at.exception, at.exception
 
-    monthly = [w for w in at.number_input if w.key and w.key.startswith("mgoal_")]
-    labels = {w.label for w in monthly}
+    boxes = [w for w in at.number_input if w.key and w.key.startswith("tgoal_")]
+    labels = {w.label for w in boxes}
 
     # Both KIs in this file's QUESTIONS fixture must appear, not just the one
     # whose name happens to contain an English keyword.
     assert any("Nuevas Personas" in l for l in labels), \
-        f"KI missing from Monthly Goals. Saw: {sorted(labels)}"
+        f"KI missing from the cycle's goals. Saw: {sorted(labels)}"
     assert any("Bautizados" in l for l in labels), \
-        f"KI missing from Monthly Goals. Saw: {sorted(labels)}"
-    assert len(monthly) == 2, \
-        f"expected one box per Key Indicator, got {len(monthly)}: {sorted(labels)}"
+        f"KI missing from the cycle's goals. Saw: {sorted(labels)}"
+    assert len(boxes) == 2, \
+        f"expected one box per Key Indicator, got {len(boxes)}: {sorted(labels)}"
+
+
+def test_transfer_goal_boxes_are_keyed_to_a_chosen_cycle():
+    """A goal belongs to a cambio, so the page must offer one to belong to.
+
+    The picker lists every cycle in TRANSFER_SCHEDULE — past ones included, so
+    2026-4 and 2026-5 can be backfilled (PLAN §7.4c) rather than leaving the
+    year summary a fraction of the year on day one.
+    """
+    at = AppTest.from_file("views/02_Metas.py", default_timeout=90)
+    at.session_state["pmg_lang"] = "es"
+    at.session_state["goals_section_val"] = "Area Goal Customization"
+    at.run()
+    assert not at.exception, at.exception
+
+    pickers = [w for w in at.selectbox if w.key == "area_goal_cycle"]
+    assert pickers, "no cambio picker rendered on the goals section"
+    options = " ".join(str(o) for o in pickers[0].options)
+    for number in ("2026-4", "2026-5", "2026-6"):
+        assert number in options, f"{number} missing from the picker: {options}"
 
 
 def test_goals_offers_ccsm_metrics_by_name():

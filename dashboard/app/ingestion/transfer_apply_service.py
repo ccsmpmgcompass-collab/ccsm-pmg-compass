@@ -111,7 +111,7 @@ def apply(override: bool = False, today: date | None = None) -> dict:
     q.get_area_language_group.clear()
     q._resolve_area_category.clear()
     q.get_mission_weekly_expectation_total.clear()
-    q.get_mission_monthly_expectation_total.clear()
+    q.get_mission_transfer_expectation_total.clear()
 
     schedule_updated = _advance_schedule(today)
     config_updated = _set_transfer_start_date(today)

@@ -1697,10 +1697,7 @@ def get_area_weekly_expectation(area: str, metric: str) -> int:
     entry = resolve_area_expectations(area).get(metric)
     if not entry:
         return 0
-    value = entry["value"]
-    if entry["cadence"] == "monthly":
-        value = value / _AVG_WEEKS_PER_MONTH
-    return int(round(value))
+    return int(round(_weekly_equivalent(entry)))
 
 
 @st.cache_data(ttl=300)
@@ -1722,37 +1719,50 @@ def get_mission_weekly_expectation_total(metric: str) -> int:
         entry = resolve_area_expectations(nm).get(metric)
         if not entry:
             continue
-        v = entry["value"]
-        total += v / _AVG_WEEKS_PER_MONTH if entry["cadence"] == "monthly" else v
+        total += _weekly_equivalent(entry)
     return int(round(total))
 
 
 @st.cache_data(ttl=300)
-def get_mission_monthly_expectation_total(metric: str, month_start: str) -> int:
+def get_mission_transfer_expectation_total(
+    metric: str, transfer_start: str, transfer_end: str) -> int:
     """
-    Hypothetical mission-wide MONTHLY total for `metric` over the calendar
-    month starting at `month_start` (ISO date): every submitting area at
-    its own resolve_area_expectations() figure. A monthly-cadence
-    indicator counts as-is; a weekly-cadence one scales by that month's
-    EXACT weeks (days/7) — except pew and renew, both Sunday-only church-
-    attendance events, which scale by the month's actual Sunday count (4
-    or 5), matching the Goals page's REC convention. Exact per-area floats
-    summed THEN
-    ceil'd — not routed through get_mission_weekly_expectation_total,
-    whose int-rounded weekly figure re-scaled by an average month would
-    drift ~15% for monthly-cadence indicators like Gate. 0 when no area
-    has an expectation — the Mission Goals fraction only draws for a
-    positive total (same "no expectation, no reference" rule as the
-    Breakdowns lines).
+    Hypothetical mission-wide total for `metric` over ONE TRANSFER CYCLE
+    (`transfer_start`..`transfer_end`, both ISO dates, both inclusive): every
+    submitting area at its own resolve_area_expectations() figure. Backs the
+    "/N" fractions on the Goals page's transfer boxes.
+
+    Replaces get_mission_monthly_expectation_total, which asked the same
+    question of a calendar month. A month was always the awkward unit here: it
+    cut reporting weeks in half, so a weekly expectation had to be scaled by an
+    estimated days/7 and a Sunday-only one by a counted Sunday count that might
+    be 4 or 5. A transfer cycle is whole reporting weeks by construction — every
+    schedule start is a Monday and every Week_End_Date a Sunday — so the two
+    scalings agree by definition and the special case is gone rather than
+    ported (PLAN §7.0a, §7.4h).
+
+    A `transfer`-cadence indicator counts as-is; a weekly one scales by the
+    cycle's real weeks; a monthly one by the cycle's share of an average month.
+    The Sunday count is still computed from the real dates rather than assumed
+    equal to the week count, because a schedule that records a short or long
+    cycle is described as it really ran everywhere else in this app.
+
+    Exact per-area floats summed THEN ceil'd — not routed through
+    get_mission_weekly_expectation_total, whose int-rounded weekly figure
+    re-scaled would drift ~15% for monthly-cadence indicators like Gate. 0 when
+    no area has an expectation: same "no expectation, no reference" rule as the
+    Breakdowns lines, and a fraction out of 0 says less than no fraction at all.
     """
     try:
-        start = date.fromisoformat(month_start)
+        start = date.fromisoformat(str(transfer_start)[:10])
+        end = date.fromisoformat(str(transfer_end)[:10])
     except (ValueError, TypeError):
         return 0
-    nxt = (date(start.year + 1, 1, 1) if start.month == 12
-           else date(start.year, start.month + 1, 1))
-    days = (nxt - start).days
+    days = (end - start).days + 1
+    if days <= 0:
+        return 0
     weeks = days / 7
+    months = days / 30.4368
     sundays = sum(1 for i in range(days)
                   if (start + timedelta(days=i)).weekday() == 6)
     areas = get_submitting_areas()
@@ -1769,26 +1779,33 @@ def get_mission_monthly_expectation_total(metric: str, month_start: str) -> int:
             continue
         if v <= 0:
             continue
-        if entry["cadence"] == "monthly":
+        cadence = str(entry.get("cadence", "weekly") or "weekly").strip().lower()
+        if cadence == "transfer":
             total += v
+        elif cadence == "monthly":
+            total += v * months
         else:
-            # A weekly expectation scales to a month differently depending on
-            # where the number comes from. A NIGHTLY metric accumulates every
-            # day, so a month holds days/7 = 4.4286 weeks of it. A WEEKLY-FORM
-            # metric is reported once per week, so a month holds however many
-            # of those reports actually occur — 4 or 5, never 4.4286.
+            # A weekly expectation scales differently depending on where the
+            # number comes from. A NIGHTLY metric accumulates every day, so a
+            # window holds days/7 weeks of it. A WEEKLY-FORM metric is reported
+            # once per week, so a window holds however many of those reports
+            # actually occur — which is the Sunday count, not days/7.
             #
-            # Carson, 2026-07-21: Pew ("People at Sacrament Meeting") is a
-            # once-a-week church-attendance event exactly like Renew, but was
-            # only scaled by the generic weeks-in-month figure — a 31-day
-            # month's 4.4286 "weeks" vs the real 4 Sundays inflated 60 areas x
-            # 1/wk to 266 instead of the correct 240.
+            # Carson, 2026-07-21: Pew is a once-a-week church-attendance event
+            # exactly like Renew, but was only scaled by the generic
+            # weeks-in-window figure — a 31-day month's 4.4286 "weeks" against
+            # its real 4 Sundays inflated 60 areas x 1/wk to 266 instead of 240.
             #
-            # That was fixed by naming Provo's two once-a-week keys. Naming
-            # keys does not travel: CCSM's weekly form carries all SEVEN of its
-            # Key Indicators, so every one of them was being inflated by ~11%
-            # here, and a mission whose form changes would silently regain the
-            # bug. The rule is the metric's FORM, which the catalogue knows.
+            # That was fixed by naming Provo's two once-a-week keys. Naming keys
+            # does not travel: CCSM's weekly form carries all SEVEN of its Key
+            # Indicators, so every one of them was being inflated by ~11%, and a
+            # mission whose form changes would silently regain the bug. The rule
+            # is the metric's FORM, which the catalogue knows.
+            #
+            # Over a TRANSFER the two agree by construction (§7.0a), so this
+            # branch normally computes the same number twice. It is kept anyway:
+            # a schedule row recording a short or long cycle is the case where
+            # they diverge, and that case is real.
             once_weekly = metric in _weekly_form_metric_keys()
             total += v * (sundays if once_weekly else weeks)
     return int(math.ceil(total)) if total > 0 else 0
@@ -1824,6 +1841,38 @@ AREA_TYPE_EXPECTATIONS_TAB = "AREA_TYPE_EXPECTATIONS"
 # prorates against that date's REAL month length instead — more precise,
 # used in preference to this constant whenever possible.
 _AVG_WEEKS_PER_MONTH = 30.4368 / 7
+
+#: Weeks assumed for a `transfer`-cadence expectation when no cycle is in hand.
+#: The same six-week default `utils.transfer_helpers.DEFAULT_WEEKS` carries, and
+#: used for exactly the same reason `_AVG_WEEKS_PER_MONTH` is: several callers
+#: need a weekly-equivalent PACE and take no date, so the conversion cannot
+#: consult the real schedule. Anything that knows its cycle should divide by that
+#: cycle's own weeks instead — see analytics.transfer_year.weeks_in_cycle.
+_ASSUMED_TRANSFER_WEEKS = 6
+
+
+def _weekly_equivalent(entry: dict) -> float:
+    """An expectation's weekly PACE, whatever cadence it was entered at.
+
+    One conversion, in one place. This expression used to be written out at four
+    call sites, each handling `monthly` and treating everything else as weekly —
+    so adding `transfer` as a cadence (PLAN §7.4h) would have silently read a
+    six-week target as a one-week one at every site anyone forgot.
+
+    Not rounded: Gate's 1/month is ≈0.23/week, and rounding that to 0 removes the
+    expectation line rather than drawing it low.
+    """
+    try:
+        value = float(entry.get("value") or 0)
+    except (ValueError, TypeError):
+        return 0.0
+    cadence = str(entry.get("cadence", "weekly") or "weekly").strip().lower()
+    if cadence == "monthly":
+        return value / _AVG_WEEKS_PER_MONTH
+    if cadence == "transfer":
+        return value / _ASSUMED_TRANSFER_WEEKS
+    return value
+
 
 def _area_type_indicator_defaults() -> dict[str, list[tuple[str, str, float]]]:
     """group key -> [(metric, cadence, value), …], the fallback used when
@@ -1929,8 +1978,14 @@ def get_all_area_type_indicators() -> list[dict]:
         metric = str(row.get("Metric", "")).strip()
         if not category or not metric:
             continue
+        # `transfer` joined weekly/monthly for Step 7 (PLAN §7.4h): the mission
+        # plans in six-week cycles, and an expectation entered as "8 per cambio"
+        # was previously narrowed to "8 per week" — an eightfold overstatement,
+        # silently. An unrecognized/blank cadence still defaults to weekly rather
+        # than dropping the row: a hand-edited sheet cell should not vanish an
+        # indicator.
         cadence = str(row.get("Cadence", "")).strip().lower()
-        if cadence not in ("weekly", "monthly"):
+        if cadence not in ("weekly", "monthly", "transfer"):
             cadence = "weekly"
         try:
             value = float(row.get("Value", 0) or 0)
@@ -1973,7 +2028,7 @@ def _resolve_area_category(area: str) -> tuple[str, list[dict]]:
       3. The area's built-in language group (get_area_language_group).
 
     Cached BY AREA (Carson, 2026-07-21: Mission Goals was "super slow, not
-    loading"): get_mission_monthly_expectation_total/get_mission_weekly_
+    loading"): get_mission_transfer_expectation_total/get_mission_weekly_
     expectation_total call resolve_area_expectations() once per area PER
     METRIC, redoing this exact same roster-lookup-and-category-match for
     every area on every metric even though its result doesn't depend on
@@ -2079,8 +2134,8 @@ def get_area_expectation_entry(area: str, metric: str) -> dict | None:
         return None
     if value <= 0:
         return None
-    weekly = value / _AVG_WEEKS_PER_MONTH if entry["cadence"] == "monthly" else value
-    return {"cadence": entry["cadence"], "value": value, "weekly": weekly}
+    return {"cadence": entry["cadence"], "value": value,
+            "weekly": _weekly_equivalent(entry)}
 
 
 def get_group_weekly_expectation_totals(area_names) -> dict[str, float]:
@@ -2103,13 +2158,9 @@ def get_group_weekly_expectation_totals(area_names) -> dict[str, float]:
     totals: dict[str, float] = {}
     for area in area_names:
         for metric, entry in resolve_area_expectations(area).items():
-            try:
-                value = float(entry.get("value") or 0)
-            except (ValueError, TypeError):
+            weekly = _weekly_equivalent(entry)
+            if weekly <= 0:
                 continue
-            if value <= 0:
-                continue
-            weekly = value / _AVG_WEEKS_PER_MONTH if entry.get("cadence") == "monthly" else value
             totals[metric] = totals.get(metric, 0.0) + weekly
     return totals
 
@@ -2160,7 +2211,7 @@ def save_area_type_expectations(indicators: list[dict]) -> str | None:
     # Effort scores re-key themselves off these rows via _exp_fingerprint
     # in views/06_Puntajes.py rather than needing a clear from here.)
     get_mission_weekly_expectation_total.clear()
-    get_mission_monthly_expectation_total.clear()
+    get_mission_transfer_expectation_total.clear()
     return None
 
 
@@ -2668,100 +2719,45 @@ def get_recommended_goals(area: str) -> dict:
     return recommended
 
 
-def _stretch_recommendation_monthly(df: pd.DataFrame, keys: list, area: str) -> dict:
-    """
-    Monthly counterpart to _stretch_recommendation(): buckets every weekly
-    row into the CALENDAR MONTH its week_end_date falls in, sums each
-    metric within that month to get an actual monthly total, then
-    recommends ceil(mean-of-completed-months * stretch_factor) — the same
-    Goal Settings "nudge" stretch (see _rec_stretch_factor(), defaults to
-    1.10/10%), but averaged over the area's own real monthly totals instead
-    of a weekly average scaled up by a fixed weeks-per-month factor. The
-    current, still-in-progress calendar month is always excluded so a
-    partial month doesn't drag the average down. Every returned value is
-    floored at 1.
-    """
-    out = {}
-    if df.empty or "area" not in df.columns or "week_end_date" not in df.columns:
-        return out
-    sub = df[df["area"].astype(str).str.strip() == str(area).strip()].copy()
-    if sub.empty:
-        return out
-    week_dates = pd.to_datetime(sub["week_end_date"], errors="coerce")
-    sub = sub[week_dates.notna()].copy()
-    week_dates = week_dates[week_dates.notna()]
-    if sub.empty:
-        return out
-    sub["_month"] = week_dates.dt.strftime("%Y-%m")
-    current_month = datetime.today().strftime("%Y-%m")
-    sub = sub[sub["_month"] != current_month]
-    if sub.empty:
-        return out
-    numeric_cols = [k for k in keys if k in sub.columns]
-    if not numeric_cols:
-        return out
-    monthly = sub.groupby("_month")[numeric_cols].sum(min_count=1).reset_index()
-    stretch = _rec_stretch_factor()
-    for key in keys:
-        if key in monthly.columns:
-            vals = pd.to_numeric(monthly[key], errors="coerce").dropna()
-            if not vals.empty:
-                out[key] = max(1, math.ceil(vals.mean() * stretch))
-    return out
-
-
 @st.cache_data(ttl=300)
-def get_recommended_monthly_goals(area: str) -> dict:
+def get_recommended_transfer_goals(area: str, weeks: float) -> dict:
     """
-    Recommended MONTHLY goal per metric for `area` — the Monthly Goals
-    counterpart to get_recommended_goals(). Same ~10% stretch, but computed
-    from the area's own real CALENDAR-MONTH totals (every completed month's
-    weekly rows summed together, then averaged across full history) instead
-    of a single weekly average projected up by a fixed weeks-per-month
-    factor. See _stretch_recommendation_monthly() for the formula.
+    Recommended goal per metric for `area` over a cycle of `weeks` weeks — the
+    transfer counterpart to get_recommended_goals().
 
-    EVERY metric — NIGHTLY or WEEKLY/transfer (Gate, Date, Pew, Renew
-    included) — always gets a recommendation of at least 1, even with zero
-    recorded history for that area (e.g. a newly-assigned area), so a REC
-    badge is guaranteed to show on every Monthly Goals box for every area.
+    The area's own weekly stretch average times the cycle's REAL week count,
+    from TRANSFER_SCHEDULE. Not an average cycle length, and deliberately not a
+    per-transfer history average: WEEKLY_KI begins 2026-08-09, so as of
+    2026-09-05 no area in the mission has one COMPLETED transfer of history, and
+    averaging completed cycles would divide by zero cycles and show no REC badge
+    at all (PLAN §7.4g).
 
-    An area whose ENTIRE history so far falls inside the current,
-    in-progress calendar month (e.g. a newly-assigned area, or simply early
-    in the month before any prior month's data exists) has no completed
-    month to average — _stretch_recommendation_monthly() returns nothing
-    for it, which would otherwise make its REC badge vanish. Falls back to
-    the plain WEEKLY stretch average (_stretch_recommendation, full weekly
-    history) scaled up by this month's real length for exactly those keys,
-    so a badge is always shown once the area has ANY history at all.
+    This replaces get_recommended_monthly_goals, which averaged completed
+    CALENDAR MONTHS and carried a weekly fallback for areas with no completed
+    month yet. Two paths through one number, and the fallback was the one that
+    actually fired. Scaling the weekly average is what both paths reduced to, so
+    it is now the only path.
+
+    Sunday-only Key Indicators need no special case here. Over a transfer the
+    Sunday count IS the week count — every schedule start is a Monday and every
+    Week_End_Date a Sunday (§7.0a) — which is the whole reason the monthly
+    version's `_sundays_in_month` correction existed and why it is gone rather
+    than ported.
+
+    EVERY metric gets at least 1, even with no recorded history for that area
+    (a newly-assigned one), so a REC badge shows on every box.
     """
     metric_defs = get_question_metrics()
     nightly_keys = [k for k, _, f in metric_defs if f == "NIGHTLY"]
     weekly_keys = _goalable_weekly_keys(metric_defs)
 
-    recommended = {}
-    recommended.update(_stretch_recommendation_monthly(get_weekly_ki(), nightly_keys, area))
-    recommended.update(_stretch_recommendation_monthly(get_weekly_form_data(), weekly_keys, area))
+    weekly: dict = {}
+    weekly.update(_stretch_recommendation(get_weekly_ki(), nightly_keys, area))
+    weekly.update(_stretch_recommendation(get_weekly_form_data(), weekly_keys, area))
 
-    missing = [k for k in nightly_keys + weekly_keys if k not in recommended]
-    if missing:
-        weekly_fallback = {}
-        weekly_fallback.update(_stretch_recommendation(get_weekly_ki(), missing, area))
-        weekly_fallback.update(_stretch_recommendation(get_weekly_form_data(), missing, area))
-        if weekly_fallback:
-            month_start = date.today().replace(day=1)
-            next_month = date(
-                month_start.year + (month_start.month == 12),
-                month_start.month % 12 + 1,
-                1,
-            )
-            weeks_in_month = (next_month - month_start).days / 7
-            for key, val in weekly_fallback.items():
-                recommended[key] = max(1, math.ceil(val * weeks_in_month))
-
-    for key in nightly_keys + weekly_keys:
-        recommended[key] = max(1, recommended.get(key, 0))
-
-    return recommended
+    scale = max(1.0, float(weeks or 0))
+    return {k: max(1, math.ceil(weekly.get(k, 0) * scale))
+            for k in nightly_keys + weekly_keys}
 
 
 @st.cache_data(ttl=300)

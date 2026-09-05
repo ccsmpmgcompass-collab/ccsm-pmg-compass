@@ -1302,11 +1302,11 @@ ES: dict[str, str] = {
     "Set a weekly goal for every nightly and weekly form metric for this area. "
     "Saved goals appear on the Breakdowns page's area view and roll up into "
     "zone-level goals on its zone view. The mission's Key Indicators "
-    "additionally get a MONTHLY goal further down, stored separately.":
+    "additionally get a goal PER TRANSFER CYCLE further down, stored separately.":
         "Fije una meta semanal para cada métrica de los formularios nocturno y semanal "
         "de esta área. Las metas guardadas aparecen en la vista de área de la página "
         "Desgloses y se suman en metas por zona en su vista de zona. Los Indicadores "
-        "Clave de la misión además reciben una meta MENSUAL más abajo, guardada aparte.",
+        "Clave de la misión además reciben una meta POR CAMBIO más abajo, guardada aparte.",
     "Weekly and monthly expectations by area category — the single source of "
     "truth for the Goals pages' \"/N\" fractions (including Monthly Goals' Gate "
     "and Mission Goals' totals), the Breakdowns trend chart's expectation lines "
@@ -2483,4 +2483,145 @@ ES: dict[str, str] = {
     "Emergency update failed after pull: {error}":
         "La actualización de emergencia falló después de extraer: {error}",
     "Emergency update complete.": "Actualización de emergencia completa.",
+
+    # ── Step 7: goals per transfer cycle (PLAN §1b) ───────────────────────────
+    # "cambio" throughout, matching the mission's own word and the Desgloses
+    # period picker ("Este cambio hasta hoy"). Never "traslado" — that is the
+    # Traslados page's word for the roster move, a different thing.
+    "Cambio": "Cambio",
+    "Cambio {number} · {span}": "Cambio {number} · {span}",
+    "{start} – {end}": "{start} – {end}",
+    "Year": "Año",
+    "Goal": "Meta",
+    "% of Goal": "% de la Meta",
+    "Goals for this transfer": "Metas de este cambio",
+    "Save goals for this transfer": "Guardar las Metas de este Cambio",
+    "Goals saved for **{selected_area}** — {cycle}.":
+        "Metas guardadas para **{selected_area}** — {cycle}.",
+    "Failed to save goals: {err}": "No se pudieron guardar las metas: {err}",
+    "Failed to save goals: {e}": "No se pudieron guardar las metas: {e}",
+    "Only the mission president and the assistants can set goals for a cambio.":
+        "Solo el presidente de misión y los asistentes pueden fijar las metas "
+        "de un cambio.",
+    "This cambio has already ended. Goals saved for it are a record of what "
+    "was expected, not a plan.":
+        "Este cambio ya terminó. Las metas que guarde aquí quedan como registro "
+        "de lo que se esperaba, no como una planificación.",
+    "TRANSFER_SCHEDULE has no cycles, so a goal has nothing to belong to. Add "
+    "the mission's cycles on the Traslados page.":
+        "TRANSFER_SCHEDULE no tiene cambios, así que una meta no tendría a qué "
+        "pertenecer. Agregue los cambios de la misión en la página Traslados.",
+    "TRANSFER_SCHEDULE has no cycles, so there is nothing to summarise. Add "
+    "the mission's cycles on the Traslados page.":
+        "TRANSFER_SCHEDULE no tiene cambios, así que no hay nada que resumir. "
+        "Agregue los cambios de la misión en la página Traslados.",
+    "Key indicators for **{cycle}** — {weeks} weeks. REC is a light stretch "
+    "goal, about {pct}% above this area's own typical weekly performance, "
+    "times this cambio's real length. Any indicator with an expectation saved "
+    "in Area Expectation Settings shows goal / that expectation sized to this "
+    "cambio: a transfer-cadence figure as-is, a weekly one times {weeks} "
+    "weeks. An indicator with no expectation shows no fraction at all — nobody "
+    "has said what the bar is. These are separate boxes from the weekly "
+    "Nightly Form Goals above; the two are not kept in sync.":
+        "Indicadores clave para **{cycle}** — {weeks} semanas. REC es una meta "
+        "de superación ligera, alrededor de {pct}% por encima del desempeño "
+        "semanal típico de esta área, multiplicado por la duración real de este "
+        "cambio. Todo indicador con una expectativa guardada en Configuración "
+        "de Expectativas por Área muestra meta / esa expectativa ajustada a "
+        "este cambio: una cifra por cambio tal cual, una semanal por {weeks} "
+        "semanas. Un indicador sin expectativa no muestra fracción alguna — "
+        "nadie ha dicho cuál es el estándar. Estas casillas son distintas de "
+        "las Metas del Formulario Nocturno semanales de arriba; las dos no se "
+        "mantienen sincronizadas.",
+
+    # ── The bulk button ──────────────────────────────────────────────────────
+    "Compute the recommended weekly goals and this cambio's goals for every "
+    "active area, preview them, then save all at once.":
+        "Calcular las metas semanales recomendadas y las metas de este cambio "
+        "para cada área activa, previsualizarlas y guardarlas todas de una vez.",
+    "Preview — goals for {cycle}": "Previsualización — metas para {cycle}",
+    "Recommended goals computed for **{count} areas** — each area's own REC "
+    "values, exactly what the per-metric REC pills show. Review below, then "
+    "**Save All Recommended** to write every area's weekly goals and its goals "
+    "for {cycle}. This overwrites any custom goals already saved.":
+        "Metas recomendadas calculadas para **{count} áreas** — los valores REC "
+        "propios de cada área, exactamente los que muestran las pastillas REC "
+        "de cada métrica. Revíselas abajo y luego use **Guardar Todas las "
+        "Recomendadas** para escribir las metas semanales de cada área y sus "
+        "metas para {cycle}. Esto sobrescribe cualquier meta personalizada ya "
+        "guardada.",
+    "Recommended goals saved for **{count} areas** — weekly, plus {cycle}.":
+        "Metas recomendadas guardadas para **{count} áreas** — semanales, más "
+        "{cycle}.",
+    "Weekly goals saved for {count} areas, but the cambio goals failed: {err}":
+        "Se guardaron las metas semanales de {count} áreas, pero las metas del "
+        "cambio fallaron: {err}",
+
+    # ── Resumen de la misión ─────────────────────────────────────────────────
+    "Mission Summary": "Resumen de la Misión",
+    "Mission — this transfer": "La Misión — Este Cambio",
+    "Mission — the year": "La Misión — El Año",
+    "Mission-wide, and not affected by the zone filter in the sidebar. The "
+    "goal is every area's own goal for this cambio, summed — there is no "
+    "separate mission-wide goal to set.":
+        "De toda la misión, y no se ve afectado por el filtro de zona de la "
+        "barra lateral. La meta es la suma de la meta propia de cada área para "
+        "este cambio — no existe una meta aparte para toda la misión.",
+    "No area has set a goal for {cycle} yet. Set them under Area Goal "
+    "Customization.":
+        "Ningún área ha fijado una meta para {cycle} todavía. Fíjelas en "
+        "Personalización de Metas por Área.",
+    "{n} of {total} areas have set a goal for this cambio. Results counted "
+    "through {through}.":
+        "{n} de {total} áreas han fijado una meta para este cambio. Resultados "
+        "contados hasta el {through}.",
+    "{label} (weekly report)": "{label} (informe semanal)",
+    "Baptisms here are the mission's own weekly report, which under-counts. "
+    "The certified Tableau figure is monthly and cannot describe a cambio; it "
+    "is shown in the year below.":
+        "Los bautismos aquí provienen del informe semanal de la misión, que "
+        "cuenta de menos. La cifra certificada de Tableau es mensual y no "
+        "puede describir un cambio; se muestra en el año, más abajo.",
+    "No cycle in the schedule can be placed in a calendar year.":
+        "Ningún cambio del calendario puede ubicarse en un año calendario.",
+    "{n} of {total} cambios in {year} have goals set. Results counted through "
+    "{through}.":
+        "{n} de {total} cambios de {year} tienen metas fijadas. Resultados "
+        "contados hasta el {through}.",
+    "{label} crosses into another year, so {pct}% of its goal ({days} of its "
+    "{total} days) counts toward {year}.":
+        "{label} cruza al año siguiente, así que {pct}% de su meta ({days} de "
+        "sus {total} días) cuenta para {year}.",
+    "Baptisms (Tableau, certified through {reach})":
+        "Bautismos (Tableau, certificado hasta {reach})",
+    "A year's goal is every cambio's goal for that year, with a cambio that "
+    "crosses New Year split by days. Results are counted by the week they were "
+    "reported in, always by real date — never by which cambio a week belonged "
+    "to.":
+        "La meta de un año es la suma de las metas de cada cambio de ese año, "
+        "y un cambio que cruza el Año Nuevo se reparte por días. Los resultados "
+        "se cuentan según la semana en que se informaron, siempre por fecha "
+        "real — nunca según a qué cambio perteneció una semana.",
+    "No certified Tableau baptism figure has been captured for {year} yet, so "
+    "only the mission's own weekly report is shown.":
+        "Todavía no se ha capturado una cifra certificada de bautismos de "
+        "Tableau para {year}, así que solo se muestra el informe semanal de la "
+        "misión.",
+
+    # ── The `transfer` expectation cadence ───────────────────────────────────
+    # "transfer" is a raw cadence VALUE written to the sheet; only its display
+    # is translated (the Cadence dropdown's format_func capitalizes t(c)).
+    "transfer": "por cambio",
+    "Goals per Transfer": "Metas por Cambio",
+    "Weekly Goals": "Metas Semanales",
+
+    # ── goals_queries error messages ─────────────────────────────────────────
+    "Failed to fetch area transfer goal: {e}":
+        "No se pudo obtener la meta del cambio para el área: {e}",
+    "Failed to upsert area transfer goal: {e}":
+        "No se pudo guardar la meta del cambio para el área: {e}",
+    "Failed to bulk upsert area transfer goals: {e}":
+        "No se pudieron guardar en bloque las metas del cambio por área: {e}",
+    "Failed to delete area transfer goal: {e}":
+        "No se pudo eliminar la meta del cambio para el área: {e}",
 }

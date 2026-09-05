@@ -4,7 +4,7 @@ import streamlit.components.v1 as components
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import date, timedelta
-from app.auth.auth import require_auth
+from app.auth.auth import can_set_goals, require_auth
 from app.components.design_system import (
     render_page_header, render_section_label, render_section_tabs,
     render_table, render_companionship_card,
@@ -16,7 +16,15 @@ from app.config.metric_catalog import (
     metric_options,
     nightly_metrics,
 )
-from app.i18n.formats import NA, fmt_month_year
+from app.i18n.formats import NA, fmt_day_month, fmt_int, fmt_month_year, fmt_number
+from app.utils.area_helpers import mission_today
+
+
+#: The cadences an area-type expectation can be entered at, in the order the
+#: dropdowns offer them. "transfer" joined the pair for Step 7 (PLAN §7.4h) —
+#: the mission plans in six-week cycles, and the values are written to the sheet
+#: verbatim, so these stay English and are translated for display only.
+_CADENCES = ["weekly", "monthly", "transfer"]
 
 
 def _placeholder_metric() -> str:
@@ -65,9 +73,9 @@ from app.db.queries import (
     save_all_area_goals,
     delete_area_goals,
     get_recommended_goals,
-    get_recommended_monthly_goals,
+    get_recommended_transfer_goals,
     get_mission_recommended_goals,
-    get_mission_monthly_expectation_total,
+    get_mission_transfer_expectation_total,
     get_area_weekly_expectation,
     get_area_expectation_entry,
     resolve_area_expectations,
@@ -81,16 +89,26 @@ from app.db.queries import (
 )
 from app.db.queries import _AREA_TYPE_LABELS
 from app.db.goals_queries import (
-    current_month_start,
-    get_current_goal,
-    upsert_goal,
-    get_mission_goals_for_display,
-    get_current_area_monthly_goal,
-    upsert_area_monthly_goal,
-    bulk_upsert_area_monthly_goals,
+    get_area_transfer_goal,
+    upsert_area_transfer_goal,
+    bulk_upsert_area_transfer_goals,
+    group_goal_totals,
+    goals_by_cycle_start,
+    cycles_with_goals,
+    areas_with_goals,
     get_app_setting,
     set_app_setting,
 )
+# Goals are set per TRANSFER CYCLE, not per calendar month (PLAN §7.2). The
+# monthly path — MISSION_GOALS and AREA_MONTHLY_GOALS — is gone, tabs and
+# functions both: neither tab ever existed on the live sheet, so nothing was
+# stranded. `current_month_start`, `get_current_goal`, `upsert_goal`,
+# `get_mission_goals_for_display`, `get_current_area_monthly_goal`,
+# `upsert_area_monthly_goal` and `bulk_upsert_area_monthly_goals` were deleted
+# with it, along with `get_recommended_monthly_goals` and
+# `get_mission_monthly_expectation_total` in queries.py.
+from app.analytics import transfer_year as ty
+from app.utils.transfer_helpers import transfer_cycles, transfer_window
 
 # Page chrome (set_page_config / inject_global_css / render_sidebar) is
 # owned by Home.py's st.navigation router since 2026-09-02 — the router and
@@ -150,11 +168,18 @@ _GOAL_TO_ACTUAL: dict[str, str] = GOAL_TO_ACTUAL
 
 
 def _can_edit_goals(user: dict) -> bool:
-    """True for MP, APs, and the system owner account."""
-    return (
-        user.get("role") in ("president", "assistant")
-        or str(user.get("email", "")).strip().lower() == "ccsm.pmg.compass@gmail.com"
-    )
+    """True for MP, APs, and the system owner account.
+
+    Delegates to `auth.can_set_goals`. This used to check the MISSION_ORG role
+    plus one hardcoded gmail address, which — probed live 2026-09-05 — admitted
+    that gmail account and NOBODY ELSE: none of the mission president's, the two
+    assistants' or the owner's sign-in addresses appear in MISSION_ORG at all,
+    so their derived role is "unknown". Every gated section on this page was
+    therefore closed to the four people it was written for. Found while adding
+    the same gate to the transfer-goal boxes (PLAN §7.4d), where it would have
+    locked the mission out of the one thing Step 7 exists to let them do.
+    """
+    return can_set_goals(user)
 
 
 # ── Helper: % of goal color ──────────────────────────────────────────────────
@@ -172,25 +197,119 @@ def _color_pct(val):
     return "background-color: #7b1e1e; color: white"       # red
 
 
-def _current_month_bounds() -> tuple[date, date]:
-    """(first-of-month, first-of-next-month) for the CURRENT real calendar month."""
-    start = date.today().replace(day=1)
-    next_start = (
-        date(start.year + 1, 1, 1) if start.month == 12
-        else date(start.year, start.month + 1, 1)
-    )
-    return start, next_start
+def _strip_real_suffix(label: str) -> str:
+    """A Key Indicator's name without the form's "(Real)" suffix.
+
+    That suffix separates an achieved figure from the "(Meta)" beside it ON THE
+    FORM, where a companionship enters both. Nowhere on this page is that the
+    question: a goal box labelled "Nuevas Personas Encontradas (Real)" says the
+    opposite of what it is. The Panel and the Desgloses progression header
+    already make the same trim.
+    """
+    for suffix in (" (Real)", " (real)"):
+        if label.endswith(suffix):
+            return label[: -len(suffix)]
+    return label
 
 
-def _current_month_weeks() -> float:
-    """Weeks in the CURRENT real calendar month (28-31 days -> 4.0-4.43), not
-    a fixed yearly average — same dynamic scaling Mission Goals uses (see
-    _weeks_in_month there). Used to scale a hypothetical weekly RATE up to a
-    monthly value for Area Goals' Monthly Goals section (Mate's lesson
-    target) — NOT used for REC pills, which are computed from the area's own
-    real monthly totals instead (see get_recommended_monthly_goals)."""
-    start, next_start = _current_month_bounds()
-    return (next_start - start).days / 7
+def _cycles() -> list[dict]:
+    """Every transfer cycle in TRANSFER_SCHEDULE, oldest first, with real end
+    dates. One read per page run — the picker, the goal boxes, the mission
+    summary and the year summary all want the same list."""
+    return transfer_cycles()
+
+
+def _cycle_label(cycle: dict) -> str:
+    """How a cycle is named on this page: "Cambio 2026-6 · 7 sep – 18 oct".
+
+    "cambio", matching the period picker on Desgloses ("Este cambio hasta hoy")
+    — the mission's own word, and the one leadership uses out loud. The dates
+    ride along because the number alone does not say when: nobody remembers
+    that 2026-6 is September.
+    """
+    from app.i18n.formats import fmt_day_month
+    number = str(cycle.get("number") or "").strip()
+    span = t("{start} – {end}",
+             start=fmt_day_month(cycle["start"]), end=fmt_day_month(cycle["end"]))
+    if not number:
+        return span
+    return t("Cambio {number} · {span}", number=number, span=span)
+
+
+def _cycle_weeks(cycle: dict) -> float:
+    """A cycle's length in weeks, from its REAL dates rather than its Weeks
+    column — a cycle that ran short is described as it ran, here as everywhere
+    else. Floors at 1: every scaling below divides or multiplies by this."""
+    return max(1.0, ty.weeks_in_cycle(cycle["start"], cycle["end"]))
+
+
+def _cycle_has_ended(cycle: dict) -> bool:
+    """True once the cycle's end date has passed.
+
+    Past cycles stay EDITABLE (Zackary, 2026-09-05) so 2026-4 and 2026-5 can be
+    backfilled and the year summary is not a fraction of the year on day one.
+    This only drives the caption that says so — a goal typed into a finished
+    cycle should be visibly a backfill, not look like a plan.
+    """
+    from app.utils.area_helpers import mission_today
+    return cycle["end"] < mission_today()
+
+
+def _certified_baptisms_for_year(year: int, today: date) -> tuple[int | None, str]:
+    """The certified TABLEAU_BAPTISMS total for `year`, and how far it reaches.
+
+    `get_baptisms_actual_for_range` refuses a range whose months are not ALL
+    captured — correctly, because a partial sum reads LOW and looks like a real
+    total. A year in progress is always partial, so this walks January forward
+    and STOPS at the first month with no capture, returning what it has along
+    with the name of the last month it covers.
+
+    That is the honest shape for this row: the capture lags a month or two, and
+    a number labelled "certified through August" is usable where an unlabelled
+    one is a quiet undercount. Returns (None, "") when not even January is in.
+
+    Never blended with the mission's own weekly figure — the two appear as two
+    named rows (§7.7), which is `annual_baptisms.py`'s "One source" rule.
+    """
+    last_month = 12 if year < today.year else (today.month if year == today.year else 0)
+    if last_month == 0:
+        return None, ""
+    total, reach = 0, None
+    for m in range(1, last_month + 1):
+        val = get_baptisms_actual(f"{year:04d}-{m:02d}-01")
+        if val is None:
+            break
+        total += int(val)
+        reach = date(year, m, 1)
+    if reach is None:
+        return None, ""
+    label = fmt_month_year(reach)
+    return total, (reach.isoformat()[:7] if label == NA else label)
+
+
+def _pick_cycle(key: str) -> dict | None:
+    """The cycle picker: every cycle in the schedule, newest first, defaulting
+    to the one today falls in.
+
+    Newest first because the cycle being planned is almost always the current or
+    next one; the older ones are there to be backfilled, not scrolled past.
+    Returns None when the schedule is empty, which the caller reports rather
+    than papering over — a goal has to belong to a cycle.
+    """
+    cycles = _cycles()
+    if not cycles:
+        return None
+    newest_first = list(reversed(cycles))
+    current = transfer_window(0)
+    default = 0
+    if current:
+        for i, c in enumerate(newest_first):
+            if c["start"] == current["start"]:
+                default = i
+                break
+    labels = [_cycle_label(c) for c in newest_first]
+    choice = st.selectbox(t("Cambio"), labels, index=default, key=key)
+    return newest_first[labels.index(choice)]
 
 
 # ── Main "tabs" ───────────────────────────────────────────────────────────────
@@ -207,9 +326,13 @@ def _current_month_weeks() -> float:
 #
 # The stored value is still the English id, so a mid-session language switch
 # cannot strand a Spanish string in the option list.
+# "Mission Goals" became "Mission Summary" when MISSION_TRANSFER_GOALS was
+# dropped (PLAN §7.4a). There is no mission goal to SET any more — the mission's
+# figure for a cycle is its areas' summed goals — so the slot holds a read-only
+# summary of this cycle and then the year instead of an editor.
 _GOALS_SECTIONS = {
     s: t(s) for s in (
-        "Area Goal Customization", "Mission Goals", "Goal Settings",
+        "Area Goal Customization", "Mission Summary", "Goal Settings",
         "Area Expectation Settings",
     )
 }
@@ -549,376 +672,198 @@ def _render_fraction_overlay(prefix: str, key: str, current_value: int, total: i
         # below the digits, which read as misaligned to Carson.
         st.caption(f"<span class='fracslash'>/</span> {total}", unsafe_allow_html=True)
 
-
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — MISSION GOALS
+# TAB 2 — MISSION SUMMARY  ("Resumen de la misión")
 # ══════════════════════════════════════════════════════════════════════════════
+# Replaces "Mission Goals", which set a monthly mission-wide target in its own
+# tab. That tab is gone and so is the idea behind it (PLAN §7.4a): the mission's
+# figure for a cycle IS its areas' summed goals, so there is nothing here to
+# edit and everything here is read.
+#
+# What the old section got wrong, beyond the cadence: it rendered the flavor's
+# six GOAL keys, of which `baptisms` and `confirmations` BOTH mapped to
+# ki_baptized_confirmed_real — one metric shown twice — while
+# ki_friends_first_week_real had no goal key at all and never appeared. Keying on
+# the seven Key Indicators directly (§7.1) fixes both by construction.
+#
+# Two parts: this cycle, then the year.
 
-if selected_section == "Mission Goals":
+if selected_section == "Mission Summary":
 
-    # Mission Goals are set once per calendar MONTH (not per week — see
-    # current_month_start()). "Actuals" for comparison are therefore summed
-    # across every completed week whose week_end_date falls within the
-    # current month (month-to-date), not just the latest single week.
-    month_start = current_month_start()
-    _month_start_date = date.fromisoformat(month_start)
-    _next_month_start = (
-        date(_month_start_date.year + 1, 1, 1) if _month_start_date.month == 12
-        else date(_month_start_date.year, _month_start_date.month + 1, 1)
-    )
-    # Weeks in THIS specific month (28-31 days -> 4.0-4.43 weeks), not a fixed
-    # yearly average — so a short month (February) gets a proportionally
-    # smaller monthly REC/target than a long one (January, March), instead of
-    # every month using the same ~4.348 constant regardless of its real length.
-    _weeks_in_month = (_next_month_start - _month_start_date).days / 7
-    # Sundays in THIS specific month — church attendance (Renew / Recent
-    # Convert Attendance) can only happen on a Sunday, so its monthly REC
-    # scales off the ACTUAL Sunday count (4 or 5, depending on how the month
-    # lines up with the calendar), not the generic days/7 weeks-in-month
-    # figure above, which is a fine approximation for daily-ish metrics but
-    # not exact for a strictly-weekly, Sunday-only event.
-    _sundays_in_month = sum(
-        1 for i in range((_next_month_start - _month_start_date).days)
-        if (_month_start_date + timedelta(days=i)).weekday() == 6
-    )
-    def _month_to_date(df: pd.DataFrame) -> pd.DataFrame:
+    _ki_catalog = key_indicator_metrics()
+
+    _BAPTISM_KEY = "ki_baptized_confirmed_real"
+
+    def _weekly_between(df, start: date, end: date):
+        """Weekly-form rows whose week_end_date falls in [start, end].
+
+        A reporting week is placed by its Sunday, which is the only grain the
+        weekly form offers. Over a transfer cycle that is exact — cycles are
+        whole Monday-to-Sunday weeks (§7.0a). Over a calendar YEAR a week
+        straddling New Year lands wholly in the year its Sunday falls in, which
+        is a real approximation and is why the year rows say "por semana
+        informada".
+        """
         if df.empty or "week_end_date" not in df.columns:
             return df
         wk = pd.to_datetime(df["week_end_date"], errors="coerce").dt.date
-        return df[wk.notna() & (wk >= _month_start_date) & (wk < _next_month_start)]
+        return df[wk.notna() & (wk >= start) & (wk <= end)]
 
-    actual_df = _month_to_date(get_weekly_ki())
-    wf_df = get_weekly_form_data()
-    wf_month_td = _month_to_date(wf_df)
-    current_goal_row = get_current_goal(month_start)
+    def _sum_ki(df, key: str) -> float:
+        if df.empty or key not in df.columns:
+            return 0.0
+        return float(pd.to_numeric(df[key], errors="coerce").fillna(0).sum())
 
-    # ── Section A: Set Mission Goals (MP/AP only) ─────────────────────────────
+    def _pct(actual: float, goal: float) -> str:
+        return f"{round(actual / goal * 100)}%" if goal > 0 else "—"
 
-    if _can_edit_goals(user):
-        render_section_label(t("Set Mission Goals — This Month"))
+    def _style_summary(row):
+        styles = [""] * len(row)
+        idx = list(row.index).index(t("% of Goal"))
+        styles[idx] = _color_pct(row[t("% of Goal")])
+        return styles
 
-        def _goal_val(key: str) -> int:
-            if not current_goal_row:
-                return 0
-            return int(current_goal_row.get(key, 0) or 0)
+    _wf_all = get_weekly_form_data()
+    _all_cycles = _cycles()
 
-        def _extra_val(key: str) -> int:
-            if not current_goal_row:
-                return 0
-            extra = current_goal_row.get("extra_goals") or {}
-            return int(extra.get(key, 0) or 0)
+    if not _all_cycles:
+        st.warning(t("TRANSFER_SCHEDULE has no cycles, so there is nothing to "
+                     "summarise. Add the mission's cycles on the Traslados page."))
+        st.stop()
 
-        # Mission-wide REC: same +10% stretch formula as Area Goals' REC pills,
-        # based on the WHOLE MISSION'S own history (every area's weeks summed
-        # together, then averaged) — but scaled up from a weekly to a
-        # MONTHLY-sized suggestion using THIS month's actual week count
-        # (_weeks_in_month, e.g. 4.0 for February vs 4.43 for January — not a
-        # fixed yearly average), since these goals are now set once per
-        # month, not once per week. Keyed by raw metric key (e.g. "gate",
-        # "renew"); featured goal keys (e.g. "baptisms") are translated via
-        # _GOAL_TO_ACTUAL before lookup.
-        _weekly_recommended = get_mission_recommended_goals()
-        mission_recommended = {
-            k: max(1, math.ceil(v * _weeks_in_month)) for k, v in _weekly_recommended.items()
-        }
-        # Church-attendance indicators are Sunday-only events — override their
-        # generic _weeks_in_month scaling with the actual Sunday COUNT for this
-        # month (4 or 5, depending on calendar alignment) rather than the days/7
-        # estimate used for every other metric. Scaling by weeks inflates the
-        # bar with Sundays the month does not contain: a 31-day month's 4.4286
-        # "weeks" against its real 4 Sundays.
-        #
-        # Identified from the KI catalogue instead of a hardcoded ("renew",
-        # "pew") — Provo's two keys, neither of which CCSM collects, so no
-        # CCSM indicator ever got this correction.
-        for _sunday_key in (k for k in key_indicator_metrics()
-                            if "sacrament" in k or "church" in k):
-            if _sunday_key in _weekly_recommended:
-                mission_recommended[_sunday_key] = max(
-                    1, math.ceil(_weekly_recommended[_sunday_key] * _sundays_in_month)
-                )
-        # Provo computed three hypothetical mission-wide denominators here —
-        # Recent-Convert attendance potential (from rc_total), an NM Lessons
-        # target and an MMM target — as fallbacks for goals with no saved
-        # expectation. CCSM collects none of those three metrics, so each
-        # evaluated to its max(1, 0) floor of 1, and any goal falling back to
-        # one would have rendered as "goal / 1": a fraction that looks
-        # meaningful and is not. See _mission_denominator, which no longer
-        # falls back at all.
+    # ── Part 1: this cycle ────────────────────────────────────────────────────
 
-        def _mission_denominator(goal_key: str) -> int | None:
-            """One mission goal input's "/N" fraction denominator, or None
-            for no fraction.
+    render_section_label(t("Mission — this transfer"))
+    st.caption(t("Mission-wide, and not affected by the zone filter in the "
+                 "sidebar. The goal is every area's own goal for this cambio, "
+                 "summed — there is no separate mission-wide goal to set."))
 
-            DYNAMIC: the mission-wide expectation total for the input's
-            underlying metric, sized to THIS month exactly (per-area monthly
-            figures as-is, weekly × the month's exact weeks, Sunday-only
-            church-attendance KIs × the month's Sunday count — see
-            get_mission_monthly_expectation_total). Any indicator given an
-            expectation in Area Expectation Settings gets a fraction here the
-            moment it is saved.
+    _sum_cycle = _pick_cycle("mission_summary_cycle")
+    _from = _sum_cycle["start"]
+    _to = min(_sum_cycle["end"], mission_today())
+    _cycle_goals = group_goal_totals(_sum_cycle["start"])
+    _n_areas_set = areas_with_goals(_sum_cycle["start"])
+    _n_areas_total = len(get_submitting_areas())
 
-            Provo also carried four derived fallbacks for metrics with no saved
-            expectation — renew → the mission's maximum possible Recent-Convert
-            attendances (from rc_total), member/NM lessons → a hypothetical
-            lesson target, mmm_sent → an MMM target, lsi_followups → whatever
-            was typed into the LSI Given box. All four named metrics CCSM does
-            not collect, so each could only ever have evaluated to 0 or crashed
-            on a missing widget. They are gone: a metric with no expectation now
-            renders with no fraction, which says "nobody has set the bar" rather
-            than inventing one.
-            """
-            actual = _GOAL_TO_ACTUAL.get(goal_key, goal_key)
-            exp_total = get_mission_monthly_expectation_total(actual, month_start)
-            if exp_total > 0:
-                return exp_total
-            return None
-        st.caption(
-            t("REC is a light stretch goal — about {get_rec_stretch_pct}% above the whole mission's typical MONTHLY performance across every area, for a month this length — to nudge the mission to do slightly better. Church-attendance indicators scale by the number of Sundays this month, since attendance is a once-a-week event, rather than the general weeks-in-month figure used for other metrics. Any goal whose indicator has expectations saved in Area Expectation Settings shows goal / a hypothetical mission-wide target for this month — every area at its own expectation, summed and sized to this month's exact length — not based on actual data. A goal with no expectation saved shows no fraction at all.", get_rec_stretch_pct=get_rec_stretch_pct())
-        )
-
-        def _apply_all_mission_rec(recommended: dict) -> None:
-            """on_click callback: fill every mission goal input (featured +
-            other) with its recommended value in one go."""
-            for key, _label in _FEATURED_METRICS:
-                actual_key = _GOAL_TO_ACTUAL.get(key, key)
-                if actual_key in recommended:
-                    st.session_state[f"mission_goal_{key}"] = int(recommended[actual_key])
-            for key, _label, _ft in get_question_metrics():
-                if key not in _FEATURED_METRIC_KEYS and key in recommended:
-                    st.session_state[f"mission_extra_{key}"] = int(recommended[key])
-
-        if mission_recommended:
-            with st.container(key="fillallrec_mission"):
-                st.button(
-                    t("FILL ALL RECOMMENDED"),
-                    key="fillall_mission_btn",
-                    on_click=_apply_all_mission_rec,
-                    args=(mission_recommended,),
-                )
-
-        # Featured metrics — 3-per-row grid (2026-07-21: was 4-per-row, but
-        # these are now the long "Descriptive Title (ABBREV)" KI names, not
-        # short one-word labels — at 4-per-row's narrower column width,
-        # "New Members at Sacrament Meeting (RENEW)" wrapped to a 2nd line,
-        # which pushed the actual input box down while its "/N" fraction
-        # overlay (position:absolute, a fixed top offset calibrated for a
-        # 1-line label — see the frozen CSS block above) stayed put and
-        # landed ON the wrapped label instead of next to the typed number
-        # (Carson, 2026-07-21 screenshot: "the renew boxs text is way off").
-        # 3-per-row's ~33% wider column keeps every one of the 6 KI labels
-        # on one line, so the existing 1-line-calibrated overlay offsets
-        # stay correct for all of them without needing a second, wrap-aware
-        # offset (which would itself be fragile — exactly which label wraps
-        # depends on its own word-break points at a given width, not just
-        # character count: MATE's label is longer than RENEW's but didn't
-        # wrap at the same 4-per-row width RENEW broke at). 6 goals ÷ 3 also
-        # divides evenly into two full rows, instead of 4-per-row's uneven
-        # trailing row of 2. Session-state pre-seeding (not value=) matches
-        # Area Goals' pattern — passing value= on every rerun AND writing to
-        # session_state from the REC/FILL ALL callbacks trips Streamlit's
-        # "widget had both a default value and a Session State API write"
-        # warning banner.
-        featured_values: dict[str, int] = {}
-        for i in range(0, len(_FEATURED_METRICS), 3):
-            cols = st.columns(3)
-            for col, (key, label) in zip(cols, _FEATURED_METRICS[i : i + 3]):
-                with col:
-                    widget_key = f"mission_goal_{key}"
-                    if widget_key not in st.session_state:
-                        st.session_state[widget_key] = _goal_val(key)
-                    featured_values[key] = st.number_input(
-                        label,
-                        min_value=0,
-                        step=1,
-                        key=widget_key,
-                    )
-                    _den = _mission_denominator(key)
-                    if _den:
-                        _render_fraction_overlay("mg", key, featured_values[key], _den)
-                    actual_key = _GOAL_TO_ACTUAL.get(key, key)
-                    if actual_key in mission_recommended:
-                        _render_rec_pill("mg", key, widget_key, mission_recommended[actual_key])
-
-        # Other metrics expander. rc_total is excluded entirely — same as Area
-        # Goals, it's a running snapshot count, not a goal-able production
-        # number (see get_latest_rc_total's docstring); its latest value is
-        # only ever shown as the fixed denominator next to Renew's fraction.
-        # The 6 featured KIs (Gate/Date/New/Pew/Renew/Mate) are excluded too —
-        # they already have their own box up in Featured Metrics above; see
-        # _FEATURED_METRIC_KEYS' comment for why _FEATURED_KEYS (goal keys)
-        # couldn't do this exclusion on its own.
-        # report_date is excluded too: it's asked on BOTH the Nightly and
-        # Weekly forms and shares that same Metric_Key in QUESTIONS_CONFIG
-        # (CcsmData.gs' CCSM_NIGHTLY_QUESTIONS/CCSM_WEEKLY_QUESTIONS each
-        # define a 'report_date' question). get_question_metrics() here is
-        # called with no form_type filter (unlike Area Goals' nightly_defs/
-        # weekly_defs split), so both rows came through as two entries with
-        # the same key, producing two `mission_extra_report_date` boxes and
-        # crashing with StreamlitDuplicateElementKey. It's also a DATE field
-        # (which date the report covers), not a countable production number
-        # a "goal" makes sense for.
-        all_metrics = get_question_metrics()
-        _seen_other_keys: set[str] = set()
-        other_metrics = []
-        for k, lbl, ft in all_metrics:
-            if k in _FEATURED_METRIC_KEYS or k == "report_date":
-                continue
-            # "rc_total" used to be excluded here too — Provo's running
-            # recent-convert headcount, which no goal makes sense for. CCSM has
-            # no such key, so the exclusion did nothing; two CCSM-specific ones
-            # take its place.
-            #
-            # `_meta` keys are the companionship's OWN weekly goal, collected on
-            # the weekly form beside each `_real` achievement. A goal box for
-            # one asks leadership to set a goal for a goal, and its saved value
-            # would then be compared against a target rather than an outcome.
-            if k.endswith("_meta"):
-                continue
-            # CHOICE metrics carry no summable number — CCSM's `effort` is
-            # answered Todo / La mayor parte / Algo. A weekly numeric goal for
-            # one is meaningless, and _num() would coerce the answer to 0 and
-            # make it look met. Detected via Data_Type, never by inspecting
-            # values.
-            if metric_data_type(k) == "CHOICE":
-                continue
-            # Belt-and-suspenders: any other Metric_Key that ends up defined
-            # on both forms (a future CcsmData.gs edit repeating the
-            # report_date mistake above) would otherwise reach st.number_input
-            # twice with the identical widget key and crash the whole page
-            # with StreamlitDuplicateElementKey — silently drop the repeat
-            # instead, keeping the first (Nightly-ordered) definition.
-            if k in _seen_other_keys:
-                continue
-            _seen_other_keys.add(k)
-            other_metrics.append((k, lbl, ft))
-        extra_values: dict[str, int] = {}
-        if other_metrics:
-            with st.expander(t("Other Metrics")):
-                for i in range(0, len(other_metrics), 4):
-                    # min(4, remaining) instead of a flat 4 (Carson, 2026-07-21:
-                    # "boxes look off") — a flat st.columns(4) on a trailing
-                    # partial row (e.g. 1 leftover box) squeezes that box into
-                    # a quarter-width column with 3 empty ones beside it;
-                    # sizing the row to what's actually left makes every row's
-                    # boxes a consistent, proportional width.
-                    _row = other_metrics[i : i + 4]
-                    cols = st.columns(len(_row))
-                    for col, (key, label, _ft) in zip(cols, _row):
-                        with col:
-                            widget_key = f"mission_extra_{key}"
-                            if widget_key not in st.session_state:
-                                st.session_state[widget_key] = _extra_val(key)
-                            extra_values[key] = st.number_input(
-                                label,
-                                min_value=0,
-                                step=1,
-                                key=widget_key,
-                            )
-                            _den = _mission_denominator(key)
-                            if _den:
-                                _render_fraction_overlay("me", key, extra_values[key], _den)
-                            if key in mission_recommended:
-                                _render_rec_pill("me", key, widget_key, mission_recommended[key])
-
-        _month_label = fmt_month_year(_month_start_date)
-
-        if st.button(t("Save Mission Goals"), type="primary", key="mission_goal_save"):
-            row, err = upsert_goal(
-                month_start=month_start,
-                baptisms=featured_values.get("baptisms", 0),
-                # "confirmations" is no longer a featured input (removed from
-                # featured_goals), but upsert_goal still has a dedicated column
-                # for it — preserve whatever's already saved instead of
-                # silently zeroing it out on every future save.
-                confirmations=_goal_val("confirmations"),
-                on_date=featured_values.get("on_date", 0),
-                at_sacrament=featured_values.get("at_sacrament", 0),
-                new_people_to_teach=featured_values.get("new_people_to_teach", 0),
-                rc_at_church=featured_values.get("rc_at_church", 0),
-                members_nonmember_lessons=featured_values.get("members_nonmember_lessons", 0),
-                extra_goals=extra_values,
-                set_by=user.get("email", ""),
-            )
-            if err:
-                st.error(t('Failed to save: {err}', err=err))
-            else:
-                set_by = row.get("set_by", "") if row else user.get("email", "")
-                st.success(t('Mission goals saved. Last set by **{set_by}** · month of {month_label}', set_by=set_by, month_label=_month_label))
-                st.rerun()
-
-        if current_goal_row:
-            set_by = current_goal_row.get("set_by", "")
-            ws = current_goal_row.get("month_start", "")
-            if set_by:
-                ws_label = fmt_month_year(ws)
-                if ws_label == NA:
-                    ws_label = ws
-                st.caption(t('Last set by {set_by} · month of {ws_label}', set_by=set_by, ws_label=ws_label))
-
-        st.divider()
-
-    # ── Section B: Mission Goals vs Actuals ───────────────────────────────────
-
-    render_section_label(t("Mission Goals vs Actuals — This Month"))
-
-    mission_goals_display = get_mission_goals_for_display(month_start)
-
-    if not mission_goals_display:
-        st.info("No mission-wide goals set for this month yet." +
-                (" Use the form above to add them." if _can_edit_goals(user) else ""))
+    if not _cycle_goals or not _n_areas_set:
+        st.info(t("No area has set a goal for {cycle} yet. Set them under Area "
+                  "Goal Customization.", cycle=_cycle_label(_sum_cycle)))
     else:
-        mission_rows = []
-        for key, label in _FEATURED_METRICS:
-            goal_val = float(mission_goals_display.get(key, 0) or 0)
-            actual_key = _GOAL_TO_ACTUAL.get(key, key)
-            actual_val = 0.0
-            # Baptisms: the weekly-form "gate" field under-counts badly (missionaries
-            # don't fill it in reliably — verified ~18-20 vs an official 41 for one
-            # month). Prefer the real Tableau-sourced count; fall back to gate only
-            # if no Tableau capture exists yet for this month.
-            tableau_baptisms = get_baptisms_actual(month_start) if key == "baptisms" else None
-            if tableau_baptisms is not None:
-                actual_val = float(tableau_baptisms)
-            elif not wf_month_td.empty and actual_key in wf_month_td.columns:
-                actual_val = float(wf_month_td[actual_key].sum())
-            elif not actual_df.empty and actual_key in actual_df.columns:
-                actual_val = float(actual_df[actual_key].sum())
-            pct_str = f"{round(actual_val / goal_val * 100)}%" if goal_val > 0 else "—"
-            mission_rows.append({
-                "Metric":    label,
-                "Goal":      int(goal_val),
-                "Actual":    int(actual_val),
-                "% of Goal": pct_str,
+        # The basis, said out loud. A mission total resting on six areas out of
+        # forty-three must not read the same as one every area signed up to —
+        # the same rule _ki_goal_note enforces on the Panel's bars.
+        st.caption(t("{n} of {total} areas have set a goal for this cambio. "
+                     "Results counted through {through}.",
+                     n=fmt_int(_n_areas_set), total=fmt_int(_n_areas_total),
+                     through=fmt_day_month(_to)))
+
+        _cycle_rows = []
+        for _key, _raw in _ki_catalog.items():
+            _goal = float(_cycle_goals.get(_key, 0) or 0)
+            _actual = _sum_ki(_weekly_between(_wf_all, _from, _to), _key)
+            _label = _strip_real_suffix(_raw)
+            # §7.7: a transfer window cannot carry a certified baptism count —
+            # TABLEAU_BAPTISMS holds whole calendar months and a cycle never is
+            # one. The mission's own weekly figure is used and NAMED, never
+            # silently substituted for the certified number it undercounts.
+            if _key == _BAPTISM_KEY:
+                _label = t("{label} (weekly report)", label=_label)
+            _cycle_rows.append({
+                t("Indicator"): _label,
+                t("Goal"):      int(round(_goal)),
+                t("Actual"):    int(round(_actual)),
+                t("% of Goal"): _pct(_actual, _goal),
             })
 
-        # Non-zero extra_goals
-        extra_goal_data = {k: v for k, v in mission_goals_display.items()
-                           if k not in _FEATURED_KEYS and v}
-        if extra_goal_data:
-            all_metrics_lookup = {k: lbl for k, lbl, _ in get_question_metrics()}
-            for key, goal_val in extra_goal_data.items():
-                actual_val = 0.0
-                if not actual_df.empty and key in actual_df.columns:
-                    actual_val = float(actual_df[key].sum())
-                pct_str = f"{round(actual_val / goal_val * 100)}%" if goal_val > 0 else "—"
-                mission_rows.append({
-                    "Metric":    all_metrics_lookup.get(key, key),
-                    "Goal":      int(goal_val),
-                    "Actual":    int(actual_val),
-                    "% of Goal": pct_str,
-                })
+        render_table(pd.DataFrame(_cycle_rows).style.apply(_style_summary, axis=1))
+        st.caption(t("Baptisms here are the mission's own weekly report, which "
+                     "under-counts. The certified Tableau figure is monthly and "
+                     "cannot describe a cambio; it is shown in the year below."))
 
-        mission_tbl = pd.DataFrame(mission_rows)
+    st.divider()
 
-        def _style_mission(row):
-            styles = [""] * len(row)
-            pct_idx = list(row.index).index("% of Goal")
-            styles[pct_idx] = _color_pct(row["% of Goal"])
-            return styles
+    # ── Part 2: the year ──────────────────────────────────────────────────────
 
-        styled_mission = mission_tbl.style.apply(_style_mission, axis=1)
-        render_table(styled_mission)
+    render_section_label(t("Mission — the year"))
+
+    _years = ty.years_in_schedule(_all_cycles)
+    if not _years:
+        st.info(t("No cycle in the schedule can be placed in a calendar year."))
+    else:
+        _today = mission_today()
+        _default_year = _years.index(_today.year) if _today.year in _years else len(_years) - 1
+        _year = st.selectbox(t("Year"), _years, index=_default_year, key="mission_year")
+
+        _goals_by_cycle = goals_by_cycle_start()
+        _owned = ty.cycles_owned_by(_all_cycles, _year)
+        _planned = {c["start"] for c in _owned} & cycles_with_goals()
+        _y_from, _y_to = ty.year_bounds(_year, _today)
+
+        # MANDATORY (§7.8). With the tab empty on day one, a year total resting
+        # on three of eight cycles is the normal case, not an edge case, and
+        # without this caption it reads as the whole year's target.
+        st.caption(t("{n} of {total} cambios in {year} have goals set. "
+                     "Results counted through {through}.",
+                     n=fmt_int(len(_planned)), total=fmt_int(len(_owned)),
+                     year=_year, through=fmt_day_month(_y_to)))
+
+        # A cycle that crosses New Year contributes its goal to BOTH years, split
+        # by days (§7.3). Naming it is what makes the total addable by eye — a
+        # pro-rated figure that does not explain itself is unreadable.
+        for _straddler in ty.straddlers_for_year(_all_cycles, _year):
+            _share = ty.year_share(_straddler["start"], _straddler["end"], _year)
+            st.caption(t(
+                "{label} crosses into another year, so {pct}% of its goal "
+                "({days} of its {total} days) counts toward {year}.",
+                label=_cycle_label(_straddler), pct=round(_share * 100),
+                days=fmt_int(ty.days_in_year(_straddler["start"], _straddler["end"], _year)),
+                total=fmt_int(ty.cycle_days(_straddler["start"], _straddler["end"])),
+                year=_year))
+
+        _y_weekly = _weekly_between(_wf_all, _y_from, _y_to)
+        _year_rows = []
+        for _key, _raw in _ki_catalog.items():
+            _goal = ty.year_goal_total(_all_cycles, _goals_by_cycle, _key, _year)
+            _actual = _sum_ki(_y_weekly, _key)
+            _label = _strip_real_suffix(_raw)
+            if _key == _BAPTISM_KEY:
+                _label = t("{label} (weekly report)", label=_label)
+            _year_rows.append({
+                t("Indicator"): _label,
+                t("Goal"):      int(round(_goal)),
+                t("Actual"):    int(round(_actual)),
+                t("% of Goal"): _pct(_actual, _goal),
+            })
+
+        # §7.7: both baptism sources, as two named rows, never spliced into one.
+        # The gap between them is itself worth seeing — the weekly figure came in
+        # at ~18-20 against an official 41 for one month — and neither source
+        # quietly does the other's job. That is annual_baptisms.py's "One source"
+        # rule, applied to a table instead of a chart.
+        _certified, _reach = _certified_baptisms_for_year(_year, _today)
+        if _certified is not None:
+            _bapt_goal = ty.year_goal_total(_all_cycles, _goals_by_cycle, _BAPTISM_KEY, _year)
+            _year_rows.append({
+                t("Indicator"): t("Baptisms (Tableau, certified through {reach})",
+                                  reach=_reach),
+                t("Goal"):      int(round(_bapt_goal)),
+                t("Actual"):    int(_certified),
+                t("% of Goal"): _pct(_certified, _bapt_goal),
+            })
+
+        render_table(pd.DataFrame(_year_rows).style.apply(_style_summary, axis=1))
+        st.caption(t("A year's goal is every cambio's goal for that year, with a "
+                     "cambio that crosses New Year split by days. Results are "
+                     "counted by the week they were reported in, always by real "
+                     "date — never by which cambio a week belonged to."))
+        if _certified is None:
+            st.caption(t("No certified Tableau baptism figure has been captured "
+                         "for {year} yet, so only the mission's own weekly "
+                         "report is shown.", year=_year))
+
+        # The Panel's annual baptism chart keeps its own certified source and its
+        # own GOAL_ANNUAL_baptisms target, and is deliberately untouched by any
+        # of this (§7.8, and acceptance check 6).
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -932,7 +877,7 @@ if selected_section == "Area Goal Customization":
         t("Set a weekly goal for every nightly and weekly form metric for this area. "
         "Saved goals appear on the Breakdowns page's area view and roll up into "
         "zone-level goals on its zone view. The mission's Key Indicators "
-        "additionally get a MONTHLY goal further down, stored separately.")
+        "additionally get a goal PER TRANSFER CYCLE further down, stored separately.")
     )
 
     # ── Load area list (real teaching areas only — no leadership rows) ────────
@@ -965,25 +910,32 @@ if selected_section == "Area Goal Customization":
 
     # ── Bulk: Recommend All Areas ─────────────────────────────────────────────
     # One click computes the REC value for EVERY active area — weekly Nightly
-    # Form Goals AND current-month Monthly Goals — shows a preview, and a
+    # Form Goals AND this cambio's Key Indicator goals — shows a preview, and a
     # separate Save writes each store in ONE batched Sheets call
-    # (save_all_area_goals / bulk_upsert_area_monthly_goals), not one write
-    # per area, so 60 areas can't trip the API quota.
+    # (save_all_area_goals / bulk_upsert_area_transfer_goals), not one write per
+    # area, so 60 areas can't trip the API quota.
+    #
+    # This is the only realistic way to populate AREA_TRANSFER_GOALS at all:
+    # forty-three areas times seven indicators is 301 numbers to type by hand.
+    # The first draft of PLAN §7 missed this button entirely (§7.4e).
 
     # The mission's own Key Indicators, not a fixed list of Provo's six —
-    # which would have written zeros into every area's monthly row.
-    _BULK_MONTHLY_KEYS = list(key_indicator_metrics())
-    _BULK_MONTH_START = current_month_start()
-    _bulk_month_label = fmt_month_year(_BULK_MONTH_START)
-    if _bulk_month_label == NA:
-        _bulk_month_label = _BULK_MONTH_START
+    # which would have written zeros into every area's row.
+    _BULK_KI_KEYS = list(key_indicator_metrics())
+    _bulk_cycle = transfer_window(0)
+    _bulk_cycle_label = _cycle_label(_bulk_cycle) if _bulk_cycle else ""
+    _bulk_weeks = _cycle_weeks(_bulk_cycle) if _bulk_cycle else 0
+
+    # The bulk button writes the transfer goals of every area in the mission, so
+    # it is gated exactly as the per-area transfer boxes are (§7.4d).
+    _may_bulk = _can_edit_goals(user) and _bulk_cycle is not None
 
     def _compute_all_area_recs() -> None:
-        """on_click: build the weekly + monthly REC values for every active
+        """on_click: build the weekly + transfer REC values for every active
         area and stash them in session state until saved or cancelled.
         Weekly metrics with no REC (no data yet) keep the area's currently
         saved value instead of being zeroed."""
-        weekly, monthly = {}, {}
+        weekly, transfer = {}, {}
         for _a in area_names:
             _rec = get_recommended_goals(_a)
             _cur = get_area_goals(_a)
@@ -997,40 +949,42 @@ if selected_section == "Area Goal Customization":
                     except (ValueError, TypeError):
                         _row[_k] = 0
             weekly[_a] = _row
-            _mrec = get_recommended_monthly_goals(_a)
-            monthly[_a] = {_k: int(_mrec.get(_k, 1)) for _k in _BULK_MONTHLY_KEYS}
-        st.session_state["bulk_rec_preview"] = {"weekly": weekly, "monthly": monthly}
+            _trec = get_recommended_transfer_goals(_a, _bulk_weeks)
+            transfer[_a] = {_k: int(_trec.get(_k, 1)) for _k in _BULK_KI_KEYS}
+        st.session_state["bulk_rec_preview"] = {"weekly": weekly, "transfer": transfer}
 
-    with st.container(key="fillallareas"):
-        st.button(
-            t("RECOMMEND ALL AREA GOALS"),
-            key="fillallareas_btn",
-            on_click=_compute_all_area_recs,
-            help=t("Compute the recommended weekly and monthly goals for every "
-                 "active area, preview them, then save all at once."),
-        )
+    if _may_bulk:
+        with st.container(key="fillallareas"):
+            st.button(
+                t("RECOMMEND ALL AREA GOALS"),
+                key="fillallareas_btn",
+                on_click=_compute_all_area_recs,
+                help=t("Compute the recommended weekly goals and this cambio's "
+                       "goals for every active area, preview them, then save "
+                       "all at once."),
+            )
 
-    if "bulk_rec_preview" in st.session_state:
+    if _may_bulk and "bulk_rec_preview" in st.session_state:
         _preview = st.session_state["bulk_rec_preview"]
         st.caption(
-            t("Recommended goals computed for **{count} areas** — each area's own REC values, exactly what the per-metric REC pills show. Review below, then **Save All Recommended** to write every area's weekly goals and its {bulk_month_label} monthly goals. This overwrites any custom goals already saved.", count=len(_preview['weekly']), bulk_month_label=_bulk_month_label)
+            t("Recommended goals computed for **{count} areas** — each area's own REC values, exactly what the per-metric REC pills show. Review below, then **Save All Recommended** to write every area's weekly goals and its goals for {cycle}. This overwrites any custom goals already saved.", count=len(_preview['weekly']), cycle=_bulk_cycle_label)
         )
         _wk_labels = {k: _LABEL_OVERRIDES.get(k, lbl) for k, lbl, _f in metric_defs}
         with st.expander(t('Preview — weekly goals ({count} areas)', count=len(_preview['weekly']))):
             _wk_df = pd.DataFrame.from_dict(_preview["weekly"], orient="index")
             _wk_df.index.name = "Area"
             st.dataframe(_wk_df.rename(columns=_wk_labels), height=420)
-        # Column headers for the monthly preview table. Was a fixed
+        # Column headers for the transfer preview table. Was a fixed
         # Gate/Date/New/Pew/Renew/Mate map — Provo's six abbreviations. None
         # matched a CCSM key, so .rename() silently left every column as a raw
         # `ki_*_real` token in a table leadership reads before saving goals for
         # the whole mission.
-        _MONTHLY_PREVIEW_LABELS = dict(key_indicator_metrics())
-        with st.expander(t('Preview — monthly goals for {bulk_month_label}', bulk_month_label=_bulk_month_label)):
-            _mo_df = pd.DataFrame.from_dict(_preview["monthly"], orient="index")
-            _mo_df.index.name = "Area"
+        _KI_PREVIEW_LABELS = dict(key_indicator_metrics())
+        with st.expander(t('Preview — goals for {cycle}', cycle=_bulk_cycle_label)):
+            _tr_df = pd.DataFrame.from_dict(_preview["transfer"], orient="index")
+            _tr_df.index.name = "Area"
             st.dataframe(
-                _mo_df[_BULK_MONTHLY_KEYS].rename(columns=_MONTHLY_PREVIEW_LABELS),
+                _tr_df[_BULK_KI_KEYS].rename(columns=_KI_PREVIEW_LABELS),
                 height=420,
             )
         _col_bulk_save, _col_bulk_cancel = st.columns([1, 1])
@@ -1041,26 +995,27 @@ if selected_section == "Area Goal Customization":
                 except Exception as e:
                     st.error(t('Failed to save weekly goals: {e}', e=e))
                 else:
-                    _n_month, _m_err = bulk_upsert_area_monthly_goals(
-                        _BULK_MONTH_START,
-                        _preview["monthly"],
+                    _n_tr, _t_err = bulk_upsert_area_transfer_goals(
+                        _bulk_cycle["start"].isoformat(),
+                        _preview["transfer"],
                         set_by=user.get("email", ""),
+                        transfer_number=str(_bulk_cycle.get("number") or ""),
                     )
                     # Drop every per-area goal input's stale session value so
                     # the grids below re-initialize from the freshly saved
                     # goals (these widgets haven't rendered yet this run, so
                     # deleting their keys here is safe).
                     for _sk in list(st.session_state.keys()):
-                        if _sk.startswith("goal_n_") or _sk.startswith("mgoal_"):
+                        if _sk.startswith("goal_n_") or _sk.startswith("tgoal_"):
                             del st.session_state[_sk]
                     del st.session_state["bulk_rec_preview"]
-                    if _m_err:
+                    if _t_err:
                         st.error(
-                            t('Weekly goals saved for {count} areas, but monthly goals failed: {m_err}', count=len(_preview['weekly']), m_err=_m_err)
+                            t('Weekly goals saved for {count} areas, but the cambio goals failed: {err}', count=len(_preview['weekly']), err=_t_err)
                         )
                     else:
                         st.success(
-                            t('Recommended goals saved for **{count} areas** — weekly + {bulk_month_label} monthly.', count=len(_preview['weekly']), bulk_month_label=_bulk_month_label)
+                            t('Recommended goals saved for **{count} areas** — weekly, plus {cycle}.', count=len(_preview['weekly']), cycle=_bulk_cycle_label)
                         )
         with _col_bulk_cancel:
             if st.button(t("Cancel"), key="bulk_rec_cancel"):
@@ -1295,14 +1250,22 @@ if selected_section == "Area Goal Customization":
 
     st.divider()
 
-    # ── Monthly Goals: the mission's Key Indicators ───────────────────────────
-    # Stored SEPARATELY from GOALS_CONFIG, in AREA_MONTHLY_GOALS (keyed by
-    # area + month_start) — NOT read by the live AgentScores scoring script,
+    # ── Metas de este cambio: the mission's Key Indicators ────────────────────
+    # Stored SEPARATELY from GOALS_CONFIG, in AREA_TRANSFER_GOALS (keyed by
+    # area + transfer_start) — NOT read by the live AgentScores scoring script,
     # which compares GOALS_CONFIG's number directly against ONE week of real
-    # data with no conversion. Making these boxes monthly without a separate
-    # tab would silently break every area's weekly score.
+    # data with no conversion, and which CCSM_Agent2.gs recalibrates every
+    # cycle. Making the weekly boxes above transfer-scoped would silently break
+    # every area's weekly score, so they stay weekly and these are their own
+    # thing (PLAN §7.4i).
+    #
+    # Was "Monthly Goals", written to a tab that never existed. The cadence is
+    # the change that matters: a transfer cycle is whole Monday-to-Sunday
+    # reporting weeks, so every scaling below is exact where the monthly version
+    # needed a days/7 estimate and a counted-Sundays correction to approximate
+    # it. Both estimates are gone rather than ported (§7.0a).
 
-    render_section_label(t("Monthly Goals"))
+    render_section_label(t("Goals for this transfer"))
 
     # The seven Key Indicators, in the order the weekly form asks them.
     #
@@ -1312,155 +1275,176 @@ if selected_section == "Area Goal Customization":
     # collapses to exactly ONE box: nothing matches gate/renew/pew/new_found/
     # member_lessons, and "date" matches `ki_baptismal_date_real` purely by
     # coincidence of spelling. A single arbitrary metric would have appeared
-    # here under the heading "Monthly Goals", looking deliberate.
+    # here under the heading, looking deliberate.
     #
     # Keyword matching over metric names is the wrong tool regardless: it
     # depends on the mission's language. Taking the catalogue's own KI set is
     # both correct and self-correcting when the form changes.
     _ki_catalog = key_indicator_metrics()
     _weekly_by_key = {m[0]: m for m in weekly_defs}
-    monthly_ki_defs = [
-        _weekly_by_key.get(k, (k, label, "WEEKLY"))
+    # Labels trimmed of "(Real)": these are goal boxes, and the suffix names the
+    # achieved half of the pair the weekly FORM collects.
+    transfer_ki_defs = [
+        (k, _strip_real_suffix(_weekly_by_key.get(k, (k, label, "WEEKLY"))[1]), "WEEKLY")
         for k, label in _ki_catalog.items()
     ]
-    _MONTHLY_LABEL_OVERRIDES: dict[str, str] = {}
 
-    _monthly_month_start = current_month_start()
-    _monthly_row = get_current_area_monthly_goal(selected_area, _monthly_month_start)
-    _monthly_label = fmt_month_year(_monthly_month_start)
-    if _monthly_label == NA:
-        _monthly_label = _monthly_month_start
+    _tg_cycle = _pick_cycle("area_goal_cycle")
+    if _tg_cycle is None:
+        st.warning(t("TRANSFER_SCHEDULE has no cycles, so a goal has nothing to "
+                     "belong to. Add the mission's cycles on the Traslados page."))
+    else:
+        _tg_start = _tg_cycle["start"].isoformat()
+        _tg_weeks = _cycle_weeks(_tg_cycle)
+        _tg_label = _cycle_label(_tg_cycle)
+        _tg_row = get_area_transfer_goal(selected_area, _tg_start)
 
-    def _monthly_current(key: str) -> int:
-        if not _monthly_row:
-            return 0
-        return int(_monthly_row.get(key, 0) or 0)
+        # Past cycles stay editable so 2026-4 and 2026-5 can be backfilled
+        # (§7.4c) — but a goal typed into a finished cycle should read as a
+        # backfill, not as a plan.
+        if _cycle_has_ended(_tg_cycle):
+            st.caption(t("This cambio has already ended. Goals saved for it are "
+                         "a record of what was expected, not a plan."))
 
-    # Monthly REC = the same ~10% stretch used everywhere else on this page,
-    # but computed from this area's own actual CALENDAR-MONTH totals (every
-    # completed month's data summed together, then averaged across full
-    # history) via get_recommended_monthly_goals() — NOT a weekly average
-    # projected up by a fixed weeks-per-month factor. Applies uniformly to
-    # every Monthly Goals box, including Renew.
-    _monthly_weeks = _current_month_weeks()
-    _monthly_ki_keys = {m[0] for m in monthly_ki_defs}
-    _monthly_recommended_goals = get_recommended_monthly_goals(selected_area)
-    monthly_recommended = {
-        k: v for k, v in _monthly_recommended_goals.items() if k in _monthly_ki_keys
-    }
+        def _transfer_current(key: str) -> int:
+            if not _tg_row:
+                return 0
+            return int(_tg_row.get(key, 0) or 0)
 
-    st.caption(
-        t("Key indicators for **{monthly_label}**, in order: Gate, Date, New, Pew, Renew, Mate. REC is a light stretch goal — about {get_rec_stretch_pct}% above this area's own real average monthly performance (every completed calendar month in this area's history, not a weekly number scaled up). Any indicator with an expectation saved in Area Expectation Settings shows goal / that expectation sized to this month — a monthly figure as-is, a weekly one times this month's exact weeks (Renew, a Sunday-only event, times its actual Sunday count). Two fallbacks when no expectation is set: Renew shows goal / the MAX possible Recent-Convert attendances this month — every recent convert, every Sunday they were eligible for (a convert baptized mid-month only counts for the Sundays after their baptism, not the ones before) — and Mate shows goal / this area's own hypothetical monthly Non-Member Lesson target (its NM Lessons expectation scaled to this month), not based on actual data. New and Mate also appear above under Nightly Form Goals as a separate WEEKLY number — the two boxes are independent, not kept in sync.", monthly_label=_monthly_label, get_rec_stretch_pct=get_rec_stretch_pct())
-    )
+        # Only the MP and the APs set the mission's targets (§7.4d). This is a
+        # real change: Area Goal Customization was the one tab on this page with
+        # no gate, and with Mission Goals deleted these boxes are now the only
+        # leadership goal in the app. The WEEKLY nightly-form boxes above are
+        # deliberately left as they were — this step does not take away edit
+        # rights anyone has today.
+        _may_edit_transfer = _can_edit_goals(user)
 
-    def _apply_all_monthly_rec(area: str, recommended: dict, defs: list) -> None:
-        """on_click callback: fill every Monthly Goals input with its
-        recommended monthly value in one go."""
-        for key, _lbl, _ft in defs:
-            if key in recommended:
-                st.session_state[f"mgoal_{area}_{key}"] = int(recommended[key])
+        # REC = the area's own weekly stretch average times THIS cycle's real
+        # weeks. Not an average cycle length, and not an average of completed
+        # cycles: WEEKLY_KI begins 2026-08-09, so no area has one completed
+        # transfer of history yet and that average would divide by zero cycles
+        # (§7.4g). Sunday-only KIs need no correction here — over a transfer the
+        # Sunday count IS the week count, which is why the monthly version's
+        # _sundays_in_month special case is gone rather than ported.
+        _transfer_ki_keys = {m[0] for m in transfer_ki_defs}
+        _all_transfer_recs = get_recommended_transfer_goals(selected_area, _tg_weeks)
+        transfer_recommended = {
+            k: v for k, v in _all_transfer_recs.items() if k in _transfer_ki_keys
+        }
 
-    if monthly_recommended:
-        with st.container(key="fillallmonthlyrec"):
-            st.button(
-                t("FILL ALL RECOMMENDED"),
-                key="fillall_monthly_btn",
-                on_click=_apply_all_monthly_rec,
-                args=(selected_area, monthly_recommended, monthly_ki_defs),
-            )
-
-    # Monthly denominators are DYNAMIC: every monthly KI whose category defines
-    # an expectation in Area Expectation Settings gets a "/N" fraction — a
-    # monthly-cadence indicator counts as-is, a weekly-cadence one scales by
-    # THIS month's exact weeks. Church-attendance KIs are Sunday-only events, so
-    # they scale by the month's actual SUNDAY count instead; scaling those by
-    # weeks would set a bar for Sundays that do not exist in the month.
-    # ceil, floored at 1 — a fraction out of 0 means nothing.
-    #
-    # Provo had two derived fallbacks here for KIs with no explicit expectation:
-    # Renew's was the maximum possible Recent-Convert attendances this month
-    # (from rc_total, a running headcount of the recent converts an area works
-    # with), and Mate's was the area's NM Lessons expectation scaled to the
-    # month. Both are gone. CCSM's weekly form asks no rc_total — there is no
-    # recent-convert headcount anywhere in its data — so that denominator could
-    # only ever have been 0, and "3 / 0" is worse than no fraction at all. A KI
-    # with no expectation set now simply renders without one, which is honest:
-    # nobody has said what the bar is.
-    _SUNDAY_ONLY_KIS = {
-        k for k in _ki_catalog
-        if "sacrament" in k or "church" in k
-    }
-
-    def _area_monthly_exp_target(key: str) -> int | None:
-        _e = get_area_expectation_entry(selected_area, key)
-        if not _e:
-            return None
-        if _e["cadence"] == "monthly":
-            _v = _e["value"]
-        else:
-            _v = _e["value"] * (
-                _sundays_this_month if key in _SUNDAY_ONLY_KIS else _monthly_weeks
-            )
-        return max(1, math.ceil(_v))
-
-    try:
-        _month_start_d = date.fromisoformat(_monthly_month_start)
-        _next_month_d = (
-            date(_month_start_d.year + 1, 1, 1) if _month_start_d.month == 12
-            else date(_month_start_d.year, _month_start_d.month + 1, 1)
+        st.caption(
+            t("Key indicators for **{cycle}** — {weeks} weeks. REC is a light "
+              "stretch goal, about {pct}% above this area's own typical weekly "
+              "performance, times this cambio's real length. Any indicator with "
+              "an expectation saved in Area Expectation Settings shows goal / "
+              "that expectation sized to this cambio: a transfer-cadence figure "
+              "as-is, a weekly one times {weeks} weeks. An indicator with no "
+              "expectation shows no fraction at all — nobody has said what the "
+              "bar is. These are separate boxes from the weekly Nightly Form "
+              "Goals above; the two are not kept in sync.",
+              cycle=_tg_label, weeks=fmt_number(_tg_weeks, 0) if _tg_weeks == int(_tg_weeks) else fmt_number(_tg_weeks, 1),
+              pct=get_rec_stretch_pct())
         )
-        _sundays_this_month = sum(
-            1 for _i in range((_next_month_d - _month_start_d).days)
-            if (_month_start_d + timedelta(days=_i)).weekday() == 6
-        )
-    except ValueError:
-        _sundays_this_month = 4
 
-    _monthly_denominators: dict[str, int] = {}
-    for _mk, _mlbl, _mft in monthly_ki_defs:
-        _t = _area_monthly_exp_target(_mk)
-        if _t is not None:
-            _monthly_denominators[_mk] = _t
+        def _apply_all_transfer_rec(area: str, recommended: dict, defs: list) -> None:
+            """on_click callback: fill every transfer-goal input with its
+            recommended value in one go."""
+            for key, _lbl, _ft in defs:
+                if key in recommended:
+                    st.session_state[f"tgoal_{area}_{key}"] = int(recommended[key])
 
-    monthly_values = {}
-    for i in range(0, len(monthly_ki_defs), 4):
-        cols = st.columns(4)
-        for col, (key, label, _f) in zip(cols, monthly_ki_defs[i : i + 4]):
-            with col:
-                widget_key = f"mgoal_{selected_area}_{key}"
-                if widget_key not in st.session_state:
-                    st.session_state[widget_key] = _monthly_current(key)
-                monthly_values[key] = st.number_input(
-                    _MONTHLY_LABEL_OVERRIDES.get(key, label),
-                    min_value=0,
-                    step=1,
-                    key=widget_key,
+        if transfer_recommended and _may_edit_transfer:
+            with st.container(key="fillalltransferrec"):
+                st.button(
+                    t("FILL ALL RECOMMENDED"),
+                    key="fillall_transfer_btn",
+                    on_click=_apply_all_transfer_rec,
+                    args=(selected_area, transfer_recommended, transfer_ki_defs),
                 )
-                if key in _monthly_denominators:
-                    _render_fraction_overlay("m", key, monthly_values[key], _monthly_denominators[key])
-                if key in monthly_recommended:
-                    _render_rec_pill("m", key, widget_key, monthly_recommended[key])
 
-    if st.button(t("Save Monthly Goals"), type="primary", key="area_monthly_save"):
-        try:
-            def _mv(key: str) -> int:
-                return int(monthly_values.get(key, _monthly_current(key)))
+        # Denominators are DYNAMIC: every KI whose category defines an
+        # expectation gets a "/N" fraction. A transfer-cadence expectation counts
+        # as-is; a weekly one scales by the cycle's real weeks. ceil, floored at
+        # 1 — a fraction out of 0 means nothing.
+        #
+        # Provo had two derived fallbacks here for KIs with no explicit
+        # expectation: Renew's was the maximum possible Recent-Convert
+        # attendances, and Mate's was the area's NM Lessons expectation scaled up.
+        # Both are gone. CCSM's weekly form asks no rc_total — there is no
+        # recent-convert headcount anywhere in its data — so that denominator
+        # could only ever have been 0, and "3 / 0" is worse than no fraction.
+        def _area_transfer_exp_target(key: str) -> int | None:
+            _e = get_area_expectation_entry(selected_area, key)
+            if not _e:
+                return None
+            _v = _e["value"] if _e["cadence"] == "transfer" else _e["weekly"] * _tg_weeks
+            return max(1, math.ceil(_v))
 
-            # Every KI actually on screen, not six fixed Provo keyword args.
-            # Those evaluated to 0 for CCSM, so this button reported "saved"
-            # and stored nothing the user had typed.
-            _row, _err = upsert_area_monthly_goal(
-                selected_area,
-                _monthly_month_start,
-                goals={k: _mv(k) for k, _lbl, _ft in monthly_ki_defs},
-                set_by=user.get("email", ""),
-            )
-            if _err:
-                st.error(t('Failed to save monthly goals: {err}', err=_err))
-            else:
-                st.success(t('Monthly goals saved for **{selected_area}** — {monthly_label}.', selected_area=selected_area, monthly_label=_monthly_label))
-        except Exception as e:
-            st.error(t('Failed to save monthly goals: {e}', e=e))
+        _transfer_denominators: dict[str, int] = {}
+        for _tk, _tlbl, _tft in transfer_ki_defs:
+            _t = _area_transfer_exp_target(_tk)
+            if _t is not None:
+                _transfer_denominators[_tk] = _t
+
+        # 3-per-row, not 4. These are the long descriptive KI names, and at
+        # 4-per-row's narrower column "Nuevas Personas Encontradas" and
+        # "Amigos en la Iglesia (Primera Semana)" wrap to a second line — which
+        # pushes the input box down while its REC pill and "/N" overlay
+        # (position:absolute, at a fixed top offset calibrated for a one-line
+        # label — see the frozen CSS block above) stay put and land ON the
+        # label. That block names this exact remedy and forbids re-anchoring to
+        # fix it, which is the reason Mission Goals used 3-per-row too.
+        #
+        # A flat st.columns(3) on the trailing row of one, rather than sizing the
+        # row to what is left: a lone box in a full-width column is a different
+        # width from the six above it.
+        transfer_values = {}
+        for i in range(0, len(transfer_ki_defs), 3):
+            cols = st.columns(3)
+            for col, (key, label, _f) in zip(cols, transfer_ki_defs[i : i + 3]):
+                with col:
+                    widget_key = f"tgoal_{selected_area}_{key}"
+                    if widget_key not in st.session_state:
+                        st.session_state[widget_key] = _transfer_current(key)
+                    transfer_values[key] = st.number_input(
+                        label,
+                        min_value=0,
+                        step=1,
+                        key=widget_key,
+                        disabled=not _may_edit_transfer,
+                    )
+                    if key in _transfer_denominators:
+                        _render_fraction_overlay("tg", key, transfer_values[key],
+                                                 _transfer_denominators[key])
+                    if key in transfer_recommended and _may_edit_transfer:
+                        _render_rec_pill("tg", key, widget_key, transfer_recommended[key])
+
+        if not _may_edit_transfer:
+            st.caption(t("Only the mission president and the assistants can set "
+                         "goals for a cambio."))
+        elif st.button(t("Save goals for this transfer"), type="primary",
+                       key="area_transfer_save"):
+            try:
+                def _tv(key: str) -> int:
+                    return int(transfer_values.get(key, _transfer_current(key)))
+
+                # Every KI actually on screen, not six fixed Provo keyword args.
+                # Those evaluated to 0 for CCSM, so the predecessor of this
+                # button reported "saved" and stored nothing the user had typed.
+                _row, _err = upsert_area_transfer_goal(
+                    selected_area,
+                    _tg_start,
+                    goals={k: _tv(k) for k, _lbl, _ft in transfer_ki_defs},
+                    set_by=user.get("email", ""),
+                    transfer_number=str(_tg_cycle.get("number") or ""),
+                )
+                if _err:
+                    st.error(t('Failed to save goals: {err}', err=_err))
+                else:
+                    st.success(t('Goals saved for **{selected_area}** — {cycle}.',
+                                 selected_area=selected_area, cycle=_tg_label))
+            except Exception as e:
+                st.error(t('Failed to save goals: {e}', e=e))
 
     st.divider()
 
@@ -1594,7 +1578,7 @@ if selected_section == "Goal Settings":
             else:
                 st.session_state.pop("_nudge_save_error", None)
                 get_recommended_goals.clear()
-                get_recommended_monthly_goals.clear()
+                get_recommended_transfer_goals.clear()
                 get_mission_recommended_goals.clear()
 
         # Session-state pre-seed pattern (no value= param) — same as every
@@ -1951,12 +1935,18 @@ if selected_section == "Area Expectation Settings":
             # StreamlitDuplicateElementKey crash this partition originally
             # fixed (a just-flipped row rendering in BOTH passes of one
             # script run — see 25d6bd1).
-            _rows_by_cadence: dict[str, list[dict]] = {"weekly": [], "monthly": []}
+            # "transfer" joined weekly/monthly for Step 7 (PLAN §7.4h): the
+            # mission plans in six-week cycles, and an expectation entered per
+            # cambio was previously narrowed to per week — an eightfold
+            # overstatement, silently.
+            _rows_by_cadence: dict[str, list[dict]] = {
+                "weekly": [], "monthly": [], "transfer": []}
             for _r in _cat_rows:
                 _rows_by_cadence.setdefault(_r["cadence"], []).append(_r)
 
             for _cadence, _cadence_heading in (
                 ("weekly", "Weekly Goals"), ("monthly", "Monthly Goals"),
+                ("transfer", "Goals per Transfer"),
             ):
                 _cadence_rows = _rows_by_cadence.get(_cadence, [])
                 if not _cadence_rows:
@@ -1983,7 +1973,7 @@ if selected_section == "Area Expectation Settings":
                 # See the "st-key-cadence_rail_" / "st-key-cadence_rows_"
                 # rules below for the actual stroke styling.
                 with st.container(key=f"cadence_rail_{_cadence}_{_category}"):
-                    st.caption(f"**{_cadence_heading}**")
+                    st.caption(f"**{t(_cadence_heading)}**")
                     with st.container(key=f"cadence_rows_{_cadence}_{_category}"):
                         for _row in _cadence_rows:
                             # One bordered section per INDICATOR (Carson,
@@ -2023,8 +2013,9 @@ if selected_section == "Area Expectation Settings":
                                         # Options stay English - this value is
                                         # written to GOALS_CONFIG. format_func
                                         # translates the display only.
-                                        t("Cadence"), ["weekly", "monthly"],
-                                        index=0 if _row["cadence"] == "weekly" else 1,
+                                        t("Cadence"), _CADENCES,
+                                        index=(_CADENCES.index(_row["cadence"])
+                                               if _row["cadence"] in _CADENCES else 0),
                                         format_func=lambda c: t(c).capitalize(),
                                         key=f"area_ind_cadence_{_row['_id']}",
                                         on_change=_on_area_ind_cadence,
@@ -2079,7 +2070,7 @@ if selected_section == "Area Expectation Settings":
                 # never silently defaults to Weekly.
                 _new_cadence = st.selectbox(
                     # Options stay English - written to GOALS_CONFIG.
-                    t("Cadence"), ["weekly", "monthly"],
+                    t("Cadence"), _CADENCES,
                     index=None,
                     placeholder=t("SELECT CADENCE"),
                     format_func=lambda c: t(c).capitalize(),

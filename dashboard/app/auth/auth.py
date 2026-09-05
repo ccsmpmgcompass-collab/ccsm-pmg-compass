@@ -53,6 +53,34 @@ _ALWAYS_ALLOWED = {
 # Mission-leadership roles, plus the always-allowed owner/admin accounts above.
 _LEADERSHIP_ROLES = {"president", "assistant", "leader"}
 
+#: Accounts that may SET the mission's goals, on top of MISSION_ORG's own
+#: Is_MP / Is_AP flags. Everything in _ALWAYS_ALLOWED except the temporary
+#: deploy-verification address, which is for reaching the app, not for setting
+#: what the mission is measured against.
+#:
+#: This exists because the role check alone admits NOBODY. Probed live
+#: 2026-09-05: not one of these five addresses appears in MISSION_ORG, so
+#: get_user_role() returns "unknown" for every one of them. The only row flagged
+#: Is_AP=TRUE carries AP1's missionary-ID mailbox (500407562@missionary.org),
+#: not the named address he signs in with, and NO row is flagged Is_MP at all —
+#: the mission president has no row in the tab. So a plain
+#: `role in ("president", "assistant")` gate was passing for exactly one
+#: account, the system gmail, and silently locking out the mission president,
+#: both assistants and the owner. Same reason _ALWAYS_ALLOWED itself exists,
+#: applied to the second question the app asks about a person.
+_GOAL_SETTERS = _ALWAYS_ALLOWED - {"grayden16gmc@gmail.com"}
+
+
+def can_set_goals(user: dict) -> bool:
+    """True for the mission president, the assistants, and the owner account.
+
+    Takes the session dict `require_auth()` returns, and checks BOTH the role
+    MISSION_ORG derives and the address itself — see _GOAL_SETTERS for why the
+    role alone is not enough on this mission's data.
+    """
+    email = str((user or {}).get("email", "")).strip().lower()
+    return (user or {}).get("role") in ("president", "assistant") or email in _GOAL_SETTERS
+
 
 def is_leadership(email: str) -> bool:
     """
