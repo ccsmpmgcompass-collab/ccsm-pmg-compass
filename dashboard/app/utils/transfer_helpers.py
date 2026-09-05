@@ -83,6 +83,33 @@ def _fallback_row() -> dict | None:
         return None
 
 
+def transfer_cycles(rows: list[dict] | None = None) -> list[dict]:
+    """Every cycle in the schedule with its real END date, oldest first.
+
+    Keys: ``number``, ``start``, ``end``, ``weeks``, ``status`` — the same shape
+    ``transfer_window`` returns, minus ``source``, for every row rather than one.
+
+    ``end`` is the day before the NEXT cycle starts when a next row exists, so a
+    schedule that records a short or long cycle is described as it really was
+    rather than as ``start + weeks``. Only the final row falls back to its own
+    ``weeks``, since nothing follows it to bound it. **That rule lives here and
+    only here** — `transfer_window` reads it from this function rather than
+    keeping a second copy, which is audit item E2's whole point.
+
+    Added for Step 7: setting a goal per cycle means listing every cycle, past
+    and future, not just the one today falls in.
+    """
+    rows = transfer_rows() if rows is None else rows
+    out: list[dict] = []
+    for i, row in enumerate(rows):
+        if i + 1 < len(rows):
+            end = rows[i + 1]["start"] - timedelta(days=1)
+        else:
+            end = row["start"] + timedelta(weeks=row["weeks"]) - timedelta(days=1)
+        out.append({**row, "end": end})
+    return out
+
+
 def transfer_window(offset: int = 0, today: date | None = None) -> dict | None:
     """The transfer `offset` cycles back from the current one, or None.
 
@@ -112,22 +139,20 @@ def transfer_window(offset: int = 0, today: date | None = None) -> dict | None:
             return None
         rows, source = [fb], "config"
 
+    cycles = transfer_cycles(rows)
+
     # The current cycle is the latest one that has STARTED — not the latest
     # marked "Actual". See the module docstring.
-    started = [i for i, r in enumerate(rows) if r["start"] <= today]
+    started = [i for i, c in enumerate(cycles) if c["start"] <= today]
     if not started:
         return None
     idx = started[-1] - offset
-    if idx < 0 or idx >= len(rows):
+    if idx < 0 or idx >= len(cycles):
         return None
 
-    row = rows[idx]
-    if idx + 1 < len(rows):
-        end = rows[idx + 1]["start"] - timedelta(days=1)
-    else:
-        end = row["start"] + timedelta(weeks=row["weeks"]) - timedelta(days=1)
-    return {"start": row["start"], "end": end, "number": row["number"],
-            "weeks": row["weeks"], "status": row["status"], "source": source}
+    c = cycles[idx]
+    return {"start": c["start"], "end": c["end"], "number": c["number"],
+            "weeks": c["weeks"], "status": c["status"], "source": source}
 
 
 def transfer_period_bounds(today: date | None = None) -> dict:
