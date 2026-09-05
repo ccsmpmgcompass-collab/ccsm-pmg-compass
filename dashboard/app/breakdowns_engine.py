@@ -85,6 +85,7 @@ from app.config.metric_catalog import (
     is_rate_metric,
     key_indicator_metrics,
     metric_options,
+    non_numeric_metrics,
     weekly_metric_keys,
 )
 
@@ -1806,6 +1807,18 @@ def render_group_breakdown(
     # carry a target — zone and district both roll up their areas' goals, an
     # area has its own directly (Carson, 2026-07-24: district wanted the same
     # goal bars zone/area already had).
+    # `effort` (CHOICE) and `exchanges` (YESNO) hold the form's own Spanish word
+    # in DAILY_LOG — 'Todo', 'La mayor parte', 'TRUE'. get_daily_log() coerces
+    # every metric column to a number, so those land here as a hard 0 that is
+    # indistinguishable from a real measured zero: an area that answered "Todo"
+    # every single night would render as having given no effort at all. Consult
+    # QUESTIONS_CONFIG's Data_Type rather than inspecting values, exactly as
+    # Puntajes, Informes, Traslados and get_weekly_actuals_for_area already do.
+    # Defined out here because BOTH consumers below need it — the Key Indicators
+    # card grid (which takes its keys from LIVE_SNAPSHOT, where a3_buildLiveSnapshot
+    # writes these two as 0 for the same reason) and the Metric picker.
+    _non_numeric = non_numeric_metrics()
+
     if snap_scope is not None and not snap_scope.empty and has_rows:
         render_section_label(t('Key Indicators — {scope_value}', scope_value=scope_value))
 
@@ -1814,7 +1827,9 @@ def render_group_breakdown(
         # DAILY_LOG counts so it shouldn't carry any — guard regardless.
         _kpi_keys = [
             c[:-3] for c in snap_scope.columns
-            if c.endswith("_7d") and not is_rate_metric(c[:-3])
+            if c.endswith("_7d")
+            and not is_rate_metric(c[:-3])
+            and c[:-3] not in _non_numeric
         ]
         # Goal scales with the period: the sheet stores one WEEKLY goal per area
         # (get_zone_goals sums them), so a 31-day month is goal*31/7. All Time
@@ -2011,9 +2026,12 @@ def render_group_breakdown(
     _catalog = metric_options()
     _primary = _primary_metrics()
 
+    # Same guard as the Key Indicators grid above, on the other consumer:
+    # without it `effort` and `exchanges` are pickable metrics whose every chart,
+    # total and twin comparison would be built from coerced zeros.
     metric_keys = [
         k for k in _catalog
-        if not is_rate_metric(k) and (
+        if not is_rate_metric(k) and k not in _non_numeric and (
             (has_rows and k in rows.columns)
             or (k in _weekly_keys and _weekly_has.get(k, False))
         )
