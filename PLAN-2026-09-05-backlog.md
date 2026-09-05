@@ -645,6 +645,14 @@ concern that happens to share the file.
 7a and 7b have no dependencies and can land first. 7c blocks 7e/7f/7g/7i;
 7e blocks 7f; 7b + 7c block 7i.
 
+**Landed 2026-09-05 as FOUR commits, not nine.** 7c through 7f and 7i went in
+together: the store, the page and the bulk button reference each other, and the
+deleted monthly functions are imported by the very section that replaces them,
+so every intermediate split would have put a broken Metas page on `main`. 7g and
+7h shared a commit for the same reason — 7h reads the four-tier
+`_resolve_group_goal` that 7g introduces. The sub-step numbering below still
+describes the work; only the commit boundaries differ.
+
 ### Acceptance
 
 Verify in the running app, not only in the suite — the Step 2a lesson (a fix
@@ -680,6 +688,25 @@ that passed the suite still read "INTERCAMBIOS 0" on the live page).
 
 **Creates one new tab on the live sheet — needs Zackary's approval at the point
 of first save**, same pattern as Step 1.
+
+### Found while building, 2026-09-05 — `_can_edit_goals` admitted nobody
+
+Not in the audit, and it blocks §7.4d. `_can_edit_goals` checked MISSION_ORG's
+derived role plus one hardcoded gmail address. **Probed live: not one of the
+mission president's, the two assistants' or the owner's sign-in addresses
+appears in MISSION_ORG at all**, so `get_user_role()` returns "unknown" for
+every one of them — the only row flagged `Is_AP=TRUE` carries AP1's
+missionary-ID mailbox rather than the address he signs in with, and **no row is
+flagged `Is_MP`**. So Mission Goals, Goal Settings and Area Expectation Settings
+have been closed to the four people they were written for, and only
+`ccsm.pmg.compass@gmail.com` could open them.
+
+Fixed in `cf28071`: `_can_edit_goals` delegates to a new `auth.can_set_goals`,
+which honours the same `_ALWAYS_ALLOWED` set that lets those accounts sign in at
+all, minus the temporary deploy-verification address. **The real fix is on the
+sheet** — MISSION_ORG should carry the mission president and the assistants
+under the addresses they actually use — and that is a data change for Zackary,
+not a code change.
 ---
 
 ## §2 — Not scheduled (carried forward, deliberately)
@@ -792,4 +819,8 @@ commit — same as `PLAN-2026-09-03-desgloses-progression.md`._
 | 4 — Phase 3.5 payoff | not started | — |
 | 5 — Phase 4 sweep | not started | — |
 | 6 — Phase 3.4 automation | not started | — |
-| 7 — Transfer goals | **in progress** — plan revised after the second audit; 7a-7i not yet landed | — |
+| 7a — `Transfer_Number` parses | **DONE** | `9c33d83` |
+| 7b — Transfer-year library | **DONE** | `8eac9f8` |
+| 7c-7f, 7i — store, Metas, bulk, Resumen | **DONE**, verified in the app | `cf28071` |
+| 7g, 7h — KI card row, Panel bar | **DONE**, verified in the app | `4d58d39` |
+| 7 — first live save | **OPEN** — `AREA_TRANSFER_GOALS` is created on first save and needs Zackary's approval | — |
