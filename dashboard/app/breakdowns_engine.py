@@ -55,7 +55,11 @@ from app.db.queries import (
     is_within_last_transfers,
     resolve_area_category_label,
 )
-from app.utils.transfer_helpers import transfer_period_bounds, transfer_window
+from app.utils.transfer_helpers import (
+    transfer_cycles, transfer_period_bounds, transfer_window,
+)
+from app.analytics import transfer_year
+from app.db.goals_queries import areas_with_goals, group_goal_totals
 from app.utils.area_helpers import (
     build_calendar_data,
     compliance_anchor_date,
@@ -82,6 +86,7 @@ from app.i18n import t
 
 from app.config.flavor_loader import GOAL_TO_ACTUAL
 from app.config.metric_catalog import (
+    goal_metric_key,
     is_rate_metric,
     key_indicator_metrics,
     metric_options,
@@ -480,27 +485,41 @@ def _twin_label(label: str) -> str:
 
 
 def _resolve_group_goal(
-    metric: str, goals: dict | None, per_area_goals: dict, n_areas: int
-) -> tuple[float, str, int]:
-    """This group's WEEKLY goal for `metric`, the arithmetic behind it, and how
-    many areas that goal covers.
+    metric: str, goals: dict | None, per_area_goals: dict, n_areas: int,
+    transfer_weekly: dict | None = None, transfer_note: str = "",
+    transfer_basis: int = 0,
+    meta_weekly: dict | None = None, meta_basis: int = 0,
+) -> tuple[float, str, int, str]:
+    """This group's WEEKLY goal for `metric`, the arithmetic behind it, how many
+    areas that goal covers, and WHICH source it came from.
 
-    Two sources, most-specific first — the same order `views/01_Panel.py`
-    applies mission-wide, and the reason it exists here is that Desgloses never
-    had the second one:
+    Four sources, most-specific first — one precedence rule for the whole app
+    (PLAN §7.5), and the last two are new with Step 7:
 
       1. GOALS_CONFIG, summed across the group's areas by the caller. This is
          what the Goals page edits, so an entered goal always wins.
-      2. AGENT_CONFIG's ``GOAL_<metric>`` rows, which are PER AREA PER WEEK, so
+      2. ``AREA_TRANSFER_GOALS`` for the cycle this period sits in, summed over
+         the group and divided by the cycle's weeks — its weekly equivalent, so
+         it enters this function's contract like any other weekly number. When
+         the period IS the transfer, the caller's ``_goal_factor`` multiplies it
+         straight back to the transfer total.
+      3. AGENT_CONFIG's ``GOAL_<metric>`` rows, which are PER AREA PER WEEK, so
          a group's goal is that number times how many areas are in it.
+      4. The companionships' own summed ``ki_*_meta`` — what the areas set for
+         THEMSELVES on the weekly form. A different kind of fact from a
+         leadership target, so it is the last resort and the caller must label
+         it as such; never silently presented as "the goal".
 
-    GOALS_CONFIG is an empty tab across the whole mission (checked live
-    2026-09-03), which is why no card on this page has ever drawn a goal bar —
-    Steps B1/B2/B3 would have shipped as three careful fixes to something
-    nobody could see. Falling back the way the Panel already does turns them
-    on, with no sheet edit and no second convention.
+    In practice tiers 1 and 3 are empty for a Key Indicator: GOALS_CONFIG is an
+    empty tab mission-wide and every AGENT_CONFIG.GOAL_* row is a nightly metric
+    (probed live 2026-09-05). So tier 2 is what lights a KI bar once leadership
+    enters a goal, and tier 4 is what holds the Panel and this page exactly as
+    they are until then — nothing regresses before the first goal is saved.
 
-    The returned note carries the multiplication because the product alone is
+    Conversely, tiers 2 and 4 are empty for a nightly metric, so the nightly
+    grid's behaviour is unchanged by their existence.
+
+    The returned note carries the arithmetic because the product alone is
     unreadable on screen: a bar saying "48% of 1.200" is 150 x 8 areas, and
     nothing else on the card says so. It is empty for an entered goal, which is
     its own explanation.
@@ -510,17 +529,34 @@ def _resolve_group_goal(
     38 reporting areas over a goal set for 43 is not a percentage anyone should
     read (audit F8). Reduce both to per-area rates first and the mismatched
     denominators cancel.
+
+    The fourth is the source — "config", "transfer", "agent", "meta" or "" for
+    no goal at all. Only tier 4 changes what the card SAYS, but naming all four
+    keeps the caller from inferring the source from the note's shape.
     """
     entered = float((goals or {}).get(metric, 0) or 0)
     if entered > 0:
-        return entered, "", n_areas
+        return entered, "", n_areas, "config"
+
+    transfer = float((transfer_weekly or {}).get(metric, 0) or 0)
+    if transfer > 0:
+        return transfer, transfer_note, (transfer_basis or n_areas), "transfer"
+
     per_area = float((per_area_goals or {}).get(metric, 0) or 0)
-    if per_area <= 0 or n_areas <= 0:
-        return 0.0, "", 0
-    return (per_area * n_areas,
-            t("{per_area} per area x {n}",
-              per_area=fmt_int(per_area), n=fmt_int(n_areas)),
-            n_areas)
+    if per_area > 0 and n_areas > 0:
+        return (per_area * n_areas,
+                t("{per_area} per area x {n}",
+                  per_area=fmt_int(per_area), n=fmt_int(n_areas)),
+                n_areas, "agent")
+
+    meta = float((meta_weekly or {}).get(metric, 0) or 0)
+    if meta > 0 and meta_basis > 0:
+        return (meta,
+                t("the companionships' own goal — {n} areas set one",
+                  n=fmt_int(meta_basis)),
+                meta_basis, "meta")
+
+    return 0.0, "", 0, ""
 
 
 def _comparison_note(
@@ -1797,16 +1833,6 @@ def render_group_breakdown(
             t('No {scope_value} activity recorded for {kpi_period} — the sections below cover this period only.', scope_value=scope_value, kpi_period=t(kpi_period).lower())
         )
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # 1. KEY INDICATORS — every metric for the group, over the selected period
-    # ══════════════════════════════════════════════════════════════════════════
-    # WHICH metrics get a card comes from LIVE_SNAPSHOT's *_7d columns (that's
-    # METRICS_CONFIG's active metric set); the VALUES come from DAILY_LOG, the
-    # only source with the per-day granularity an arbitrary period needs. All
-    # three levels get cards (Carson, 2026-07-17); `goals` decides whether they
-    # carry a target — zone and district both roll up their areas' goals, an
-    # area has its own directly (Carson, 2026-07-24: district wanted the same
-    # goal bars zone/area already had).
     # `effort` (CHOICE) and `exchanges` (YESNO) hold the form's own Spanish word
     # in DAILY_LOG — 'Todo', 'La mayor parte', 'TRUE'. get_daily_log() coerces
     # every metric column to a number, so those land here as a hard 0 that is
@@ -1814,13 +1840,240 @@ def render_group_breakdown(
     # every single night would render as having given no effort at all. Consult
     # QUESTIONS_CONFIG's Data_Type rather than inspecting values, exactly as
     # Puntajes, Informes, Traslados and get_weekly_actuals_for_area already do.
-    # Defined out here because BOTH consumers below need it — the Key Indicators
-    # card grid (which takes its keys from LIVE_SNAPSHOT, where a3_buildLiveSnapshot
+    # Defined out here because BOTH consumers below need it — the Daily Activity
+    # grid (which takes its keys from LIVE_SNAPSHOT, where a3_buildLiveSnapshot
     # writes these two as 0 for the same reason) and the Metric picker.
     _non_numeric = non_numeric_metrics()
 
-    if snap_scope is not None and not snap_scope.empty and has_rows:
+    # ── Period scaling, shared by BOTH card sections ──────────────────────────
+    # Hoisted out of the nightly grid when the Key Indicators row was added
+    # (PLAN §7.5): two card sections scaling a weekly goal to the same period by
+    # two copies of the same arithmetic is how they drift apart.
+    #
+    # Goal scales with the period: the store holds one WEEKLY goal per area, so a
+    # 31-day month is goal*31/7. All Time has no meaningful goal. The expectation
+    # bar (Carson, 2026-07-24) rides the exact same _goal_factor — keeping one
+    # scaling convention for both bars is what makes them comparable on one card.
+    _goal_factor = (p_days / 7) if p_days else None
+
+    # AGENT_CONFIG's GOAL_* rows: the per-area weekly targets the mission itself
+    # set. Every one of them is a NIGHTLY metric, so this tier fires for the grid
+    # below and never for the Key Indicators row. Read once per render.
+    _per_area_goals = get_area_weekly_goals()
+
+    # How much of the period has actually run, and when it ends. Both are None on
+    # a completed period and on All Time, which is what turns the pace tick off:
+    # there is no "should be here by now" for a period that is already over.
+    if in_progress and p_start is not None and p_days:
+        _elapsed_days = (p_end - p_start).days + 1
+        _pace_factor = _elapsed_days / 7
+        _period_end_full = p_start + timedelta(days=p_days - 1)
+    else:
+        _elapsed_days = None
+        _pace_factor = None
+        _period_end_full = None
+
+    _vs = _twin_label(kpi_period)
+
+    def _strip_real(label: str) -> str:
+        """A Key Indicator's name without the weekly form's "(Real)" suffix.
+
+        The suffix separates an achieved figure from the "(Meta)" the
+        companionship set beside it ON THE FORM. On a card that distinction is
+        already carried by the bar and its note, so it is six characters of noise
+        on all seven labels — the same trim _header_lines and the Panel make.
+        """
+        for _sfx in (" (Real)", " (real)"):
+            if label.endswith(_sfx):
+                return label[: -len(_sfx)]
+        return label
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 1. INDICADORES CLAVE — the mission's seven, for this group and period
+    # ══════════════════════════════════════════════════════════════════════════
+    # New in Step 7 (PLAN §7.5), and it is a BUILD rather than a rewire: until
+    # now the seven Key Indicators had NO card on this page at all. The grid
+    # below — which was called "Key Indicators" — takes its keys from
+    # LIVE_SNAPSHOT's *_7d columns, and LIVE_SNAPSHOT holds 22 of them, every one
+    # a NIGHTLY metric and not one `ki_*` (probed live 2026-09-05). So a reader
+    # coming to Desgloses for the mission's headline outcomes found a section
+    # with the right name and the wrong seven metrics in it, and a transfer goal
+    # wired into that grid would have been unreachable code.
+    #
+    # The values come from the weekly form, the only place they exist, scoped to
+    # this group and cut to the selected period. Same render_kpi_row the grid
+    # below uses, so the goal bar, the pace tick, the twin arrow and the
+    # value/goal basis handling all behave identically on both.
+    _ki_keys_weekly = list(key_indicator_metrics())
+    _ki_wk_all = get_weekly_form_data()
+    if not _ki_wk_all.empty and "area" in _ki_wk_all.columns:
+        _ki_wk_all = _scope_to_areas(_ki_wk_all, "area", group_areas)
+
+    def _ki_window(df, start, end):
+        """`df` rows whose week_end_date falls in [start, end]."""
+        if df is None or df.empty or start is None or end is None:
+            return df if df is not None else pd.DataFrame()
+        if "week_end_date" not in df.columns:
+            return pd.DataFrame()
+        return df[(df["week_end_date"] >= start.isoformat())
+                  & (df["week_end_date"] <= end.isoformat())]
+
+    _ki_cur = _ki_window(_ki_wk_all, p_start, p_end)
+    _ki_prior = _ki_window(_ki_wk_all, pr_start, pr_end)
+
+    if not _ki_wk_all.empty and not _ki_cur.empty:
         render_section_label(t('Key Indicators — {scope_value}', scope_value=scope_value))
+
+        # ── Tier 2: the leadership goal for the cycle this period sits in ─────
+        # A transfer goal is a period TOTAL, and _resolve_group_goal's contract
+        # is a WEEKLY figure, so it enters as total / the cycle's real weeks.
+        # When the period IS that transfer, _goal_factor multiplies it straight
+        # back and the bar reads the transfer total exactly; for any other
+        # period it degrades to a sensible weekly rate.
+        _ki_transfer_weekly: dict = {}
+        _ki_transfer_note = ""
+        _ki_transfer_basis = 0
+        _ki_cycle = None
+        for _c in transfer_cycles():
+            if p_end is not None and _c["start"] <= p_end <= _c["end"]:
+                _ki_cycle = _c
+                break
+            if p_start is not None and _c["start"] <= p_start <= _c["end"]:
+                _ki_cycle = _c
+        if _ki_cycle is not None:
+            _cyc_weeks = max(1.0, transfer_year.weeks_in_cycle(
+                _ki_cycle["start"], _ki_cycle["end"]))
+            _cyc_totals = group_goal_totals(_ki_cycle["start"], group_areas)
+            _ki_transfer_basis = areas_with_goals(_ki_cycle["start"])
+            _ki_transfer_weekly = {k: v / _cyc_weeks for k, v in _cyc_totals.items() if v}
+            if _ki_transfer_weekly:
+                _ki_transfer_note = t(
+                    "goal for {cycle}, spread over its {weeks} weeks",
+                    cycle=str(_ki_cycle.get("number") or "").strip()
+                    or fmt_day_month(_ki_cycle["start"]),
+                    weeks=fmt_number(_cyc_weeks, 0))
+
+        # ── Tier 4: the companionships' own goals, as the last resort ─────────
+        # A week's meta is written on the PREVIOUS week's form, so the rows
+        # carrying the goals FOR this period are the ones ending a week earlier.
+        # Reading them off the same rows as the results grades a week against
+        # the target set for the week after it — the bug get_ki_goals_for_week
+        # exists to avoid, and it applies just as much to a multi-week window.
+        _ki_meta_weekly: dict = {}
+        _ki_meta_basis: dict = {}
+        if p_start is not None and p_end is not None and _goal_factor:
+            _meta_rows = _ki_window(_ki_wk_all,
+                                    p_start - timedelta(days=7),
+                                    p_end - timedelta(days=7))
+            if _meta_rows is not None and not _meta_rows.empty:
+                for _k in _ki_keys_weekly:
+                    _mk = goal_metric_key(_k)
+                    if not _mk or _mk not in _meta_rows.columns:
+                        continue
+                    _mvals = pd.to_numeric(_meta_rows[_mk], errors="coerce").fillna(0)
+                    _tot = float(_mvals.sum())
+                    if _tot > 0:
+                        # Back to a weekly equivalent, so _goal_factor below
+                        # returns it to the period total it came from.
+                        _ki_meta_weekly[_k] = _tot / _goal_factor
+                        # DISTINCT AREAS, not rows. A multi-week window holds one
+                        # row per area PER WEEK, so counting rows reported "78
+                        # areas set a goal" on a mission that has 43 — and fed
+                        # that 78 to render_kpi_row as the goal's basis, which
+                        # then reduced a 41-area total against a 78-area goal
+                        # and produced a percentage of nothing (audit F8, in
+                        # reverse). Caught in the running app, not by the suite.
+                        _ki_meta_basis[_k] = (
+                            int(_meta_rows.loc[_mvals > 0, "area"].nunique())
+                            if "area" in _meta_rows.columns else 0)
+
+        _ki_value_basis = (int(_ki_cur["area"].nunique())
+                           if "area" in _ki_cur.columns else 0)
+        _ki_prior_basis = (int(_ki_prior["area"].nunique())
+                           if _ki_prior is not None and not _ki_prior.empty
+                           and "area" in _ki_prior.columns else 0)
+
+        _ki_row_cards = []
+        _ki_any_goal = False
+        _ki_any_meta = False
+        for _k in _ki_keys_weekly:
+            if _k not in _ki_cur.columns:
+                continue
+            _v = int(pd.to_numeric(_ki_cur[_k], errors="coerce").fillna(0).sum())
+            _c: dict = {"label": _strip_real(format_metric_label(_k)), "value": _v}
+
+            # The basis is REPORTING AREAS, not days: a weekly indicator does not
+            # grow with the days behind it, it grows with the companionships that
+            # filed. Same rule _header_lines applies to the progression header.
+            if (_ki_prior is not None and not _ki_prior.empty
+                    and _k in _ki_prior.columns and _ki_prior_basis
+                    and _ki_prior_basis >= max(1, _ki_value_basis * REPORTING_MIN_SHARE)):
+                _pv = int(pd.to_numeric(_ki_prior[_k], errors="coerce").fillna(0).sum())
+                _chg = period_delta(_v, _pv, current_basis=_ki_value_basis,
+                                    prior_basis=_ki_prior_basis, min_basis=1)
+                if _chg is not None:
+                    _c["change"] = _chg
+                    _c["delta_label"] = _vs
+
+            _wg, _note, _basis, _src = _resolve_group_goal(
+                _k, goals, _per_area_goals, len(group_areas),
+                transfer_weekly=_ki_transfer_weekly,
+                transfer_note=_ki_transfer_note,
+                transfer_basis=_ki_transfer_basis,
+                meta_weekly=_ki_meta_weekly,
+                meta_basis=_ki_meta_basis.get(_k, 0))
+            if _goal_factor and _wg > 0:
+                _ki_any_goal = True
+                _c["goal"] = _wg * _goal_factor
+                if _note:
+                    _c["goal_note"] = _note
+                if _src == "meta":
+                    _ki_any_meta = True
+                if _ki_value_basis and _basis:
+                    _c["value_basis"] = _ki_value_basis
+                    _c["goal_basis"] = _basis
+                if _pace_factor is not None:
+                    _c["pace"] = _wg * _pace_factor
+                    if _period_end_full is not None:
+                        _c["goal_by"] = fmt_day_month(_period_end_full)
+            _ki_row_cards.append(_c)
+
+        _ki_weeks_seen = (_ki_cur["week_end_date"].nunique()
+                          if "week_end_date" in _ki_cur.columns else 0)
+        st.caption(t(
+            "The mission's seven Key Indicators, from the weekly report — "
+            "{weeks} weeks in this period, {areas} areas reporting.",
+            weeks=fmt_int(_ki_weeks_seen), areas=fmt_int(_ki_value_basis)))
+        if not _ki_any_goal:
+            st.caption(t("No goal set for this cambio yet — set one on the Metas "
+                         "page and these bars light up."))
+        elif _ki_any_meta:
+            # Tier 4 must never be mistaken for a leadership target.
+            st.caption(t("A bar with no goal for the cambio falls back to what "
+                         "the companionships set for themselves, and says so."))
+
+        for _i in range(0, len(_ki_row_cards), 4):
+            render_kpi_row(_ki_row_cards[_i:_i + 4])
+
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 2. ACTIVIDAD DIARIA — the nightly metrics, over the selected period
+    # ══════════════════════════════════════════════════════════════════════════
+    # RENAMED from "Key Indicators" (PLAN §7.5). It never showed the mission's
+    # Key Indicators: WHICH metrics get a card comes from LIVE_SNAPSHOT's *_7d
+    # columns, and all 22 of those are NIGHTLY metrics — probed live 2026-09-05,
+    # not one `ki_*` column among them. The seven KIs now have their own section
+    # above, and two sections cannot share the name while only one of them means
+    # it.
+    #
+    # The VALUES come from DAILY_LOG, the only source with the per-day
+    # granularity an arbitrary period needs. All three levels get cards (Carson,
+    # 2026-07-17); `goals` decides whether they carry a target — zone and
+    # district both roll up their areas' goals, an area has its own directly
+    # (Carson, 2026-07-24: district wanted the same goal bars zone/area had).
+    if snap_scope is not None and not snap_scope.empty and has_rows:
+        render_section_label(
+            t('Daily Activity — {scope_value}', scope_value=scope_value))
 
         # Rates can't be summed across areas or days (and render_kpi_row int()s
         # its value, so a 0.42 rate would read as 0). LIVE_SNAPSHOT is built from
@@ -1831,35 +2084,12 @@ def render_group_breakdown(
             and not is_rate_metric(c[:-3])
             and c[:-3] not in _non_numeric
         ]
-        # Goal scales with the period: the sheet stores one WEEKLY goal per area
-        # (get_zone_goals sums them), so a 31-day month is goal*31/7. All Time
-        # has no meaningful goal. The expectation bar (Carson, 2026-07-24) rides
-        # the exact same _goal_factor — keeping one scaling convention for both
-        # bars is what makes them directly comparable on one card.
-        _goal_factor = (p_days / 7) if p_days else None
         _expectation_totals = get_group_weekly_expectation_totals(group_areas)
-        # AGENT_CONFIG's GOAL_* rows: the per-area weekly targets the mission
-        # itself set, and the fallback that actually fires — GOALS_CONFIG is an
-        # empty tab. Read once per render, not once per card.
-        _per_area_goals = get_area_weekly_goals()
 
         # How many of the group's areas actually filed anything this period.
         # The denominator behind every card's VALUE, as against the goal's own.
         _value_basis = (int(rows["Area"].nunique())
                         if "Area" in rows.columns else 0)
-
-        # How much of the period has actually run, and when it ends. Both are
-        # None on a completed period and on All Time, which is what turns the
-        # pace tick off: there is no "should be here by now" for a period that
-        # is already over.
-        if in_progress and p_start is not None and p_days:
-            _elapsed_days = (p_end - p_start).days + 1
-            _pace_factor = _elapsed_days / 7
-            _period_end_full = p_start + timedelta(days=p_days - 1)
-        else:
-            _elapsed_days = None
-            _pace_factor = None
-            _period_end_full = None
 
         # ── What each side of the comparison rests on ─────────────────────────
         # A date counts as a day of data for THIS GROUP only when at least half
@@ -1869,7 +2099,6 @@ def render_group_breakdown(
         _report_dates = reporting_dates(_hist, len(group_areas))
         _cur_days = days_in_window(_report_dates, p_start, p_end)
         _prior_days = days_in_window(_report_dates, pr_start, pr_end)
-        _vs = _twin_label(kpi_period)
 
         _kpi_cards = []
         for _key in _kpi_keys:
@@ -1894,7 +2123,10 @@ def render_group_breakdown(
                     _card["change"] = _change
                     _card["delta_label"] = _vs
 
-            _weekly_goal, _derived_note, _goal_basis = _resolve_group_goal(
+            # Nightly metrics only reach tiers 1 and 3 — AREA_TRANSFER_GOALS and
+            # the ki_*_meta goals are both keyed on the seven Key Indicators, so
+            # the two new tiers are empty here by construction.
+            _weekly_goal, _derived_note, _goal_basis, _goal_src = _resolve_group_goal(
                 _key, goals, _per_area_goals, len(group_areas))
             if _goal_factor and _weekly_goal > 0:
                 _card["goal"] = _weekly_goal * _goal_factor
@@ -1973,7 +2205,7 @@ def render_group_breakdown(
             st.info(t('No snapshot metrics found for {scope_value}.', scope_value=scope_value))
 
     # ══════════════════════════════════════════════════════════════════════════
-    # 2. METRIC PICKER + PER-AREA BAR — the selected indicator, this period
+    # 3. METRIC PICKER + PER-AREA BAR — the selected indicator, this period
     # ══════════════════════════════════════════════════════════════════════════
     # The pickable metrics are mostly the Key Indicators: DAILY_LOG-backed
     # counts. Rates and rc_total are weekly-grained and can't be cut to an
@@ -2333,7 +2565,7 @@ def render_group_breakdown(
         st.plotly_chart(fig_bar, use_container_width=True)
 
     # ══════════════════════════════════════════════════════════════════════════
-    # 3. TREND — the same metric over the same period, one line per area
+    # 4. TREND — the same metric over the same period, one line per area
     # ══════════════════════════════════════════════════════════════════════════
     render_section_label(t('{m_label} Trend — {scope_value}', m_label=m_label, scope_value=scope_value))
 

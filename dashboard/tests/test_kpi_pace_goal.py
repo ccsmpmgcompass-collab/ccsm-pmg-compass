@@ -193,23 +193,88 @@ def test_a_group_goal_reports_how_many_areas_it_covers():
     """_resolve_group_goal's third value. render_kpi_row needs it beside the
     value's own basis or the two totals get divided directly."""
     from app.breakdowns_engine import _resolve_group_goal
-    goal, note, basis = _resolve_group_goal(
+    goal, note, basis, source = _resolve_group_goal(
         "new_people_found", {}, {"new_people_found": 8}, 43)
     assert goal == 8 * 43
     assert basis == 43
+    assert source == "agent"
     assert "43" in note          # the arithmetic is shown, not just the product
 
 
 def test_an_entered_goal_needs_no_explanatory_note():
     from app.breakdowns_engine import _resolve_group_goal
-    goal, note, basis = _resolve_group_goal(
+    goal, note, basis, source = _resolve_group_goal(
         "new_people_found", {"new_people_found": 300}, {"new_people_found": 8}, 43)
     assert goal == 300 and note == ""
+    assert source == "config"
 
 
 def test_a_metric_with_no_goal_anywhere_yields_no_bar():
     from app.breakdowns_engine import _resolve_group_goal
-    assert _resolve_group_goal("exchanges", {}, {}, 43) == (0.0, "", 0)
+    assert _resolve_group_goal("exchanges", {}, {}, 43) == (0.0, "", 0, "")
+
+
+# ── The two tiers Step 7 added (PLAN §7.5) ──────────────────────────────────
+# One precedence rule across the whole app: GOALS_CONFIG, then the transfer
+# goal, then AGENT_CONFIG's per-area weekly, then the companionships' own meta.
+
+def test_a_transfer_goal_beats_the_agent_config_default():
+    from app.breakdowns_engine import _resolve_group_goal
+    goal, note, basis, source = _resolve_group_goal(
+        "ki_new_people_real", {}, {"ki_new_people_real": 8}, 43,
+        transfer_weekly={"ki_new_people_real": 20}, transfer_note="per cambio",
+        transfer_basis=30)
+    assert goal == 20 and source == "transfer" and basis == 30
+    assert note == "per cambio"
+
+
+def test_an_entered_goal_still_beats_a_transfer_goal():
+    """GOALS_CONFIG keeps precedence — Zackary's call, 2026-09-05."""
+    from app.breakdowns_engine import _resolve_group_goal
+    goal, _note, _basis, source = _resolve_group_goal(
+        "ki_new_people_real", {"ki_new_people_real": 300},
+        {}, 43, transfer_weekly={"ki_new_people_real": 20})
+    assert goal == 300 and source == "config"
+
+
+def test_the_companionships_own_goal_is_the_last_resort():
+    """It is a different KIND of fact from a leadership target, so it only ever
+    fires when nothing else can, and the note says whose goal it is."""
+    from app.breakdowns_engine import _resolve_group_goal
+    goal, note, basis, source = _resolve_group_goal(
+        "ki_new_people_real", {}, {}, 43,
+        meta_weekly={"ki_new_people_real": 116}, meta_basis=32)
+    assert goal == 116 and source == "meta" and basis == 32
+    assert "32" in note
+
+
+def test_a_transfer_goal_beats_the_companionships_own():
+    from app.breakdowns_engine import _resolve_group_goal
+    goal, _note, _basis, source = _resolve_group_goal(
+        "ki_new_people_real", {}, {}, 43,
+        transfer_weekly={"ki_new_people_real": 20}, transfer_basis=30,
+        meta_weekly={"ki_new_people_real": 116}, meta_basis=32)
+    assert goal == 20 and source == "transfer"
+
+
+def test_the_new_tiers_are_inert_for_a_nightly_metric():
+    """Both new tiers are keyed on the seven Key Indicators, so the Daily
+    Activity grid's behaviour is unchanged by their existence."""
+    from app.breakdowns_engine import _resolve_group_goal
+    goal, _note, _basis, source = _resolve_group_goal(
+        "contacts_attempted", {}, {"contacts_attempted": 150}, 43,
+        transfer_weekly={"ki_new_people_real": 20},
+        meta_weekly={"ki_new_people_real": 116}, meta_basis=32)
+    assert goal == 150 * 43 and source == "agent"
+
+
+def test_a_meta_nobody_set_does_not_draw_a_bar():
+    """meta_basis of 0 means no area wrote one down; a bar resting on nothing
+    is worse than no bar."""
+    from app.breakdowns_engine import _resolve_group_goal
+    assert _resolve_group_goal(
+        "ki_new_people_real", {}, {}, 43,
+        meta_weekly={"ki_new_people_real": 116}, meta_basis=0) == (0.0, "", 0, "")
 
 
 def test_mismatched_bases_are_reduced_before_being_divided(rendered):

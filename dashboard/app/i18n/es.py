@@ -2624,4 +2624,30 @@ ES: dict[str, str] = {
         "No se pudieron guardar en bloque las metas del cambio por área: {e}",
     "Failed to delete area transfer goal: {e}":
         "No se pudo eliminar la meta del cambio para el área: {e}",
+
+    # ── Step 7: the Desgloses Key Indicators card row (PLAN §7.5) ─────────────
+    "Daily Activity — {scope_value}": "Actividad Diaria — {scope_value}",
+    "The mission's seven Key Indicators, from the weekly report — {weeks} weeks "
+    "in this period, {areas} areas reporting.":
+        "Los siete Indicadores Clave de la misión, del informe semanal — "
+        "{weeks} semanas en este período, {areas} áreas informando.",
+    "No goal set for this cambio yet — set one on the Metas page and these bars "
+    "light up.":
+        "Todavía no hay una meta fijada para este cambio — fíjela en la página "
+        "Metas y estas barras se encienden.",
+    "A bar with no goal for the cambio falls back to what the companionships "
+    "set for themselves, and says so.":
+        "Una barra sin meta del cambio recurre a lo que los compañerismos se "
+        "propusieron a sí mismos, y lo dice.",
+    "goal for {cycle}, spread over its {weeks} weeks":
+        "meta del cambio {cycle}, repartida en sus {weeks} semanas",
+    "the companionships' own goal — {n} areas set one":
+        "meta de las compañerías — {n} áreas se propusieron una",
+
+    # ── Step 7: the Panel's KI bars (PLAN §7.6) ──────────────────────────────
+    # The leadership goal is the bar; the companionships' own goal is named
+    # beside it. The two are never added together.
+    "goal for cambio {cycle}": "meta del cambio {cycle}",
+    "{note} · the companionships set themselves {n}":
+        "{note} · las compañerías se propusieron {n}",
 }

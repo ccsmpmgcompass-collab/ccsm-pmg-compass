@@ -58,7 +58,9 @@ from app.analytics.period_delta import (
     period_delta, point_delta, MIN_COMPARABLE_DAYS, WINDOW_DAYS,
 )
 from app.analytics.rate_metrics import rate_rows
-from app.utils.transfer_helpers import transfer_period_bounds
+from app.utils.transfer_helpers import transfer_cycles, transfer_period_bounds
+from app.analytics import transfer_year as ty
+from app.db.goals_queries import areas_with_goals, group_goal_totals
 from app.analytics import annual_baptisms as ab
 from app.analytics import effort_breakdown as eb
 from app.analytics import compliance_rankings as cr
@@ -521,6 +523,57 @@ def _ki_label(key: str, fallback: str) -> str:
     return label
 
 
+def _leadership_week_goal(week_end) -> tuple[dict, int, str]:
+    """The mission's leadership goal for the week ending `week_end`.
+
+    Returns ``({metric: weekly figure}, areas_that_set_one, cycle_label)``. The
+    stored goal is a TRANSFER TOTAL, so a week's share of it is that total
+    divided by the cycle's real weeks — the same conversion the Desgloses cards
+    make, so one goal cannot mean two things on two pages (PLAN §7.5).
+
+    Empty until leadership actually enters goals, which is what keeps this
+    page's bars exactly as they are in the meantime (§7.6): the companionships'
+    own ki_*_meta stays the bar, labelled as theirs, and a leadership goal only
+    displaces it where one exists.
+    """
+    if week_end is None:
+        return {}, 0, ""
+    for cycle in transfer_cycles():
+        if not (cycle["start"] <= week_end <= cycle["end"]):
+            continue
+        weeks = max(1.0, ty.weeks_in_cycle(cycle["start"], cycle["end"]))
+        totals = group_goal_totals(cycle["start"])
+        if not any(totals.values()):
+            return {}, 0, ""
+        label = str(cycle.get("number") or "").strip() or fmt_day_month(cycle["start"])
+        return ({k: v / weeks for k, v in totals.items() if v},
+                areas_with_goals(cycle["start"]), label)
+    return {}, 0, ""
+
+
+# The leadership goal for whichever cambio each of the two weeks above falls in,
+# as a weekly figure. Empty until someone enters one on the Metas page — which is
+# exactly when these bars keep showing the companionships' own goal instead.
+_cur_lead_goals, _cur_lead_areas, _cur_lead_label = _leadership_week_goal(_this_sunday)
+_past_lead_goals, _past_lead_areas, _past_lead_label = _leadership_week_goal(_ki_week_end)
+
+
+def _leadership_goal_note(cycle_label: str, own_goal: float) -> str:
+    """Small print under a bar that shows the LEADERSHIP goal.
+
+    Both facts survive and neither is mistaken for the other (§7.6): the bar is
+    what leadership set for the cambio, and beside it, in words, is what the
+    companionships set for themselves. They are never added together — a goal a
+    companionship wrote down is not a second target, and
+    key_indicator_metrics()'s own docstring warns against confusing the two.
+    """
+    note = t("goal for cambio {cycle}", cycle=cycle_label)
+    if own_goal > 0:
+        note = t("{note} · the companionships set themselves {n}",
+                 note=note, n=fmt_int(own_goal))
+    return note
+
+
 def _ki_goal_note(key: str, set_by: dict, areas: int) -> str:
     """Small print under a KI goal bar when not every area set one.
 
@@ -592,14 +645,23 @@ else:
         _cur_cards.append({
             "label": _KI_NIGHTLY_RELABEL.get(k, _ki_label(k, label)),
             "value": int(_wtd_totals.get(source, 0)) if measured else "—",
-            "goal":  0 if borrowed else _cur_goals.get(k, 0),
+            # The leadership goal for the cambio is the bar where one exists;
+            # the companionships' own goal falls back into it where none does,
+            # and is named beside it either way (§7.6).
+            "goal":  0 if borrowed
+                     else (_cur_lead_goals.get(k) or _cur_goals.get(k, 0)),
             "goal_note": "" if borrowed
-                         else _ki_goal_note(k, _cur_goal_set_by, _cur_goal_areas),
+                         else (_leadership_goal_note(_cur_lead_label,
+                                                     _cur_goals.get(k, 0))
+                               if _cur_lead_goals.get(k)
+                               else _ki_goal_note(k, _cur_goal_set_by,
+                                                  _cur_goal_areas)),
             # Nightly totals come from however many areas filed a report this
             # week; the goal from however many wrote one down last week. Those
             # are different sets, so the percentage is computed per area.
             "value_basis": _wtd_areas,
-            "goal_basis":  _cur_goal_set_by.get(k, 0),
+            "goal_basis":  (_cur_lead_areas if _cur_lead_goals.get(k)
+                            else _cur_goal_set_by.get(k, 0)),
             "change": period_delta(
                 _wtd_totals.get(source, 0), _lw_totals.get(source, 0),
                 current_basis=_wtd_areas, prior_basis=_lw_areas,
@@ -675,7 +737,7 @@ else:
         {
             "label": _ki_label(k, label),
             "value": int(_ki_val(k)),
-            "goal":  _past_goals.get(k, 0),
+            "goal":  _past_lead_goals.get(k) or _past_goals.get(k, 0),
             "change": period_delta(
                 _ki_val(k), _prev_ki_val(k),
                 current_basis=_ki_reported, prior_basis=_prev_ki_reported,
@@ -684,9 +746,13 @@ else:
             # Denominator is who reported RESULTS this week, not who set the
             # goals — see _ki_goal_note. Without that, the 1-of-33 case is
             # silent and the bar reads 2040% unexplained.
-            "goal_note": _ki_goal_note(k, _past_goal_set_by, _ki_reported),
+            "goal_note": (_leadership_goal_note(_past_lead_label,
+                                                _past_goals.get(k, 0))
+                          if _past_lead_goals.get(k)
+                          else _ki_goal_note(k, _past_goal_set_by, _ki_reported)),
             "value_basis": _ki_reported,
-            "goal_basis":  _past_goal_set_by.get(k, 0),
+            "goal_basis":  (_past_lead_areas if _past_lead_goals.get(k)
+                            else _past_goal_set_by.get(k, 0)),
         }
         for k, label in _ki_metrics.items()
     ])
