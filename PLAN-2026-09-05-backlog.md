@@ -209,9 +209,11 @@ Sub-steps to be written once Step 3 says what is actually live. **Gated on Q3.**
 - **5.1 (§4.1)** `GOALS_CONFIG` is empty; per-area goals would make the goal
   bars mean something per companionship. Desgloses and the Panel already fall
   back correctly (`_resolve_group_goal`), so this is an improvement, not a bug.
-- **5.2 (§4.2)** Test the Goals save path end to end. Saving one goal creates
-  three tabs that have never existed on the live sheet — **a live-sheet write,
-  needs approval (Q4).** Then decide whether to keep the feature at all.
+- **5.2 (§4.2)** ~~Test the Goals save path end to end.~~ **Superseded by Step 7**
+  (2026-09-05): goals move from monthly to per-transfer, and Step 7's acceptance
+  is the same end-to-end save test against the new tabs. Nothing is lost by
+  retiring it here — no goal has ever been saved, so there is no monthly path
+  worth certifying.
 - **5.3 (§4.3)** Shrunk by §0.3 to: confirm the app reads the populated tab.
 - **5.4 (§4.4)** Mantenimiento claims plumbing that does not exist —
   `referral-scraper.yml`, a `REFERRAL_DATA` tab, and `tableau-reports.yml`
@@ -224,6 +226,126 @@ Only once the manual path is known-good. Mirrors the proven chain —
 reusing `cloud_job_wrapper`, `CLOUD_JOB_STATUS` and `cloud_job_ui.py` unchanged,
 writing through `save_dataframe(..., uploaded_by="auto:tableau")`. Monthly cadence
 matches the data's own. Makes Mantenimiento's existing claim true.
+
+
+---
+
+## §1b — Step 7: transfer goals *(added 2026-09-05, Zackary's request)*
+
+Goals are keyed by **transfer**, not by calendar month. Raised after Steps 1-2a
+landed; supersedes most of Step 5.2.
+
+### Why this is cheap
+
+- **Nothing to migrate.** `MISSION_GOALS`, `AREA_MONTHLY_GOALS` and
+  `AREA_TYPE_EXPECTATIONS` do not exist on the sheet and no goal has ever been
+  saved. We name the tabs correctly the first time instead of converting.
+- **Two consumers only.** `goals_queries.py` is read by `views/02_Metas.py` and
+  by one unrelated `get_app_setting` call in `queries.py:2549`. The goal bars on
+  the Panel and Desgloses come from a **different** path entirely
+  (`AGENT_CONFIG.GOAL_*` through `_resolve_group_goal`) and are untouched.
+- **A cadence concept already exists.** `AREA_TYPE_EXPECTATIONS` carries a
+  `Cadence` column; `queries.py:1933` just narrows it to `weekly`/`monthly`.
+  Adding `transfer` extends a shape that is already there.
+
+### 7.1 — Data model
+
+Two tabs, created on first save, replacing the never-created monthly pair:
+
+| Tab | Key | Columns |
+|---|---|---|
+| `MISSION_TRANSFER_GOALS` | `transfer_start` | `transfer_start`, `transfer_number`, the 7 KI integer columns, `extra_goals`, `set_by`, `notes` |
+| `AREA_TRANSFER_GOALS` | `area` + `transfer_start` | `area`, `transfer_start`, `transfer_number`, one integer column per Key Indicator, `set_by`, `notes` |
+
+**Keyed by `transfer_start` (ISO date), not by `Transfer_Number`.** The number is
+carried as a label only. Reason: the number has no code-enforced format and two
+functions already mis-parse the live values (§7.4). A start date is unambiguous,
+sorts correctly, and matches how `transfer_window()` already identifies a cycle.
+
+`AREA_TYPE_EXPECTATIONS.Cadence` gains `transfer` alongside `weekly`/`monthly`.
+A transfer's weekly equivalent is `value / Weeks` read from `TRANSFER_SCHEDULE`
+— the real length of that cycle, not an average. This replaces
+`_mp_weeks_in_month`'s month-proration on this path; that function stays for the
+monthly indicators that still use it.
+
+### 7.2 — Which year a transfer belongs to *(Zackary's rule, 2026-09-05)*
+
+Count the transfer's days in each calendar year; **the year holding more days
+owns it.** On an exact 21/21 split, **the year it ends in wins** (his decision —
+his phrasing said both "more than half" and "three weeks or more", which
+disagree at exactly half).
+
+This is deliberately **not** "the year it starts in". Modeled forward:
+
+| Cycle | Span | Split | Owns it |
+|---|---|---|---|
+| `2026-8` | 2026-11-30 → 2027-01-10 | 2026: 32 / 2027: 10 | **2026** |
+| the 2027 year-end cycle | 2027-12-13 → 2028-01-23 | 2027: 19 / 2028: 23 | **2028** |
+
+The second starts in December 2027 and belongs to 2028. So a transfer's *label*
+and its *year* genuinely come apart, which is the whole reason §7.3 exists.
+
+### 7.3 — Years: actuals by real date, goals pro-rated *(both confirmed)*
+
+Two different rules, deliberately, and they are not in conflict — one governs
+where a goal is **seen and edited**, the other governs how a year **totals**:
+
+- **Actuals always follow the real date.** A yearly rollup — the annual baptism
+  chart against `GOAL_ANNUAL_baptisms` = 527 — counts each day's activity in the
+  calendar year it actually happened. The January days of `2026-8` count toward
+  **2027**, whatever the transfer is labeled. The annual chart already works this
+  way (`analytics/annual_baptisms.py` keys off real `YYYY-MM` months from
+  `TABLEAU_BAPTISMS`), so this is a constraint to **protect in review**, not code
+  to write. **Do not let §7.2's assignment leak into annual aggregation.**
+- **Goal totals pro-rate by days.** When summing transfer goals into a year, a
+  straddling transfer contributes `goal × (its days in that year / its total
+  days)`. So a year's goal total and its actual total cover exactly the same
+  span. `2026-8`'s goal contributes 32/42 to 2026 and 10/42 to 2027.
+
+§7.2 still decides which single year the transfer is *filed under* for display
+and editing. Pro-rating applies only to yearly arithmetic.
+
+### 7.4 — Fix the two numeric `Transfer_Number` parses *(folded in)*
+
+Found while answering the numbering question, and this step depends on reading
+the schedule reliably:
+
+- `get_recent_transfer_dates()` (`queries.py:3851`) coerces `Transfer_Number`
+  with `pd.to_numeric`. `"2026-4"` → `NaN` → dropped. **Verified live: it
+  returns `[]`, and `is_within_last_transfers()` returns `False` for every
+  date.** Sort by `Start_Date` instead.
+- `next_schedule_update()` (`ingestion/transfer_engine.py:303`) does
+  `int("2026-4")`, which throws. It is caught, so `max_num` stays `0` and the
+  function would append a row numbered `"1"`.
+
+**Current impact: none.** The only consumer is `render_lineage_badge()`
+(`breakdowns_engine.py:1298`), which cannot draw anyway because the
+`AREA_LINEAGE` tab does not exist. Latent, and it bites the day someone
+populates that tab.
+
+### 7.5 — Metas page
+
+Month picker becomes a transfer picker, defaulting to the current cycle from
+`transfer_window(0)`. Goal history lists transfers, newest first. Labels read
+"Este cambio" rather than a month name; i18n done per step, not at the end.
+
+### Acceptance
+
+Verify in the running app, not only in the suite:
+
+1. Save a mission goal and an area goal for the current transfer; confirm both
+   tabs are created with the shapes in §7.1 — **this is the end-to-end test old
+   Step 5.2 was asking for, so it retires with this step.**
+2. Confirm the seven KI columns are CCSM's, not Provo's six. `AREA_MONTHLY_GOALS`
+   once hardcoded `gate/date_metric/new_found/pew/renew/member_lessons`, so every
+   value typed went to a column for a metric CCSM does not collect and the page
+   reported "saved" having stored nothing. The code is fixed; it has never been
+   exercised against a real sheet.
+3. Check a straddling transfer pro-rates 32/42 : 10/42 across 2026/2027.
+4. Confirm the annual baptism chart is **unchanged** — that is the §7.3 guard.
+
+**Creates two new tabs on the live sheet — needs Zackary's approval at the point
+of first save**, same pattern as Step 1.
 
 ---
 
@@ -261,8 +383,22 @@ matches the data's own. Makes Mantenimiento's existing claim true.
 3. **Order of Steps 4–6.**
    → **Verify → payoff → sweep → automation**, i.e. Step 3 → 4 → 5 → 6 as
    numbered. The highest-value build goes ahead of the cheaper cleanup.
-4. **Step 5.2 creates three new tabs on the live sheet.** Still open — not asked
-   yet, because it does not gate anything until Step 5. Ask before doing it.
+4. ~~**Step 5.2 creates three new tabs on the live sheet.**~~ Retired — Step 7
+   supersedes 5.2, and carries its own approval point at first save.
+
+**On Step 7 (asked and answered 2026-09-05):**
+
+5. **Do annual rollups attribute by real date, or by the transfer's assigned
+   year?** → **By real date.** A straddling transfer's actuals split across two
+   years. §7.3.
+6. **Which way does an exact 21/21 split go?** → **The year it ends in.** §7.2.
+7. **How does a yearly goal total handle a straddling transfer?** →
+   **Pro-rate its goal by days**, so a year's goal and actuals cover the same
+   span. §7.3.
+
+**Still open on Step 7:** where it sits in the queue. Default assumption is
+after Step 3 (the Phase 3.3 verification), ahead of Step 4 — say otherwise and
+it moves.
 
 ---
 
@@ -280,3 +416,4 @@ commit — same as `PLAN-2026-09-03-desgloses-progression.md`._
 | 4 — Phase 3.5 payoff | not started | — |
 | 5 — Phase 4 sweep | not started | — |
 | 6 — Phase 3.4 automation | not started | — |
+| 7 — Transfer goals | not started (design agreed) | — |
