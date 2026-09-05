@@ -230,119 +230,321 @@ matches the data's own. Makes Mantenimiento's existing claim true.
 
 ---
 
-## §1b — Step 7: transfer goals *(added 2026-09-05, Zackary's request)*
+## §1b — Step 7: transfer goals *(added 2026-09-05; design settled 2026-09-05)*
 
 Goals are keyed by **transfer**, not by calendar month. Raised after Steps 1-2a
-landed; supersedes most of Step 5.2.
+landed; supersedes Step 5.2 entirely.
 
-### Why this is cheap
+Rewritten 2026-09-05 after a code audit and a live probe answered twelve design
+questions. **Every decision below is Zackary's and settled — do not re-litigate
+them.** What changed from the first draft: the scope is larger (mission goals go
+KI-only, the goal bars get wired, a year summary is built) and four facts about
+the codebase turned out to be different from what the draft assumed.
 
-- **Nothing to migrate.** `MISSION_GOALS`, `AREA_MONTHLY_GOALS` and
-  `AREA_TYPE_EXPECTATIONS` do not exist on the sheet and no goal has ever been
-  saved. We name the tabs correctly the first time instead of converting.
-- **Two consumers only.** `goals_queries.py` is read by `views/02_Metas.py` and
-  by one unrelated `get_app_setting` call in `queries.py:2549`. The goal bars on
-  the Panel and Desgloses come from a **different** path entirely
-  (`AGENT_CONFIG.GOAL_*` through `_resolve_group_goal`) and are untouched.
-- **A cadence concept already exists.** `AREA_TYPE_EXPECTATIONS` carries a
-  `Cadence` column; `queries.py:1933` just narrows it to `weekly`/`monthly`.
-  Adding `transfer` extends a shape that is already there.
+### 7.0 — What the audit found *(2026-09-05, live probe + code read)*
 
-### 7.1 — Data model
+**Five goal paths exist, not three.** The draft counted three.
+
+| Path | Tab / source | Cadence | Read by |
+|---|---|---|---|
+| Per-area weekly | `GOALS_CONFIG` | weekly | **`CCSM_AgentScores.gs`** scores against it |
+| Mission goals | `MISSION_GOALS` | monthly | Metas only |
+| Per-area goals | `AREA_MONTHLY_GOALS` | monthly | Metas only |
+| Expectations | `AREA_TYPE_EXPECTATIONS` | weekly / monthly | Metas' `/N` fractions |
+| Mission defaults | `AGENT_CONFIG.GOAL_*` | weekly, per area | Panel + Desgloses goal bars |
+
+…and a **sixth** the draft did not know about at all: the weekly form asks each
+companionship for its own `ki_*_meta` goals for the coming week, and
+`views/01_Panel.py:214` already draws the Panel's KI bars from them through
+`get_ki_goals_for_week()` (`queries.py:740`). See §7.6.
+
+Four findings that change the build:
+
+**a. Transfers align exactly to reporting weeks.** `WEEKLY_KI.Week_End_Date` is
+**Sunday on all 109 live rows**; every `TRANSFER_SCHEDULE` start is a **Monday**.
+A six-week transfer is exactly six whole weekly rows — 2026-6 runs 09-07 (Mon)
+→ 10-18 (Sun), covering week-ends 09-13 … 10-18. There is no partial-week
+arithmetic anywhere in this step, and Sundays-in-window is exactly `Weeks`.
+Transfer goals are *cleaner* to compute than the monthly ones they replace,
+which cut weeks in half and needed `_weeks_in_month` / `_sundays_in_month`
+estimates (`02_Metas.py:573`, `:581`) to paper over it. **Those estimates are
+deleted on this path, not ported.**
+
+**b. No goal of any kind exists for the seven Key Indicators.** Probed live:
+every `AGENT_CONFIG.GOAL_*` row is a NIGHTLY metric (`GOAL_contacts_attempted`,
+`GOAL_roleplays`, …) — not one KI. `GOALS_CONFIG` is an empty header.
+So `_resolve_group_goal` (`breakdowns_engine.py:482`) can return nothing for a
+KI, and **no KI card on Desgloses has ever drawn a goal bar or could.** This is
+why §7.5 exists: wiring transfer goals in is what finally lights them.
+
+**c. Certified baptism counts cannot describe a transfer.**
+`get_baptisms_actual_for_range` (`queries.py:3253`) returns `None` — never a
+partial sum — unless the range is whole calendar months, because
+`TABLEAU_BAPTISMS` only holds monthly figures. A transfer never is. The Metas
+baptism row depends on it today (`02_Metas.py:880`). See §7.7.
+
+**d. The Apps Script side already thinks in transfers.** `CCSM_Agent2.gs`
+recalibrates per-area goals **once per transfer cycle**, reading
+`TRANSFER_SCHEDULE`'s real `Actual` rows (`CCSM_Agent2.gs:161`, `:218`) and
+writing suggestions to `GOAL_RECALIBRATION` → `GOALS_CONFIG`, expressed as a
+weekly number. A transfer-cadence goal engine exists; it just speaks weekly.
+Nothing in this step touches it — see §7.4's last bullet.
+
+**Confirmed by probe, 2026-09-05:** `MISSION_GOALS`, `AREA_MONTHLY_GOALS`,
+`AREA_TYPE_EXPECTATIONS` and `APP_SETTINGS` **do not exist as tabs**;
+`GOALS_CONFIG` and `GOAL_RECALIBRATION` are empty headers. Nothing to migrate.
+`get_area_monthly_goals()` (`goals_queries.py:204`) has **no consumer at all** —
+its docstring cites `app/analytics/mlc_rollups.py`, which does not exist.
+
+### 7.1 — The seven Key Indicators, constant across the app *(Zackary's rule)*
+
+The KI vocabulary is the sheet's, and it is these seven — confirmed against
+`QUESTIONS_CONFIG` (`Q-W-004` … `Q-W-016`), which is exactly what
+`metric_catalog.key_indicator_metrics()` already returns:
+
+| Key | `Metric_Display_Name` on the sheet |
+|---|---|
+| `ki_new_people_real` | Nuevas Personas Encontradas |
+| `ki_member_lessons_real` | Lecciones con Miembros |
+| `ki_friends_sacrament_real` | Amigos en la Reunión Sacramental |
+| `ki_friends_first_week_real` | Amigos en la Iglesia (Primera Semana) |
+| `ki_baptismal_date_real` | Amigos con Fecha Bautismal |
+| `ki_baptized_confirmed_real` | Bautizados y Confirmados — **short label "Bautismos"** |
+| `ki_rc_at_church_real` | Conversos Recientes en la Iglesia |
+
+**These seven are the KI set everywhere in the app.** Baptisms and confirmations
+stay ONE metric — the mission's own form asks them as one question — and the
+short label is "Bautismos".
+
+This retires the legacy goal-key vocabulary on the mission path.
+`flavor.featured_goals` gives six keys (`baptisms`, `confirmations`, `on_date`,
+`at_sacrament`, `new_people_to_teach`, `rc_at_church`,
+`members_nonmember_lessons` — `standard.json`), which `GOAL_TO_ACTUAL`
+(`flavor_loader.py:95`) maps onto only six metrics: `baptisms` and
+`confirmations` **both** point at `ki_baptized_confirmed_real`, and
+`ki_friends_first_week_real` has no goal key at all. So Mission Goals today
+renders one metric twice and omits another entirely. Fixed here by keying on
+the seven directly.
+
+### 7.2 — Data model
 
 Two tabs, created on first save, replacing the never-created monthly pair:
 
 | Tab | Key | Columns |
 |---|---|---|
-| `MISSION_TRANSFER_GOALS` | `transfer_start` | `transfer_start`, `transfer_number`, the 7 KI integer columns, `extra_goals`, `set_by`, `notes` |
-| `AREA_TRANSFER_GOALS` | `area` + `transfer_start` | `area`, `transfer_start`, `transfer_number`, one integer column per Key Indicator, `set_by`, `notes` |
+| `MISSION_TRANSFER_GOALS` | `transfer_start` | `transfer_start`, `transfer_number`, the **seven `ki_*_real` columns**, `set_by`, `notes` |
+| `AREA_TRANSFER_GOALS` | `area` + `transfer_start` | `area`, `transfer_start`, `transfer_number`, the **seven `ki_*_real` columns**, `set_by`, `notes` |
 
-**Keyed by `transfer_start` (ISO date), not by `Transfer_Number`.** The number is
-carried as a label only. Reason: the number has no code-enforced format and two
-functions already mis-parse the live values (§7.4). A start date is unambiguous,
-sorts correctly, and matches how `transfer_window()` already identifies a cycle.
+One vocabulary across both tabs, per §7.1. **No `extra_goals` JSON column** —
+mission goals are KI-only now (§7.4), so there is nothing for it to hold.
 
-`AREA_TYPE_EXPECTATIONS.Cadence` gains `transfer` alongside `weekly`/`monthly`.
-A transfer's weekly equivalent is `value / Weeks` read from `TRANSFER_SCHEDULE`
-— the real length of that cycle, not an average. This replaces
-`_mp_weeks_in_month`'s month-proration on this path; that function stays for the
-monthly indicators that still use it.
+**Keyed by `transfer_start` (ISO date), not `Transfer_Number`.** The number is
+carried as a label only. The number has no code-enforced format and two
+functions already mis-parse the live `2026-4` style values (§7.9). A start date
+is unambiguous, sorts correctly, and is how `transfer_window()` already
+identifies a cycle.
 
-### 7.2 — Which year a transfer belongs to *(Zackary's rule, 2026-09-05)*
+### 7.3 — Which year a transfer belongs to, and how a year totals
+
+*(Zackary's rules, settled — unchanged from the previous draft.)*
 
 Count the transfer's days in each calendar year; **the year holding more days
-owns it.** On an exact 21/21 split, **the year it ends in wins** (his decision —
-his phrasing said both "more than half" and "three weeks or more", which
-disagree at exactly half).
-
-This is deliberately **not** "the year it starts in". Modeled forward:
+owns it.** On an exact 21/21 split, **the year it ends in wins.** Deliberately
+not "the year it starts in":
 
 | Cycle | Span | Split | Owns it |
 |---|---|---|---|
 | `2026-8` | 2026-11-30 → 2027-01-10 | 2026: 32 / 2027: 10 | **2026** |
 | the 2027 year-end cycle | 2027-12-13 → 2028-01-23 | 2027: 19 / 2028: 23 | **2028** |
 
-The second starts in December 2027 and belongs to 2028. So a transfer's *label*
-and its *year* genuinely come apart, which is the whole reason §7.3 exists.
+- **Actuals always follow the real date.** A yearly rollup counts each day's
+  activity in the calendar year it actually happened. The January days of
+  `2026-8` count toward **2027** whatever the transfer is labeled.
+  `analytics/annual_baptisms.py` already works this way, keying off real
+  `YYYY-MM` months. **Do not let the year assignment leak into annual
+  aggregation** — this is a constraint to protect in review, not code to write.
+- **Goal totals pro-rate by days.** A straddling transfer contributes
+  `goal × (its days in that year / its total days)`, so a year's goal and its
+  actuals cover the same span. `2026-8` contributes 32/42 to 2026, 10/42 to 2027.
 
-### 7.3 — Years: actuals by real date, goals pro-rated *(both confirmed)*
+The year assignment decides only which single year a transfer is *filed under*
+for display and editing. Pro-rating governs yearly arithmetic.
 
-Two different rules, deliberately, and they are not in conflict — one governs
-where a goal is **seen and edited**, the other governs how a year **totals**:
+### 7.4 — The Metas page *(full replacement)*
 
-- **Actuals always follow the real date.** A yearly rollup — the annual baptism
-  chart against `GOAL_ANNUAL_baptisms` = 527 — counts each day's activity in the
-  calendar year it actually happened. The January days of `2026-8` count toward
-  **2027**, whatever the transfer is labeled. The annual chart already works this
-  way (`analytics/annual_baptisms.py` keys off real `YYYY-MM` months from
-  `TABLEAU_BAPTISMS`), so this is a constraint to **protect in review**, not code
-  to write. **Do not let §7.2's assignment leak into annual aggregation.**
-- **Goal totals pro-rate by days.** When summing transfer goals into a year, a
-  straddling transfer contributes `goal × (its days in that year / its total
-  days)`. So a year's goal total and its actual total cover exactly the same
-  span. `2026-8`'s goal contributes 32/42 to 2026 and 10/42 to 2027.
+**The monthly path is deleted, not left dormant.** Nothing was ever saved
+monthly, so no history is stranded, and one cadence means one answer to "what is
+the goal".
 
-§7.2 still decides which single year the transfer is *filed under* for display
-and editing. Pro-rating applies only to yearly arithmetic.
+- **Mission Goals** → per-transfer, **seven KI boxes only**. The "Other Metrics"
+  grid and its `extra_goals` JSON are removed: nightly metrics already have
+  per-area weekly targets in `AGENT_CONFIG` that the Panel and Desgloses read,
+  and a second mission-wide transfer number for the same metric is a second
+  answer to one question.
+- **Area "Monthly Goals"** (`02_Metas.py:1305`) → **"Metas de este cambio"**,
+  same seven KIs, written to `AREA_TRANSFER_GOALS`.
+- **Picker**: every transfer in `TRANSFER_SCHEDULE` — past, current and next —
+  defaulting to the current cycle from `transfer_window(0)`. The schedule runs
+  through 2027-01-10 after Step 1, so "next" always exists. Goal history lists
+  transfers newest first.
+- **Wording**: **"cambio"**, matching Desgloses' period picker
+  ("Este cambio hasta hoy"). "Metas de este cambio", "Cambio 2026-6". i18n done
+  per sub-step, not deferred to the end.
+- **REC pills**: the existing weekly stretch average **× that cycle's real
+  `Weeks`** from `TRANSFER_SCHEDULE` — not an average cycle length, and not a
+  per-transfer history average. `WEEKLY_KI` begins 2026-08-09, so **no area has
+  one completed transfer of history**; averaging completed cycles would divide
+  by zero cycles. `get_recommended_monthly_goals` (`queries.py:2714`) is not
+  ported.
+- **`/N` fractions**: kept. `AREA_TYPE_EXPECTATIONS.Cadence` gains `transfer`
+  alongside `weekly`/`monthly` (`queries.py:1932` narrows it today, `:1885` is
+  the header). A weekly-cadence expectation scales by the cycle's real `Weeks`;
+  a `transfer`-cadence one counts as-is. Sunday-only KIs scale by the Sunday
+  count, which per §7.0a is exactly `Weeks` — so the `_sundays_in_month` special
+  case disappears rather than being ported.
+- **Unchanged on this page**: the "Nightly Form Goals (weekly totals)" section.
+  It writes `GOALS_CONFIG`, which `CCSM_AgentScores.gs` scores against weekly
+  with no conversion, and which `CCSM_Agent2.gs` recalibrates every cycle
+  (§7.0d). Making it transfer-scoped would silently break every area's weekly
+  score. It stays weekly.
 
-### 7.4 — Fix the two numeric `Transfer_Number` parses *(folded in)*
+### 7.5 — Wire the goal bars *(the visible payoff)*
 
-Found while answering the numbering question, and this step depends on reading
-the schedule reliably:
+Per-area transfer goals feed the KI goal bars on Desgloses and the Panel. Per
+§7.0b these bars have never been able to draw for a KI.
+
+`_resolve_group_goal` (`breakdowns_engine.py:482`) returns a **weekly** goal
+which the caller multiplies by `_goal_factor` (`:1839`, `p_days / 7`). A
+transfer goal is a period TOTAL, so it enters that contract as
+`transfer_goal / cycle_weeks` — its weekly equivalent. When the period IS the
+transfer, `_goal_factor` reproduces the transfer total exactly; for any other
+period it degrades to a sensible weekly rate.
+
+**Precedence — Zackary's call: most-specific-entered-goal-wins, the existing
+order, with the transfer goal slotted beneath `GOALS_CONFIG`:**
+
+1. `GOALS_CONFIG`, summed across the group's areas *(wins where it exists)*
+2. **`AREA_TRANSFER_GOALS` ÷ the cycle's weeks** *(new)*
+3. `AGENT_CONFIG.GOAL_<metric>` × the area count
+
+One precedence rule across the whole app. In practice the vocabularies barely
+overlap — `AGENT_CONFIG.GOAL_*` is entirely nightly and `GOALS_CONFIG` is empty
+mission-wide — so the transfer goal is what actually lights the KI bars.
+
+The derived note must carry the arithmetic, as the existing branches do
+(`:520`): a bar reading "48% de 1.200" is unreadable without it.
+
+### 7.6 — The companionship's own goals stay visible *(§7.0's sixth path)*
+
+The weekly form asks each companionship for its own `ki_*_meta` goals for the
+coming week, and `get_ki_goals_for_week()` (`queries.py:740`) reads them with
+the week-offset correction — a week's goals are written on the PREVIOUS week's
+form. `views/01_Panel.py:209-217` draws the Panel's KI bars from them.
+
+These are a different fact from a leadership-set target, and
+`key_indicator_metrics()`'s own docstring warns they must never be added to a
+real value or confused with one.
+
+**Zackary's call: the leadership transfer goal is the bar; the companionship's
+own goal is shown beside it** in the small print — "se propusieron N". Both
+facts survive and neither is mistaken for the other. `_ki_goal_note`
+(`01_Panel.py:524`) already renders small print under these bars and is where
+this goes.
+
+### 7.7 — Baptism actuals
+
+Per §7.0c a transfer window cannot carry a certified count.
+
+**On the transfer rows** (Metas' goals-vs-actuals, the goal bars): use
+`ki_baptized_confirmed_real` summed over the cycle's weeks, **labeled as the
+mission's own weekly report**, with a note that the certified figure is monthly.
+`get_baptisms_actual` (`queries.py:3195`) documents that field as undercounting
+badly (~18–20 against an official 41 for one month) — so it is shown named, never
+silently substituted for the certified number.
+
+**In the year summary** (§7.8): **show both**, as two named rows — the certified
+`TABLEAU_BAPTISMS` figure (marked with how far the capture reaches; it lags a
+month or two) and the self-reported weekly total. The gap between them is itself
+worth seeing, and neither source quietly does the other's job.
+
+**Never splice them into one series.** That is `annual_baptisms.py`'s "One
+source" rule and the §7.3 guard.
+
+### 7.8 — The KI year summary *(new section on Metas)*
+
+A fifth section beside Area Goal Customization / Mission Goals / Goal Settings /
+Area Expectation Settings. **Mission-wide, KI-only** — the seven of §7.1, not
+nightly metrics and not per-area.
+
+Per row: the year's goal (that year's transfer goals summed, straddlers
+pro-rated by days per §7.3), the actual to date (by **real date**, per §7.3),
+and % of goal. Baptisms appear as two rows per §7.7.
+
+This gives §7.3's rules a real consumer rather than leaving them as an
+unexercised library.
+
+**`GOAL_ANNUAL_baptisms` = 527 and the Panel's annual chart are NOT touched.**
+The chart keeps its own certified source and its own goal. See the acceptance
+check.
+
+### 7.9 — Fix the two numeric `Transfer_Number` parses *(folded in)*
+
+This step depends on reading the schedule reliably:
 
 - `get_recent_transfer_dates()` (`queries.py:3851`) coerces `Transfer_Number`
   with `pd.to_numeric`. `"2026-4"` → `NaN` → dropped. **Verified live: it
-  returns `[]`, and `is_within_last_transfers()` returns `False` for every
-  date.** Sort by `Start_Date` instead.
+  returns `[]`, and `is_within_last_transfers()` is `False` for every date.**
+  Sort by `Start_Date` instead.
 - `next_schedule_update()` (`ingestion/transfer_engine.py:303`) does
   `int("2026-4")`, which throws. It is caught, so `max_num` stays `0` and the
   function would append a row numbered `"1"`.
 
 **Current impact: none.** The only consumer is `render_lineage_badge()`
-(`breakdowns_engine.py:1298`), which cannot draw anyway because the
-`AREA_LINEAGE` tab does not exist. Latent, and it bites the day someone
-populates that tab.
+(`breakdowns_engine.py:1298`), which cannot draw anyway — the `AREA_LINEAGE` tab
+does not exist. Latent, and it bites the day someone populates that tab.
 
-### 7.5 — Metas page
+### Build order — one commit each
 
-Month picker becomes a transfer picker, defaulting to the current cycle from
-`transfer_window(0)`. Goal history lists transfers, newest first. Labels read
-"Este cambio" rather than a month name; i18n done per step, not at the end.
+| # | Commit | Touches |
+|---|---|---|
+| 7a | `Transfer_Number` parses fixed (§7.9) | `queries.py:3851`, `transfer_engine.py:303` |
+| 7b | Transfer-year library: ownership, day-split, pro-rating (§7.3) | new `app/analytics/transfer_year.py`, pure + tested |
+| 7c | `goals_queries.py`: the two transfer tabs replace the monthly pair (§7.2) | `goals_queries.py`, `tests/test_area_monthly_goals.py` ported |
+| 7d | `transfer` cadence on expectations (§7.4) | `queries.py:1885`, `:1932`, `:2064` |
+| 7e | Metas: Mission Goals → per-transfer, seven KIs (§7.4) | `02_Metas.py:553-921` |
+| 7f | Metas: area goals → per-transfer (§7.4) | `02_Metas.py:1305-1470` |
+| 7g | Goal bars read transfer goals (§7.5) | `breakdowns_engine.py:482`, `:1897` |
+| 7h | Companionship's own goal shown beside the bar (§7.6) | `01_Panel.py:209-217`, `:524` |
+| 7i | KI year summary (§7.8) | `02_Metas.py` new section |
+
+7a and 7b have no dependencies and can land first. 7c blocks 7e/7f; 7e/7f block
+7g; 7g blocks 7i.
 
 ### Acceptance
 
-Verify in the running app, not only in the suite:
+Verify in the running app, not only in the suite — the Step 2a lesson (a fix
+that passed the suite still read "INTERCAMBIOS 0" on the live page).
 
 1. Save a mission goal and an area goal for the current transfer; confirm both
-   tabs are created with the shapes in §7.1 — **this is the end-to-end test old
-   Step 5.2 was asking for, so it retires with this step.**
-2. Confirm the seven KI columns are CCSM's, not Provo's six. `AREA_MONTHLY_GOALS`
-   once hardcoded `gate/date_metric/new_found/pew/renew/member_lessons`, so every
-   value typed went to a column for a metric CCSM does not collect and the page
-   reported "saved" having stored nothing. The code is fixed; it has never been
-   exercised against a real sheet.
-3. Check a straddling transfer pro-rates 32/42 : 10/42 across 2026/2027.
-4. Confirm the annual baptism chart is **unchanged** — that is the §7.3 guard.
+   tabs are created with the shapes in §7.2. **This is the end-to-end test old
+   Step 5.2 asked for, so 5.2 retires with this step.**
+2. Confirm the metric columns are the **seven** of §7.1 — not the flavor's six
+   goal keys. `AREA_MONTHLY_GOALS` once hardcoded Provo's
+   `gate/date_metric/new_found/pew/renew/member_lessons`, so every value typed
+   went to a column for a metric CCSM does not collect and the page reported
+   "saved" having stored nothing. Fixed in code; never exercised against a real
+   sheet.
+3. A saved area transfer goal **draws a KI goal bar on Desgloses** where none
+   could draw before (§7.0b), and its note carries the arithmetic.
+4. A straddling transfer pro-rates 32/42 : 10/42 across 2026/2027 in the year
+   summary.
+5. The Panel's annual baptism chart is **unchanged** — same source, same 527
+   goal, same reach. That is the §7.3 guard.
+6. A KI card shows the leadership goal as its bar and the companionship's own
+   `ki_*_meta` figure beside it, never summed (§7.6).
+7. Baptism actuals are labeled by source everywhere they appear (§7.7).
+8. Stash and re-run before blaming this work for any of the 14 baseline
+   failures (§2).
 
 **Creates two new tabs on the live sheet — needs Zackary's approval at the point
 of first save**, same pattern as Step 1.
@@ -396,9 +598,19 @@ of first save**, same pattern as Step 1.
    **Pro-rate its goal by days**, so a year's goal and actuals cover the same
    span. §7.3.
 
-**Still open on Step 7:** where it sits in the queue. Default assumption is
-after Step 3 (the Phase 3.3 verification), ahead of Step 4 — say otherwise and
-it moves.
+**Queue position — settled 2026-09-05.** Zackary moved Step 7 to the FRONT:
+it runs now, ahead of Steps 3-6, which keep their relative order behind it.
+
+**Twelve further design questions were asked and answered 2026-09-05** during
+the Step 7 audit; every answer is written into §1b at the point it applies.
+Summarised: full replacement of the monthly path; goal bars wired; weekly-form
+baptism figure on transfer rows, both sources in the year summary; the seven
+`ki_*_real` keys as the KI vocabulary app-wide; a KI-only mission-wide year
+summary on Metas; picker covers past/current/next; REC is weekly × the cycle's
+real weeks; `GOALS_CONFIG` keeps precedence over a transfer goal; wording is
+"cambio"; `transfer` joins the expectation cadences; mission goals drop the
+"Other Metrics" grid; and the companionship's own `ki_*_meta` goal is shown
+beside the leadership bar, never as it.
 
 ---
 
@@ -416,4 +628,4 @@ commit — same as `PLAN-2026-09-03-desgloses-progression.md`._
 | 4 — Phase 3.5 payoff | not started | — |
 | 5 — Phase 4 sweep | not started | — |
 | 6 — Phase 3.4 automation | not started | — |
-| 7 — Transfer goals | not started (design agreed) | — |
+| 7 — Transfer goals | **audited, plan rewritten, awaiting approval to build** | — |
