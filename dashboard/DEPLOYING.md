@@ -56,6 +56,35 @@ and from 1.42 on it deliberately stops returning a Community Cloud account
 email unless you run your own OIDC provider. `tests/test_sso_viewer.py` fails
 on the broken form — verified by reverting it, not assumed.
 
+## Reboot after any deploy that changes a file outside `views/`
+
+**A git push is not enough.** Streamlit Cloud keeps one long-lived Python
+process per app. Its file watcher re-executes a **page script** when the file
+changes, but a module the page *imports* stays in `sys.modules` from whenever
+the process last started. A deploy that changes both — a page and a module it
+imports — leaves the new page running against the old module.
+
+That is not theoretical. Commit `cf28071` added `can_set_goals` to
+`app/auth/auth.py` and, in the same commit, the `from app.auth.auth import
+can_set_goals, require_auth` at the top of `views/02_Metas.py`. The page
+reloaded; the auth module did not. Every visit to Metas then died with:
+
+```
+ImportError: cannot import name 'can_set_goals' from 'app.auth.auth'
+```
+
+The tell is the traceback shape: it ends **at** the import line with no frames
+beneath it. A module that genuinely fails to import shows its own frames below;
+a name missing from an already-cached module does not.
+
+**Fix, and the routine from now on:** App settings → **Reboot app** after any
+deploy touching `app/`, `Home.py`, or anything else outside `views/`. Changing
+only a page's own body is the one case where the push alone is sufficient.
+
+Nothing in the repository can prevent this — it is a property of how the Cloud
+runner reloads. Do not paper over it with try/except around an import: that
+converts a loud, accurate error into a page that silently loses a feature.
+
 ## Verify after deploying
 
 Runtime checks only; the local suite cannot see any of these:
