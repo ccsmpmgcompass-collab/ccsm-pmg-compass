@@ -2747,6 +2747,29 @@ def roster_ceiling(df: pd.DataFrame, key: str, area: str | None,
     return max(1, int(peak * sundays))
 
 
+def _goalable_nightly_keys(metric_defs: list) -> list:
+    """Nightly-form metrics a goal can sensibly be recommended for.
+
+    Every NIGHTLY metric qualified until 2026-09-06, including the three the
+    form asks that carry no countable quantity — `report_date` (DATE),
+    `exchanges` (YESNO) and `effort` (CHOICE). A weekly goal of "3" for a date,
+    a yes/no, or a three-way choice is not a smaller or larger target, it is a
+    category error, and each of the three still drew a box and a REC badge of 1
+    on the Goals page and a column in the bulk preview table (Zackary,
+    2026-09-06: "take out goals for the date, intercambios, and effort level").
+
+    `non_numeric_metrics()` is the same declaration `get_daily_log` already
+    consults, and it reads the sheet's own Data_Type rather than naming keys —
+    so a mission whose form asks a different CHOICE question is covered without
+    a code change. The weekly counterpart below has excluded CHOICE since it was
+    written; this is that rule, applied to the half that never got it.
+    """
+    from app.config.metric_catalog import non_numeric_metrics
+
+    skip = non_numeric_metrics()
+    return [k for k, _, f in metric_defs if f == "NIGHTLY" and k not in skip]
+
+
 def _goalable_weekly_keys(metric_defs: list) -> list:
     """Weekly-form metrics a goal can sensibly be recommended for.
 
@@ -2794,7 +2817,7 @@ def get_recommended_goals(area: str) -> dict:
     Every returned value is floored at 1.
     """
     metric_defs = get_question_metrics()
-    nightly_keys = [k for k, _, f in metric_defs if f == "NIGHTLY"]
+    nightly_keys = _goalable_nightly_keys(metric_defs)
     weekly_keys = _goalable_weekly_keys(metric_defs)
 
     recommended = {}
@@ -2861,7 +2884,7 @@ def get_recommended_transfer_goals(area: str, weeks: float) -> dict:
     one of them already at perfect attendance.
     """
     metric_defs = get_question_metrics()
-    nightly_keys = [k for k, _, f in metric_defs if f == "NIGHTLY"]
+    nightly_keys = _goalable_nightly_keys(metric_defs)
     weekly_keys = _goalable_weekly_keys(metric_defs)
 
     nightly_df, weekly_df = get_weekly_ki(), get_weekly_form_data()
@@ -2903,7 +2926,7 @@ def get_mission_recommended_goals() -> dict:
     to these via GOAL_TO_ACTUAL before looking up a REC value.
     """
     metric_defs = get_question_metrics()
-    nightly_keys = [k for k, _, f in metric_defs if f == "NIGHTLY"]
+    nightly_keys = _goalable_nightly_keys(metric_defs)
     weekly_keys = _goalable_weekly_keys(metric_defs)
 
     recommended = {}

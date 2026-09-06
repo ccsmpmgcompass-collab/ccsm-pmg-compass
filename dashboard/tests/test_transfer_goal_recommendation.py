@@ -51,6 +51,15 @@ QUESTIONS = pd.DataFrame([
      "Form_Type": "WEEKLY", "Data_Type": "NUMBER", "Active": "TRUE"},
     {"Metric_Key": "contacts_attempted", "Metric_Display_Name": "Intentos de Contacto",
      "Form_Type": "NIGHTLY", "Data_Type": "NUMBER", "Active": "TRUE"},
+    # The three nightly questions that carry no countable quantity. CCSM asks
+    # all three, and every one of them drew a goal box and a REC badge until
+    # 2026-09-06.
+    {"Metric_Key": "report_date", "Metric_Display_Name": "Fecha del Informe",
+     "Form_Type": "NIGHTLY", "Data_Type": "DATE", "Active": "TRUE"},
+    {"Metric_Key": "exchanges", "Metric_Display_Name": "Intercambios",
+     "Form_Type": "NIGHTLY", "Data_Type": "YESNO", "Active": "TRUE"},
+    {"Metric_Key": "effort", "Metric_Display_Name": "Nivel de Esfuerzo",
+     "Form_Type": "NIGHTLY", "Data_Type": "CHOICE", "Active": "TRUE"},
 ])
 
 #: Los Huertos' real WEEKLY_KI rows, probed live 2026-09-05. Three completed
@@ -249,3 +258,35 @@ def test_an_area_with_no_history_has_no_ceiling(live):
     falls back to the ordinary floor rather than being capped at nothing."""
     assert q.roster_ceiling(WEEKLY.copy(), RC, "Nueva Área", 6.0) is None
     assert _rec(area="Nueva Área")[RC] == 1
+
+
+# ── metrics a goal cannot apply to ───────────────────────────────────────────
+#
+# Zackary, 2026-09-06: "take out goals for the date, intercambios, and effort
+# level." A weekly goal of 3 for a DATE, a YESNO or a three-way CHOICE is not a
+# smaller or larger target — it is a category error. All three still drew a
+# number box on the Goals page, a REC badge of 1, and a column in the bulk
+# preview table every leader reads before saving goals for the whole mission.
+#
+# The weekly half of this rule has excluded CHOICE since it was written
+# (_goalable_weekly_keys); the nightly half never got it.
+
+def test_non_numeric_metrics_get_no_recommendation(live):
+    rec = _rec()
+    for key in ("report_date", "exchanges", "effort"):
+        assert key not in rec, key
+
+
+def test_countable_nightly_metrics_still_do(live):
+    """The filter must not take the whole nightly form with it."""
+    assert _rec()["contacts_attempted"] >= 1
+
+
+def test_the_rule_reads_the_sheet_not_a_list_of_keys(live):
+    """Data_Type decides, so a mission whose form asks a different CHOICE
+    question is covered without a code change — the same reason the KI set is
+    taken from the catalogue rather than written down."""
+    defs = [("whatever_we_call_it", "Cualquiera", "NIGHTLY")]
+    assert q._goalable_nightly_keys(defs) == ["whatever_we_call_it"]
+    from app.config.metric_catalog import non_numeric_metrics
+    assert non_numeric_metrics() == {"report_date", "exchanges", "effort"}

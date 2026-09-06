@@ -15,6 +15,7 @@ from app.config.metric_catalog import (
     metric_data_type,
     metric_options,
     nightly_metrics,
+    non_numeric_metrics,
 )
 from app.i18n.formats import NA, fmt_day_month, fmt_int, fmt_month_year, fmt_number
 from app.utils.area_helpers import mission_today
@@ -401,13 +402,53 @@ if selected_section != "Area Expectation Settings":
 # per his 2026-07-10 evening feedback ("sits too low / slash wrong / size
 # different"): fraction top:2.1rem, full-brightness text (the old 0.75
 # alpha read as smaller), and the slash rendered at 0.85em via .fracslash
-# so it doesn't tower over / descend below the digits. Known accepted wart:
-# if a long label ever wraps to two lines, that box's overlays sit high
-# over the label — do not re-anchor to fix that.
+# so it doesn't tower over / descend below the digits.
+#
+# ⚠ THE "ACCEPTED WART" IS FIXED (2026-09-06, Zackary) — the freeze above
+# still holds for the ANCHORING STRATEGY, and the offsets below moved once.
+# The wart was: "if a long label ever wraps to two lines, that box's overlays
+# sit high over the label". CCSM has such a label — "Lecciones con CR (Mi
+# Senda de los Convenios)" — and Zackary reported the grid as "a mess", the
+# words not lining up with the boxes and the numbers landing outside them.
+#
+# Measured live at 1600px, 4 columns of 263px: every widget label is 24px
+# tall except that one at 45px, and the input box therefore starts 28.8px
+# below its column for every box except that one, where it starts 49.6px
+# down — while both overlays stay pinned at a fixed offset from the COLUMN
+# top. The overlay does not drift a little; it is on the label.
+#
+# Bottom-anchoring was re-measured before being ruled out again, and the
+# freeze is right on the substance: distance from the column BOTTOM to the
+# input box takes THREE different values across this grid (55.2 / 87.2 /
+# 108px), because columns carry different trailing content. Neither edge of
+# the column is a stable anchor, which is why every re-tune since July has
+# only moved the problem.
+#
+# What IS stable is making every label the same height. The rule below fixes
+# the goal grids' labels at two lines (45px, clamped so a third line cannot
+# reappear), so the input box starts 49.8px down in EVERY column, and both
+# offsets are then correct by construction rather than by tuning:
+#
+#     REC pill : 49.8 + 4.0 (its old inset into the box) = 53.8px = 3.3625rem
+#     fraction : 49.8 + 8.0 (the input's padding-top)    = 57.8px = 3.6125rem
+#
+# Do not hand-tune these two numbers again. If they ever look wrong, the
+# label height changed — measure that and re-derive, same as here.
 st.markdown(
     "<style>"
     "div[data-testid='stColumn']{position:relative}"
-    "div[class*='st-key-recbtn_']{position:absolute!important;top:2.05rem;left:0;right:0;z-index:5;text-align:right!important;pointer-events:none;min-height:0!important;margin:0!important;padding:0!important}"
+    # Fixed two-line labels — the invariant both offsets below depend on. Scoped
+    # to the goal inputs by their own widget keys (`goal_` weekly, `tgoal_` per
+    # cambio) so no other widget label on the page gains blank space. -webkit-
+    # line-clamp caps a hypothetical third line rather than letting it push that
+    # one box's input down and reopen the bug this closes.
+    "div[class*='st-key-goal_'] label[data-testid='stWidgetLabel'],"
+    "div[class*='st-key-tgoal_'] label[data-testid='stWidgetLabel']"
+    "{min-height:45px!important;align-items:flex-start!important;overflow:hidden}"
+    "div[class*='st-key-goal_'] label[data-testid='stWidgetLabel'] p,"
+    "div[class*='st-key-tgoal_'] label[data-testid='stWidgetLabel'] p"
+    "{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}"
+    "div[class*='st-key-recbtn_']{position:absolute!important;top:3.3625rem;left:0;right:0;z-index:5;text-align:right!important;pointer-events:none;min-height:0!important;margin:0!important;padding:0!important}"
     "div[class*='st-key-recbtn_'] button{pointer-events:auto;transform:translateX(-4.2rem)!important;background:rgba(99,102,241,0.15)!important;border:1px solid rgba(99,102,241,0.4)!important;border-radius:999px!important;padding:0.1rem 0.45rem!important;min-height:0!important;height:auto!important;line-height:1.25!important;white-space:nowrap!important}"
     "div[class*='st-key-recbtn_'] button:hover{background:rgba(99,102,241,0.30)!important;border-color:rgba(99,102,241,0.6)!important;transform:translateX(-4.2rem)!important;box-shadow:none!important}"
     "div[class*='st-key-recbtn_'] button p{font-size:0.62rem!important;font-weight:700!important;letter-spacing:0.04em!important;color:#a5b4fc!important}"
@@ -454,7 +495,7 @@ st.markdown(
     # browser measured it fine. Reverted to 2.30rem so the overlay's content
     # top matches the input's content-box top to within 0.01px, removing the
     # slack that was crossing the boundary. Do NOT re-add the 0.21px.
-    "div[class*='st-key-renewfrac_']{position:absolute!important;top:2.30rem;z-index:4;pointer-events:none;width:auto!important;min-height:0!important;margin:0!important;padding:0!important}"
+    "div[class*='st-key-renewfrac_']{position:absolute!important;top:3.6125rem;z-index:4;pointer-events:none;width:auto!important;min-height:0!important;margin:0!important;padding:0!important}"
     # font-family: design_system.py's global `p` rule forces the app font
     # (SF Pro/Segoe UI), but the number_input's typed text keeps BaseWeb's
     # own "Source Sans Pro" — without this override the "/ N" sits right
@@ -1142,11 +1183,24 @@ if selected_section == "Area Goal Customization":
                         _render_rec_pill(prefix, key, widget_key, recommended[key])
         return values
 
-    # Every nightly metric the mission asks. This used to exclude
-    # "online_referrals" — a Provo metric, dropped from Provo's grid at that
-    # mission's request. CCSM has no such question, so the filter excluded
+    # Every nightly metric the mission asks THAT CARRIES A COUNT. This used to
+    # exclude "online_referrals" — a Provo metric, dropped from Provo's grid at
+    # that mission's request. CCSM has no such question, so the filter excluded
     # nothing here while implying a deliberate omission.
-    nightly_defs = [m for m in metric_defs if m[2] == "NIGHTLY"]
+    #
+    # What it does exclude now is the three questions the nightly form asks that
+    # are not quantities: `report_date` (DATE), `exchanges` (YESNO) and `effort`
+    # (CHOICE — Todo / La mayor parte / Algo). Each drew a number box and a REC
+    # badge of 1, and "a weekly goal of 3 dates" is a category error rather than
+    # an ambitious or modest target (Zackary, 2026-09-06). `non_numeric_metrics`
+    # reads the sheet's own Data_Type, so this follows a form change by itself.
+    #
+    # Nothing saved is stranded: GOALS_CONFIG is an empty tab mission-wide
+    # (probed live 2026-09-05), so no area has ever stored a goal for any of the
+    # three for this grid to drop on its next save.
+    _non_numeric = non_numeric_metrics()
+    nightly_defs = [m for m in metric_defs
+                    if m[2] == "NIGHTLY" and m[0] not in _non_numeric]
     weekly_defs  = [m for m in metric_defs if m[2] == "WEEKLY"]
 
     # Fill every NIGHTLY input with its recommended value at once (only shown
