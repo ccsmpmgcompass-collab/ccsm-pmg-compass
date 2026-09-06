@@ -86,6 +86,7 @@ from app.db.queries import (
     get_baptisms_actual,
     get_rec_stretch_pct,
     exclude_current_week,
+    roster_ceiling,
 )
 from app.db.queries import _AREA_TYPE_LABELS
 from app.db.goals_queries import (
@@ -1418,6 +1419,36 @@ if selected_section == "Area Goal Customization":
                                                  _transfer_denominators[key])
                     if key in transfer_recommended and _may_edit_transfer:
                         _render_rec_pill("tg", key, widget_key, transfer_recommended[key])
+
+        # A roster-capped KI has a ceiling no amount of work can pass: every
+        # recent convert the area has, at church every Sunday of the cycle. The
+        # REC is already clamped to it in get_recommended_transfer_goals; this
+        # says the number out loud, because a REC of 12 where the area's average
+        # implies 14 is otherwise unexplained.
+        #
+        # What leadership TYPES is deliberately NOT clamped. A baptism during
+        # the cycle raises the real ceiling, and the companionship's own goal
+        # box is where that expectation belongs — the app does not know a
+        # baptism is coming and must not overrule someone who does.
+        _tg_weekly_df = get_weekly_form_data()
+        for _ck, _clbl, _cft in transfer_ki_defs:
+            _ceiling = roster_ceiling(_tg_weekly_df, _ck, selected_area, _tg_weeks)
+            if _ceiling is None:
+                continue
+            _sundays = max(1, int(round(_tg_weeks)))
+            st.caption(t(
+                "{label}: this area's ceiling for this cambio is {ceiling} — "
+                "{roster} at church every one of its {sundays} Sundays. The "
+                "recommendation never goes above it.",
+                label=_clbl, ceiling=fmt_int(_ceiling),
+                roster=fmt_int(int(_ceiling / _sundays)), sundays=fmt_int(_sundays)))
+            if int(transfer_values.get(_ck, 0) or 0) > _ceiling:
+                st.warning(t(
+                    "{label}: {value} is above that ceiling of {ceiling}. Save it "
+                    "only if you expect another baptism during the cambio — the "
+                    "ceiling rises when the area does.",
+                    label=_clbl, value=fmt_int(transfer_values.get(_ck, 0)),
+                    ceiling=fmt_int(_ceiling)))
 
         if not _may_edit_transfer:
             st.caption(t("Only the mission president and the assistants can set "

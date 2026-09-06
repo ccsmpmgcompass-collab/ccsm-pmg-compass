@@ -2503,6 +2503,19 @@ ES: dict[str, str] = {
     "Only the mission president and the assistants can set goals for a cambio.":
         "Solo el presidente de misión y los asistentes pueden fijar las metas "
         "de un cambio.",
+    # The roster ceiling on Conversos Recientes en la Iglesia — "tope" is the
+    # mission's own word for a limit, and reads as a ceiling rather than a goal.
+    "{label}: this area's ceiling for this cambio is {ceiling} — {roster} at "
+    "church every one of its {sundays} Sundays. The recommendation never goes "
+    "above it.":
+        "{label}: el tope de esta área para este cambio es {ceiling} — {roster} "
+        "en la Iglesia cada uno de sus {sundays} domingos. La recomendación "
+        "nunca lo supera.",
+    "{label}: {value} is above that ceiling of {ceiling}. Save it only if you "
+    "expect another baptism during the cambio — the ceiling rises when the "
+    "area does.":
+        "{label}: {value} supera ese tope de {ceiling}. Guárdelo solo si espera "
+        "otro bautismo durante el cambio — el tope sube cuando el área lo hace.",
     "This cambio has already ended. Goals saved for it are a record of what "
     "was expected, not a plan.":
         "Este cambio ya terminó. Las metas que guarde aquí quedan como registro "

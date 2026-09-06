@@ -51,6 +51,36 @@ RATE_METRIC_LABELS: dict[str, str] = {
 #: "contact rate" of 47 areas added together is meaningless.
 RATE_METRICS: frozenset[str] = frozenset(RATE_METRIC_LABELS)
 
+# ── Roster-capped metrics (a ceiling no effort can pass) ──────────────────────
+#: Metrics whose weekly value is bounded by the size of a ROSTER the
+#: companionship cannot grow within a cycle — so a percentage stretch is the
+#: wrong operator for them and a recommendation must be clamped to the ceiling.
+#:
+#: There is exactly one on CCSM's form. `ki_rc_at_church_real` counts recent
+#: converts at church: an area with two of them cannot report more than two in
+#: a week however hard it works, and over a six-Sunday cycle its ceiling is
+#: twelve. The roster grows only when `ki_baptized_confirmed_real` fires, which
+#: is itself a Key Indicator and rare.
+#:
+#: Zackary, 2026-09-06, on being recommended 14: "We only have 2 converts, and
+#: if each of them come every week that would lead us to 12 at the end of the
+#: transfer, not 14. We can't jump up that number until we have another
+#: baptism." Probed the same day: the stretch exceeded the ceiling for 9 of the
+#: mission's 41 reporting areas, and every one of those nine was already at
+#: PERFECT attendance — mean equal to peak. Asking them for 110% of perfect is
+#: the entire defect.
+#:
+#: **Deliberately not extended to the other six Key Indicators.** Friends at
+#: sacrament meeting, new people found, member lessons and the rest are all
+#: bounded by pools the companionship CAN grow inside a cycle by finding and
+#: teaching. This one it cannot.
+#:
+#: Declared, not inferred: "cappedness" is a fact about what the metric counts,
+#: and nothing in QUESTIONS_CONFIG records it. Declared here rather than
+#: keyword-matched on the metric's name, which is how Provo's catalogue kept
+#: mis-firing against CCSM's (see `views/02_Metas.py`'s KI selection).
+ROSTER_CAPPED_METRICS: frozenset[str] = frozenset({"ki_rc_at_church_real"})
+
 # ── English labels (display convenience only) ─────────────────────────────────
 # QUESTIONS_CONFIG stores Spanish display names, which is correct: CCSM is a
 # Spanish-speaking mission and those strings are what appear on the real forms.
@@ -222,6 +252,15 @@ def goal_metric_key(real_key: str) -> str | None:
 def is_rate_metric(key: str) -> bool:
     """Rates and scores are averaged across areas, never summed."""
     return key in RATE_METRICS
+
+
+def is_roster_capped(key: str) -> bool:
+    """True for a metric bounded by a roster the area cannot grow in a cycle.
+
+    See ROSTER_CAPPED_METRICS. Callers recommending a target for one of these
+    must clamp to the ceiling rather than stretch past it.
+    """
+    return key in ROSTER_CAPPED_METRICS
 
 
 def metric_data_type(key: str) -> str:

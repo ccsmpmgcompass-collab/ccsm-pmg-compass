@@ -2610,17 +2610,22 @@ def _rec_stretch_factor() -> float:
     return 1.0 + get_rec_stretch_pct() / 100.0
 
 
-def _stretch_recommendation(df: pd.DataFrame, keys: list, area: str | None) -> dict:
+def _stretch_means(df: pd.DataFrame, keys: list, area: str | None) -> dict:
     """
-    Shared REC-badge math for both get_recommended_goals(area) and
-    get_mission_recommended_goals(): a light STRETCH goal sitting just above
-    the long-run average, so it pushes missionaries to be slightly better.
+    The stretched weekly AVERAGE for each key, UNROUNDED and UNFLOORED — the
+    raw material every REC badge on the page is built from.
     Averages EVERY completed week available (full history — all transfers,
-    not just a recent window) and recommends ceil(mean * stretch_factor),
-    where stretch_factor is 1 + the Goal Settings "nudge" percentage / 100
-    (see _rec_stretch_factor() — defaults to 1.10, i.e. 10%, until changed).
+    not just a recent window) and returns mean * stretch_factor, where
+    stretch_factor is 1 + the Goal Settings "nudge" percentage / 100 (see
+    _rec_stretch_factor() — defaults to 1.10, i.e. 10%, until changed).
     The in-progress current week is always excluded so a partial week
-    doesn't drag the average down. Every returned value is floored at 1.
+    doesn't drag the average down.
+
+    Separate from _stretch_recommendation() BECAUSE the rounding must happen
+    once, at the cadence the number is finally shown at. A weekly badge rounds
+    a weekly average; a transfer badge rounds that average times the cycle's
+    weeks. Rounding first and scaling second does both jobs wrong — see
+    get_recommended_transfer_goals().
 
     area=<name>: filters to that area's own rows first (per-area basis, used
     by get_recommended_goals).
@@ -2654,8 +2659,92 @@ def _stretch_recommendation(df: pd.DataFrame, keys: list, area: str | None) -> d
         if key in sub.columns:
             vals = pd.to_numeric(sub[key], errors="coerce").dropna()
             if not vals.empty:
-                out[key] = max(1, math.ceil(vals.mean() * stretch))
+                out[key] = float(vals.mean()) * stretch
     return out
+
+
+def _stretch_recommendation(df: pd.DataFrame, keys: list, area: str | None) -> dict:
+    """One WEEKLY REC value per key: _stretch_means() rounded up, floored at 1.
+
+    The floor is a display rule, not a target — a REC badge reading 0 tells a
+    companionship nothing, so a metric an area has never recorded still shows 1
+    for the week. **It is only meaningful at this cadence.** Anything scaling a
+    REC to a longer period must scale the MEAN and floor the product, never
+    multiply this floored figure: six weeks x "the badge cannot show 0" is how
+    an area with no baptisms was told to plan for six (Zackary, 2026-09-05).
+    """
+    return {k: max(1, math.ceil(v)) for k, v in _stretch_means(df, keys, area).items()}
+
+
+#: How far back a roster-capped metric looks for the peak that implies its
+#: roster. Twelve weeks is about two transfer cycles — long enough that one
+#: quiet week (a convert travelling, a missed report) does not lower the
+#: ceiling, short enough that a convert who has since aged out of "recent", or
+#: moved away, stops holding it up forever. All of CCSM's history is four weeks
+#: as of 2026-09-06, so this bites later rather than now; it is written for then.
+_ROSTER_PEAK_WINDOW_WEEKS = 12
+
+
+def _roster_peak(df: pd.DataFrame, key: str, area: str | None) -> float | None:
+    """The most `area` has recorded for `key` in ONE recent week, or None.
+
+    A LOWER BOUND on the roster behind a capped metric: if two recent converts
+    turned up in some week, the area has at least two. It cannot see a convert
+    who has never once come — the honest fix for that is to collect the roster
+    on the weekly form, and until then this errs toward a ceiling that is too
+    low rather than one that lets an impossible target through.
+
+    The peak, not the mean: the question is "how many EXIST", and the best
+    evidence for that is the week they all showed up.
+    """
+    if df is None or df.empty or key not in df.columns:
+        return None
+    sub = df
+    if area is not None and "area" in sub.columns:
+        # Whitespace-tolerant, same as _stretch_means — WEEKLY_KI area names
+        # can carry stray spaces against MISSION_ORG's Area_Name.
+        sub = sub[sub["area"].astype(str).str.strip() == str(area).strip()]
+    if sub.empty:
+        return None
+    if "week_end_date" in sub.columns:
+        sub = exclude_current_week(sub)
+        weeks = pd.to_datetime(sub["week_end_date"], errors="coerce").dropna()
+        if not weeks.empty:
+            recent = sorted(weeks.unique())[-_ROSTER_PEAK_WINDOW_WEEKS:]
+            sub = sub[pd.to_datetime(sub["week_end_date"], errors="coerce") >= recent[0]]
+    vals = pd.to_numeric(sub[key], errors="coerce").dropna()
+    if vals.empty:
+        return None
+    return float(vals.max())
+
+
+def roster_ceiling(df: pd.DataFrame, key: str, area: str | None,
+                   weeks: float) -> int | None:
+    """The most `area` could POSSIBLY report for `key` over a cycle of `weeks`,
+    or None when `key` is not roster-capped or the area has no history.
+
+    ``peak x Sundays`` — every member of the roster, at church every Sunday.
+    That is a ceiling, not a target: an area already at it is not underachieving,
+    it is at 100%.
+
+    The Sunday count is the cycle's week count rounded, which §7.0a licenses:
+    every TRANSFER_SCHEDULE start is a Monday and every WEEKLY_KI.Week_End_Date
+    a Sunday, so a whole cycle holds exactly as many Sundays as weeks. A
+    schedule row recording an odd length rounds to its nearest whole Sunday and
+    the ceiling is off by at most one Sunday's worth.
+
+    Public because the Metas page shows the ceiling beside the box it caps — a
+    recommendation of 12 where the stretch said 14 has to explain itself.
+    """
+    from app.config.metric_catalog import is_roster_capped
+
+    if not is_roster_capped(key):
+        return None
+    peak = _roster_peak(df, key, area)
+    if peak is None:
+        return None
+    sundays = max(1, int(round(float(weeks or 0))))
+    return max(1, int(peak * sundays))
 
 
 def _goalable_weekly_keys(metric_defs: list) -> list:
@@ -2745,19 +2834,61 @@ def get_recommended_transfer_goals(area: str, weeks: float) -> dict:
     than ported.
 
     EVERY metric gets at least 1, even with no recorded history for that area
-    (a newly-assigned one), so a REC badge shows on every box.
+    (a newly-assigned one), so a REC badge shows on every box. **That floor is
+    applied once, to the cycle total** — it is not a weekly 1 multiplied up.
+
+    Scaling the weekly MEAN rather than the weekly REC is the whole point of
+    `_stretch_means` existing (Zackary, 2026-09-05). Taking the badge figure
+    instead compounded two roundings and produced targets nobody would set:
+
+      * `ki_baptized_confirmed_real` at Los Huertos — 0, 0, 0 across every week
+        it has reported. The weekly badge floors that to 1 because a badge
+        reading 0 is not useful, and six weeks of that floor recommended
+        **baptizing six people** to an area that has baptized none. It now
+        recommends 1: the floor, applied to the cycle, once.
+      * `ki_rc_at_church_real` at the same area — a flat 2 a week. ceil(2 x 1.1)
+        = 3, times six weeks, recommended **18**; the honest stretch on 2 a week
+        over six weeks is ceil(2 x 1.1 x 6) = **14**.
+
+    The rule is the same one the weekly badge follows — the area's own average,
+    plus the nudge — asked at the cadence the number is actually shown at.
+
+    A ROSTER-CAPPED metric is then clamped to `roster_ceiling()`: a stretch is
+    the wrong operator for a number bounded by how many people exist. Los
+    Huertos has two recent converts and reported both at church every week, so
+    the stretch asked for 14 where six Sundays can only ever produce 12
+    (Zackary, 2026-09-06). Mission-wide the clamp fired on 9 of 41 areas, every
+    one of them already at perfect attendance.
     """
     metric_defs = get_question_metrics()
     nightly_keys = [k for k, _, f in metric_defs if f == "NIGHTLY"]
     weekly_keys = _goalable_weekly_keys(metric_defs)
 
+    nightly_df, weekly_df = get_weekly_ki(), get_weekly_form_data()
+
     weekly: dict = {}
-    weekly.update(_stretch_recommendation(get_weekly_ki(), nightly_keys, area))
-    weekly.update(_stretch_recommendation(get_weekly_form_data(), weekly_keys, area))
+    weekly.update(_stretch_means(nightly_df, nightly_keys, area))
+    weekly.update(_stretch_means(weekly_df, weekly_keys, area))
 
     scale = max(1.0, float(weeks or 0))
-    return {k: max(1, math.ceil(weekly.get(k, 0) * scale))
-            for k in nightly_keys + weekly_keys}
+    out = {k: max(1, math.ceil(weekly.get(k, 0) * scale))
+           for k in nightly_keys + weekly_keys}
+
+    # A roster-capped metric cannot be stretched past what its roster makes
+    # possible, so the ceiling wins over the stretch wherever the two disagree.
+    # Only where they disagree: an area with slack keeps its stretch, and the
+    # clamp fires exactly on the areas already at perfect attendance.
+    #
+    # `get_recommended_goals` and `get_mission_recommended_goals` are NOT
+    # clamped, because nothing renders a box for a roster-capped metric at
+    # weekly cadence — the Metas page's weekly section draws `nightly_defs`
+    # only. A caller that starts showing one should clamp it here too.
+    for key in list(out):
+        ceiling = roster_ceiling(
+            weekly_df if key in weekly_keys else nightly_df, key, area, weeks)
+        if ceiling is not None:
+            out[key] = min(out[key], ceiling)
+    return out
 
 
 @st.cache_data(ttl=300)
