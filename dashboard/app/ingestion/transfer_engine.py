@@ -106,6 +106,44 @@ def parse_roster(import_rows: list[dict]) -> list[dict]:
     return out
 
 
+def filter_roster_to_zones(roster_rows: list[dict],
+                           zones) -> tuple[list[dict], list[str]]:
+    """`roster_rows` cut to `zones`, plus any configured zone that matched nothing.
+
+    CCSM does not run PMG Compass mission-wide. Since 2026-08-19 it has been a
+    pilot in four zones — Angol, Los Angeles Norte, San Pedro, Temuco Nielol —
+    while the other six stay `Active=FALSE` in MISSION_ORG. The IMOS roster is
+    always the WHOLE mission (97 areas, 11 zones on the 2026-08-09 pull), and
+    `apply_transfer` sets `Active="TRUE"` for every area it finds in the roster,
+    so applying an unfiltered pull silently reactivates the entire mission and
+    the next form sync puts all eleven zones back in the dropdowns.
+
+    Filtering here rather than by hand-deleting rows from TRANSFER_IMPORT means
+    a new area OPENED in a pilot zone this transfer still arrives — which is the
+    whole point, and the thing hand-trimming a 97-row tab every six weeks gets
+    wrong.
+
+    An empty/missing `zones` returns the roster unchanged: no configuration means
+    the whole mission, so this is inert for a mission that never pilots.
+
+    The second return value is the configured zones that matched NO roster row.
+    That is almost always a spelling drift rather than a zone with no areas —
+    "Los Angeles Norte" against the export's "Los Ángeles Norte" would quietly
+    drop eleven real areas, and since they are active in MISSION_ORG and absent
+    from the filtered roster, `apply_transfer` would DEACTIVATE all eleven. The
+    caller is expected to refuse rather than proceed on a non-empty list.
+    """
+    wanted = {str(z).strip().casefold() for z in (zones or []) if str(z).strip()}
+    if not wanted:
+        return list(roster_rows), []
+    kept = [r for r in roster_rows
+            if str(r.get("Zone", "")).strip().casefold() in wanted]
+    seen = {str(r.get("Zone", "")).strip().casefold() for r in roster_rows}
+    unknown = sorted(z for z in (zones or [])
+                     if str(z).strip() and str(z).strip().casefold() not in seen)
+    return kept, unknown
+
+
 def _roster_map(roster_rows: list[dict]) -> dict:
     return {r["Area_Name"].lower().strip(): r for r in roster_rows}
 

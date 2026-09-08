@@ -2387,6 +2387,26 @@ ES: dict[str, str] = {
 
     # ── 12_Traslados.py — Apply a Transfer (added 2026-08-05) ────────────────
     "Apply a Transfer": "Aplicar un Traslado",
+
+    # Pilot-zone scoping (added 2026-09-08) — see
+    # transfer_engine.filter_roster_to_zones.
+    "Scoped to {count} pilot zone(s): {zones}. Areas in every other zone are "
+    "left exactly as they are — including the ones already inactive. Set "
+    "AGENT_CONFIG's PILOT_ZONES to change this; clear it to go mission-wide.":
+        "Limitado a {count} zona(s) piloto: {zones}. Las áreas de todas las "
+        "demás zonas quedan exactamente como están — incluidas las que ya "
+        "están inactivas. Cambie PILOT_ZONES en AGENT_CONFIG para modificar "
+        "esto; bórrelo para abarcar toda la misión.",
+    "PILOT_ZONES is not set, so Apply covers the WHOLE mission — every area "
+    "in the roster is activated.":
+        "PILOT_ZONES no está configurado, así que Aplicar abarca TODA la "
+        "misión — se activa cada área de la organización.",
+    "PILOT_ZONES names zone(s) that appear nowhere in TRANSFER_IMPORT: "
+    "{zones}. Fix the spelling to match the roster's own Zone column — "
+    "applying now would deactivate every area in them.":
+        "PILOT_ZONES nombra zona(s) que no aparecen en TRANSFER_IMPORT: "
+        "{zones}. Corrija la ortografía para que coincida con la columna Zone "
+        "de la organización — aplicar ahora desactivaría todas sus áreas.",
     "Applying a transfer is available to mission leadership only.":
         "Aplicar un traslado está disponible solo para el liderazgo de la misión.",
     "Pull the current roster from IMOS, preview what would change in "

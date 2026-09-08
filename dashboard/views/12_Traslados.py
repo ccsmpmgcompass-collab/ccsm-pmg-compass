@@ -290,6 +290,25 @@ def _render_roster_tab() -> None:
           "this after Apply.")
     )
 
+    # The pilot filter decides what Apply will touch, so it is stated BEFORE the
+    # buttons rather than discovered afterwards in the diff. A mission with no
+    # PILOT_ZONES set says so explicitly too — "whole mission" is a fact worth
+    # reading before clicking Apply, not an absence of one.
+    _zones = tas.pilot_zones()
+    if _zones:
+        st.caption(
+            t("Scoped to {count} pilot zone(s): {zones}. Areas in every other "
+              "zone are left exactly as they are — including the ones already "
+              "inactive. Set AGENT_CONFIG's PILOT_ZONES to change this; clear "
+              "it to go mission-wide.",
+              count=fmt_int(len(_zones)), zones=", ".join(_zones))
+        )
+    else:
+        st.caption(
+            t("PILOT_ZONES is not set, so Apply covers the WHOLE mission — "
+              "every area in the roster is activated.")
+        )
+
     import_rows = sc.read_values("TRANSFER_IMPORT")
     if len(import_rows) <= 1:
         st.info(
@@ -327,6 +346,17 @@ def _render_roster_tab() -> None:
             t("{roster} roster rows vs {org} MISSION_ORG rows.",
               roster=fmt_int(preview["roster_count"]), org=fmt_int(preview["org_count"]))
         )
+        # A configured zone matching no roster row is a spelling drift, and
+        # every area in it would be deactivated. apply() refuses outright; the
+        # preview has to say so before the user reaches for the override.
+        if preview.get("unknown_zones"):
+            st.error(
+                t("PILOT_ZONES names zone(s) that appear nowhere in "
+                  "TRANSFER_IMPORT: {zones}. Fix the spelling to match the "
+                  "roster's own Zone column — applying now would deactivate "
+                  "every area in them.",
+                  zones=", ".join(preview["unknown_zones"]))
+            )
         if not guard["ok"]:
             st.error(guard["msg"])
         for label, key in [(t("New areas"), "added"), (t("Deactivating"), "deactivated"),
