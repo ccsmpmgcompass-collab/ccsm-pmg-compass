@@ -223,7 +223,7 @@ Ordering matters: the roster must be right before goals are set against it, and
 > instead, then repair the two cells by hand (Step 5.1 + 5.2). The *only* thing
 > you must not do is click **2 · Apply** with the current code, because of §1a.
 
-### Step 2 — Pull a fresh roster
+### Step 2 — Pull a fresh roster — **DONE 2026-09-08**
 
 2.1 Traslados → **Roster Update** → **0 · Pull roster from IMOS (cloud)**.
     Wait for the success message.
@@ -235,7 +235,7 @@ MISSION_ORG.
 **Acceptance:** `CLOUD_JOB_STATUS` gains a `transfer_pull` row with
 `status=SUCCESS`; the page's caption reports the new row count.
 
-### Step 3 — Preview, then apply
+### Step 3 — Preview, then apply — **DONE 2026-09-08** (see §3.6)
 
 3.1 **1 · Preview.** Read all four groups: New / Deactivating / Changed /
     Reactivating.
@@ -257,7 +257,7 @@ MISSION_ORG.
 `MISSION_ORG` active count matches what Preview said; `MISSION_ORG_SNAPSHOT`
 holds the pre-apply grid (written before any mutation — this is your undo).
 
-### Step 4 — Sync the form dropdowns
+### Step 4 — Sync the form dropdowns — **DONE 2026-09-08, via the workaround below**
 
 4.1 Traslados → **3 · Sync nightly + weekly form dropdowns**.
 
@@ -303,10 +303,24 @@ both to **Manage app → Settings → Secrets** on Streamlit Cloud as
       zone question was renamed; the finder at
       `CCSM_TransferHelpers.gs:cct_readFormStructure_` matches on the title.
 
-**Acceptance:** `TRANSFER_LOG` shows `nightly form sync complete. N zones
-verified.` and the same for weekly, where **N must be 4**. If it says 11, the
-pilot filter did not apply — stop and check `PILOT_ZONES` before letting the
-forms go out.
+**Acceptance — MET 2026-09-08.** Both forms returned `4 zones verified`, and
+the live forms were then parsed directly (`FB_PUBLIC_LOAD_DATA_`) rather than
+trusted on that message alone:
+
+| | Nightly | Weekly |
+|---|---|---|
+| Zone dropdown | the 4 pilot zones | the 4 pilot zones |
+| Area choices | 45 | 45 |
+| All 7 new areas selectable | yes | yes |
+| 5 renamed areas gone | yes | yes |
+
+45 matches MISSION_ORG's 45 active areas exactly. Two false alarms are worth
+recording so the next person does not chase them: `&` is escaped in the form
+payload, so a plain substring search for "Huepil & Tucapel" fails; and the six
+non-pilot zone names DO appear in the HTML, as leftover empty page-break
+sections whose area list reads `(No active areas)` — form sync updates and adds
+sections but never deletes them. Neither is selectable, because
+`cct_repairFormRouting_` rebuilds the zone dropdown from scratch.
 
 ### Step 5 — Set the transfer window straight — **DONE 2026-09-08**
 
