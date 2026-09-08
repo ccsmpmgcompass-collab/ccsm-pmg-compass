@@ -342,6 +342,57 @@ the empty-state notice.
 
 ---
 
+## §3.6 — What the real Preview turned up (2026-09-08), and the four things it leaves open
+
+The pull ran and the diff was read: **7 new areas, 5 deactivating, 38 changed,
+0 reactivating** — the pilot filter held. All five "deactivations" are renames
+or splits, not closures, and they map cleanly onto the seven new areas:
+
+| Closing | Becomes |
+|---|---|
+| Collipulli | Collipulli 1 + Collipulli 2 |
+| Villa Obispo | Villa Obispo 1 + Villa Obispo 2 |
+| Huepil & Tucapel & Villa Obispo | Huepil & Tucapel |
+| Los Sauces | Purén y Los Sauces |
+| Galvarino | Galvarino 1 |
+
+Net **43 → 45 active areas**. The guard did not fire (5 of 43 = 12%, under the
+30% threshold).
+
+**F1 — The 7 new areas have no email, and will silently stop reporting.**
+`apply_transfer` preserves existing email columns but creates new areas with
+blank ones, and `CCSM_AgentReminder.gs:584` sends only to `Companion1_Email` /
+`Companion2_Email`. Until those seven are filled in on MISSION_ORG they get no
+nightly reminder — and the failure is invisible, because an area that is never
+asked simply never appears in the missing-report counts as a *drop*. **This is
+the highest-value follow-up on this page.**
+
+**F2 — Renamed areas start from zero history.** DAILY_LOG and WEEKLY_KI are
+keyed by area NAME, so Collipulli's record stays under "Collipulli" while
+"Collipulli 1" begins empty. Nothing is lost and nothing carries forward.
+Consequences: the seven get **no REC badge** on Metas (the recommendation
+averages completed weekly history), their goal boxes must be set by judgment,
+and any transfer-over-transfer comparison for them starts fresh. Worth deciding
+one day whether a rename should carry its predecessor's history — there is no
+`AREA_LINEAGE` tab on this sheet, which is exactly what one would be for.
+
+**F3 — Four-person companionships lose two names.** La Marina 1 (Phillips,
+Egbers, Heath, Blood) and Los Huertos (Butterfield, Laiton, Monroe) arrive with
+Companion3/Companion4 populated, but MISSION_ORG has only two companion columns,
+so `rows_to_grid`'s headers-driven merge drops slots 3 and 4. Reporting is
+unaffected — reminders go to slots 1 and 2 and the form is answered per AREA —
+but those missionaries are invisible in the roster view and in any headcount
+taken from MISSION_ORG. Adding `Companion3_Name`/`Companion4_Name` columns to
+the tab would fix it; `_ROSTER_COPY_COLS` already carries them.
+
+**F4 — The AP seat is filled by hand, every transfer.** Presley Egbers moved
+into La Marina 1 (the `Is_AP` area) replacing Hyrum Turner, and was added to
+`_ALWAYS_ALLOWED` on 2026-09-08. This will recur: MISSION_ORG's `Is_AP` row
+carries the shared mailbox `500407562@missionary.org` for every companion in it,
+never the personal address an assistant signs in with, so **every transfer that
+changes an assistant locks the new one out until someone edits `auth.py`.** The
+durable fix is §4.2 — put the real sign-in addresses in MISSION_ORG.
+
 ## §4 — Housekeeping this transfer surfaces
 
 **4.1 — AP1's access. HALF DONE 2026-09-08 (`19f21df`).** Zackary confirmed
@@ -387,5 +438,7 @@ likely. Worth a second look next Sunday before reading anything into it.
 5. ~~`TRANSFER_START_DATE` → `2026-09-07`; `2026-6` → `Actual`~~ — done.
 6. Run `runAgent2` once, manually, in Apps Script.
 7. Set the 2026-6 goals on Metas.
-8. ~~Check whether AP1 has gone home~~ — he did; add the NEW AP's personal
-   address to `_ALWAYS_ALLOWED` once the pull names him (§4.1).
+8. ~~Check whether AP1 has gone home~~ — he did; ~~add the new AP~~ Presley
+   Egbers added 2026-09-08.
+9. **Fill in `Companion1_Email` for the 7 new areas** — §3.6 F1, the one that
+   silently stops them reporting.
