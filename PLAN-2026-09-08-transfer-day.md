@@ -486,7 +486,7 @@ likely. Worth a second look next Sunday before reading anything into it.
 
 ---
 
-## §6 — A generic goal for an area with no history (open, 2026-09-08)
+## §6 — A generic goal for an area with no history — **BUILT 2026-09-08**
 
 Raised by Zackary while setting the 2026-6 goals: *"Is there a way to just have
 them stay with a generic number until they have data gathered?"*
@@ -524,10 +524,36 @@ of the floor of 1. Rationale, and why this shape:
   (`ki_baptized_confirmed_real`, `ki_friends_first_week_real`), which is what it
   was always for.
 
-Touches `get_recommended_transfer_goals` / `_stretch_means` in
-`app/db/queries.py` and the pill in `views/02_Metas.py`. **Not built — awaiting
-Zackary's call.** Interim: set the seven new areas by hand from the cycle column
-above.
+**Built and approved 2026-09-08** ("when an area doesn't have history fall back
+to the zone's median is a good idea"). `queries._peer_means` supplies the
+baseline, `get_recommended_transfer_goals` fills only the keys the area itself
+has nothing for, and `queries.transfer_rec_basis` reports `own` / `zone` /
+`mission` per key. Verified against the live sheet: Collipulli 1 now recommends
+53 new people (Angol) and Villa Obispo 2 recommends 44 (Los Angeles Norte),
+where both read 1 that morning; Alemania 2 and Vilcun are untouched at 60 and
+82. Eight tests in `dashboard/tests/test_new_area_peer_baseline.py`.
+
+**The notice went above the grid, not into the REC pills.** The pills are
+absolutely positioned over their number_inputs and the grid holds alignment only
+because every label is clamped to a fixed two-line height — widening seven pills
+to carry a "· zona" suffix is precisely the change that breaks it (the layout
+invariant recorded after the July work). It would also be seven copies of one
+fact: an area with no history has none for ANY indicator, so the notice is
+all-or-nothing in practice, and it names the zone the figure came from.
+
+One existing test moved: `test_an_area_with_no_history_has_no_ceiling` asserted
+`== 1`, which was the floor this change replaces. Its real guard — that
+`roster_ceiling` answers None rather than 0 for an unseen area, so nothing
+clamps a new area to nothing — is intact and now asserted as `>= 1` rather than
+pinned to whichever baseline the recommendation happens to use.
+
+**Also seeded, 2026-09-08:** the seven new areas' 2026-6 rows were written
+straight into `AREA_TRANSFER_GOALS` from their zone medians (Angol 55 / Los
+Angeles Norte 39 new people, and so on), so the cycle has goals now rather than
+after someone opens the page. Those seeded numbers differ by a point or two from
+what the REC now shows, because the shipped code excludes the in-progress week
+and the area itself from the peer group. Either is defensible; the REC pill will
+overwrite them if leadership prefers it.
 
 ## §5 — The short version
 

@@ -2663,6 +2663,120 @@ def _stretch_means(df: pd.DataFrame, keys: list, area: str | None) -> dict:
     return out
 
 
+def area_zone(area: str) -> str:
+    """`area`'s zone per MISSION_ORG, or "" when it is not on the roster.
+
+    Public because views/02_Metas.py names the zone in the notice it shows when
+    a REC is borrowed from it — a borrowed number has to say where it came
+    from, and "the median area in Angol" is the part that makes it honest.
+    """
+    try:
+        org = get_areas_df()
+    except Exception:
+        return ""
+    if org.empty or "Area_Name" not in org.columns or "Zone" not in org.columns:
+        return ""
+    hit = org[org["Area_Name"].astype(str).str.strip() == str(area).strip()]
+    return "" if hit.empty else str(hit.iloc[0]["Zone"]).strip()
+
+
+def _peer_means(df: pd.DataFrame, keys: list, area: str) -> tuple[dict, str]:
+    """A typical area's weekly average per key, for an area with no history.
+
+    Returns ``({key: weekly_mean}, basis)`` where basis is ``"zone"`` or
+    ``"mission"``. Only the keys the peer group has any data for appear.
+
+    Why this exists
+    ───────────────
+    `_stretch_means` returns nothing for an area with no rows, and
+    `get_recommended_transfer_goals` then floors every metric to 1. That floor
+    is right for a metric an established area genuinely scores zero on — it
+    keeps a badge from reading 0 — but for a BRAND NEW area it is not a
+    recommendation at all, and it looks like one. The 2026-09-07 transfer opened
+    seven areas; every Key Indicator recommended 1 for each of them, where
+    Alemania 2 was recommended 60 new people and Vilcun 82. Bulk-applying that
+    would have set each new area a six-week goal of finding one person, and
+    their goal bars would have read as triumphant all cycle (Zackary,
+    2026-09-08: "have them stay with a generic number until they have data").
+
+    Why the ZONE, and why the MEDIAN
+    ────────────────────────────────
+    Zone first because the zones are not alike — measured 2026-09-08, the median
+    Angol area found 9.2 new people a week against Los Angeles Norte's 6.5, so a
+    mission-wide figure would set both wrong. Mission-wide is the fallback for a
+    zone whose areas have no history either.
+
+    Median of each area's own weekly mean, not the mean of them: with
+    `ki_friends_sacrament_real` the mission mean is 1.63 against a median of
+    1.00, so a handful of strong areas would otherwise set everyone's baseline.
+
+    Why NO stretch factor
+    ─────────────────────
+    `_stretch_means` adds the +10% nudge because it is asking an area to beat
+    its OWN average. Nudging a borrowed figure would ask a brand-new area to
+    beat the typical area in its zone by 10% in its first cycle, which is a
+    different and harsher thing to ask. The peer median is already the target.
+    """
+    if df.empty or "area" not in df.columns:
+        return {}, "mission"
+
+    sub = exclude_current_week(df) if "week_end_date" in df.columns else df
+    cols = [k for k in keys if k in sub.columns]
+    if sub.empty or not cols:
+        return {}, "mission"
+
+    # Each area's own weekly mean, then the median across areas.
+    per_area = sub.copy()
+    for k in cols:
+        per_area[k] = pd.to_numeric(per_area[k], errors="coerce")
+    means = per_area.groupby(per_area["area"].astype(str).str.strip())[cols].mean()
+    means = means.drop(index=str(area).strip(), errors="ignore")
+    if means.empty:
+        return {}, "mission"
+
+    zone = area_zone(area)
+    basis = "mission"
+    if zone and "zone" in sub.columns:
+        in_zone = (sub.assign(_a=sub["area"].astype(str).str.strip())
+                      .loc[sub["zone"].astype(str).str.strip() == zone, "_a"].unique())
+        peers = means.loc[means.index.isin(in_zone)]
+        if not peers.empty:
+            means, basis = peers, "zone"
+
+    out = {k: float(means[k].median()) for k in cols
+           if not means[k].dropna().empty}
+    return out, basis
+
+
+def transfer_rec_basis(area: str, weeks: float) -> dict:
+    """``{key: "own" | "zone" | "mission"}`` — where each key's REC came from.
+
+    The page labels a borrowed number so leadership never reads a zone figure as
+    this area's own measured performance. Kept separate from
+    `get_recommended_transfer_goals` so that function's return shape (and every
+    caller and test of it) is unchanged.
+    """
+    metric_defs = get_question_metrics()
+    nightly_keys = _goalable_nightly_keys(metric_defs)
+    weekly_keys = _goalable_weekly_keys(metric_defs)
+    nightly_df, weekly_df = get_weekly_ki(), get_weekly_form_data()
+
+    own = {}
+    own.update(_stretch_means(nightly_df, nightly_keys, area))
+    own.update(_stretch_means(weekly_df, weekly_keys, area))
+
+    _, n_basis = _peer_means(nightly_df, nightly_keys, area)
+    _, w_basis = _peer_means(weekly_df, weekly_keys, area)
+
+    out = {}
+    for k in nightly_keys + weekly_keys:
+        if k in own:
+            out[k] = "own"
+        else:
+            out[k] = w_basis if k in weekly_keys else n_basis
+    return out
+
+
 def _stretch_recommendation(df: pd.DataFrame, keys: list, area: str | None) -> dict:
     """One WEEKLY REC value per key: _stretch_means() rounded up, floored at 1.
 
@@ -2892,6 +3006,18 @@ def get_recommended_transfer_goals(area: str, weeks: float) -> dict:
     weekly: dict = {}
     weekly.update(_stretch_means(nightly_df, nightly_keys, area))
     weekly.update(_stretch_means(weekly_df, weekly_keys, area))
+
+    # An area with no history of its own borrows its ZONE's typical area rather
+    # than falling through to the floor of 1 below — see _peer_means for why
+    # that floor is the wrong answer for a newly opened area. Only keys the area
+    # itself has nothing for are filled; a key it HAS reported always wins.
+    if area is not None:
+        for src_df, src_keys in ((nightly_df, nightly_keys), (weekly_df, weekly_keys)):
+            missing = [k for k in src_keys if k not in weekly]
+            if not missing:
+                continue
+            peers, _ = _peer_means(src_df, missing, area)
+            weekly.update(peers)
 
     scale = max(1.0, float(weeks or 0))
     out = {k: max(1, math.ceil(weekly.get(k, 0) * scale))

@@ -2548,6 +2548,22 @@ ES: dict[str, str] = {
     "the mission's cycles on the Traslados page.":
         "TRANSFER_SCHEDULE no tiene cambios, así que no hay nada que resumir. "
         "Agregue los cambios de la misión en la página Traslados.",
+    # A REC borrowed from the area's zone must say so — see
+    # queries._peer_means and views/02_Metas.py (added 2026-09-08).
+    "**{area} has no reporting history yet**, so REC below is not this area's "
+    "own figure — it is the median area in {zone}, over this cambio. It becomes "
+    "the area's own number as soon as it files one weekly report.":
+        "**{area} aún no tiene historial de informes**, así que el REC de abajo "
+        "no es la cifra propia de esta área — es la mediana de las áreas de "
+        "{zone}, para este cambio. Pasará a ser su propia cifra en cuanto "
+        "entregue un informe semanal.",
+    "**{area} has no reporting history yet**, and neither does its zone, so REC "
+    "below is the median area across the mission over this cambio. It becomes "
+    "the area's own number as soon as it files one weekly report.":
+        "**{area} aún no tiene historial de informes**, y su zona tampoco, así "
+        "que el REC de abajo es la mediana de las áreas de toda la misión para "
+        "este cambio. Pasará a ser su propia cifra en cuanto entregue un "
+        "informe semanal.",
     "Key indicators for **{cycle}** — {weeks} weeks. REC is a light stretch "
     "goal, about {pct}% above this area's own typical weekly performance, "
     "times this cambio's real length. Any indicator with an expectation saved "

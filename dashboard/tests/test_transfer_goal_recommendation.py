@@ -254,10 +254,19 @@ def test_a_metric_that_is_not_roster_capped_has_no_ceiling(live):
 
 
 def test_an_area_with_no_history_has_no_ceiling(live):
-    """No evidence of a roster is not evidence of an empty one — a new area
-    falls back to the ordinary floor rather than being capped at nothing."""
+    """No evidence of a roster is not evidence of an empty one — a new area is
+    never capped at nothing.
+
+    The VALUE this returns changed on 2026-09-08: it used to be the floor of 1,
+    and is now borrowed from the area's peers (see
+    tests/test_new_area_peer_baseline.py). What this test guards is unchanged
+    and is the reason it exists — `roster_ceiling` must answer None rather than
+    0 for an area it has never seen, so nothing clamps a new area down to
+    nothing. Asserting `>= 1` rather than a number keeps that guard honest
+    without pinning it to whichever baseline the recommendation currently uses.
+    """
     assert q.roster_ceiling(WEEKLY.copy(), RC, "Nueva Área", 6.0) is None
-    assert _rec(area="Nueva Área")[RC] == 1
+    assert _rec(area="Nueva Área")[RC] >= 1
 
 
 # ── metrics a goal cannot apply to ───────────────────────────────────────────

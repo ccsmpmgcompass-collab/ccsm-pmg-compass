@@ -75,6 +75,8 @@ from app.db.queries import (
     delete_area_goals,
     get_recommended_goals,
     get_recommended_transfer_goals,
+    transfer_rec_basis,
+    area_zone,
     get_mission_recommended_goals,
     get_mission_transfer_expectation_total,
     get_area_weekly_expectation,
@@ -1400,6 +1402,38 @@ if selected_section == "Area Goal Customization":
               cycle=_tg_label, weeks=fmt_number(_tg_weeks, 0) if _tg_weeks == int(_tg_weeks) else fmt_number(_tg_weeks, 1),
               pct=get_rec_stretch_pct())
         )
+
+        # A brand-new area has no weekly history, so every REC above would
+        # otherwise be the floor of 1 — which reads as a recommendation rather
+        # than as the absence of one. get_recommended_transfer_goals now borrows
+        # the area's ZONE median instead, and that has to be said out loud: a
+        # borrowed figure must never be mistaken for this area's own measured
+        # performance.
+        #
+        # Said once, above the grid, rather than in each REC pill. The pills are
+        # absolutely positioned over their number_inputs and the grid only holds
+        # its alignment because every label is clamped to a fixed two-line
+        # height (see the st-key-recbtn_ CSS) — widening seven pills to carry a
+        # "· zona" suffix is exactly the change that breaks it. And it would be
+        # seven copies of one fact: an area with no history has none for ANY
+        # indicator, so the notice is always all-or-nothing in practice.
+        _tg_basis = transfer_rec_basis(selected_area, _tg_weeks)
+        _borrowed = sorted({_tg_basis.get(_k) for _k, _l, _f in transfer_ki_defs
+                            if _tg_basis.get(_k) in ("zone", "mission")})
+        if _borrowed:
+            _zone_name = str(area_zone(selected_area) or "").strip()
+            if "zone" in _borrowed and _zone_name:
+                st.info(t("**{area} has no reporting history yet**, so REC below "
+                          "is not this area's own figure — it is the median area "
+                          "in {zone}, over this cambio. It becomes the area's own "
+                          "number as soon as it files one weekly report.",
+                          area=selected_area, zone=_zone_name))
+            else:
+                st.info(t("**{area} has no reporting history yet**, and neither "
+                          "does its zone, so REC below is the median area across "
+                          "the mission over this cambio. It becomes the area's "
+                          "own number as soon as it files one weekly report.",
+                          area=selected_area))
 
         def _apply_all_transfer_rec(area: str, recommended: dict, defs: list) -> None:
             """on_click callback: fill every transfer-goal input with its
