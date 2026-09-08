@@ -208,7 +208,8 @@ Ordering matters: the roster must be right before goals are set against it, and
 1.2 ~~Run the suite~~ **done** — 977 passing, **13 failing**, exactly the
     documented baseline and the same test names.
 1.3 ~~Commit, push~~ **done** — `4458616`, `805ca79`, `19f21df` on `main`.
-1.4 **Reboot the Streamlit app.** ← *the only part left, and it is Zackary's.*
+1.4 **Reboot the Streamlit app** — https://ccsm-pmg-compass-dvqpedw6bqixxscth8zapn.streamlit.app/
+    (Manage app → ⋮ → Reboot). ← *the only part left, and it is Zackary's.*
 1.5 ~~Set `AGENT_CONFIG.PILOT_ZONES`~~ **done 2026-09-08** —
     `Angol, Los Angeles Norte, San Pedro, Temuco Ñielol`, derived from
     MISSION_ORG's own active zones and checked against TRANSFER_IMPORT's
