@@ -207,11 +207,12 @@ Ordering matters: the roster must be right before goals are set against it, and
     `dashboard/tests/test_transfer_apply_cycle.py`.
 1.2 ~~Run the suite~~ **done** — 977 passing, **13 failing**, exactly the
     documented baseline and the same test names.
-1.3 Commit, push. ← *next*
-1.4 **Reboot the Streamlit app.** Non-negotiable — see the deploy note in §1d.
-1.5 Set `AGENT_CONFIG.PILOT_ZONES` (§3, Step 1.5 below). **Until this key
-    exists the new code behaves exactly as before — mission-wide — so the push
-    is safe on its own and the pilot only takes effect once the key is set.**
+1.3 ~~Commit, push~~ **done** — `4458616`, `805ca79`, `19f21df` on `main`.
+1.4 **Reboot the Streamlit app.** ← *the only part left, and it is Zackary's.*
+1.5 ~~Set `AGENT_CONFIG.PILOT_ZONES`~~ **done 2026-09-08** —
+    `Angol, Los Angeles Norte, San Pedro, Temuco Ñielol`, derived from
+    MISSION_ORG's own active zones and checked against TRANSFER_IMPORT's
+    spelling rather than typed by hand.
 
 **Acceptance:** Traslados loads; the Roster Update tab's first caption reads
 "Scoped to 4 pilot zone(s): Angol, Los Angeles Norte, San Pedro, Temuco
@@ -279,15 +280,19 @@ verified.` and the same for weekly, where **N must be 4**. If it says 11, the
 pilot filter did not apply — stop and check `PILOT_ZONES` before letting the
 forms go out.
 
-### Step 5 — Set the transfer window straight
+### Step 5 — Set the transfer window straight — **DONE 2026-09-08**
 
-Skip 5.1/5.2 if Step 1 landed and Apply did them for you — but **verify them
-anyway**, they are two cells.
+Done ahead of the roster steps rather than after them, because §0.1 was wrong on
+the live app every minute it stood. Both writes are idempotent, so the Apply in
+Step 3 re-confirming them changes nothing.
 
-5.1 `AGENT_CONFIG.TRANSFER_START_DATE` → **`2026-09-07`** (currently
-    `2026-07-27`).
-5.2 `TRANSFER_SCHEDULE` row `2026-6` → Status **`Actual`** (currently
-    `Scheduled`).
+5.1 ~~`AGENT_CONFIG.TRANSFER_START_DATE`~~ **`2026-07-27` → `2026-09-07`**.
+5.2 ~~`TRANSFER_SCHEDULE` row `2026-6` Status~~ **`Scheduled` → `Actual`**
+    (Start_Date untouched).
+
+Verified after the write: current cycle resolves to **2026-6, 2026-09-07 →
+2026-10-18, week 1 of 6**; no junk row on the tab; schedule still covers two
+cycles ahead.
 
 On 5.2: `transfer_window()` does not read Status
 (`transfer_helpers.py:13-17`), so nothing on the dashboard changes today. It
@@ -338,11 +343,13 @@ the empty-state notice.
 
 ## §4 — Housekeeping this transfer surfaces
 
-**4.1 — AP1's access.** `app/auth/auth.py:44` carries
-`hyrum.turner@missionary.org` with the note *"TODO: remove ~mid-Sept 2026, goes
-home in 6 weeks (as of 2026-07-31)"*. Six weeks from 07-31 is 2026-09-11 —
-**this transfer**. If he has gone home, remove him and add the incoming
-assistant, or the new AP cannot open the goals or roster pages at all.
+**4.1 — AP1's access. HALF DONE 2026-09-08 (`19f21df`).** Zackary confirmed
+Hyrum Turner went home this transfer; his address is out of `_ALWAYS_ALLOWED`
+and `_GOAL_SETTERS`. **The incoming AP is still locked out** and cannot be added
+from the roster: MISSION_ORG's one `Is_AP` row carries the shared mailbox
+`500407562@missionary.org` for *both* companions, never the
+`firstname.lastname@missionary.org` address an AP actually signs in with. Once
+the Step 2 pull names him, that address goes on the line the comment marks.
 
 **4.2 — MISSION_ORG still carries no leadership sign-in addresses.** Probed
 again today: no row is flagged `Is_MP`, and the only `Is_AP=TRUE` row holds a
@@ -371,12 +378,13 @@ likely. Worth a second look next Sunday before reading anything into it.
 
 ## §5 — The short version
 
-1. ~~Fix the two Apply defects (§1)~~ — done; push, **reboot**, then set
-   `PILOT_ZONES`.
+1. ~~Fix the two Apply defects (§1), push, set `PILOT_ZONES`, fix the transfer
+   window, drop the departed AP1~~ — **all done 2026-09-08**. **Reboot the app.**
 2. Pull a fresh roster — the one on the sheet is from 2026-08-09.
 3. Decide §2 (4 zones or 11), preview, apply, fill in new-area emails.
 4. Sync the form dropdowns **from the deployed app**; confirm the zone count.
-5. `TRANSFER_START_DATE` → `2026-09-07`; `2026-6` → `Actual`.
+5. ~~`TRANSFER_START_DATE` → `2026-09-07`; `2026-6` → `Actual`~~ — done.
 6. Run `runAgent2` once, manually, in Apps Script.
 7. Set the 2026-6 goals on Metas.
-8. Check whether AP1 has gone home (§4.1).
+8. ~~Check whether AP1 has gone home~~ — he did; add the NEW AP's personal
+   address to `_ALWAYS_ALLOWED` once the pull names him (§4.1).
