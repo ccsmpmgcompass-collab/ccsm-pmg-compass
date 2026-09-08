@@ -41,15 +41,16 @@ _ALWAYS_ALLOWED = {
     # a different address is invisible to get_allowed_emails() and must be
     # listed here by hand.
     "zackary.butterfield@missionary.org",   # Los Huertos, San Pedro zone
-    "anderson.phillips@missionary.org",     # AP2
-    # AP1 seat is EMPTY. Hyrum Turner went home in the 2026-09-07 transfer and
-    # was removed 2026-09-08; his replacement is not listed yet because the
-    # roster cannot supply the address he will sign in with. MISSION_ORG stores
-    # only the shared missionary-ID mailbox (its one Is_AP row carries
-    # 500407562@missionary.org for BOTH companions), so the incoming AP is
-    # invisible to get_allowed_emails() and CANNOT open the goals or roster
-    # pages until his personal address is added on the line above — the same
-    # firstname.lastname@missionary.org shape as the others here.
+    "anderson.phillips@missionary.org",     # AP2 (AP1 from the 2026-09-07 transfer)
+    "presley.egbers@missionary.org",        # AP — moved into La Marina 1 on 2026-09-07,
+                                            # replacing Hyrum Turner, who went home.
+    # Hyrum Turner was removed 2026-09-08. Note WHY these have to be listed by
+    # hand: MISSION_ORG cannot supply the address an AP signs in with — its one
+    # Is_AP row (La Marina 1) carries the shared missionary-ID mailbox
+    # 500407562@missionary.org for every companion in it — so a new AP is
+    # invisible to get_allowed_emails() and cannot open the goals or roster
+    # pages until his personal firstname.lastname@missionary.org address is
+    # added above. Do this every transfer that changes an assistant.
 
     # Mission President — MISSION_ORG has no churchofjesuschrist.org
     # addresses at all, so the sheet grants him nothing on its own (see
