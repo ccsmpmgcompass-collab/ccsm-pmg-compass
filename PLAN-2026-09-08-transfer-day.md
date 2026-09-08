@@ -419,9 +419,18 @@ the highest-value follow-up on this page.**
 **F2 — Renamed areas start from zero history.** DAILY_LOG and WEEKLY_KI are
 keyed by area NAME, so Collipulli's record stays under "Collipulli" while
 "Collipulli 1" begins empty. Nothing is lost and nothing carries forward.
-Consequences: the seven get **no REC badge** on Metas (the recommendation
-averages completed weekly history), their goal boxes must be set by judgment,
-and any transfer-over-transfer comparison for them starts fresh. Worth deciding
+Consequences — **corrected 2026-09-08**, an earlier draft of this section and
+the advice given in chat both said the seven would show *no* REC badge. They do
+show one: `get_recommended_transfer_goals` floors every metric at 1 for an area
+with no history (`queries.py:2859`), so the badge appears and reads **1 on all
+seven Key Indicators**. Verified by running it against the live sheet for
+Collipulli 1, Villa Obispo 2 and Purén y Los Sauces — all 1s, where Alemania 2
+gets 60 new people and Vilcun 82.
+
+That is worse than a blank, because a REC of 1 looks like a recommendation
+rather than an absence of one, and bulk-applying it would set every new area a
+cycle goal of "find one person". Their goal bars would then read as triumphant
+all cycle. See §6 for what to do about it. Worth deciding
 one day whether a rename should carry its predecessor's history — there is no
 `AREA_LINEAGE` tab on this sheet, which is exactly what one would be for.
 
@@ -476,6 +485,49 @@ ending 08-16 / 08-23 / 08-30, then **28** for 09-06. Transfer week, most
 likely. Worth a second look next Sunday before reading anything into it.
 
 ---
+
+## §6 — A generic goal for an area with no history (open, 2026-09-08)
+
+Raised by Zackary while setting the 2026-6 goals: *"Is there a way to just have
+them stay with a generic number until they have data gathered?"*
+
+The floor of 1 (§3.6 F2) is the current answer and it is a bad one. Measured on
+the live sheet — per-area weekly mean, then the median across the 41 areas that
+have `WEEKLY_KI` history, scaled to a six-week cycle:
+
+| Key Indicator | median weekly | cycle (x6) | today's REC for a new area |
+|---|---|---|---|
+| `ki_new_people_real` | 7.00 | **42** | 1 |
+| `ki_member_lessons_real` | 5.50 | **33** | 1 |
+| `ki_friends_sacrament_real` | 1.00 | **6** | 1 |
+| `ki_friends_first_week_real` | 0.00 | 0 → 1 | 1 |
+| `ki_baptismal_date_real` | 1.00 | **6** | 1 |
+| `ki_baptized_confirmed_real` | 0.00 | 0 → 1 | 1 |
+| `ki_rc_at_church_real` | 1.50 | **9** | 1 |
+
+So for four of the seven the honest generic number is 6-42x what the app
+currently recommends.
+
+**Proposed:** when an area has no history for a metric, fall back to its
+**zone's** median of that metric (mission median if the zone has none), instead
+of the floor of 1. Rationale, and why this shape:
+
+- It is self-correcting. The moment the area files one weekly report its own
+  average takes over; nothing has to be remembered or cleared.
+- Zone before mission because the four zones are not alike, and with ~11 areas
+  each the zone median is stable enough to beat a mission-wide one.
+- Median, not mean — `ki_friends_sacrament_real` has a mean of 1.63 against a
+  median of 1.00, so a few strong areas would otherwise set everyone's baseline.
+- It must be visibly *not* the area's own number. The REC pill should say so
+  (e.g. "REC 42 · zona"), or leadership will read a borrowed figure as measured.
+- The floor of 1 stays for the genuinely zero-median metrics
+  (`ki_baptized_confirmed_real`, `ki_friends_first_week_real`), which is what it
+  was always for.
+
+Touches `get_recommended_transfer_goals` / `_stretch_means` in
+`app/db/queries.py` and the pill in `views/02_Metas.py`. **Not built — awaiting
+Zackary's call.** Interim: set the seven new areas by hand from the cycle column
+above.
 
 ## §5 — The short version
 
