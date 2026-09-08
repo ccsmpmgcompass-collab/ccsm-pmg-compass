@@ -443,6 +443,26 @@ but those missionaries are invisible in the roster view and in any headcount
 taken from MISSION_ORG. Adding `Companion3_Name`/`Companion4_Name` columns to
 the tab would fix it; `_ROSTER_COPY_COLS` already carries them.
 
+**F5 — A new area is created with no `Area_Code`, and never gets one.** Every
+established row carries one (`A001`, `A004`, `A005`…); `apply_transfer` builds a
+new row as `{h: "" for h in headers}` and fills only the columns the roster
+supplies, and TRANSFER_IMPORT has no `Area_Code` column, so the seven opened
+this transfer are blank and will stay blank. **Nothing breaks** —
+`CCSM_AgentScores.gs:488` reads `obj['Area_Code'] || obj['Area_Name']` and
+`CCSM_Agent1A.gs:174` defaults to `''`, and SCORE_CONFIG holds only `ALL` rows
+so no area-specific config is missed. The visible effect is that SCORES rows for
+these areas carry the area's NAME in the Area_Code column. Left alone
+deliberately: the codes look like a mission numbering scheme, and inventing
+`A098` risks colliding with a real one later. Worth deciding who owns that
+sequence.
+
+**F6 — `Companion2_Email` is blank on all seven, and cannot be filled from the
+roster.** IMOS supplies one `Area_Email` per area, not one per missionary.
+Harmless: `CCSM_AgentReminder.gs:765-775` collects Companion1 and Companion2
+emails, drops blanks and placeholder addresses, and sends if *any* survive — so
+every new area is reminded through the address written in F1. The second
+companion simply does not get their own copy, as on any area with one address.
+
 **F4 — The AP seat is filled by hand, every transfer.** Presley Egbers moved
 into La Marina 1 (the `Is_AP` area) replacing Hyrum Turner, and was added to
 `_ALWAYS_ALLOWED` on 2026-09-08. This will recur: MISSION_ORG's `Is_AP` row
