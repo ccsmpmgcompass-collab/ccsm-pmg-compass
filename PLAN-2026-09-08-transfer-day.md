@@ -261,12 +261,39 @@ holds the pre-apply grid (written before any mutation — this is your undo).
 
 4.1 Traslados → **3 · Sync nightly + weekly form dropdowns**.
 
-**Run this from the deployed app, not local dev.** `form_sync()` needs
+**The button does not work — corrected 2026-09-08.** `form_sync()` needs
 `TRANSFER_WEBAPP_URL` / `TRANSFER_WEBAPP_SECRET`
-(`app/integrations/transfer_bridge.py:23-30`), and the local
-`dashboard/.streamlit/secrets.toml` **does not have them** — locally it will
-raise `FormSyncError`. Production evidently does have them: the 2026-08-19 sync
-succeeded.
+(`app/integrations/transfer_bridge.py:23-30`). The local
+`dashboard/.streamlit/secrets.toml` does not have them, and **neither does the
+deployed app** — clicking `3 · Sync forms` on production returns
+`TRANSFER_WEBAPP_URL / TRANSFER_WEBAPP_SECRET not set in secrets`. This plan
+previously asserted production had them, inferred from the successful
+2026-08-19 sync in TRANSFER_LOG; that inference was wrong. Either the secrets
+were never added to Streamlit Cloud, or they were lost in a later redeploy.
+
+**Workaround that gets the forms synced today** — run the sync inside Apps
+Script, where no secret is involved. The web app's own function is already
+there; it just has no runnable entry point, because `doPost` needs a request
+object and a trailing-underscore function is hidden from the Run menu. Paste
+this into the COMPASS_CCSM Apps Script project and run it:
+
+```javascript
+function ccsm_syncFormsNow() {
+  Logger.log(cct_formSync_('both').getContent());
+}
+```
+
+It calls exactly what the button calls (`cct_formSync_` in
+`CCSM_TransferWebApp.gs`), using the real `CCT_NIGHTLY_FORM_ID` /
+`CCT_WEEKLY_FORM_ID` already set in the live project. The first run will ask to
+authorise the Forms scope — that is the `FormApp.openById` permission error
+TRANSFER_LOG recorded on 2026-08-08.
+
+**Durable fix**, so the button works next transfer: in the Apps Script project
+read `CCT_SHARED_SECRET` from the top of `CCSM_TransferWebApp.gs` and get the
+deployment URL from **Deploy → Manage deployments** (the `/exec` one), then add
+both to **Manage app → Settings → Secrets** on Streamlit Cloud as
+`TRANSFER_WEBAPP_URL` and `TRANSFER_WEBAPP_SECRET`, and reboot.
 
 4.2 Check `TRANSFER_LOG`'s two new rows say `OK`. Both failure modes from
     August are worth recognising if they come back:
@@ -359,7 +386,15 @@ or splits, not closures, and they map cleanly onto the seven new areas:
 Net **43 → 45 active areas**. The guard did not fire (5 of 43 = 12%, under the
 30% threshold).
 
-**F1 — The 7 new areas have no email, and will silently stop reporting.**
+**F1 — RESOLVED 2026-09-08.** The 7 new areas' `Companion1_Email` cells were
+filled from `TRANSFER_IMPORT.Area_Email` and verified; no active area is now
+missing an address. The five renamed areas' mailboxes carried over to their
+successors (Collipulli → Collipulli 1, and so on), which independently confirms
+the rename mapping above. The underlying gap is unchanged and is worth building
+out: **apply could do this itself**, since the roster already carries the
+address. Original diagnosis, kept because it explains why it matters:
+
+**The 7 new areas have no email, and will silently stop reporting.**
 `apply_transfer` preserves existing email columns but creates new areas with
 blank ones, and `CCSM_AgentReminder.gs:584` sends only to `Companion1_Email` /
 `Companion2_Email`. Until those seven are filled in on MISSION_ORG they get no
