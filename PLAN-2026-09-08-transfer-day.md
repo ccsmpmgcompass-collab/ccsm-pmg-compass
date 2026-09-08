@@ -362,7 +362,7 @@ metric goals from the last three transfer windows into `GOAL_RECALIBRATION`.
 **Acceptance:** `AGENT_RUN_LOG` gains an `Agent2` SUCCESS row;
 `GOAL_RECALIBRATION` (currently an empty header) has rows.
 
-### Step 7 — Set the seven Key Indicator goals for 2026-6
+### Step 7 — Set the Key Indicator goals for 2026-6 — **DONE 2026-09-08**
 
 7.1 Metas → **Area Goal Customization**. The Cambio picker defaults to the
     cycle containing today (`views/02_Metas.py:292-313`), which is now
@@ -377,9 +377,32 @@ ended 2026-09-06. **No area has a goal for 2026-6.** Until they do, Metas'
 "Resumen de la misión" shows "No area has set a goal for 2026-6 yet" and every
 KI goal bar on Desgloses and the Panel has nothing to draw against.
 
-**Acceptance:** `AREA_TRANSFER_GOALS` gains rows with
-`transfer_start = 2026-09-07`; Metas' cycle summary renders totals instead of
-the empty-state notice.
+**Acceptance — MET.** `AREA_TRANSFER_GOALS` holds **46 rows: all 45 active
+areas for 2026-09-07**, plus Los Huertos' original 2026-5 row, preserved. The
+mission's summed goal for the cycle is **2,038 new people and 68 baptisms** —
+and 68 is a useful sanity check on the whole exercise, because
+`AGENT_CONFIG.GOAL_ANNUAL_baptisms` is 527 over roughly 8.7 cycles, or ~60 a
+cycle. The bottom-up number and the mission's own annual target agree without
+either having been derived from the other.
+
+**Goals were NOT set through the bulk button**, deliberately (Zackary, option A,
+2026-09-08). "RECOMMEND ALL AREA GOALS → Save All Recommended" writes
+`save_all_area_goals` as well as `bulk_upsert_area_transfer_goals`
+(`views/02_Metas.py:1036-1045`), and `GOALS_CONFIG` is **empty** — no rows, not
+even a header — so every area in the mission is currently scored against the
+single mission-wide `GOAL_*` set in `AGENT_CONFIG`. Clicking it would have
+populated that tab for the first time and moved all 45 areas onto weekly nightly
+goals derived from their own past averages: a real change to how everyone is
+scored, not needed for a transfer, and one with a sharp edge — a weak area gets
+a lower bar and finds it easier to look on target. Verified after the write:
+`GOALS_CONFIG` still holds 0 rows.
+
+Each area's goals are its OWN recommendation, except **Cabrero 1** and **Lomas
+Coloradas 1**, which have no weekly history and took their zone's median under
+§6. Worth an eye: **Los Huertos** was recommended 1 new person for the cycle,
+which is its own average honestly reported — the settled rule from 2026-09-05 is
+that a recommendation is the area's own performance, not an aspiration — but a
+goal of 1 is worth a human deciding on rather than accepting.
 
 ---
 
@@ -584,7 +607,7 @@ overwrite them if leadership prefers it.
 4. Sync the form dropdowns **from the deployed app**; confirm the zone count.
 5. ~~`TRANSFER_START_DATE` → `2026-09-07`; `2026-6` → `Actual`~~ — done.
 6. Run `runAgent2` once, manually, in Apps Script.
-7. Set the 2026-6 goals on Metas.
+7. ~~Set the 2026-6 goals on Metas~~ — done; all 45 areas.
 8. ~~Check whether AP1 has gone home~~ — he did; ~~add the new AP~~ Presley
    Egbers added 2026-09-08.
 9. **Fill in `Companion1_Email` for the 7 new areas** — §3.6 F1, the one that
