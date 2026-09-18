@@ -29,6 +29,38 @@ _CSS = """
     padding-bottom: 3rem !important;
     max-width: 1400px !important;
 }
+
+/* KPI cards (render_kpi_row): a grid that WRAPS. Four across at the 1400px
+   design width, two across on a phone; auto-fit lets a short row stretch to
+   fill, as the old flex row did. Audit X1 (2026-09-18): the flex row never
+   wrapped and seven cards at 375px were seven illegible slivers.
+   The minimum is the larger of 210px and 22% of the row: 22% caps the grid at
+   four columns however wide the row gets (sidebar open, 900px: four; sidebar
+   collapsed, 1235px: still four, not five), and 210px is the narrowest a card
+   stays legible, which gives three columns on a tablet. Measured 2026-09-18. */
+.pmg-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(max(210px, 22%), 1fr));
+    gap: 12px;
+    margin-bottom: 1.5rem;
+}
+@media (max-width: 640px) {
+    .pmg-kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 8px;
+    }
+    .pmg-kpi { padding: 0.75rem 0.8rem !important; }
+    .pmg-kpi-value { font-size: 1.5rem !important; }
+}
+a.pmg-kpi-link, a.pmg-kpi-link:visited, a.pmg-kpi-link:hover {
+    color: inherit !important;
+    text-decoration: none !important;
+    cursor: pointer;
+}
+a.pmg-kpi-link:hover {
+    border-color: rgba(57, 135, 229, 0.65) !important;
+    background: rgba(255, 255, 255, 0.07) !important;
+}
 /* [data-testid="stMain"] is the actual scrolling element (overflow-y: auto),
    not the document body. Its vertical scrollbar only reserves width while the
    content actually overflows, so the content width silently depends on whether
@@ -604,16 +636,71 @@ def projection_caption(projection, fmt) -> str:
     return t("on pace for ~{n} (early estimate)", n=fmt(value))
 
 
+#: The card's own look, inline so a card draws correctly even where the
+#: stylesheet is missing (a fragment rerun that lost it). The GRID rule and its
+#: phone breakpoint live in _CSS; the inline fallback below is the desktop grid.
+_CARD_STYLE = ("background:rgba(255,255,255,0.04);backdrop-filter:blur(12px) saturate(150%);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:1rem 1.1rem;min-width:0;display:block;transition:all 0.2s ease;")
+_GRID_STYLE = ("display:grid;grid-template-columns:repeat(auto-fit,minmax(max(210px,22%),1fr));"
+               "gap:12px;margin-bottom:1.5rem;")
+
+#: The goal-bar mark for the leadership goal (decision 6): a second tick on the
+#: same track as the pace tick. Violet, so it reads as a reference rather than
+#: as a grade — the same reason the expectation bar is violet.
+_MARK_COLOR = "#9085e9"
+
+
+def sparkline_svg(points, *, color: str = "#3987e5", width: int = 96,
+                  height: int = 26) -> str:
+    """An inline SVG polyline for a KPI card, or "" for fewer than two points.
+
+    No axes, no labels, one hue: the sparkline says "which way is this going",
+    and the card's value and change chip say everything else. The last point
+    is emphasised with a dot so the reader can see where "now" is. A flat
+    series draws a horizontal line through the middle rather than nothing.
+    """
+    try:
+        vals = [float(v) for v in (points or []) if v is not None]
+    except (TypeError, ValueError):
+        return ""
+    if len(vals) < 2:
+        return ""
+    lo, hi = min(vals), max(vals)
+    span = hi - lo
+    pad = 3
+    n = len(vals)
+    xs = [pad + (width - 2 * pad) * i / (n - 1) for i in range(n)]
+    if span == 0:
+        ys = [height / 2] * n
+    else:
+        ys = [pad + (height - 2 * pad) * (1 - (v - lo) / span) for v in vals]
+    pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in zip(xs, ys))
+    return (
+        f'<svg class="pmg-spark" viewBox="0 0 {width} {height}" width="{width}" '
+        f'height="{height}" preserveAspectRatio="none" aria-hidden="true" '
+        f'style="display:block;margin-top:8px;overflow:visible;">'
+        f'<polyline points="{pts}" fill="none" stroke="{color}" stroke-width="1.5" '
+        f'stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>'
+        f'<circle cx="{xs[-1]:.1f}" cy="{ys[-1]:.1f}" r="2.2" fill="{color}"/>'
+        f'</svg>'
+    )
+
+
 def render_kpi_row(metrics: list[dict]) -> None:
     """
-    Render a horizontal row of glass KPI cards using a single st.markdown HTML block.
+    Render a row of glass KPI cards using a single st.markdown HTML block.
+
+    The row is a CSS grid that WRAPS: four cards per row at the 1400px design
+    width, two per row on a phone, and never a crushed column. (It was a
+    non-wrapping flex row until 2026-09-18, and seven Key Indicator cards at
+    375px rendered as seven illegible slivers — audit finding X1.) Callers
+    pass every card of a section in one call and let the grid break the rows.
 
     Each dict keys: label (str), value (int|float|str), change (optional dict from
     app/analytics/period_delta.period_delta — the preferred form, it has already
     decided percent vs absolute and passed the move through the neutral band),
     delta (optional int/float pct — the older, simpler form, still supported),
     delta_label (optional str), goal (optional int/float — shows a progress bar,
-    color-graded green/indigo/amber by how close value is to it), expectation
+    color-graded by how close value is to it), expectation
     (optional int/float — shows a SECOND progress bar underneath the goal one, for
     the area-type expectation reference instead of the set goal). The expectation
     bar is deliberately styled distinct from the goal bar (Carson, 2026-07-24: the
@@ -623,15 +710,31 @@ def render_kpi_row(metrics: list[dict]) -> None:
 
     pace (optional int/float) is what the goal would be if the period ended
     today — a thirty-day goal three days in. When present the bar grows a tick
-    at pace/goal, its COLOUR is graded on value/pace instead of value/goal, and
-    the caption states the pace rather than a percentage of a full-period goal
-    the reader has not yet had time to meet. goal_by (optional str, already
-    formatted) names the date the full goal is due, for that caption.
+    at pace/goal and its COLOUR is graded on value/pace instead of value/goal.
+    day / days (optional ints) name where the period stands — "día 3/30" — and
+    are what the caption prints for a paced card; without them it prints the
+    pace itself. goal_by (optional str, already formatted) names the date the
+    full goal is due; it goes into the card's details, not its caption.
+
+    ONE caption line under the bar, always: "{pct}% de {goal}", plus
+    " · día {n}/{m}" when paced. Everything that used to stack under it —
+    goal_note (the derived goal's arithmetic), the per-area pair, the landing
+    projection — is folded into a single ``details`` string, shown as the
+    caption's hover title and meant for the section's ⓘ (render_section_label's
+    ``info``) where a page wants it on screen. A card is a glance, not a
+    paragraph.
+
+    spark (optional list of numbers) draws an inline sparkline under the value.
+    href (optional str) makes the WHOLE card a link — the query string a
+    drill-down reads (``?ki=<key>``) — styled identically, with a hover border.
+    mark (optional int/float) is a second labelled tick on the goal bar: the
+    leadership transfer goal beside the companionships' own meta (decision 6,
+    PLAN-2026-09-18-data-pages.md §1). mark_label (optional str) names it in
+    the tick's tooltip.
 
     note (optional str) prints a small caption directly under the value — for a
     card whose big number is a share and whose count would otherwise be lost
-    ("143 de 301 días-área"). goal_note, below, is a different thing: it only
-    ever renders beneath a goal bar and explains the goal.
+    ("143 de 301 días-área").
 
     points_unit (optional str, default "pp") is the suffix on a POINTS change.
     Percentage points are the default because rates were the first caller; a
@@ -640,7 +743,7 @@ def render_kpi_row(metrics: list[dict]) -> None:
 
     unit (optional str) and decimals (optional int) change how the card writes its
     numbers — the value, and the goal in the caption. unit="%" with decimals=1
-    gives "46,4%" over "93% of 50% goal". Both default to the plain integer this
+    gives "46,4%" over "93% de 50%". Both default to the plain integer this
     row has always drawn, so existing callers are unaffected.
 
     Change colors: green above +5%, grey inside ±5% ("no trend, just noise"),
@@ -648,9 +751,9 @@ def render_kpi_row(metrics: list[dict]) -> None:
     (period_delta.point_delta, for rates) uses its own thresholds: ±1 point for
     the neutral band, -5 points for red. All of them live in period_delta.
 
-    Goal bar colors: green at 90% of goal or better, indigo down to 60%, amber to
-    50%, red below half — of the PACE where one is given, of the goal otherwise.
-    See goal_bar_state() for the arithmetic and why the two are separated.
+    Goal bar colors come from _GOAL_BAR_TIERS, graded on the PACE where one is
+    given and on the goal otherwise. See goal_bar_state() for the arithmetic
+    and why the two are separated.
     """
     cards = ""
     for m in metrics:
@@ -745,13 +848,14 @@ def render_kpi_row(metrics: list[dict]) -> None:
         # "note" is a caption in the card's own right, for a card with no goal
         # bar to hang one under. The effort section's cards are percentages of
         # all possible area-days, and the count they came from ("143 de 301")
-        # is what stops a share reading as a total. Distinct from "goal_note",
-        # which explains a goal and only ever renders beneath its bar.
+        # is what stops a share reading as a total.
         note_text = _html.escape(m.get("note", ""))
         card_note_html = (
-            f'<div style="font-size:0.65rem;color:#4b5563;margin-top:4px;">{note_text}</div>'
+            f'<div style="font-size:0.7rem;color:#9aa0ad;margin-top:4px;">{note_text}</div>'
             if note_text else ""
         )
+
+        spark_html = sparkline_svg(m.get("spark"))
 
         goal_html = ""
         if goal is not None and float(goal) > 0:
@@ -764,8 +868,7 @@ def render_kpi_row(metrics: list[dict]) -> None:
             # form has not arrived), NOT a metric sitting at zero. Those tiles
             # show the goal on its own: "0% of 104" would report a failure the
             # mission has not had the chance to have.
-            measured = isinstance(value, (int, float))
-
+            #
             # value_basis / goal_basis: how many areas are behind each side.
             # When they differ, a total-over-total ratio is meaningless — on
             # 2026-08-21 the week ending 08-16 had 33 areas' results (204 new
@@ -793,59 +896,56 @@ def render_kpi_row(metrics: list[dict]) -> None:
                 goal_places = 0 if float(goal) == int(float(goal)) else decimals
             except (TypeError, ValueError):
                 goal_places = decimals
+            goal_text = _card_number(goal, goal_places)
 
+            # The one caption line. Everything else goes in `details`.
+            details: list[str] = []
             if not measured:
-                caption = t("Goal: {goal}", goal=_card_number(goal, goal_places))
-            elif state["tick"] is not None:
-                # An in-progress period is judged against where it should be
-                # TODAY, so that is what the caption states. "23% of 168 goal"
-                # on the third of the month is a true number that reads as a
-                # failure; "18 of 17 expected by today" is the same data and
-                # the right verdict. The full goal stays visible so the card
-                # never hides what the period is ultimately for.
-                caption = (
-                    t("{value} of {pace} expected by today · full goal {goal} by {date}",
-                      value=_card_number(value, goal_places),
-                      pace=_card_number(pace, 0),
-                      goal=_card_number(goal, goal_places),
-                      date=_html.escape(str(m.get("goal_by", ""))))
-                    if m.get("goal_by") else
-                    t("{value} of {pace} expected by today · full goal {goal}",
-                      value=_card_number(value, goal_places),
-                      pace=_card_number(pace, 0),
-                      goal=_card_number(goal, goal_places))
-                )
-            elif per_area:
-                # The per-area pair is printed, not just the percentage: the
-                # tile's own big number is a mission TOTAL, so without these two
-                # figures the percentage has no visible arithmetic behind it.
-                caption = t("{pct}% · {actual} vs {goal} per area",
-                            pct=fmt_int(pct),
-                            actual=fmt_number(v_rate, 1),
-                            goal=fmt_number(g_rate, 1))
+                caption = t("Goal: {goal}", goal=goal_text)
             else:
-                caption = t("{pct}% of {goal} goal",
-                            pct=fmt_int(pct), goal=_card_number(goal, goal_places))
+                caption = t("{pct}% of {goal}", pct=fmt_int(pct), goal=goal_text)
+                day, days = m.get("day"), m.get("days")
+                if state["tick"] is not None:
+                    # An in-progress period is judged against where it should
+                    # be TODAY. The caption says how far through the period we
+                    # are; the details say what that means in the goal's units.
+                    if day is not None and days:
+                        caption += " · " + t("day {n}/{m}", n=fmt_int(day),
+                                             m=fmt_int(days))
+                    else:
+                        caption += " · " + t("{pace} expected by today",
+                                             pace=_card_number(pace, 0))
+                    details.append(
+                        t("{value} of {pace} expected by today",
+                          value=_card_number(value, goal_places),
+                          pace=_card_number(pace, 0)))
+                    if m.get("goal_by"):
+                        details.append(t("full goal {goal} by {date}",
+                                         goal=goal_text,
+                                         date=str(m.get("goal_by"))))
+                if per_area:
+                    # The per-area pair: the tile's own big number is a mission
+                    # TOTAL, so without these two figures the percentage has no
+                    # visible arithmetic behind it.
+                    details.append(t("{actual} vs {goal} per area",
+                                     actual=fmt_number(v_rate, 1),
+                                     goal=fmt_number(g_rate, 1)))
             # Where a goal is derived rather than entered -- a per-area weekly
             # target multiplied by the active area count -- the total alone is
             # unexplainable on screen; goal_note carries the arithmetic.
-            note = _html.escape(m.get("goal_note", ""))
-            note_html = (
-                f'<div style="font-size:0.6rem;color:#4b5563;margin-top:1px;">{note}</div>'
-                if note else ""
-            )
-            # The landing line rides UNDER the goal caption rather than beside
-            # the big number: it belongs to the same question the bar asks
-            # ("will this period get there"), and putting it up top would give
-            # a projection the same visual weight as a fact.
+            if m.get("goal_note"):
+                details.append(str(m["goal_note"]))
             proj_text = projection_caption(m.get("projection"), _card_number)
-            note_html += (
-                f'<div style="font-size:0.6rem;color:#6b7280;margin-top:1px;">'
-                f'{_html.escape(proj_text)}</div>'
-                if proj_text else ""
+            if proj_text:
+                details.append(proj_text)
+            if m.get("details"):
+                details.append(str(m["details"]))
+            details_attr = (
+                f' title="{_html.escape(" · ".join(details))}"' if details else ""
             )
+
             # The pace mark. overflow:hidden on the track would clip an
-            # absolutely-positioned child, so the tick lives in a wrapper
+            # absolutely-positioned child, so the ticks live in a wrapper
             # OUTSIDE the clipping box and the track keeps its rounded fill.
             tick_html = (
                 f'<div style="position:absolute;left:{state["tick"]}%;top:-2px;'
@@ -853,6 +953,23 @@ def render_kpi_row(metrics: list[dict]) -> None:
                 f'border-radius:1px;"></div>'
                 if state["tick"] is not None else ""
             )
+            # The leadership mark (decision 6): a second tick, in a colour that
+            # is neither a grade nor the pace, with its name on hover.
+            mark = m.get("mark")
+            mark_html = ""
+            try:
+                if mark is not None and float(mark) > 0:
+                    mark_pos = max(0, min(100, round(float(mark) / float(goal) * 100)))
+                    mark_label = m.get("mark_label") or t("Leadership goal")
+                    mark_title = f"{mark_label}: {_card_number(mark, goal_places)}"
+                    mark_html = (
+                        f'<div class="pmg-kpi-mark" title="{_html.escape(mark_title)}" '
+                        f'style="position:absolute;left:{mark_pos}%;top:-3px;'
+                        f'width:2px;height:9px;background:{_MARK_COLOR};'
+                        f'border-radius:1px;"></div>'
+                    )
+            except (TypeError, ValueError, ZeroDivisionError):
+                mark_html = ""
             goal_html = (
                 f'<div style="margin-top:8px;">'
                 f'<div style="position:relative;">'
@@ -860,10 +977,11 @@ def render_kpi_row(metrics: list[dict]) -> None:
                 f'border-radius:2px;overflow:hidden;">'
                 f'<div style="height:100%;width:{width}%;background:{bar};'
                 f'border-radius:2px;transition:width 0.4s ease;"></div></div>'
-                f'{tick_html}</div>'
-                f'<div style="font-size:0.65rem;color:#4b5563;margin-top:3px;">'
+                f'{tick_html}{mark_html}</div>'
+                f'<div class="pmg-kpi-cap"{details_attr} '
+                f'style="font-size:0.7rem;color:#9aa0ad;margin-top:4px;">'
                 f'{_html.escape(caption)}'
-                f'</div>{note_html}</div>'
+                f'</div></div>'
             )
 
         expectation_html = ""
@@ -878,7 +996,7 @@ def render_kpi_row(metrics: list[dict]) -> None:
                 f'border-radius:2px;overflow:hidden;">'
                 f'<div style="height:100%;width:{exp_pct}%;background:#8b5cf6;'
                 f'border-radius:2px;transition:width 0.4s ease;"></div></div>'
-                f'<div style="font-size:0.65rem;color:#4b5563;margin-top:3px;">'
+                f'<div class="pmg-kpi-exp" style="font-size:0.7rem;color:#9aa0ad;margin-top:4px;">'
                 f'{_html.escape(t("{pct}% of {expectation} expectation", pct=fmt_int(exp_pct), expectation=fmt_int(expectation)))}'
                 f'</div></div>'
             )
@@ -891,22 +1009,25 @@ def render_kpi_row(metrics: list[dict]) -> None:
         # text "None"; fmt_int rounds and renders None as an em dash.
         fmt = (_card_number(value) if isinstance(value, (int, float))
                else _html.escape(str(value)))
-        cards += (
-            f'<div style="background:rgba(255,255,255,0.04);'
-            f'backdrop-filter:blur(12px) saturate(150%);'
-            f'border:1px solid rgba(255,255,255,0.08);border-radius:12px;'
-            f'padding:1rem 1.1rem;flex:1;min-width:0;transition:all 0.2s ease;">'
-            f'<div style="font-size:0.68rem;font-weight:700;letter-spacing:0.1em;'
-            f'color:#6b7280;text-transform:uppercase;margin-bottom:6px;">{label}</div>'
-            f'<div style="font-size:2rem;font-weight:800;color:#f4f4f8;'
-            f'letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums;">'
-            f'{fmt}</div>{delta_html}{card_note_html}{goal_html}{expectation_html}</div>'
+        body = (
+            f'<div class="pmg-kpi-label" style="font-size:0.72rem;font-weight:600;'
+            f'color:#9ca3af;line-height:1.2;min-height:2.4em;margin-bottom:6px;">{label}</div>'
+            f'<div class="pmg-kpi-value" style="font-size:1.9rem;font-weight:800;color:#f4f4f8;'
+            f'letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums;">{fmt}</div>'
+            f'{delta_html}{card_note_html}{spark_html}{goal_html}{expectation_html}'
         )
+        href = m.get("href")
+        if href:
+            # The whole card is the link. target=_self: a query-string link on
+            # the page itself must not open a second tab.
+            cards += (
+                f'<a class="pmg-kpi pmg-kpi-link" href="{_html.escape(str(href))}" '
+                f'target="_self" style="{_CARD_STYLE}">{body}</a>'
+            )
+        else:
+            cards += f'<div class="pmg-kpi" style="{_CARD_STYLE}">{body}</div>'
 
-    st.markdown(
-        f'<div style="display:flex;gap:0.75rem;margin-bottom:1.5rem;">{cards}</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown(f'<div class="pmg-kpi-grid" style="{_GRID_STYLE}">{cards}</div>', unsafe_allow_html=True)
 
 
 #: Section numbering state. Two keys, both reset by the router at the top of

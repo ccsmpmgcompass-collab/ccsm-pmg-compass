@@ -2052,8 +2052,7 @@ def render_group_breakdown(
             st.caption(t("A bar with no goal for the cambio falls back to what "
                          "the companionships set for themselves, and says so."))
 
-        for _i in range(0, len(_ki_row_cards), 4):
-            render_kpi_row(_ki_row_cards[_i:_i + 4])
+        render_kpi_row(_ki_row_cards)
 
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -2197,10 +2196,7 @@ def render_group_breakdown(
                                     _cur_days, _prior_days))
 
         if _kpi_cards:
-            # render_kpi_row is a non-wrapping flex row, so cards shrink rather
-            # than wrap — chunk them 4-up to keep labels on one line.
-            for _i in range(0, len(_kpi_cards), 4):
-                render_kpi_row(_kpi_cards[_i:_i + 4])
+            render_kpi_row(_kpi_cards)
         else:
             st.info(t('No snapshot metrics found for {scope_value}.', scope_value=scope_value))
 

@@ -429,3 +429,17 @@ landed in the same push).
 
 - 2026-09-18 — audit published, twelve questions answered (§1), plan written.
   Nothing built. Awaiting go-ahead for Phase A.
+- 2026-09-18 — **A1 landed.** `render_kpi_row` is a wrapping CSS grid
+  (`minmax(max(210px, 22%), 1fr)`, two columns under 640px), the Desgloses
+  4-up loops are gone, and the card takes `spark`, `href`, `mark`/`mark_label`,
+  `day`/`days` and `details`. Measured live: Panel 4+3 at 1400px (sidebar
+  open or collapsed), 2 per row at 375px; Desgloses 7 and 20 cards in one grid
+  each. Suite 13 failed / 1007 passed (same 13). Decisions made mid-build:
+  (a) the caption's details (goal note, per-area pair, projection, due date)
+  ride as the caption's hover `title` until a page passes them to A4's ⓘ, so
+  nothing is lost in the interim; (b) the paced caption prints "día n/m" only
+  when the caller passes `day`/`days`, else "{pace} esperado a hoy" — the
+  engine does not yet pass day counts (Phase C/D wires them); (c) the 4-column
+  cap is a 22% minimum, not a fixed track count, so a 3-card row still
+  stretches. Noted, not fixed: at 375px a `render_table` on the Panel is
+  451px wide and scrolls the main pane sideways — Phase C's tables.

@@ -29,7 +29,10 @@ from app.components.design_system import (
     goal_bar_color, goal_bar_state, render_kpi_row,
 )
 
-_CAPTION = re.compile(r'font-size:0\.65rem;color:#4b5563;margin-top:3px;">([^<]*)<')
+# The goal caption is the element carrying class="pmg-kpi-cap"; its hover title
+# holds the details (the per-area pair, the derived-goal note, the projection).
+_CAPTION = re.compile(r'class="pmg-kpi-cap"[^>]*>([^<]*)<')
+_DETAILS = re.compile(r'class="pmg-kpi-cap" title="([^"]*)"')
 
 
 @pytest.fixture
@@ -156,14 +159,27 @@ def test_an_unpaced_card_draws_no_tick(rendered):
     assert "left:" not in html
 
 
-def test_a_paced_caption_states_the_pace_and_keeps_the_full_goal(rendered):
+def test_a_paced_caption_is_one_line_with_the_full_goal_and_the_pace(rendered):
     """Both halves matter. Without the pace the caption grades against a goal
     nobody could have met yet; without the full goal the card stops saying what
-    the period is ultimately for."""
+    the period is ultimately for. Since plan A1 (2026-09-18) it is ONE line:
+    "7% de 300 · 20 esperado a hoy"; the due date rides in the details."""
     html = rendered([{"label": "Nuevas personas", "value": 20, "goal": 300,
                       "pace": 20, "goal_by": "30 sep"}])
     caption = _CAPTION.search(html).group(1)
-    assert "20" in caption and "300" in caption and "30 sep" in caption
+    assert "7%" in caption and "300" in caption and "20" in caption
+    assert "30 sep" not in caption
+    assert "30 sep" in _DETAILS.search(html).group(1)
+
+
+def test_a_paced_caption_prefers_the_day_count_when_the_card_has_one(rendered):
+    """"día 3/30" is the plan's wording: where the period stands, in days,
+    which every reader can check against a calendar."""
+    html = rendered([{"label": "Nuevas personas", "value": 20, "goal": 300,
+                      "pace": 20, "day": 2, "days": 30}])
+    caption = _CAPTION.search(html).group(1)
+    assert "2/30" in caption and "300" in caption
+    assert "esperado" not in caption and "expected" not in caption
 
 
 def test_a_paced_caption_survives_a_missing_due_date(rendered):
@@ -173,14 +189,14 @@ def test_a_paced_caption_survives_a_missing_due_date(rendered):
                       "pace": 20}])
     caption = _CAPTION.search(html).group(1)
     assert "20" in caption and "300" in caption
-    assert caption.rstrip().endswith("300")
+    assert "by" not in _DETAILS.search(html).group(1)
 
 
 # ── Two bars must mean two things ────────────────────────────────────────────
 
 def test_a_card_can_carry_a_goal_bar_and_an_expectation_bar(rendered):
     """They are different references and are deliberately styled apart — graded
-    green/indigo/amber/red for the goal, fixed violet for the expectation."""
+    by _GOAL_BAR_TIERS for the goal, fixed violet for the expectation."""
     html = rendered([{"label": "Nuevas personas", "value": 20, "goal": 300,
                       "expectation": 250}])
     assert "#8b5cf6" in html          # the expectation bar's violet
@@ -286,4 +302,5 @@ def test_mismatched_bases_are_reduced_before_being_divided(rendered):
                       "value_basis": 38, "goal_basis": 43}])
     caption = _CAPTION.search(html).group(1)
     assert "62" in caption
-    assert "per area" in caption or "por área" in caption
+    details = _DETAILS.search(html).group(1)
+    assert "per area" in details or "por área" in details

@@ -26,7 +26,10 @@ from app.components.design_system import render_kpi_row
 # what made the first cut of these tests wrong: the card's CSS carries
 # saturate(150%) and a zero-length bar is literally width:0%, so a bare
 # `"%" not in html` catches the stylesheet rather than the claim.
-_CAPTION = re.compile(r'font-size:0\.65rem;color:#4b5563;margin-top:3px;">([^<]*)<')
+# The goal caption is the element carrying class="pmg-kpi-cap"; its hover title
+# holds the details (the per-area pair, the derived-goal note, the projection).
+_CAPTION = re.compile(r'class="pmg-kpi-cap"[^>]*>([^<]*)<')
+_DETAILS = re.compile(r'class="pmg-kpi-cap" title="([^"]*)"')
 
 
 @pytest.fixture
@@ -89,14 +92,18 @@ def test_a_genuine_zero_still_reports_zero_percent(rendered):
 
 # ── The derived-goal explanation ──────────────────────────────────────────────
 
-def test_goal_note_is_rendered_under_the_bar(rendered):
-    """A mission bar reading "48% of 8.600" is unreadable without its
-    arithmetic: 8.600 is GOAL_contacts_attempted (200) x 43 active areas."""
+def test_goal_note_is_carried_in_the_captions_details(rendered):
+    """A mission bar reading "48% de 8.600" is unreadable without its
+    arithmetic: 8.600 is GOAL_contacts_attempted (200) x 43 active areas.
+    Since 2026-09-18 (data-pages plan A1) the card prints ONE caption line and
+    the arithmetic rides in the caption's details — the hover title, and the
+    string a section's ⓘ shows — rather than as a second line on the card."""
     html = rendered([{
         "label": "Contactos", "value": 4123, "goal": 8600,
         "goal_note": "200 por área × 43",
     }])
-    assert "200 por área × 43" in html
+    assert "200 por área × 43" in _DETAILS.search(html).group(1)
+    assert "200 por área" not in _CAPTION.search(html).group(1)
 
 
 def test_a_tile_without_a_note_gains_no_empty_element(rendered):
@@ -128,15 +135,17 @@ def test_mismatched_area_counts_are_compared_per_area(rendered):
     assert "2.040" not in caption and "2040" not in caption
 
 
-def test_the_per_area_pair_is_printed_not_just_the_percentage(rendered):
+def test_the_per_area_pair_is_kept_in_the_details(rendered):
     """The tile's own big number is a mission TOTAL, so the percentage has no
-    visible arithmetic unless both per-area figures are shown."""
-    caption = _captions(rendered([{
+    visible arithmetic unless both per-area figures are available. They live
+    in the caption's details (one caption line, plan A1), not on the card."""
+    html = rendered([{
         "label": "Nuevas Personas", "value": 204, "goal": 10,
         "value_basis": 33, "goal_basis": 1,
-    }]))[0]
-    assert "6,2" in caption or "6.2" in caption
-    assert "10" in caption
+    }])
+    details = _DETAILS.search(html).group(1)
+    assert "6,2" in details or "6.2" in details
+    assert "10" in details
 
 
 def test_equal_bases_give_the_same_answer_as_a_plain_ratio(rendered):

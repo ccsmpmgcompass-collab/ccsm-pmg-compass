@@ -167,10 +167,6 @@ ES: dict[str, str] = {
     "{per_area} per area x {n}":
         "{per_area} por área × {n}",
     "Goal: {goal}": "Meta: {goal}",
-    # Per-area comparison — used when the number of areas behind the value and
-    # behind the goal differ, so a total-over-total ratio would be meaningless.
-    "{pct}% · {actual} vs {goal} per area":
-        "{pct}% · {actual} vs {goal} por área",
     "Weekly Key Indicators — Last 7 Days":
         "Indicadores Clave Semanales — Últimos 7 Días",
     # ── Panel §1b: the four conversion rates (audit H2) ───────────────────────
@@ -992,10 +988,6 @@ ES: dict[str, str] = {
     # ── Breakdowns engine: pace goals (progression work, 2026-09-03) ─────────
     # "lo esperado a hoy" and not "la meta": on the third of the month the bar
     # is judged against three days of the month's target, not the whole of it.
-    "{value} of {pace} expected by today · full goal {goal} by {date}":
-        "{value} de {pace} esperado a hoy · meta completa {goal} al {date}",
-    "{value} of {pace} expected by today · full goal {goal}":
-        "{value} de {pace} esperado a hoy · meta completa {goal}",
     "totals for the period — no goals at this level":
         "totales del período — sin metas en este nivel",
     "no goal for unbounded history":
@@ -2189,7 +2181,13 @@ ES: dict[str, str] = {
     # design_system.render_kpi_row, so the string extractor cannot see them —
     # they were plain English on every page, in both languages, until routed
     # through t() by hand.
-    "{pct}% of {goal} goal": "{pct}% de la meta de {goal}",
+    "{pct}% of {goal}": "{pct}% de {goal}",
+    "day {n}/{m}": "día {n}/{m}",
+    "{pace} expected by today": "{pace} esperado a hoy",
+    "{value} of {pace} expected by today": "{value} de {pace} esperado a hoy",
+    "full goal {goal} by {date}": "meta completa {goal} al {date}",
+    "{actual} vs {goal} per area": "{actual} vs {goal} por área",
+    "Leadership goal": "Meta del liderazgo",
     "{pct}% of {expectation} expectation": "{pct}% de la expectativa de {expectation}",
 
     # ── Phase 2 de-contamination: Dashboard + Scores rebuilt sections ────────
