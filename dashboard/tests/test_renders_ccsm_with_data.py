@@ -286,7 +286,13 @@ def _text(at) -> str:
     Plotly figures matter here: the Dashboard's trend charts and the Daily
     Activity bars carry metric names in their trace names and axis titles, and
     those are exactly where Provo's keys used to survive.
+
+    Link targets are stripped first: since the Key Indicator drill-down
+    (2026-09-18) every KI card is an ``<a href="?ki=ki_member_lessons_real">``,
+    and a query string that carries CCSM's own key is not displayed
+    vocabulary — it merely contains Provo's ``member_lessons`` as a substring.
     """
+    import re
     parts = []
     for attr in ("markdown", "caption", "info", "warning", "error", "success",
                  "button", "radio", "selectbox", "expander", "text_input",
@@ -297,7 +303,7 @@ def _text(at) -> str:
             for f in ("value", "label", "body", "placeholder"):
                 v = getattr(el, f, None)
                 if isinstance(v, str):
-                    parts.append(v)
+                    parts.append(re.sub(r'href="[^"]*"', "", v))
             v = getattr(el, "options", None)
             if isinstance(v, (list, tuple)):
                 parts.extend(str(o) for o in v)

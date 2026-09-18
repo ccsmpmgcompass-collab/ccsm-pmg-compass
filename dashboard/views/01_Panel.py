@@ -13,6 +13,7 @@ import plotly.graph_objects as go
 
 from app.auth.auth import require_auth
 from app.components.charts import chart, ranked_list
+from app.components.ki_drilldown import ki_href, render_ki_drilldown
 from app.components.design_system import (
     render_page_header,
     render_section_label, render_section_tabs, render_kpi_row, render_table,
@@ -612,6 +613,8 @@ else:
         borrowed = k in _KI_NIGHTLY_RELABEL
         _cur_cards.append({
             "label": _KI_NIGHTLY_RELABEL.get(k, ki_short_label(k)),
+            # The whole card opens the drill-down on this metric (§3 B3).
+            "href": ki_href(k),
             "value": int(_wtd_totals.get(source, 0)) if measured else "—",
             # The leadership goal for the cambio is the bar where one exists;
             # the companionships' own goal falls back into it where none does,
@@ -704,6 +707,7 @@ else:
     render_kpi_row([
         {
             "label": ki_short_label(k),
+            "href": ki_href(k),
             "value": int(_ki_val(k)),
             "goal":  _past_lead_goals.get(k) or _past_goals.get(k, 0),
             "change": period_delta(
@@ -740,6 +744,18 @@ else:
             "Compared against the previous week per area — {prev} areas "
             "reported then, {now} now.",
             prev=fmt_int(_prev_ki_reported), now=fmt_int(_ki_reported)))
+
+# ── 2c. The drill-down — a tapped Key Indicator, by week / cambio / area ───────
+# Opened by ?ki=<metric>, which every card above links to; the pills strip is
+# the visible affordance. Mission scope: every submitting area. The panel owns
+# the metric, this page owns the scope (PLAN-2026-09-18-data-pages.md §3).
+if _ki_metrics:
+    _ki_scope_roster = get_submitting_areas()
+    _ki_scope_areas = (
+        set(_ki_scope_roster["Area_Name"].astype(str).str.strip())
+        if "Area_Name" in _ki_scope_roster.columns else set()
+    )
+    render_ki_drilldown("Mission", _mission_name, _ki_scope_areas, key="panel_ki")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 3. ZONES — PER-AREA AVERAGE ACROSS THE FINDING FUNNEL (last 7 days)

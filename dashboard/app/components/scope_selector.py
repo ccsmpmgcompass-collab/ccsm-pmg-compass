@@ -117,10 +117,56 @@ def _autofill_zone_for_district(prefix: str, district_name: str) -> None:
         st.session_state[f"{prefix}_zone_val"] = str(zone).strip()
 
 
+#: The query parameters a link into a scope carries, per level. A Key
+#: Indicator drill-down row links to ``/Desgloses?bd_area=<name>&ki=…``, and a
+#: card on Desgloses links to ``?bd_zone=<name>&ki=…`` so the full reload the
+#: link causes lands back on the same scope (PLAN-2026-09-18-data-pages.md §3).
+SCOPE_PARAMS = ("zone", "district", "area")
+
+
+def seed_from_params(prefix: str, params) -> dict[str, str]:
+    """The ``*_val`` seed a page entry should start from, read from
+    ``params`` (``st.query_params`` or any mapping). The deepest level wins,
+    exactly as the selectors themselves resolve; the shallower boxes are
+    filled in by the same MISSION_ORG autofill a pick triggers. Empty when no
+    scope parameter is present, so the cascade resets to "any" as before."""
+    def _get(level: str) -> str:
+        raw = params.get(f"{prefix}_{level}") if params is not None else None
+        if isinstance(raw, (list, tuple)):
+            raw = raw[0] if raw else None
+        return str(raw or "").strip()
+
+    for level in reversed(SCOPE_PARAMS):
+        value = _get(level)
+        if value:
+            return {f"{prefix}_{level}_val": value}
+    return {}
+
+
+def _apply_seed(prefix: str) -> None:
+    seed = seed_from_params(prefix, st.query_params)
+    for key, value in seed.items():
+        st.session_state[key] = value
+        if key.endswith("_area_val"):
+            _autofill_zone_district(prefix, value)
+        elif key.endswith("_district_val"):
+            _autofill_zone_for_district(prefix, value)
+
+
+def _clear_scope_params(prefix: str) -> None:
+    """A pick supersedes whatever scope the URL carried: drop it, so a
+    later reload does not snap back to the linked-in scope."""
+    for level in SCOPE_PARAMS:
+        name = f"{prefix}_{level}"
+        if name in st.query_params:
+            del st.query_params[name]
+
+
 def _on_zone_pick(prefix: str) -> None:
     picked = st.session_state[f"{prefix}_zone_pick"]
     if picked is None:      # the self-clearing write below re-enters here
         return
+    _clear_scope_params(prefix)
     st.session_state[f"{prefix}_zone_val"] = picked
     st.session_state[f"{prefix}_district_val"] = ANY
     st.session_state[f"{prefix}_area_val"] = ANY
@@ -134,6 +180,7 @@ def _on_district_pick(prefix: str) -> None:
     picked = st.session_state[f"{prefix}_district_pick"]
     if picked is None:
         return
+    _clear_scope_params(prefix)
     st.session_state[f"{prefix}_district_val"] = picked
     st.session_state[f"{prefix}_area_val"] = ANY
     st.session_state[f"{prefix}_district_pick"] = None
@@ -145,6 +192,7 @@ def _on_area_pick(prefix: str) -> None:
     picked = st.session_state[f"{prefix}_area_pick"]
     if picked is None:
         return
+    _clear_scope_params(prefix)
     st.session_state[f"{prefix}_area_val"] = picked
     st.session_state[f"{prefix}_area_pick"] = None
     if picked == ANY:
@@ -158,6 +206,7 @@ def _on_companionship_pick(prefix: str, comp_to_area: dict) -> None:
     picked = st.session_state[f"{prefix}_comp_pick"]
     if picked is None:
         return
+    _clear_scope_params(prefix)
     st.session_state[f"{prefix}_comp_pick"] = None
     if picked == ANY:
         st.session_state[f"{prefix}_area_val"] = ANY
@@ -212,6 +261,8 @@ def render_scope_selectors(
         st.session_state[f"{prefix}_zone_val"] = ANY
         st.session_state[f"{prefix}_district_val"] = ANY
         st.session_state[f"{prefix}_area_val"] = ANY
+        # …unless the URL names a scope — a link into an area opens on it.
+        _apply_seed(prefix)
 
     st.session_state.setdefault(f"{prefix}_zone_val", ANY)
     st.session_state.setdefault(f"{prefix}_district_val", ANY)

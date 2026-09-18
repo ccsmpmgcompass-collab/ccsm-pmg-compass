@@ -538,3 +538,40 @@ landed in the same push).
   `/Desgloses?bd_area=<name>&ki=<metric>` and the ranking is by % of meta,
   areas without a meta last; (f) the Tabla tab's CSV carries the raw
   numbers, the on-screen table the formatted ones.
+- 2026-09-18 — **B3 landed. Phase B complete.** Panel: both KI blocks' cards
+  carry `href=ki_href(k)` and the panel renders under 2b (mission scope =
+  every submitting area, `key="panel_ki"`). Desgloses: the engine's KI cards
+  carry `ki_href(k, {bd_zone|bd_district|bd_area: scope_value})` and
+  `render_ki_drilldown(scope_kind, scope_value, group_areas, key="bd_ki")`
+  renders right under them, inside the fragment. `render_scope_selectors`
+  seeds `bd_*_val` from `?bd_zone / ?bd_district / ?bd_area` on page entry
+  (`seed_from_params`, deepest wins, MISSION_ORG autofill fills the boxes
+  above) and every pick callback drops those params so a later reload does
+  not snap back. `tests/test_scope_seed_from_url.py` (5).
+  Verified live at 1400px: `/?ki=ki_new_people_real` opens the Panel on the
+  metric (14 card hrefs, legend "Cambio 2026-5 · Cambio 2026-6 · Meta de las
+  compañerías · Meta del liderazgo, por semana · Esperado a hoy", week 1 =
+  225 vs meta 203, ghosts 16/204/301/184/170); Por cambio caption "225 de
+  474 propuesto · meta del cambio 2.038 · 1 de 6 semanas informadas"; Por
+  área 45 rows ranked, Huequen 11 of meta 5 first; Tabla + CSV.
+  `/Desgloses?bd_area=Huequen&ki=…` seeds Angol / Purén y Los Sauces /
+  Huequen and opens "Nuevas personas · Huequen · 1 áreas · meta del cambio
+  43"; `?bd_zone=Angol&ki=…` likewise. At 375px the strip and tabs wrap,
+  charts and ranked rows are 339px wide, nothing of the panel overflows.
+  Suite 13 failed / 1085 passed (same 13). One test adjusted:
+  `test_renders_ccsm_with_data._text` now strips `href="…"` before the
+  Provo-vocabulary scan — `?ki=ki_member_lessons_real` contains Provo's
+  `member_lessons` as a substring and is a link target, not displayed text.
+  Noted, not fixed: (a) at 375px the main pane still scrolls sideways —
+  the zones table (766px) and the three long section labels (the Panel's
+  two KI headings at 630/546px and the drill-down header at 521px) do not
+  wrap; C1 renames the headings and Phase C's tables own the rest, and
+  `render_section_label` should be allowed to wrap then; (b) the KI card's
+  goal bar is still the leadership goal (2038/6 = 340) while the drill-down's
+  weekly bars use the companionships' meta (203) — decision 6's tier
+  reversal is C1's job, and until then the two disagree by design; (c) the
+  live 2026-5 row carries a stray leadership goal of 6 for new people, which
+  "Por cambio" draws honestly as a dot at 6 — a data question for Zackary,
+  not a code one; (d) reading a freshly restarted server too early (first
+  ~10s) shows the page before its query params are applied — a cold-start
+  artefact, not a bug, seen once and not reproducible warm.

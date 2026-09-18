@@ -34,6 +34,7 @@ from app.analytics.period_delta import (
 )
 from app.components.charts import chart
 from app.components.design_system import render_kpi_row, render_section_label
+from app.components.ki_drilldown import ki_href, render_ki_drilldown
 from app.config.theme import series_style, STATUS
 from app.i18n.formats import fmt_day_month, fmt_int, fmt_number
 from app.db.queries import (
@@ -1887,6 +1888,9 @@ def render_group_breakdown(
     # below uses, so the goal bar, the pace tick, the twin arrow and the
     # value/goal basis handling all behave identically on both.
     _ki_keys_weekly = list(key_indicator_metrics())
+    _ki_scope_param = {"Zone": "bd_zone", "District": "bd_district",
+                       "Area": "bd_area"}.get(scope_kind)
+    _ki_scope_params = {_ki_scope_param: scope_value} if _ki_scope_param else {}
     _ki_wk_all = get_weekly_form_data()
     if not _ki_wk_all.empty and "area" in _ki_wk_all.columns:
         _ki_wk_all = _scope_to_areas(_ki_wk_all, "area", group_areas)
@@ -1982,7 +1986,11 @@ def render_group_breakdown(
             if _k not in _ki_cur.columns:
                 continue
             _v = int(pd.to_numeric(_ki_cur[_k], errors="coerce").fillna(0).sum())
-            _c: dict = {"label": ki_short_label(_k), "value": _v}
+            # The whole card opens the drill-down on this metric, and the
+            # link carries the scope so the full reload it causes lands back
+            # here (render_scope_selectors seeds from the same params).
+            _c: dict = {"label": ki_short_label(_k), "value": _v,
+                        "href": ki_href(_k, _ki_scope_params)}
 
             # The basis is REPORTING AREAS, not days: a weekly indicator does not
             # grow with the days behind it, it grows with the companionships that
@@ -2035,6 +2043,10 @@ def render_group_breakdown(
                          "the companionships set for themselves, and says so."))
 
         render_kpi_row(_ki_row_cards)
+
+        # The drill-down under the cards — the same panel the Panel draws,
+        # on this scope (PLAN-2026-09-18-data-pages.md §3 B3).
+        render_ki_drilldown(scope_kind, scope_value, group_areas, key="bd_ki")
 
 
     # ══════════════════════════════════════════════════════════════════════════
