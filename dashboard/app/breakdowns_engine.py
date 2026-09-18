@@ -32,6 +32,7 @@ from app.analytics.period_delta import (
     period_delta,
     reporting_dates,
 )
+from app.components.charts import chart
 from app.components.design_system import render_kpi_row, render_section_label
 from app.config.theme import series_style
 from app.i18n.formats import fmt_day_month, fmt_int, fmt_number
@@ -731,7 +732,7 @@ def _detail_col(df: pd.DataFrame, name: str):
 # blocks Plotly's default). Cost of that: no Streamlit chart theming inside the
 # iframe, hence the explicit dark colours in _isolating_trend_chart().
 #
-# Everything else on the page keeps using st.plotly_chart.
+# Everything else on the page draws through charts.chart().
 
 _LEGEND_ISOLATE_JS = """
 var gd = document.getElementById('%(div_id)s');
@@ -1054,11 +1055,7 @@ def _render_teaching_pipeline(
             outsidetextfont=dict(color="#f4f4f8"),
             marker=dict(color=["#2563eb", "#15803d", "#b45309", "#b91c1c"]),
         ))
-        fig_funnel.update_layout(
-            template="pmg_dark", height=300,
-            margin=dict(l=0, r=0, t=20, b=0),
-        )
-        st.plotly_chart(fig_funnel, use_container_width=True)
+        chart(fig_funnel, height=300)
         st.caption(
             t("{span}  |  {kpi_period} — counts what happened in this period. Found, At Sacrament and Baptized from the weekly Key Indicators, Taught from the Tableau export; the bars come from different reports and aren't subsets of each other.", span=span, kpi_period=t(kpi_period))
         )
@@ -2382,14 +2379,12 @@ def render_group_breakdown(
                        max(_exp_y) if _exp_y else 0)
         fig_all.update_layout(
             xaxis=dict(tickangle=-45),
-            showlegend=False,
-            margin=dict(t=30, b=150, l=50, r=20),
             yaxis=dict(
                 title="Count",
                 range=[0, max(_all_top * 1.15, 1)],
             ),
         )
-        st.plotly_chart(fig_all, use_container_width=True)
+        chart(fig_all, height=380)
     else:
         render_section_label(t('{m_label} by Area — {scope_value}', m_label=m_label, scope_value=scope_value))
         st.caption(f"{span}  |  {t(kpi_period)}"
@@ -2506,12 +2501,9 @@ def render_group_breakdown(
             # No in-chart title: the section label and caption above already say the
             # metric, scope and period.
             xaxis_title=t("Area"),
-            # A legend only once there are two series to tell apart. With a
-            # single one it said nothing, which is why it was off.
-            showlegend=_has_ghosts,
-            legend=dict(orientation="h", y=1.12, x=0, font=dict(size=10)),
+            # A legend only once there are two series to tell apart (the ghost
+            # bars) -- charts.chart() decides that from the trace count.
             hovermode="x unified",
-            margin=dict(t=30, b=80, l=50, r=20),
             yaxis=dict(
                 title=m_label,
                 # Headroom for the outside text label above the tallest bar —
@@ -2558,7 +2550,7 @@ def render_group_breakdown(
                 # tallest expectation line would clip off the top.
                 fig_bar.update_layout(yaxis=dict(range=[0, max(_bar_top * 1.15, 1)]))
 
-        st.plotly_chart(fig_bar, use_container_width=True)
+        chart(fig_bar, height=360)
 
     # ══════════════════════════════════════════════════════════════════════════
     # 4. TREND — the same metric over the same period, one line per area

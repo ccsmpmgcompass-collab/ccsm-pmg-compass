@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from app.auth.auth import require_auth
+from app.components.charts import chart
 from app.components.design_system import (
     render_page_header, render_section_label,
     render_table, render_kpi_row, PALETTE,
@@ -467,11 +468,8 @@ with fcol:
                         line=dict(width=0)),
             connector=dict(line=dict(color="rgba(255,255,255,0.10)", width=1)),
         ))
-        fig.update_layout(height=430, margin=dict(l=140, r=20, t=10, b=10),
-                          template="pmg_dark", paper_bgcolor="rgba(0,0,0,0)",
-                          xaxis=dict(visible=False, range=[-_fmax * 0.05, _fmax * 1.35]))
-        st.plotly_chart(fig, use_container_width=True, theme=None,
-                        config={"displayModeBar": False})
+        fig.update_layout(xaxis=dict(visible=False, range=[-_fmax * 0.05, _fmax * 1.35]))
+        chart(fig, height=430)
         st.caption(t("Each stage = people found in range who reached at least that "
                      "far. A milestone that was never logged is inherited from a "
                      "later one, so the funnel never widens."))
@@ -502,7 +500,7 @@ with dcol:
                      for v in cats.values]
         donut = go.Figure(go.Pie(
             labels=cats.index.tolist(), values=cats.values.tolist(),
-            hole=0.62, sort=False, rotation=270,
+            hole=0.62, sort=False, rotation=270, automargin=True,
             marker=dict(colors=PALETTE, line=dict(color="#08080e", width=2)),
             text=_pct_text, textinfo="text", textposition="outside",
             textfont=dict(color="#ffffff", size=14),
@@ -510,14 +508,10 @@ with dcol:
             insidetextfont=dict(color="#ffffff", size=14),
         ))
         donut.update_layout(
-            height=400, margin=dict(l=30, r=30, t=20, b=80), template="pmg_dark",
-            showlegend=True,
-            legend=dict(orientation="h", yanchor="top", y=-0.18, x=0.5, xanchor="center"),
             annotations=[dict(text=f"{int(found)}<br>found", x=0.5, y=0.5,
                               font=dict(size=18, color="#f4f4f8"), showarrow=False)],
         )
-        st.plotly_chart(donut, use_container_width=True, theme=None,
-                        config={"displayModeBar": False})
+        chart(donut, height=400)
     else:
         st.caption(t("No detail records to break down."))
 
@@ -559,11 +553,8 @@ if not det_df.empty:
                 marker=dict(color="#6366f1"), text=src.values.tolist(),
                 textposition="outside", cliponaxis=False,
                 textfont=dict(color="#ffffff", size=12)))
-            bar.update_layout(
-                height=340, margin=dict(l=10, r=55, t=10, b=10), template="pmg_dark",
-                xaxis=dict(visible=False, range=[0, int(src.max()) * 1.18]))
-            st.plotly_chart(bar, use_container_width=True, theme=None,
-                            config={"displayModeBar": False})
+            bar.update_layout(xaxis=dict(visible=False, range=[0, int(src.max()) * 1.18]))
+            chart(bar, height=340)
 
     with s2:
         render_section_label(t("Findings by Zone"))
@@ -576,11 +567,8 @@ if not det_df.empty:
                 marker=dict(color="#22c55e"), text=zn.values.tolist(),
                 textposition="outside", cliponaxis=False,
                 textfont=dict(color="#ffffff", size=12)))
-            zbar.update_layout(
-                height=340, margin=dict(l=10, r=55, t=10, b=10), template="pmg_dark",
-                xaxis=dict(visible=False, range=[0, int(zn.max()) * 1.18]))
-            st.plotly_chart(zbar, use_container_width=True, theme=None,
-                            config={"displayModeBar": False})
+            zbar.update_layout(xaxis=dict(visible=False, range=[0, int(zn.max()) * 1.18]))
+            chart(zbar, height=340)
 
     # Finding trend. Buckets by month once the window is long — with the bogus
     # DATA_FLOOR gone, "All" spans 2.6 years and a per-day chart is ~950 bars
@@ -594,11 +582,8 @@ if not det_df.empty:
             marker=dict(color="#8b5cf6"), text=_tvalues,
             textposition="outside", cliponaxis=False,
             textfont=dict(color="#ffffff", size=12)))
-        tbar.update_layout(
-            height=240, margin=dict(l=10, r=10, t=26, b=10), template="pmg_dark",
-            yaxis=dict(visible=False, range=[0, max(_tvalues) * 1.2]))
-        st.plotly_chart(tbar, use_container_width=True, theme=None,
-                        config={"displayModeBar": False})
+        tbar.update_layout(yaxis=dict(visible=False, range=[0, max(_tvalues) * 1.2]))
+        chart(tbar, height=240)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

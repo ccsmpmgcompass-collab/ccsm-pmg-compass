@@ -443,3 +443,17 @@ landed in the same push).
   cap is a 22% minimum, not a fixed track count, so a 3-card row still
   stretches. Noted, not fixed: at 375px a `render_table` on the Panel is
   451px wide and scrolls the main pane sideways — Phase C's tables.
+- 2026-09-18 — **A2 landed.** `app/components/charts.py`: `chart()` (the only
+  `st.plotly_chart` on the three pages — 13 call sites converted, 0 remain;
+  the Desgloses trend keeps its own iframe until D4), `bars_vs_goal`,
+  `small_multiples`, `stage_bars` (HTML), `ranked_list` (the Panel's rankings
+  now call it). `theme.STATUS` added early because both A2 and A3 need it.
+  Verified live at 1400px: Panel 5 charts, Embudo 5, Desgloses 2 + iframe, no
+  in-chart titles, no modebars, no exceptions; Embudo's two bar charts show
+  full y-labels (E2 fixed as a side effect of `automargin`). Suite 13 failed /
+  1036 passed (same 13). Decisions: (a) the two-up 8-week charts and the
+  effort chart lost their in-chart titles and gained `render_section_label(…,
+  numbered=False)` above them, so nothing is unnamed before C4/C5 replace
+  them; (b) `bars_vs_goal` takes `pace_value` beside `pace_index` — the tick
+  needs a height, not just a bucket; (c) a per-bucket goal draws a dash over
+  each bar (shapes), a scalar goal one `add_hline`.

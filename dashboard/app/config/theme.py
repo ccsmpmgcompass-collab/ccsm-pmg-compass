@@ -62,6 +62,13 @@ def series_style(i: int) -> tuple[str, str, str]:
     return SERIES_COLORS[i % n], SERIES_DASHES[tier], SERIES_PATTERNS[tier]
 
 
+# ── Status: the three grading states, and nothing else ───────────────────────
+# Decision 10 (PLAN-2026-09-18-data-pages.md §1): on pace / behind / far behind.
+# No blue — blue is "this metric, this period" on every chart (SERIES_COLORS[0]).
+# Used by the KPI goal bar tiers, the ranked-list row tints and the goal line.
+STATUS = {"good": "#3ecf6f", "warn": "#f2b134", "bad": "#f0645a"}
+
+
 SEVERITY_COLORS = {
     "HIGH":   "#D32F2F",
     "MEDIUM": "#F57C00",

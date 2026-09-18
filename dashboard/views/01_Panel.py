@@ -12,6 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 from app.auth.auth import require_auth
+from app.components.charts import chart, ranked_list
 from app.components.design_system import (
     render_page_header,
     render_section_label, render_section_tabs, render_kpi_row, render_table,
@@ -1009,11 +1010,8 @@ if _ab_monthly:
             xaxis=dict(type="category"),
             yaxis=dict(title=t("Baptisms, cumulative"), rangemode="tozero"),
             hovermode="x unified",
-            legend=dict(orientation="h", yanchor="top", y=-0.18, x=0),
-            margin=dict(t=20, b=60, l=60, r=20),
-            height=340,
         )
-        st.plotly_chart(fig_ab, use_container_width=True)
+        chart(fig_ab, height=340)
 
         # The line stops where the capture stops. Said plainly, because a
         # cumulative line that simply ends is easy to read as a mission that
@@ -1062,6 +1060,9 @@ else:
     with col_a:
         if _has_nightly_trend:
             weeks = nightly_chart["week_end_date"].astype(str)
+            # The chart's name is a label above it, not a title inside it —
+            # charts.chart() strips in-chart titles so every chart reads alike.
+            render_section_label(t("Nightly Activity"), numbered=False)
             fig1 = go.Figure()
             for i, key in enumerate(flavor.nightly_highlights):
                 if key in nightly_chart.columns:
@@ -1072,20 +1073,17 @@ else:
                         marker=dict(size=6),
                     ))
             fig1.update_layout(
-                title=t("Nightly Activity"),
                 xaxis_title=t("Week Ending"), yaxis_title=t("Count"),
                 xaxis_type="category", hovermode="x unified",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                margin=dict(t=50, b=40, l=40, r=20),
-                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
             )
-            st.plotly_chart(fig1, use_container_width=True)
+            chart(fig1, height=320)
         else:
             st.info(_EMPTY_MSG)
 
     with col_b:
         if _has_ki_trend:
             ki_weeks = ki_chart["week_end_date"].astype(str)
+            render_section_label(t("Key Indicators"), numbered=False)
             fig2 = go.Figure()
             for i, key in enumerate(key_indicator_metrics()):
                 if key in ki_chart.columns:
@@ -1096,14 +1094,10 @@ else:
                         marker=dict(size=6),
                     ))
             fig2.update_layout(
-                title=t("Key Indicators"),
                 xaxis_title=t("Week Ending"), yaxis_title=t("Count"),
                 xaxis_type="category", hovermode="x unified",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                margin=dict(t=50, b=40, l=40, r=20),
-                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
             )
-            st.plotly_chart(fig2, use_container_width=True)
+            chart(fig2, height=320)
         else:
             st.info(_EMPTY_MSG)
 
@@ -1194,17 +1188,16 @@ else:
         x="Label",
         y=_daily_key,
         labels={"Label": t("Date"), _daily_key: _daily_label},
-        title=t("{metric} per day (mission total)", metric=_daily_label),
         color_discrete_sequence=["#6366f1"],
     )
+    # No in-chart title: the metric selector above and the caption below
+    # already name it.
     fig_daily.update_layout(
         xaxis_title=t("Date"),
         xaxis_type="category",
         yaxis_title=_daily_label,
-        margin=dict(t=40, b=20),
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
     )
-    st.plotly_chart(fig_daily, use_container_width=True)
+    chart(fig_daily, height=280)
     st.caption(t("{span} · mission total per day.", span=_night_span))
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1319,6 +1312,8 @@ else:
         (eb.SOME, _eff_labels[eb.SOME], "#ef4444"),
     ]
 
+    render_section_label(t("Effort answers per day, share of all active areas"),
+                         numbered=False)
     fig_effort = go.Figure()
     for level, label, color in _eff_segments:
         fig_effort.add_trace(go.Bar(
@@ -1341,16 +1336,12 @@ else:
     ))
     fig_effort.update_layout(
         barmode="stack",
-        title=t("Effort answers per day, share of all active areas"),
         xaxis_title=t("Date"),
         xaxis_type="category",
         yaxis_title=t("Share of active areas"),
         yaxis=dict(range=[0, 100], ticksuffix="%"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        margin=dict(t=60, b=20),
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
     )
-    st.plotly_chart(fig_effort, use_container_width=True)
+    chart(fig_effort, height=300)
 
     # ── Per area ──────────────────────────────────────────────────────────────
     with st.expander(t("Effort by area — who answered what ({span})", span=_night_span)):
@@ -1771,36 +1762,11 @@ _display_rows = cr.rank(_display_rows, _rk_type,
                         worst_first=(_rk_view == "worst"),
                         by_name=(_rk_view == "name"))
 
-#: Row colours. The bands are compliance_rankings.GREEN_MIN / AMBER_MIN, which
-#: are the same >=85 / 70-84 / <70 the two calendars above legend -- one number
-#: must not be green on a calendar and amber in the ranking beneath it.
-_RANK_COLORS = {
-    "green": ("rgba(34,197,94,0.10)",  "#22c55e", "#4ade80"),
-    "amber": ("rgba(245,158,11,0.10)", "#f59e0b", "#fbbf24"),
-    "red":   ("rgba(239,68,68,0.10)",  "#ef4444", "#f87171"),
-    "none":  ("rgba(255,255,255,0.03)", "#4b5563", "#9ca3af"),
-}
-
-
-def _rank_row_html(i: int, name: str, detail: str, pct, status: str) -> str:
-    bg, dot, fg = _RANK_COLORS[status]
-    shown = f"{fmt_int(pct)}%" if pct is not None else "—"
-    return (
-        f'<div style="display:flex;align-items:center;gap:0.85rem;'
-        f'background:{bg};border-radius:8px;padding:0.7rem 1rem;'
-        f'margin-bottom:0.35rem;">'
-        f'<span style="width:1.6rem;flex:none;text-align:right;color:#6b7280;'
-        f'font-size:0.8rem;">{i}</span>'
-        f'<span style="width:0.6rem;height:0.6rem;flex:none;border-radius:50%;'
-        f'background:{dot};"></span>'
-        f'<span style="flex:1 1 40%;color:#f4f4f8;font-weight:600;'
-        f'font-size:0.95rem;">{_html_escape(name)}</span>'
-        f'<span style="flex:1 1 30%;color:#9ca3af;font-size:0.82rem;">'
-        f'{_html_escape(detail)}</span>'
-        f'<span style="flex:none;color:{fg};font-weight:700;font-size:0.95rem;'
-        f'text-align:right;min-width:3.2rem;">{shown}</span>'
-        f'</div>'
-    )
+#: Row colours come from charts.ranked_list, keyed on the status
+#: compliance_rankings.status_of returns. The bands are its GREEN_MIN /
+#: AMBER_MIN, the same >=85 / 70-84 / <70 the two calendars above legend --
+#: one number must not be green on a calendar and amber in the ranking
+#: beneath it.
 
 
 def _rank_detail(row) -> str:
@@ -1832,16 +1798,16 @@ else:
     def _rank_rows_html(rows) -> str:
         """`rows` is (rank, row) pairs — the rank is passed rather than
         enumerated, so a folded view still prints each area's TRUE position."""
-        return "".join(
-            _rank_row_html(
-                i,
-                getattr(r, "area", None) or getattr(r, "zone", ""),
-                _rank_detail(r),
-                r.pct(_rk_type),
-                cr.status_of(r.pct(_rk_type)),
-            )
+        return ranked_list([
+            {
+                "rank": i,
+                "name": getattr(r, "area", None) or getattr(r, "zone", ""),
+                "sub": _rank_detail(r),
+                "value": r.pct(_rk_type),
+                "status": cr.status_of(r.pct(_rk_type)),
+            }
             for i, r in rows
-        )
+        ], value_fmt=lambda v: f"{fmt_int(v)}%", bar_max=100)
 
     _ranked = list(enumerate(_display_rows, start=1))
 

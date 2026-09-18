@@ -2188,6 +2188,10 @@ ES: dict[str, str] = {
     "full goal {goal} by {date}": "meta completa {goal} al {date}",
     "{actual} vs {goal} per area": "{actual} vs {goal} por área",
     "Leadership goal": "Meta del liderazgo",
+    # app/components/charts.py — the one chart language (plan A2)
+    "Previous cambio": "Cambio anterior",
+    "This cambio": "Este cambio",
+    "Expected by today": "Esperado a hoy",
     "{pct}% of {expectation} expectation": "{pct}% de la expectativa de {expectation}",
 
     # ── Phase 2 de-contamination: Dashboard + Scores rebuilt sections ────────
