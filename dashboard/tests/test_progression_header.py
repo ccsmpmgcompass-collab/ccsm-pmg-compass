@@ -24,6 +24,8 @@ from datetime import date
 import pandas as pd
 import pytest
 
+from app.config.theme import STATUS
+
 from app import i18n
 from app.breakdowns_engine import (
     _HEADER_METRICS, _change_chip, _header_lines, _header_window, _weeks_in,
@@ -158,15 +160,15 @@ def test_a_metric_missing_from_the_data_is_skipped_not_zeroed():
 # ── The change chip ──────────────────────────────────────────────────────────
 
 def test_a_rise_is_green_and_a_severe_fall_is_red():
-    assert "#22c55e" in _change_chip({"direction": 1, "pct": 25.0, "show": "percent"})
-    assert "#ef4444" in _change_chip({"direction": -1, "pct": -40.0, "show": "percent"})
+    assert STATUS["good"] in _change_chip({"direction": 1, "pct": 25.0, "show": "percent"})
+    assert STATUS["bad"] in _change_chip({"direction": -1, "pct": -40.0, "show": "percent"})
 
 
 def test_a_mild_fall_is_amber_not_red():
     """Same four tiers as the cards below. -8% is a wobble worth flagging and
     not a collapse, and spending red on it would teach the reader to ignore
     red."""
-    assert "#f59e0b" in _change_chip({"direction": -1, "pct": -8.0, "show": "percent"})
+    assert STATUS["warn"] in _change_chip({"direction": -1, "pct": -8.0, "show": "percent"})
 
 
 def test_a_move_inside_the_neutral_band_is_grey_and_flat():

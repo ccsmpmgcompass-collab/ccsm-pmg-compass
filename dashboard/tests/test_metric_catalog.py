@@ -284,3 +284,39 @@ def test_every_live_metric_has_an_english_label():
     # (Real)/(Meta), which are already understood; they are exempt by design.
     missing = [k for k in missing if not k.startswith("ki_")]
     assert missing == [], f"no English label for: {missing}"
+
+
+# ── The one KI vocabulary (data-pages plan A5, decision 11) ──────────────────
+
+def _es(monkeypatch):
+    import streamlit as st
+    monkeypatch.setitem(st.session_state, "pmg_lang", "es")
+
+
+def test_every_live_key_indicator_has_a_short_label():
+    """The seven keys the live QUESTIONS_CONFIG calls ki_*_real, exactly."""
+    live = {k for k in _live_question_keys() if k.startswith("ki_") and k.endswith("_real")}
+    assert live == set(mc.KI_SHORT_LABELS), live ^ set(mc.KI_SHORT_LABELS)
+
+
+def test_the_seven_short_labels_are_decision_11s(monkeypatch):
+    _es(monkeypatch)
+    got = [mc.ki_short_label(k) for k in (
+        "ki_new_people_real", "ki_member_lessons_real", "ki_friends_sacrament_real",
+        "ki_friends_first_week_real", "ki_baptismal_date_real",
+        "ki_baptized_confirmed_real", "ki_rc_at_church_real")]
+    assert got == ["Nuevas personas", "Lecciones c/ miembro", "Amigos en sacramental",
+                   "Amigos · 1ª semana", "Con fecha bautismal", "Bautizados",
+                   "CR en la Iglesia"]
+
+
+def test_a_short_label_is_translated_in_english(monkeypatch):
+    import streamlit as st
+    monkeypatch.setitem(st.session_state, "pmg_lang", "en")
+    assert mc.ki_short_label("ki_new_people_real") == "New people"
+
+
+def test_an_unlisted_key_falls_back_to_the_catalogue_without_the_form_suffix():
+    # The autouse fixture above serves FAKE_QUESTIONS as the catalogue.
+    assert mc.ki_short_label("ki_new_people_meta") == "Nuevas Personas"
+    assert mc.ki_short_label("contacts_made") == "Contactos"

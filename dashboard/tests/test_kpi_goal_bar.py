@@ -20,6 +20,7 @@ import pandas as pd
 import pytest
 
 from app.components import design_system
+from app.config.theme import STATUS
 from app.components.design_system import render_kpi_row
 
 # The goal caption's own style signature. Asserting against the whole card is
@@ -65,7 +66,7 @@ def test_the_bar_width_still_stops_at_100_percent(rendered):
     """The number is uncapped; the drawing is not, or it overflows its track."""
     html = rendered([{"label": "Contactos", "value": 1267, "goal": 645}])
     assert "width:196%" not in html
-    assert "width:100%;background:#22c55e" in html
+    assert f"width:100%;background:{STATUS['good']}" in html
 
 
 def test_an_exactly_met_goal_and_a_doubled_one_do_not_look_identical(rendered):

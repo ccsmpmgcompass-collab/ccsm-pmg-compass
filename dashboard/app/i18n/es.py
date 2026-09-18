@@ -146,11 +146,12 @@ ES: dict[str, str] = {
         "Calendarios Bautismales Entregados",
     # Short Key Indicator tile labels — the catalogue's names are the FORM's
     # question wording and wrap to three lines in a phone-width card.
-    "New People":            "Nuevas Personas",
-    "Lessons w/ Member":     "Lecciones c/ Miembro",
-    "Friends at Sacrament":  "Amigos en Sacramental",
-    "Friends · First Week":  "Amigos · 1ª Semana",
-    "On Baptismal Date":     "Con Fecha Bautismal",
+    # metric_catalog.KI_SHORT_LABELS, decision 11 (2026-09-18): sentence case.
+    "New people":            "Nuevas personas",
+    "Lessons w/ member":     "Lecciones c/ miembro",
+    "Friends at sacrament":  "Amigos en sacramental",
+    "Friends · 1st week":    "Amigos · 1ª semana",
+    "With baptismal date":   "Con fecha bautismal",
     "Baptized":              "Bautizados",
     "RC at Church":          "CR en la Iglesia",
     "Day {n} of 7 · nightly reports through {day} · goals set by "

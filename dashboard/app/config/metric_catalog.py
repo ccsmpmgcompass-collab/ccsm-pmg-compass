@@ -314,6 +314,46 @@ def format_metric_label(key: str, lang: str = "es") -> str:
     return key.replace("_", " ").title()
 
 
+#: The seven Key Indicators' card labels (PLAN-2026-09-18-data-pages.md,
+#: decision 11), the ONE vocabulary every page uses for them. English keys,
+#: translated through t() like every other string. Short on purpose: the
+#: catalogue's names are the weekly FORM's question wording, and "Amigos en la
+#: Iglesia (Primera Semana) (Real)" wraps to three lines on a phone-width card.
+#: Trimmed phrases rather than initialisms — a president glancing at the page
+#: should not have to decode NP / LM / FB. "CR" is the one exception, because
+#: Conversos Recientes is already said that way in the mission.
+KI_SHORT_LABELS: dict[str, str] = {
+    "ki_new_people_real":         "New people",
+    "ki_member_lessons_real":     "Lessons w/ member",
+    "ki_friends_sacrament_real":  "Friends at sacrament",
+    "ki_friends_first_week_real": "Friends · 1st week",
+    "ki_baptismal_date_real":     "With baptismal date",
+    "ki_baptized_confirmed_real": "Baptized",
+    "ki_rc_at_church_real":       "RC at Church",
+}
+
+_FORM_SUFFIXES = (" (Real)", " (real)", " (Meta)", " (meta)")
+
+
+def ki_short_label(key: str) -> str:
+    """A Key Indicator's label as every card, header and ranking prints it.
+
+    The short form from KI_SHORT_LABELS, translated; for a key with no short
+    form, the catalogue's name with the form's "(Real)" / "(Meta)" suffix
+    stripped — that suffix tells the Real column from the Meta column ON THE
+    FORM, where both are asked, and means nothing beside a single number.
+    """
+    from app.i18n import t  # late: app.i18n reads Streamlit session state
+    short = KI_SHORT_LABELS.get(str(key))
+    if short:
+        return t(short)
+    label = format_metric_label(str(key))
+    for suffix in _FORM_SUFFIXES:
+        if label.endswith(suffix):
+            return label[: -len(suffix)]
+    return label
+
+
 def clear_cache() -> None:
     """Drop the cached QUESTIONS_CONFIG read. Call after the Maintenance page
     writes that tab, or the catalogue serves the pre-edit vocabulary for up to

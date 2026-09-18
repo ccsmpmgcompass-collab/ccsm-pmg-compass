@@ -18,13 +18,16 @@ from app.components.design_system import (
     render_section_label, render_section_tabs, render_kpi_row, render_table,
 )
 from app.config.flavor_loader import flavor, METRIC_LABELS
-from app.config.metric_catalog import key_indicator_metrics, nightly_metrics
+from app.config.metric_catalog import (
+    key_indicator_metrics, ki_short_label, nightly_metrics,
+)
 from app.i18n import t
 from app.i18n.formats import (
     fmt_int, fmt_number, fmt_percent, fmt_week_span, fmt_day_month,
     fmt_month_abbr,
 )
-from app.config.theme import CHART_COLORS
+from app.components.charts import GOAL_LINE, MAGNITUDE
+from app.config.theme import SERIES_COLORS, STATUS
 from app.db.queries import (
     get_mission_baptisms_by_month,
     get_mission_totals,
@@ -282,7 +285,7 @@ _VS_PRIOR_WEEK = t("vs prior 7 days")
 #
 # The §1b heading already says these are rates, so repeating "Tasa de" on all
 # four cards spends the widest line of the card on a word the reader has just
-# read. Same trimming rule as _KI_SHORT_LABELS, and the same reason: the
+# read. Same trimming rule as metric_catalog.KI_SHORT_LABELS, and the same reason: the
 # catalogue's names are built to be unambiguous in a metric picker, not to fit
 # a 200px card.
 #
@@ -484,44 +487,8 @@ else:
 _ki_metrics = key_indicator_metrics()
 
 
-# Tile labels for the seven Key Indicators, short enough for a phone-width card.
-#
-# The catalogue's names are the FORM's question wording, which is right on a
-# form and wrong on a tile: "Amigos en la Iglesia (Primera Semana) (Real)" wraps
-# to three lines in a 200px card and pushes the number it labels off screen.
-#
-# Trimmed phrases rather than initialisms (NP / LM / FB), on purpose: a
-# president glancing at the page should not have to decode it. "CR" is the one
-# exception and only because Conversos Recientes is already said that way in the
-# mission. Keys are English and translated like every other string, so the row
-# does not silently become Spanish-only.
-#
-# The "(Real)" suffix goes with them. It exists to tell the Real column apart
-# from the Meta column ON THE FORM, where both are asked; a tile has no such
-# twin, and on the in-progress row it is wrong as well — those values come from
-# the nightly form, not the weekly form's Real column.
-_KI_SHORT_LABELS = {
-    "ki_new_people_real":        "New People",
-    "ki_member_lessons_real":    "Lessons w/ Member",
-    "ki_friends_sacrament_real": "Friends at Sacrament",
-    "ki_friends_first_week_real": "Friends · First Week",
-    "ki_baptismal_date_real":    "On Baptismal Date",
-    "ki_baptized_confirmed_real": "Baptized",
-    "ki_rc_at_church_real":      "RC at Church",
-}
-
-
-def _ki_label(key: str, fallback: str) -> str:
-    """A Key Indicator's tile label: the short form, or the catalogue name with
-    the form's "(Real)"/"(Meta)" suffix stripped if no short form exists."""
-    short = _KI_SHORT_LABELS.get(key)
-    if short:
-        return t(short)
-    label = METRIC_LABELS.get(key, fallback)
-    for suffix in (" (Real)", " (Meta)"):
-        if label.endswith(suffix):
-            return label[: -len(suffix)]
-    return label
+# The seven Key Indicators' tile labels are metric_catalog.ki_short_label —
+# the one vocabulary (decision 11), shared with Desgloses.
 
 
 def _leadership_week_goal(week_end) -> tuple[dict, int, str]:
@@ -644,7 +611,7 @@ else:
         # different quantity does not inherit the other quantity's target.
         borrowed = k in _KI_NIGHTLY_RELABEL
         _cur_cards.append({
-            "label": _KI_NIGHTLY_RELABEL.get(k, _ki_label(k, label)),
+            "label": _KI_NIGHTLY_RELABEL.get(k, ki_short_label(k)),
             "value": int(_wtd_totals.get(source, 0)) if measured else "—",
             # The leadership goal for the cambio is the bar where one exists;
             # the companionships' own goal falls back into it where none does,
@@ -736,7 +703,7 @@ if not _ki_metrics:
 else:
     render_kpi_row([
         {
-            "label": _ki_label(k, label),
+            "label": ki_short_label(k),
             "value": int(_ki_val(k)),
             "goal":  _past_lead_goals.get(k) or _past_goals.get(k, 0),
             "change": period_delta(
@@ -992,7 +959,7 @@ if _ab_monthly:
             fig_ab.add_trace(go.Scatter(
                 x=_ab_x, y=_ab_pace, mode="lines",
                 name=t("Goal pace ({goal})", goal=fmt_int(_ab_goal)),
-                line=dict(color="#6366f1", width=2, dash="dash"),
+                line=dict(color=GOAL_LINE, width=2, dash="dash"),
                 hovertemplate="%{y:.0f}<extra>" + t("goal pace") + "</extra>",
             ))
         # The current year last, so it draws on top of everything it is being
@@ -1001,7 +968,7 @@ if _ab_monthly:
             x=_ab_x[:_ab_n], y=_ab_series[:_ab_n],
             mode="lines+markers",
             name=str(_ab_year),
-            line=dict(color="#22c55e", width=3),
+            line=dict(color=MAGNITUDE, width=3),
             marker=dict(size=7),
             hovertemplate="%{y:.0f}<extra>" + str(_ab_year) + "</extra>",
             cliponaxis=False,
@@ -1069,7 +1036,7 @@ else:
                     fig1.add_trace(go.Scatter(
                         x=weeks, y=nightly_chart[key], mode="lines+markers",
                         name=METRIC_LABELS.get(key, key),
-                        line=dict(color=CHART_COLORS[i % len(CHART_COLORS)], width=2),
+                        line=dict(color=SERIES_COLORS[i % len(SERIES_COLORS)], width=2),
                         marker=dict(size=6),
                     ))
             fig1.update_layout(
@@ -1090,7 +1057,7 @@ else:
                     fig2.add_trace(go.Scatter(
                         x=ki_weeks, y=ki_chart[key], mode="lines+markers",
                         name=METRIC_LABELS.get(key, key),
-                        line=dict(color=CHART_COLORS[(i + 2) % len(CHART_COLORS)], width=2),
+                        line=dict(color=SERIES_COLORS[i % len(SERIES_COLORS)], width=2),
                         marker=dict(size=6),
                     ))
             fig2.update_layout(
@@ -1188,7 +1155,7 @@ else:
         x="Label",
         y=_daily_key,
         labels={"Label": t("Date"), _daily_key: _daily_label},
-        color_discrete_sequence=["#6366f1"],
+        color_discrete_sequence=[MAGNITUDE],
     )
     # No in-chart title: the metric selector above and the caption below
     # already name it.
@@ -1307,9 +1274,9 @@ else:
     # the unfiled share is drawn rather than described.
     _eff_day_labels = [fmt_day_month(d.day) for d in _eff_cur.days]
     _eff_segments = [
-        (eb.ALL,  _eff_labels[eb.ALL],  "#22c55e"),
-        (eb.MOST, _eff_labels[eb.MOST], "#f59e0b"),
-        (eb.SOME, _eff_labels[eb.SOME], "#ef4444"),
+        (eb.ALL,  _eff_labels[eb.ALL],  STATUS["good"]),
+        (eb.MOST, _eff_labels[eb.MOST], STATUS["warn"]),
+        (eb.SOME, _eff_labels[eb.SOME], STATUS["bad"]),
     ]
 
     render_section_label(t("Effort answers per day, share of all active areas"),

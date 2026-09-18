@@ -457,3 +457,20 @@ landed in the same push).
   them; (b) `bars_vs_goal` takes `pace_value` beside `pace_index` — the tick
   needs a height, not just a bucket; (c) a per-bucket goal draws a dash over
   each bar (shapes), a scalar goal one `add_hline`.
+- 2026-09-18 — **A3 + A5 landed** (one commit). `theme.STATUS` is the only
+  grading palette: `_GOAL_BAR_TIERS` is two thresholds (90/60) over
+  good/warn/bad, the change chips on the card and in the engine use it, the
+  Plotly template's colorway is `SERIES_COLORS`, the Panel imports no
+  `CHART_COLORS`, the Embudo donut uses `SERIES_COLORS`; `PALETTE` stays
+  defined for out-of-scope pages. `metric_catalog.ki_short_label` /
+  `KI_SHORT_LABELS` is the one KI vocabulary (sentence case); the Panel's
+  `_KI_SHORT_LABELS`/`_ki_label`, the engine's `_strip_real` and its header
+  suffix-strip are gone. Validator (dataviz `validate_palette.js`, dark,
+  surface #08080e) on `#3987e5,#3ecf6f,#f2b134,#f0645a,#9085e9,#8b5cf6`:
+  contrast all ≥ 3:1 PASS; the categorical checks FAIL (status hues sit above
+  the dark lightness band, warn↔good ΔE 5.6 protan, the two violets ΔE 9.9)
+  — recorded, not acted on: these six are never adjacent series; status is
+  always paired with a percentage or an arrow, and the two violets never
+  share a chart. Verified live on Panel, Desgloses, Embudo. Suite 13 failed /
+  1041 passed (same 13). Left for Phase D/E: the Desgloses funnel's and the
+  Embudo funnel's own colour lists, which D5/E3 replace outright.

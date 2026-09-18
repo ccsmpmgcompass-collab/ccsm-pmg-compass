@@ -395,14 +395,15 @@ def test_no_provo_key_or_label_reaches_a_populated_page(page):
 # question wording. The catalogue names are the weekly form's column headers —
 # right on a form, wrong on a 200px tile, where "Amigos en la Iglesia (Primera
 # Semana) (Real)" wraps to three lines and pushes its number off screen. The
-# Panel shortens them (_KI_SHORT_LABELS in 01_Panel.py); _KI_BASES still drives
-# the synthetic QUESTIONS_CONFIG above, so the two must stay separate.
+# Panel shortens them (metric_catalog.KI_SHORT_LABELS, decision 11 of the
+# 2026-09-18 data-pages plan); _KI_BASES still drives the synthetic
+# QUESTIONS_CONFIG above, so the two must stay separate.
 _KI_PANEL_LABELS = [
-    "Nuevas Personas",
-    "Lecciones c/ Miembro",
-    "Amigos en Sacramental",
-    "Amigos · 1ª Semana",
-    "Con Fecha Bautismal",
+    "Nuevas personas",
+    "Lecciones c/ miembro",
+    "Amigos en sacramental",
+    "Amigos · 1ª semana",
+    "Con fecha bautismal",
     "Bautizados",
     "CR en la Iglesia",
 ]

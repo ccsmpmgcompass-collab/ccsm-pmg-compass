@@ -34,7 +34,7 @@ from app.analytics.period_delta import (
 )
 from app.components.charts import chart
 from app.components.design_system import render_kpi_row, render_section_label
-from app.config.theme import series_style
+from app.config.theme import series_style, STATUS
 from app.i18n.formats import fmt_day_month, fmt_int, fmt_number
 from app.db.queries import (
     get_area_expectation_entry,
@@ -90,6 +90,7 @@ from app.config.metric_catalog import (
     goal_metric_key,
     is_rate_metric,
     key_indicator_metrics,
+    ki_short_label,
     metric_options,
     non_numeric_metrics,
     weekly_metric_keys,
@@ -1470,15 +1471,9 @@ def _header_lines(weekly_cur: pd.DataFrame, weekly_prior: pd.DataFrame):
                 pd.to_numeric(weekly_prior[key], errors="coerce").fillna(0).sum())
             change = period_delta(value, prior, current_basis=cur_areas,
                                   prior_basis=pri_areas, min_basis=1)
-        # The catalogue's labels end in "(Real)" to separate an achieved figure
-        # from the "(Meta)" the companionship set for itself — a distinction the
-        # weekly FORM needs and this header does not: nothing here is a goal, so
-        # the suffix is three characters of noise on all three lines.
-        label = format_metric_label(key)
-        for suffix in (" (Real)", " (real)"):
-            if label.endswith(suffix):
-                label = label[: -len(suffix)]
-        lines.append((label, value, change))
+        # The one KI vocabulary (decision 11): the short label, never the
+        # form's "(Real)" wording.
+        lines.append((ki_short_label(key), value, change))
     return lines
 
 
@@ -1577,11 +1572,11 @@ def _change_chip(change) -> str:
     pct, show = change.get("pct"), change.get("show")
     severe = pct is not None and pct < SEVERE_DROP_PCT
     if direction > 0:
-        color, arrow = "#22c55e", "↑"
+        color, arrow = STATUS["good"], "↑"
     elif direction == 0:
         color, arrow = "#6b7280", "→"
     else:
-        color, arrow = ("#ef4444" if severe else "#f59e0b"), "↓"
+        color, arrow = (STATUS["bad"] if severe else STATUS["warn"]), "↓"
     if show == "absolute" and change.get("change") is not None:
         n = round(float(change["change"]))
         text = f"{'+' if n > 0 else ''}{fmt_int(n)}"
@@ -1872,19 +1867,6 @@ def render_group_breakdown(
 
     _vs = _twin_label(kpi_period)
 
-    def _strip_real(label: str) -> str:
-        """A Key Indicator's name without the weekly form's "(Real)" suffix.
-
-        The suffix separates an achieved figure from the "(Meta)" the
-        companionship set beside it ON THE FORM. On a card that distinction is
-        already carried by the bar and its note, so it is six characters of noise
-        on all seven labels — the same trim _header_lines and the Panel make.
-        """
-        for _sfx in (" (Real)", " (real)"):
-            if label.endswith(_sfx):
-                return label[: -len(_sfx)]
-        return label
-
     # ══════════════════════════════════════════════════════════════════════════
     # 1. INDICADORES CLAVE — the mission's seven, for this group and period
     # ══════════════════════════════════════════════════════════════════════════
@@ -1997,7 +1979,7 @@ def render_group_breakdown(
             if _k not in _ki_cur.columns:
                 continue
             _v = int(pd.to_numeric(_ki_cur[_k], errors="coerce").fillna(0).sum())
-            _c: dict = {"label": _strip_real(format_metric_label(_k)), "value": _v}
+            _c: dict = {"label": ki_short_label(_k), "value": _v}
 
             # The basis is REPORTING AREAS, not days: a weekly indicator does not
             # grow with the days behind it, it grows with the companionships that

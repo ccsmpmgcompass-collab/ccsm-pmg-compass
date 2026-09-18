@@ -9,8 +9,9 @@ from app.auth.auth import require_auth
 from app.components.charts import chart
 from app.components.design_system import (
     render_page_header, render_section_label,
-    render_table, render_kpi_row, PALETTE,
+    render_table, render_kpi_row,
 )
+from app.config.theme import SERIES_COLORS
 from app.db.drive_blob import save_dataframe_blob
 from app.db.queries import (
     get_baptisms_actual_for_range, get_tableau_detail, get_tableau_detail_file_id,
@@ -501,7 +502,7 @@ with dcol:
         donut = go.Figure(go.Pie(
             labels=cats.index.tolist(), values=cats.values.tolist(),
             hole=0.62, sort=False, rotation=270, automargin=True,
-            marker=dict(colors=PALETTE, line=dict(color="#08080e", width=2)),
+            marker=dict(colors=SERIES_COLORS, line=dict(color="#08080e", width=2)),
             text=_pct_text, textinfo="text", textposition="outside",
             textfont=dict(color="#ffffff", size=14),
             outsidetextfont=dict(color="#ffffff", size=14),

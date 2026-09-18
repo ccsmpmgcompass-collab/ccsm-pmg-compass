@@ -5,6 +5,7 @@ import html as _html
 import streamlit as st
 import plotly.io as pio
 import plotly.graph_objects as go
+from app.config.theme import SERIES_COLORS, STATUS
 from app.i18n import t
 from app.i18n.formats import fmt_int, fmt_number
 from app.analytics import period_delta as _pd
@@ -20,6 +21,9 @@ def _delta_direction(pct: float) -> int:
         return _pd.FLAT
     return _pd.UP if pct > 0 else _pd.DOWN
 
+#: RETIRED from charts (data-pages plan A3, 2026-09-18): the chart colorway is
+#: theme.SERIES_COLORS and status is theme.STATUS. Kept for the pages outside
+#: that plan that still import it.
 PALETTE = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"]
 
 _CSS = """
@@ -467,7 +471,7 @@ def _register_plotly_template() -> None:
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             font=dict(color="#9ca3af", family="system-ui, -apple-system"),
-            colorway=PALETTE,
+            colorway=SERIES_COLORS,
             xaxis=dict(
                 gridcolor="rgba(255,255,255,0.06)",
                 linecolor="rgba(255,255,255,0.1)",
@@ -532,8 +536,11 @@ def render_page_header(title: str, subtitle: str, icon: str = "") -> None:
 #: amber used to run all the way from 60% to nothing, so baptismal invitation
 #: at 39% of target -- the single most actionable fact the 2026-08-21 audit
 #: found (H2) -- drew the same colour as a metric sitting at 55%.
-_GOAL_BAR_TIERS = ((90, "#22c55e"), (60, "#6366f1"), (50, "#f59e0b"))
-_GOAL_BAR_BELOW = "#ef4444"
+#: Three states, no blue (decision 10): on pace >= 90% of pace, behind 60-89%,
+#: far behind below. Blue means "this metric, this period" on every chart, so
+#: it can never also mean a grade.
+_GOAL_BAR_TIERS = ((90, STATUS["good"]), (60, STATUS["warn"]))
+_GOAL_BAR_BELOW = STATUS["bad"]
 
 
 def goal_bar_state(value, goal, *, pace=None, value_basis=None, goal_basis=None):
@@ -751,7 +758,8 @@ def render_kpi_row(metrics: list[dict]) -> None:
     (period_delta.point_delta, for rates) uses its own thresholds: ±1 point for
     the neutral band, -5 points for red. All of them live in period_delta.
 
-    Goal bar colors come from _GOAL_BAR_TIERS, graded on the PACE where one is
+    Goal bar colors are the three STATUS states (green / amber / red, no blue),
+    from _GOAL_BAR_TIERS, graded on the PACE where one is
     given and on the goal otherwise. See goal_bar_state() for the arithmetic
     and why the two are separated.
     """
@@ -804,16 +812,16 @@ def render_kpi_row(metrics: list[dict]) -> None:
                 severe = pct is not None and pct < _pd.SEVERE_DROP_PCT
 
             if direction > 0:
-                color, arrow = "#22c55e", "↑"
+                color, arrow = STATUS["good"], "↑"
             elif direction == 0:
                 # A wobble inside the neutral band is not a trend. Colouring it
                 # amber, as this did for every drop of 0 to -10%, taught the
                 # reader that the colours mean nothing.
                 color, arrow = "#6b7280", "→"
             elif severe:
-                color, arrow = "#ef4444", "↓"
+                color, arrow = STATUS["bad"], "↓"
             else:
-                color, arrow = "#f59e0b", "↓"
+                color, arrow = STATUS["warn"], "↓"
 
             if show == _pd.POINTS and points is not None:
                 # Percentage POINTS, and the card says so. The alternative -- a

@@ -25,6 +25,7 @@ import re
 import pytest
 
 from app.components import design_system
+from app.config.theme import STATUS
 from app.components.design_system import (
     goal_bar_color, goal_bar_state, render_kpi_row,
 )
@@ -57,7 +58,7 @@ def test_a_zone_exactly_on_pace_two_days_into_a_month_is_green():
     on the pace it is 100% and green."""
     state = goal_bar_state(20, 300, pace=20)
     assert state["grade_pct"] == 100
-    assert goal_bar_color(state["grade_pct"]) == "#22c55e"
+    assert goal_bar_color(state["grade_pct"]) == STATUS["good"]
 
 
 def test_the_same_zone_without_a_pace_reads_red():
@@ -65,7 +66,7 @@ def test_the_same_zone_without_a_pace_reads_red():
     later refactor cannot quietly restore it."""
     state = goal_bar_state(20, 300)
     assert state["grade_pct"] == 7
-    assert goal_bar_color(state["grade_pct"]) == "#ef4444"
+    assert goal_bar_color(state["grade_pct"]) == STATUS["bad"]
 
 
 def test_a_zone_genuinely_behind_pace_is_still_red():
@@ -73,7 +74,7 @@ def test_a_zone_genuinely_behind_pace_is_still_red():
     and must still say so."""
     state = goal_bar_state(8, 300, pace=20)
     assert state["grade_pct"] == 40
-    assert goal_bar_color(state["grade_pct"]) == "#ef4444"
+    assert goal_bar_color(state["grade_pct"]) == STATUS["bad"]
 
 
 # ── Fill and tick are about the full goal; only the colour moves ─────────────
