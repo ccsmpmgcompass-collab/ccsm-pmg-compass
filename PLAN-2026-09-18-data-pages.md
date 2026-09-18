@@ -496,3 +496,19 @@ landed in the same push).
   titles at zone scope. Coverage test passes with nothing ignored. Suite
   13 failed / 1047 passed (same 13). **Phase A is done**; pushed,
   Zackary told to Reboot. Next: Phase B on his word.
+- 2026-09-18 — **B1 landed.** `app/analytics/ki_history.py`: `weekly_series`,
+  `twin_weekly`, `cycle_series`, `area_rows`, `leadership_weekly_mark` /
+  `leadership_total`, plus the calendar helpers `cycle_weeks`,
+  `cycle_position`, `sundays_between`. Pure; every sheet read sits behind a
+  keyword (`weekly=`, `daily=`, `cycles=`, `goals_by_cycle=`, `totals=`) that
+  defaults to the live loader. `tests/test_ki_history.py`: 22 tests on a
+  synthetic frame (meta offset W-7, partial-twin None, blank meta → None,
+  basis-1 change, silent area present with 0 and `reported=False`, nights
+  missed up to yesterday). Decisions: (a) a past week nobody in scope
+  reported carries `actual=None`, not 0 — the bar is absent, not a failure;
+  (b) `meta_so_far` on a cycle sums the metas of weeks up to and including
+  the CURRENT one, not next week's already-written meta, so "propuesto hasta
+  hoy" and "actual hasta hoy" cover the same weeks; (c) the `_meta` column is
+  derived by name from the `_real` key rather than through `goal_metric_key`,
+  which would read QUESTIONS_CONFIG; (d) a cycle with no weekly rows at all
+  is omitted from "Por cambio" rather than drawn empty.
