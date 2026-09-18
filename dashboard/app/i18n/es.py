@@ -2193,6 +2193,53 @@ ES: dict[str, str] = {
     "Previous cambio": "Cambio anterior",
     "This cambio": "Este cambio",
     "Expected by today": "Esperado a hoy",
+    # ── Data-pages plan A6 (2026-09-18): the i18n sweep, audit X7 ──────────
+    "People Found":
+        "Personas encontradas",
+    "Contacted":
+        "Contactadas",
+    "New Referrals":
+        "Referencias nuevas",
+    "Contact to Friend":
+        "De contacto a amigo",
+    "Success Rate":
+        "Tasa de éxito",
+    "Median to Contact":
+        "Mediana hasta el contacto",
+    "Within 24h":
+        "Dentro de 24 h",
+    "Within 48h":
+        "Dentro de 48 h",
+    "found":
+        "encontradas",
+    "Unknown":
+        "Desconocido",
+    "Missionary":
+        "Misioneros",
+    "Member":
+        "Miembros",
+    "Media":
+        "Medios",
+    "Visitors Centers and Events":
+        "Centros de visitantes y eventos",
+    "{categories} Expectation":
+        "Expectativa {categories}",
+    "{prefix} {rate} (≈{n} this period)":
+        "{prefix} {rate} (≈{n} en este período)",
+    "Missed {unit}s are marked with a red ✕ and the dotted red line traces where the trend went through them.":
+        "Los {unit}s sin informe se marcan con una ✕ roja y la línea roja punteada traza por dónde pasó la tendencia.",
+    "Click an area in the legend to see just that one — its missed {unit}s are traced with red ✕s so the line shows where it went instead of disappearing. Click another area to switch straight to it, or click it again to show all.":
+        "Haga clic en un área en la leyenda para ver solo esa — sus {unit}s sin informe se trazan con ✕ rojas para que la línea muestre por dónde fue en vez de desaparecer. Haga clic en otra área para cambiar directamente a ella, o de nuevo en la misma para mostrar todas.",
+    "A gap in a line is a week with no weekly (Sunday) form from that area; a submitted form with nothing to report shows as a dot at 0.":
+        "Un hueco en una línea es una semana sin informe semanal (domingo) de esa área; un informe enviado sin nada que reportar se muestra como un punto en 0.",
+    "{date} — no areas yet":
+        "{date} — aún sin áreas",
+    "{n}/{total} areas submitted ({pct}%)":
+        "{n}/{total} áreas enviaron ({pct}%)",
+    "no areas yet":
+        "aún sin áreas",
+    "Week ending {date} — {title}":
+        "Semana que termina el {date} — {title}",
     # design_system.render_section_label — the ⓘ tooltip (plan A4)
     "More about this section": "Más sobre esta sección",
     "{pct}% of {expectation} expectation": "{pct}% de la expectativa de {expectation}",

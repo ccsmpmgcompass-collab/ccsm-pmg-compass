@@ -480,5 +480,19 @@ landed in the same push).
   their numbers too — out of scope, left as is), `info` renders an ⓘ and the
   whole label line is a `<details>` summary that opens a muted paragraph,
   `right` is a muted string after the rule. Verified live: Panel renders 16
-  labels, no circled digits, no exceptions. Suite 13 failed / 1050 passed
-  (same 13). No caller passes `info`/`right` yet — Phases C/D/E do.
+  labels, no circled digits, no exceptions. Suite 13 failed / 1047 passed
+  (same 13; the A4 commit message says 1050 — a miscount). No caller passes `info`/`right` yet — Phases C/D/E do.
+- 2026-09-18 — **A6 landed. Phase A complete.** Wrapped in `t()` with es.py
+  entries: Embudo's eleven KPI labels, the donut legend (sheet values stay
+  English in the data; a `_FINDING_CATEGORY_LABELS` map translates the four
+  live categories plus Unknown), the "Unknown" placeholder on the source/zone
+  bars and the donut's centre, the engine's expectation annotations (both
+  the per-metric dash and the group bar line), the three trend captions and
+  the click instruction, and the compliance calendars' cell titles (daily and
+  weekly). Found and fixed on the way: the two existing trend captions passed
+  a trailing space into `t()` that es.py's keys lacked, so they rendered in
+  English — all three now strip it and add the space outside. Verified live
+  (Spanish): Embudo labels and legend, Desgloses trend caption and calendar
+  titles at zone scope. Coverage test passes with nothing ignored. Suite
+  13 failed / 1047 passed (same 13). **Phase A is done**; pushed,
+  Zackary told to Reboot. Next: Phase B on his word.

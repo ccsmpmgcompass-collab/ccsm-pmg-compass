@@ -424,17 +424,41 @@ if not det_df.empty:
         median_success = float(h_suc.median())
 
 
+#: Tableau's finding categories, as the export writes them. The data keeps the
+#: English value (it is the sheet's own vocabulary and the filter key); only
+#: what the reader sees is translated. Probed live 2026-09-18: Missionary,
+#: Media, Member, Visitors Centers and Events.
+_FINDING_CATEGORY_LABELS = {
+    "Missionary": "Missionary",
+    "Media": "Media",
+    "Member": "Member",
+    "Visitors Centers and Events": "Visitors Centers and Events",
+    "Unknown": "Unknown",
+}
+
+
+def _finding_category_label(value: str) -> str:
+    key = _FINDING_CATEGORY_LABELS.get(str(value))
+    return t(key) if key else str(value)
+
+
+def _unknown_label(value: str) -> str:
+    """Free-text sources and zone names are shown as written; only the
+    placeholder this page itself inserts is translated."""
+    return t("Unknown") if str(value) == "Unknown" else str(value)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SECTION 1 — TOP-LINE KPIs
 # ══════════════════════════════════════════════════════════════════════════════
 
 render_kpi_row([
-    {"label": "People Found",   "value": int(found)},
-    {"label": "Contact Attempted", "value": int(attempted)},
-    {"label": "Contacted",      "value": int(contacted)},
-    {"label": "Being Taught",   "value": int(teaching)},
-    {"label": "New Referrals",  "value": int(referred)},
-    {"label": "Official Baptisms",
+    {"label": t("People Found"),      "value": int(found)},
+    {"label": t("Contact Attempted"), "value": int(attempted)},
+    {"label": t("Contacted"),         "value": int(contacted)},
+    {"label": t("Being Taught"),      "value": int(teaching)},
+    {"label": t("New Referrals"),     "value": int(referred)},
+    {"label": t("Official Baptisms"),
      "value": int(official_baptisms) if official_baptisms is not None else "—",
      "note": (t("Certified — Tableau summary PDF") if official_baptisms is not None
               else t("Pick a range of full calendar months to see this"))},
@@ -493,6 +517,10 @@ with dcol:
     if cat_col:
         cats = (det_df[cat_col].astype(str).str.strip()
                 .replace({"": "Unknown", "nan": "Unknown"}).value_counts())
+        # The sheet's category values are English and stay so in the data;
+        # only the legend is translated. A value not in the map is shown as
+        # the sheet wrote it rather than hidden (plan A6).
+        _cat_labels = [_finding_category_label(c) for c in cats.index]
         # Labels sit OUTSIDE the ring in a single white color: high-contrast on
         # the dark background and version-proof (Cloud's plotly ignores per-point
         # text-color arrays and won't fit a horizontal % inside the thin ring).
@@ -500,7 +528,7 @@ with dcol:
         _pct_text = [f"{v / _total * 100:.0f}%" if v / _total >= 0.02 else ""
                      for v in cats.values]
         donut = go.Figure(go.Pie(
-            labels=cats.index.tolist(), values=cats.values.tolist(),
+            labels=_cat_labels, values=cats.values.tolist(),
             hole=0.62, sort=False, rotation=270, automargin=True,
             marker=dict(colors=SERIES_COLORS, line=dict(color="#08080e", width=2)),
             text=_pct_text, textinfo="text", textposition="outside",
@@ -509,7 +537,7 @@ with dcol:
             insidetextfont=dict(color="#ffffff", size=14),
         ))
         donut.update_layout(
-            annotations=[dict(text=f"{int(found)}<br>found", x=0.5, y=0.5,
+            annotations=[dict(text=f"{int(found)}<br>{t('found')}", x=0.5, y=0.5,
                               font=dict(size=18, color="#f4f4f8"), showarrow=False)],
         )
         chart(donut, height=400)
@@ -526,11 +554,11 @@ if not det_df.empty:
     contact_rate = (attempted / found * 100) if found else 0
     success_rate = (contacted / found * 100) if found else 0
     render_kpi_row([
-        {"label": "Contact to Friend", "value": f"{contact_rate:.0f}%"},
-        {"label": "Success Rate",    "value": f"{success_rate:.0f}%"},
-        {"label": "Median to Contact", "value": _fmt_dur(median_attempt)},
-        {"label": "Within 24h", "value": f"{within24:.0f}%" if within24 is not None else "—"},
-        {"label": "Within 48h", "value": f"{within48:.0f}%" if within48 is not None else "—"},
+        {"label": t("Contact to Friend"), "value": f"{contact_rate:.0f}%"},
+        {"label": t("Success Rate"),      "value": f"{success_rate:.0f}%"},
+        {"label": t("Median to Contact"), "value": _fmt_dur(median_attempt)},
+        {"label": t("Within 24h"), "value": f"{within24:.0f}%" if within24 is not None else "—"},
+        {"label": t("Within 48h"), "value": f"{within48:.0f}%" if within48 is not None else "—"},
     ])
 
 
@@ -550,7 +578,8 @@ if not det_df.empty:
                    .replace({"": "Unknown", "nan": "Unknown"})
                    .value_counts().head(10).sort_values())
             bar = go.Figure(go.Bar(
-                x=src.values.tolist(), y=src.index.tolist(), orientation="h",
+                x=src.values.tolist(), y=[_unknown_label(v) for v in src.index],
+                orientation="h",
                 marker=dict(color="#6366f1"), text=src.values.tolist(),
                 textposition="outside", cliponaxis=False,
                 textfont=dict(color="#ffffff", size=12)))
@@ -564,7 +593,8 @@ if not det_df.empty:
                   .replace({"": "Unknown", "nan": "Unknown"})
                   .value_counts().sort_values())
             zbar = go.Figure(go.Bar(
-                x=zn.values.tolist(), y=zn.index.tolist(), orientation="h",
+                x=zn.values.tolist(), y=[_unknown_label(v) for v in zn.index],
+                orientation="h",
                 marker=dict(color="#22c55e"), text=zn.values.tolist(),
                 textposition="outside", cliponaxis=False,
                 textfont=dict(color="#ffffff", size=12)))

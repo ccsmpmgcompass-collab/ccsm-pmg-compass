@@ -166,9 +166,10 @@ def _expectation_prefix(cats: set[str], multi: bool) -> str:
     category/ies joined in settings-tab order ("Spanish/Bilingual
     Expectation")."""
     if not multi:
-        return "Expectation"
+        return t("Expectation")
     rank = {lbl: i for i, lbl in enumerate(get_area_type_category_labels())}
-    return "/".join(sorted(cats, key=lambda l: rank.get(l, len(rank)))) + " Expectation"
+    return t("{categories} Expectation",
+             categories="/".join(sorted(cats, key=lambda l: rank.get(l, len(rank)))))
 
 
 def _expectation_rate(entry: dict) -> str:
@@ -1207,23 +1208,24 @@ def _render_compliance(
             if cell["future"]:
                 bg, fg = _C_UPCOMING
                 return bg, f'<div style="font-size:0.6rem;color:#9ca3af;line-height:1;">{d[8:]}</div>'\
-                           f'<div style="font-size:0.8rem;">&nbsp;</div>', f"{d} — upcoming"
+                           f'<div style="font-size:0.8rem;">&nbsp;</div>', t("{date} — upcoming", date=d)
             if d < _win_start:
                 bg, fg = _C_UPCOMING
                 return bg, f'<div style="font-size:0.6rem;color:#9ca3af;line-height:1;">{d[8:]}</div>'\
-                           f'<div style="font-size:0.8rem;">&nbsp;</div>', f"{d} — before tracking started"
+                           f'<div style="font-size:0.8rem;">&nbsp;</div>', t("{date} — before tracking started", date=d)
             _acc = _accountable(d)
             if _acc == 0:
                 bg, fg = _C_UPCOMING
                 return bg, f'<div style="font-size:0.6rem;color:#9ca3af;line-height:1;">{d[8:]}</div>'\
-                           f'<div style="font-size:0.8rem;">&nbsp;</div>', f"{d} — no areas yet"
+                           f'<div style="font-size:0.8rem;">&nbsp;</div>', t("{date} — no areas yet", date=d)
             _n = _per_day.get(d, 0)
             _pct = round(_n / _acc * 100)
             _pcts.append(_pct)
             bg, fg = _pct_color(_pct)
             return bg, (f'<div style="font-size:0.6rem;color:#9ca3af;line-height:1;">{d[8:]}</div>'
                         f'<div style="font-size:0.8rem;font-weight:700;color:{fg};">{_pct}%</div>'), \
-                   f"{d} — {_n}/{_acc} areas submitted ({_pct}%)"
+                   t("{date} — {n}/{total} areas submitted ({pct}%)",
+                     date=d, n=_n, total=_acc, pct=_pct)
 
         _legend = _compliance_legend([
             (_C_GREEN[0], "&ge;85%"), (_C_AMBER[0], "70–84%"),
@@ -1295,11 +1297,12 @@ def _render_compliance(
             _pct = round(_n / _acc * 100) if _acc else 0
             _wk_pcts.append(_pct)
             _bg, _fg = _pct_color(_pct) if _acc else _C_UPCOMING
-            _title = f"{_n}/{_acc} areas submitted ({_pct}%)" if _acc else "no areas yet"
+            _title = (t("{n}/{total} areas submitted ({pct}%)", n=_n, total=_acc, pct=_pct)
+                      if _acc else t("no areas yet"))
             _inner = (f'<div style="font-size:0.6rem;color:#9ca3af;line-height:1.2;">{_lbl}</div>'
                       f'<div style="font-size:0.8rem;font-weight:700;color:{_fg};">{_pct}%</div>')
         _wk_cells += (
-            f'<td title="Week ending {_w} — {_title}" style="text-align:center;'
+            f'<td title="{t("Week ending {date} — {title}", date=_w, title=_title)}" style="text-align:center;'
             f'padding:6px 8px;background:{_bg};border-radius:4px;vertical-align:middle;'
             f'min-width:52px;white-space:nowrap;">{_inner}</td>'
         )
@@ -2338,10 +2341,10 @@ def render_group_breakdown(
                 _h = _e["weekly"] * _exp_factor
                 _exp_x.append(_lbl)
                 _exp_y.append(_h)
-                _exp_txt.append(
-                    f"Expectation {_expectation_rate(_e)} "
-                    f"(≈{round(_h, 1):g} this period)"
-                )
+                _exp_txt.append(t(
+                    "{prefix} {rate} (≈{n} this period)",
+                    prefix=t("Expectation"), rate=_expectation_rate(_e),
+                    n=f"{round(_h, 1):g}"))
         if _exp_x:
             fig_all.add_trace(go.Scatter(
                 x=_exp_x, y=_exp_y,
@@ -2520,10 +2523,10 @@ def render_group_breakdown(
                 fig_bar.add_hline(
                     y=_h,
                     line=_EXP_LINE_STYLE,
-                    annotation_text=(
-                        f"{_expectation_prefix(_cats, _multi)} "
-                        f"{_expectation_rate(_entry)} (≈{round(_h, 1):g} this period)"
-                    ),
+                    annotation_text=t(
+                        "{prefix} {rate} (≈{n} this period)",
+                        prefix=_expectation_prefix(_cats, _multi),
+                        rate=_expectation_rate(_entry), n=f"{round(_h, 1):g}"),
                     annotation_position="top left",
                     annotation=dict(_EXP_ANNOTATION),
                 )
@@ -2993,25 +2996,25 @@ def render_group_breakdown(
         # isolate — drop the click instruction. Multiple lines (group view): the
         # ✕s only appear once an area is isolated, to keep the all-areas view clean.
         if _is_area:
-            _click_caption = (f"Missed {_unit}s are marked with a red ✕ and the "
-                              "dotted red line traces where the trend went "
-                              "through them.")
+            _click_caption = t("Missed {unit}s are marked with a red ✕ and the "
+                               "dotted red line traces where the trend went "
+                               "through them.", unit=_unit)
         else:
-            _click_caption = ("Click an area in the legend to see just that one — "
-                              f"its missed {_unit}s are traced with red ✕s so the "
-                              "line shows where it went instead of disappearing. "
-                              "Click another area to switch straight to it, or "
-                              "click it again to show all.")
+            _click_caption = t("Click an area in the legend to see just that one — "
+                               "its missed {unit}s are traced with red ✕s so the "
+                               "line shows where it went instead of disappearing. "
+                               "Click another area to switch straight to it, or "
+                               "click it again to show all.", unit=_unit)
         if metric in _weekly_keys:
-            st.caption("A gap in a line is a week with no weekly (Sunday) form "
-                       "from that area; a submitted form with nothing to "
-                       "report shows as a dot at 0. " + _click_caption)
+            st.caption(t("A gap in a line is a week with no weekly (Sunday) form "
+                         "from that area; a submitted form with nothing to "
+                         "report shows as a dot at 0.") + " " + _click_caption)
         elif _is_weekly:
             st.caption(t("A gap in a line is a week with no recorded weekly "
-                         "total from that area. ") + _click_caption)
+                         "total from that area.") + " " + _click_caption)
         else:
             st.caption(t("A gap in a line is a {unit} with no nightly report "
-                         "from that area. ", unit=_unit) + _click_caption)
+                         "from that area.", unit=_unit) + " " + _click_caption)
 
     _render_teaching_pipeline(
         scope_value=scope_value, kpi_period=kpi_period,
