@@ -2193,6 +2193,8 @@ ES: dict[str, str] = {
     "Previous cambio": "Cambio anterior",
     "This cambio": "Este cambio",
     "Expected by today": "Esperado a hoy",
+    # design_system.render_section_label — the ⓘ tooltip (plan A4)
+    "More about this section": "Más sobre esta sección",
     "{pct}% of {expectation} expectation": "{pct}% de la expectativa de {expectation}",
 
     # ── Phase 2 de-contamination: Dashboard + Scores rebuilt sections ────────

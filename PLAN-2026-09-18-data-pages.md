@@ -472,5 +472,13 @@ landed in the same push).
   — recorded, not acted on: these six are never adjacent series; status is
   always paired with a percentage or an arrow, and the two violets never
   share a chart. Verified live on Panel, Desgloses, Embudo. Suite 13 failed /
-  1041 passed (same 13). Left for Phase D/E: the Desgloses funnel's and the
+  1040 passed (same 13; the A3+A5 commit message says 1041 — a miscount). Left for Phase D/E: the Desgloses funnel's and the
   Embudo funnel's own colour lists, which D5/E3 replace outright.
+- 2026-09-18 — **A4 landed.** `render_section_label(text, *, emphasis,
+  numbered=False, info, right)`: unnumbered by default (the ①②③ machinery
+  stays for `numbered=True`; no page passes it now, so Puntajes/Metas lose
+  their numbers too — out of scope, left as is), `info` renders an ⓘ and the
+  whole label line is a `<details>` summary that opens a muted paragraph,
+  `right` is a muted string after the rule. Verified live: Panel renders 16
+  labels, no circled digits, no exceptions. Suite 13 failed / 1050 passed
+  (same 13). No caller passes `info`/`right` yet — Phases C/D/E do.

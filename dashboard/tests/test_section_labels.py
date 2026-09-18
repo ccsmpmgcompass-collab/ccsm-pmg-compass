@@ -93,16 +93,16 @@ def test_emphasis_tier_stays_stronger_than_the_base_tier():
 
 
 def test_sections_are_numbered_in_render_order():
-    assert "①" in _rendered("First")
-    assert "②" in _rendered("Second")
-    assert "③" in _rendered("Third")
+    assert "①" in _rendered("First", numbered=True)
+    assert "②" in _rendered("Second", numbered=True)
+    assert "③" in _rendered("Third", numbered=True)
 
 
 def test_numbering_restarts_for_the_next_page():
-    _rendered("First")
-    _rendered("Second")
+    _rendered("First", numbered=True)
+    _rendered("Second", numbered=True)
     ds.reset_section_numbering()
-    assert "①" in _rendered("A section on the next page")
+    assert "①" in _rendered("A section on the next page", numbered=True)
 
 
 def test_a_label_keeps_its_number_when_drawn_again():
@@ -110,19 +110,19 @@ def test_a_label_keeps_its_number_when_drawn_again():
     re-executes that body without the router, so nothing resets the counter —
     the number has to come from what the label was given the first time, or it
     would climb on every scope change."""
-    _rendered("Notas")
-    _rendered("Compañerismo")
-    assert "①" in _rendered("Notas")
-    assert "②" in _rendered("Compañerismo")
+    _rendered("Notas", numbered=True)
+    _rendered("Compañerismo", numbered=True)
+    assert "①" in _rendered("Notas", numbered=True)
+    assert "②" in _rendered("Compañerismo", numbered=True)
 
 
 def test_unnumbered_labels_do_not_consume_a_number():
     """Goals' area-type categories are sub-headings inside one section; they
     must not push the next real section's number along."""
-    assert "①" in _rendered("A real section")
+    assert "①" in _rendered("A real section", numbered=True)
     sub = _rendered("Piso", emphasis=True, numbered=False)
     assert not any(g in sub for g in "①②③④⑤")
-    assert "②" in _rendered("The next real section")
+    assert "②" in _rendered("The next real section", numbered=True)
 
 
 def test_numbering_falls_back_to_digits_past_twenty():
@@ -130,6 +130,51 @@ def test_numbering_falls_back_to_digits_past_twenty():
     would render as a box. No page has twenty-one sections today; this pins
     what happens the day one does."""
     for i in range(20):
-        _rendered(f"Section {i}")
-    html = _rendered("Section twenty-one")
+        _rendered(f"Section {i}", numbered=True)
+    html = _rendered("Section twenty-one", numbered=True)
     assert ">21<" in html
+
+
+# ── Data-pages plan A4 (2026-09-18): unnumbered by default, an ⓘ, a right slot ──
+
+def test_labels_are_unnumbered_by_default():
+    """The Panel went from thirteen sections to five; numbers were its
+    wayfinding and are now noise. The machinery stays for numbered=True."""
+    html = _rendered("Indicadores clave")
+    assert not any(g in html for g in ds._CIRCLED)
+    assert "Indicadores clave" in html
+
+
+def test_an_unnumbered_label_does_not_consume_a_number():
+    _rendered("Plain")
+    assert "①" in _rendered("Numbered", numbered=True)
+
+
+def test_info_renders_a_details_with_the_paragraph():
+    html = _rendered("Indicadores clave", info="Lo que cuenta cada tarjeta.")
+    assert html.startswith("<details")
+    assert "<summary" in html
+    assert "Lo que cuenta cada tarjeta." in html
+    assert 'class="pmg-info"' in html
+
+
+def test_info_is_escaped():
+    html = _rendered("X", info="<script>alert(1)</script>")
+    assert "<script>" not in html
+
+
+def test_no_info_means_no_details_and_no_glyph():
+    html = _rendered("X")
+    assert "<details" not in html and "pmg-info" not in html
+
+
+def test_right_renders_at_the_labels_right_edge():
+    html = _rendered("Zonas", right="7 sep – 18 oct")
+    assert "7 sep – 18 oct" in html
+    # after the rule (the flex:1 div), i.e. the last thing in the row
+    assert html.index("flex:1;height:1px") < html.index("7 sep – 18 oct")
+
+
+def test_right_and_info_work_on_the_emphasis_tier_too():
+    html = _rendered("Piso", emphasis=True, info="i", right="r")
+    assert "<details" in html and ">r<" in html

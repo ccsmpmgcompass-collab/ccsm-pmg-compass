@@ -56,6 +56,11 @@ _CSS = """
     .pmg-kpi { padding: 0.75rem 0.8rem !important; }
     .pmg-kpi-value { font-size: 1.5rem !important; }
 }
+/* Section labels with an ⓘ are a <details>; the browser's own disclosure
+   triangle would fight the label's rule, so it is hidden here. */
+details.pmg-sec > summary { list-style: none; }
+details.pmg-sec > summary::-webkit-details-marker { display: none; }
+details.pmg-sec[open] .pmg-info { background: rgba(255,255,255,0.12); }
 a.pmg-kpi-link, a.pmg-kpi-link:visited, a.pmg-kpi-link:hover {
     color: inherit !important;
     text-decoration: none !important;
@@ -1079,63 +1084,79 @@ def _section_marker(text: str) -> str:
 
 
 def render_section_label(text: str, *, emphasis: bool = False,
-                         numbered: bool = True) -> None:
-    """Small uppercase label with extending horizontal rule — use between content sections.
+                         numbered: bool = False, info: str | None = None,
+                         right: str | None = None) -> None:
+    """Small uppercase label with an extending horizontal rule — the one
+    heading idiom between content sections.
 
-    Every section is numbered ①②③… in render order, restarting on each page.
-    The Panel is twelve sections over ten screens and these labels are its only
-    wayfinding (AUDIT-IA-2026-08-22.md); a number makes a section referable out
-    loud, and makes "further down" a measurable distance rather than a feeling.
-    Numbers are assigned automatically so a section inserted in the middle
-    cannot leave a stale hardcoded ⑦ behind it.
+    Two tiers. The base tier (#9ca3af at 0.8rem, 7.9:1 on the app background)
+    is every section; ``emphasis=True`` is brighter, larger and carries a
+    short indigo accent bar, for labels that must read as a page's primary
+    groupings (Goals' area-type categories — Carson, 2026-07-19 and
+    2026-07-22). Both are uppercase-with-rule so they stay one visual family.
 
-    ``numbered=False`` is for a label that is a sub-heading rather than one of
-    the page's sections — repeated inside a loop, say. The only such caller is
-    Goals' area-type category loop, where numbering each category would imply
-    they were peers of the page's real sections.
+    ``info`` renders an ⓘ beside the label; clicking the label line toggles a
+    muted paragraph beneath it (a pure-CSS <details>, so no rerun). This is
+    where a section's explanation lives — the one place, instead of a caption
+    under every card (data-pages plan A4, audit X4). ``right`` renders a short
+    muted string at the label's right edge: the period, the coverage.
 
-    The base tier used to be #6b7280 at 0.65rem, which is 4.13:1 on this
-    background — under the 4.5:1 AA floor, on the one element a reader
-    navigates a very long page by. It is now #9ca3af (7.9:1), the same muted
-    grey the app's captions already use, at 0.8rem.
-
-    ``emphasis=True`` is a stronger tier of the same pattern for labels that
-
-    ``emphasis=True`` is a stronger tier of the same pattern for labels that
-    must read as the page's primary groupings (e.g. each category on Goals >
-    Area Expectation Settings — Carson, 2026-07-19: "make it more obvious
-    what section is english and what not ... but still in theme"): brighter
-    text, larger size, and a short indigo accent bar (the app's primary
-    #6366f1→#8b5cf6 gradient), still uppercase-with-rule so it stays the
-    same visual family rather than a competing heading style. Bumped again
-    2026-07-22 (Carson: "make the title of the area type bigger so it is
-    more noticeable") — font-size 0.85rem → 1.05rem, accent bar scaled to
-    match; only caller is the Area Expectation Settings category loop, so
-    this doesn't touch any other page.
+    ``numbered=True`` prefixes the circled number the page hands out in render
+    order (①②③…). Numbers were the DEFAULT until 2026-09-18: the Panel was
+    twelve sections over ten screens and they were its only wayfinding
+    (AUDIT-IA-2026-08-22.md). The redesign cut the Panel to five sections and
+    retired the numbers; the machinery stays for any page that asks.
     """
     marker = _section_marker(text) if numbered else ""
+    label = _html.escape(text)
+    right_html = (
+        f'<span style="flex:none;color:#6b7280;font-size:0.75rem;font-weight:500;'
+        f'letter-spacing:0;text-transform:none;white-space:nowrap;">'
+        f'{_html.escape(right)}</span>' if right else ""
+    )
+    info_glyph = (
+        f'<span class="pmg-info" title="{_html.escape(t("More about this section"))}" '
+        f'style="flex:none;display:inline-flex;align-items:center;justify-content:center;'
+        f'width:1rem;height:1rem;border-radius:50%;border:1px solid rgba(255,255,255,0.28);'
+        f'color:#9aa0ad;font-size:0.65rem;font-weight:700;letter-spacing:0;'
+        f'text-transform:none;line-height:1;cursor:pointer;">i</span>' if info else ""
+    )
     if emphasis:
-        st.markdown(
-            f'<div style="display:flex;align-items:center;gap:0.75rem;'
-            f'margin:2rem 0 0.9rem 0;">'
+        row = (
             f'<span style="width:5px;height:1.4rem;border-radius:2px;flex:none;'
             f'background:linear-gradient(180deg,#6366f1,#8b5cf6);"></span>'
             f'{marker}'
             f'<span style="font-size:1.05rem;font-weight:800;letter-spacing:0.12em;'
-            f'color:#f4f4f8;text-transform:uppercase;white-space:nowrap;">{_html.escape(text)}</span>'
-            f'<div style="flex:1;height:1px;background:rgba(99,102,241,0.35);"></div></div>',
-            unsafe_allow_html=True,
+            f'color:#f4f4f8;text-transform:uppercase;white-space:nowrap;">{label}</span>'
+            f'{info_glyph}'
+            f'<div style="flex:1;height:1px;background:rgba(99,102,241,0.35);"></div>'
+            f'{right_html}'
         )
-        return
-    st.markdown(
-        f'<div style="display:flex;align-items:center;gap:0.6rem;'
-        f'margin:1.5rem 0 0.75rem 0;">'
-        f'{marker}'
-        f'<span style="font-size:0.8rem;font-weight:700;letter-spacing:0.12em;'
-        f'color:#9ca3af;text-transform:uppercase;white-space:nowrap;">{_html.escape(text)}</span>'
-        f'<div style="flex:1;height:1px;background:rgba(255,255,255,0.07);"></div></div>',
-        unsafe_allow_html=True,
-    )
+        row_style = "display:flex;align-items:center;gap:0.75rem;margin:2rem 0 0.9rem 0;"
+    else:
+        row = (
+            f'{marker}'
+            f'<span style="font-size:0.8rem;font-weight:700;letter-spacing:0.12em;'
+            f'color:#9ca3af;text-transform:uppercase;white-space:nowrap;">{label}</span>'
+            f'{info_glyph}'
+            f'<div style="flex:1;height:1px;background:rgba(255,255,255,0.07);"></div>'
+            f'{right_html}'
+        )
+        row_style = "display:flex;align-items:center;gap:0.6rem;margin:1.5rem 0 0.75rem 0;"
+
+    if info:
+        # The whole label line is the <summary>, so the ⓘ needs no script; the
+        # paragraph opens beneath the rule, full width.
+        html = (
+            f'<details class="pmg-sec">'
+            f'<summary style="{row_style}list-style:none;cursor:pointer;">{row}</summary>'
+            f'<p class="pmg-sec-info" style="margin:-0.25rem 0 0.9rem 0;font-size:0.8rem;'
+            f'line-height:1.45;color:#9aa0ad;max-width:70ch;">{_html.escape(info)}</p>'
+            f'</details>'
+        )
+    else:
+        html = f'<div class="pmg-sec" style="{row_style}">{row}</div>'
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def render_section_tabs(options: dict, *, key: str, per_row: int = 5) -> str:
