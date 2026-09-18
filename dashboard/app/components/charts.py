@@ -44,6 +44,9 @@ GHOST = "rgba(255,255,255,0.35)"
 GOAL_LINE = STATUS["warn"]
 #: The pace tick: white, like the KPI card's.
 PACE_TICK = "rgba(244,244,248,0.9)"
+#: The leadership mark — the same violet as the KPI card's second tick
+#: (design_system._MARK_COLOR): neither a grade nor the pace, on both.
+MARK_LINE = "#9085e9"
 #: Text on the dark surface.
 INK = "#f4f4f8"
 MUTED = "#9ca3af"
@@ -140,6 +143,7 @@ def bars_vs_goal(labels: Sequence[str], actual: Sequence[float | None],
                  goal, *, twin: Sequence[float | None] | None = None,
                  pace_index: int | None = None,
                  pace_value: float | None = None,
+                 mark=None, mark_label: str | None = None,
                  actual_label: str | None = None,
                  twin_label: str | None = None,
                  goal_label: str | None = None,
@@ -154,6 +158,11 @@ def bars_vs_goal(labels: Sequence[str], actual: Sequence[float | None],
     with ``labels``; ``None`` skips that bucket. ``pace_index`` names the
     in-progress bucket, drawn lighter, and ``pace_value`` is where its bar
     should be by today.
+
+    ``mark`` is the leadership goal (decision 6): a dotted violet line, one
+    number or per bucket exactly like ``goal``, so the companionships' amber
+    meta and leadership's mark are two different marks on every chart, as
+    they are two ticks on the card. ``mark_label`` names it in the legend.
     """
     labels = [str(x) for x in labels]
     n = len(labels)
@@ -204,6 +213,25 @@ def bars_vs_goal(labels: Sequence[str], actual: Sequence[float | None],
             hoverinfo="skip",
         ))
 
+    # The leadership mark, drawn the same two ways as the goal.
+    marks = _as_list(mark, n) if mark is not None else [None] * n
+    if isinstance(mark, (int, float)) and mark > 0:
+        fig.add_hline(y=float(mark), line=dict(color=MARK_LINE, width=2, dash="dot"))
+    else:
+        for i, g in enumerate(marks):
+            if g is None or g <= 0:
+                continue
+            fig.add_shape(type="line", xref="x", yref="y",
+                          x0=i - 0.42, x1=i + 0.42, y0=g, y1=g,
+                          line=dict(color=MARK_LINE, width=2, dash="dot"))
+    if any(g is not None and g > 0 for g in marks):
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None], mode="lines",
+            name=mark_label or t("Leadership goal"),
+            line=dict(color=MARK_LINE, width=2, dash="dot"),
+            hoverinfo="skip",
+        ))
+
     if pace_index is not None and pace_value is not None and 0 <= pace_index < n:
         fig.add_trace(go.Scatter(
             x=[labels[pace_index]], y=[float(pace_value)], mode="markers",
@@ -215,6 +243,7 @@ def bars_vs_goal(labels: Sequence[str], actual: Sequence[float | None],
 
     top = max([v for v in act if v is not None] +
               [g for g in goals if g is not None] +
+              [g for g in marks if g is not None] +
               ([v for v in ghosts if v is not None] if ghosts else []) +
               ([float(pace_value)] if pace_value is not None else []) + [0])
     fig.update_layout(

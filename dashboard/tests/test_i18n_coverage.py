@@ -29,7 +29,8 @@ GROUPS = {
     "task10": ["views/07_Embudo_de_Búsqueda.py", "views/10_Notas.py",
                "views/15_Sugerencias.py", "views/17_Centro_de_Acción.py"],
     "task11": ["views/06_Puntajes.py", "app/components/design_system.py",
-               "app/components/scope_selector.py", "app/components/charts.py"],
+               "app/components/scope_selector.py", "app/components/charts.py",
+               "app/components/ki_drilldown.py"],
     "task12": ["views/02_Metas.py", "views/18_Mantenimiento.py"],
     "leftovers": ["app/breakdowns_engine.py", "app/auth/auth.py"],
     # Query modules render their own st.error/st.warning on failure, so their

@@ -2751,4 +2751,56 @@ ES: dict[str, str] = {
     "goal for cambio {cycle}": "meta del cambio {cycle}",
     "{note} · the companionships set themselves {n}":
         "{note} · las compañerías se propusieron {n}",
+
+    # ── Phase B: the Key Indicator drill-down (PLAN-2026-09-18 §3) ─────────
+    # One panel under the scoreboard, opened by ?ki=<metric>. "Meta" is what
+    # the companionships propose for themselves; "meta del cambio" is what
+    # leadership set on Metas. Both words are the mission's own.
+    "By week": "Por semana",
+    "By cambio": "Por cambio",
+    "By area": "Por área",
+    "Table": "Tabla",
+    "✕ close": "✕ cerrar",
+    "View": "Vista",
+    "{metric} · {scope}": "{metric} · {scope}",
+    "{n} areas": "{n} áreas",
+    "cambio goal {goal}": "meta del cambio {goal}",
+    "Cambio goal": "Meta del cambio",
+    "Cambio {cycle}": "Cambio {cycle}",
+    "Companionships' meta": "Meta de las compañerías",
+    "Leadership goal, per week": "Meta del liderazgo, por semana",
+    "Proposed so far": "Propuesto hasta hoy",
+    "Achieved": "Logrado",
+    "Meta": "Meta",
+    "Areas reporting": "Áreas informando",
+    "W{n}": "S{n}",
+    "cambio {cycle} · week {n} of {m}": "cambio {cycle} · semana {n} de {m}",
+    "ghost bars: the same weeks of cambio {prev}":
+        "barras fantasma: las mismas semanas del cambio {prev}",
+    "{n} weeks with no meta written": "{n} semanas sin meta escrita",
+    "No transfer schedule yet — TRANSFER_SCHEDULE is empty, so there is no "
+    "cambio to show by week.":
+        "Todavía no hay calendario de cambios — TRANSFER_SCHEDULE está vacío, "
+        "así que no hay un cambio que mostrar por semana.",
+    "No weekly reports yet for cambio {cycle}.":
+        "Todavía no hay informes semanales del cambio {cycle}.",
+    "No weekly reports yet in any cambio.":
+        "Todavía no hay informes semanales en ningún cambio.",
+    "{actual} of {meta} proposed": "{actual} de {meta} propuesto",
+    "{actual} so far, no meta written": "{actual} hasta hoy, sin meta escrita",
+    "{n} of {m} weeks reported": "{n} de {m} semanas informadas",
+    "no weekly report": "sin informe semanal",
+    "meta {meta}": "meta {meta}",
+    "no meta written": "sin meta escrita",
+    "1 week": "1 semana",
+    "{n} weeks": "{n} semanas",
+    "1 night without a report": "1 noche sin informe",
+    "{n} nights without a report": "{n} noches sin informe",
+    "Ranked by % of the companionships' own meta, cambio {cycle} through {day}. "
+    "Tap an area to open it on Desgloses.":
+        "Ordenado por % de la meta de las propias compañerías, cambio {cycle} "
+        "hasta el {day}. Toque un área para abrirla en Desgloses.",
+    "The arrow compares the same weeks of cambio {prev}.":
+        "La flecha compara las mismas semanas del cambio {prev}.",
+    "Download CSV": "Descargar CSV",
 }

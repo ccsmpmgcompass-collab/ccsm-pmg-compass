@@ -512,3 +512,29 @@ landed in the same push).
   derived by name from the `_real` key rather than through `goal_metric_key`,
   which would read QUESTIONS_CONFIG; (d) a cycle with no weekly rows at all
   is omitted from "Por cambio" rather than drawn empty.
+- 2026-09-18 — **B2 landed.** `app/components/ki_drilldown.py`:
+  `render_ki_drilldown(scope_kind, scope_value, scope_areas, metric=None, *,
+  default_tab, key)` reads `?ki=` (`selected_ki`, validated against the
+  catalogue), draws the seven-KI `st.pills` strip (+ "✕ cerrar" while open;
+  a tap sets or clears the param and reruns), then the header
+  (`render_section_label(…, right="45 áreas · meta del cambio 2.038")`),
+  four `st.pills` tabs (Por semana · Por cambio · Por área · Tabla) and the
+  tab body. `ki_href(metric, params)` builds the card link. `bars_vs_goal`
+  gained `mark` / `mark_label` (scalar or per-bucket, dotted, the card's
+  violet `#9085e9` as `charts.MARK_LINE`) so the companionships' amber meta
+  and leadership's mark are two different marks on every chart. 34 es.py
+  entries; the file is in the i18n gate's task11 group.
+  `tests/test_ki_drilldown.py`: 11 tests against a recording stub `st`
+  (closed state, invalid key closes, param opens with the four tabs, taps
+  set / clear the param, the three other tabs' content, `ki_href`).
+  Decisions: (a) the strip's widget key carries the open metric so a
+  link-driven reload never meets a stale pills value; (b) the tab widget IS
+  keyed (`{key}_tab`) so the chosen tab survives a metric switch; (c) the
+  week in progress draws whatever weekly rows already exist (usually none →
+  no bar) with a pace tick at meta × elapsed/7 — the Panel's nightly
+  stand-ins are not borrowed; (d) "Por cambio" draws `meta_so_far` as the
+  amber goal and the leadership total as the violet mark, same idiom as the
+  weekly tab, rather than a second bar; (e) "Por área" rows link to
+  `/Desgloses?bd_area=<name>&ki=<metric>` and the ranking is by % of meta,
+  areas without a meta last; (f) the Tabla tab's CSV carries the raw
+  numbers, the on-screen table the formatted ones.
