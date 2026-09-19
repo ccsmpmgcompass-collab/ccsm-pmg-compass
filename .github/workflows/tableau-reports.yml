@@ -1,0 +1,85 @@
+name: Tableau Finding Pull
+
+# Nightly, not monthly. The source itself refreshes daily (it stamped "Data
+# Last Updated: 9/18/2026 12:55 PM" when read on 2026-09-19), and each run
+# re-pulls the current month AND the previous one so late-entered records land
+# — the biggest accuracy gain over the manual process, which captured a month
+# once and never revisited it. 09:00 UTC is early morning in Chile and hours
+# after the source's own refresh.
+#
+# The cron and the "Sync from Tableau" button on the Embudo page run the SAME
+# command, so the two cannot drift.
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: "CLOUD_JOB_STATUS row to report into (the app supplies this)"
+        required: false
+        type: string
+      months:
+        description: "How many months back to re-capture"
+        required: false
+        default: "2"
+        type: string
+      skip_detail:
+        description: "Capture baptisms only, skip the full Detail export"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: tableau-finding-pull
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.49.0-jammy
+    timeout-minutes: 45
+    env:
+      # A scheduled run has no job_id from a button, so it makes its own. Either
+      # way the run reports into CLOUD_JOB_STATUS and a failed night is visible
+      # in the same place a failed click is.
+      JOB_ID: ${{ inputs.job_id || format('nightly-{0}', github.run_id) }}
+      COMPASS_SHEET_NAME: COMPASS_CCSM
+      GOOGLE_SHEETS_CREDENTIALS_JSON: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: pip install --no-cache-dir -r requirements_cloud.txt
+
+      # Only the button's dispatch path creates the status row ahead of time
+      # (cloud_job_ui does it before dispatching, so the UI has something to
+      # poll from the first tick). A scheduled run seeds its own, typed — the
+      # wrapper would otherwise create it as job_type "unknown".
+      - name: Seed the status row (scheduled runs only)
+        if: github.event_name == 'schedule'
+        working-directory: dashboard
+        run: >
+          python -c "from app.integrations import cloud_job_status as c;
+          c.create_job('${{ env.JOB_ID }}', 'tableau_finding')"
+
+      - name: Pull the Tableau finding exports (tracked)
+        working-directory: dashboard
+        env:
+          CCSM_TABLEAU_USERNAME: ${{ secrets.CCSM_TABLEAU_USERNAME }}
+          CCSM_TABLEAU_PASSWORD: ${{ secrets.CCSM_TABLEAU_PASSWORD }}
+        run: >
+          python -m app.ingestion.cloud_job_wrapper
+          --job-id "${{ env.JOB_ID }}" --job-type tableau_finding
+          -- python -m app.ingestion.tableau_finding_runner
+          --months "${{ inputs.months || '2' }}"
+          ${{ (inputs.skip_detail && '--no-detail') || '' }}
+
+      # NO debug artifact step, deliberately. This repository is public, so
+      # Actions artifacts and logs are downloadable by anyone who finds the run,
+      # and a screenshot of this session would be a page of investigator names.
+      # The runner's own diagnostics print element ids and counts, never text.
+      # (transfer-roster-pull.yml still uploads IMOS screenshots on failure —
+      # a separate, flagged decision. See PLAN-2026-09-19-tableau-autosync.md §2.3.)

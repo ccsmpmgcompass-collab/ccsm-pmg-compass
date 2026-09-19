@@ -8,3 +8,10 @@ pandas>=2.0.0
 xlrd>=2.0.1
 python-dotenv>=1.0.0
 requests>=2.31.0
+
+# The nightly Tableau job reads what it downloads before storing it: the
+# Summary export is a PDF whose printed window is the runner's proof that the
+# date parameters applied (pypdf), and the Detail crosstab comes back as .xlsx
+# unless the dialog's CSV option is found (openpyxl).
+pypdf>=4.0.0
+openpyxl>=3.1.0

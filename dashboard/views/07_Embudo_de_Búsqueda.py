@@ -8,12 +8,13 @@ from app.auth.auth import require_auth
 from app.components.charts import (
     bars_vs_goal, chart, ranked_list, share_bar, stage_bars,
 )
+from app.components.cloud_job_ui import CloudJobFailed, CloudJobTimeout, run_cloud_job
 from app.components.design_system import (
     render_page_header, render_section_label,
     render_table, render_kpi_row,
 )
 from app.config.theme import MUTED, STATUS
-from app.db.drive_blob import save_dataframe_blob
+from app.db.drive_blob import read_dataframe_blob, save_dataframe_blob
 from app.db.queries import (
     get_baptisms_actual_for_range, get_tableau_detail, get_tableau_detail_file_id,
     get_tableau_ranking,
@@ -52,6 +53,13 @@ render_page_header(
     t("Mission finding & teaching pipeline — from the Tableau export"),
     icon="",
 )
+
+# What a cloud sync just did, shown once at the top rather than down in the
+# upload expander: the button's own rerun collapses that expander, so a message
+# left there would be written to a closed box.
+_sync_note = st.session_state.pop("_tableau_sync_note", "")
+if _sync_note:
+    st.success(t("Synced from Tableau · {note}", note=_sync_note))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -141,10 +149,44 @@ def _save_detail(df: pd.DataFrame) -> None:
     save_dataframe("TABLEAU_DETAIL", df, uploaded_by=who)
 
 
+def _cloud_sync_control() -> None:
+    """The nightly Tableau job, on demand.
+
+    Same workflow, same command and same window rules as the 09:00 UTC cron —
+    the button exists for the day somebody needs this morning's figure before
+    tonight, not as a second way of doing it. Dispatch, poll and error display
+    are `cloud_job_ui`'s, shared with the Traslados roster pull.
+
+    The caches are cleared and the page rerun on success: read_tab and the
+    Drive blob both hold five minutes, so without this the page would sit there
+    showing the very numbers the job just replaced.
+    """
+    st.caption(t("A scheduled job re-pulls this month and the one before it "
+                 "from Tableau every night, and refreshes the Detail export. "
+                 "Run it now if you need today's figures before tonight."))
+    if st.button(t("Sync from Tableau now"), key="ff_tableau_sync"):
+        try:
+            job = run_cloud_job(
+                job_type="tableau_finding",
+                workflow_file="tableau-reports.yml",
+                dispatch_inputs={},
+                running_label=t("Pulling the finding exports from Tableau..."),
+                timeout_s=1800,
+            )
+        except (CloudJobFailed, CloudJobTimeout):
+            return   # run_cloud_job already rendered the error/warning
+        read_tab.clear()
+        read_dataframe_blob.clear()
+        st.session_state["_tableau_sync_note"] = job.get("result_summary", "")
+        st.rerun()
+
+
 def _upload_controls() -> None:
-    """The three uploaders and the note above them, with no container of their
-    own — Streamlit forbids an expander inside an expander, and on the normal
-    path these sit inside "Datos y carga" (E6)."""
+    """The cloud sync, then the three uploaders and the note above them, with no
+    container of their own — Streamlit forbids an expander inside an expander,
+    and on the normal path these sit inside "Datos y carga" (E6)."""
+    _cloud_sync_control()
+    st.divider()
     st.caption(t("Export the Mission Finding Summary view from Tableau and drop the "
                  "files here. The Detail export REPLACES the stored data, so export "
                  "the full view, not a recent slice. Summary PDFs merge by month — "

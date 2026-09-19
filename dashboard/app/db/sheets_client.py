@@ -16,7 +16,18 @@ import streamlit as st
 import gspread
 import pandas as pd
 from google.oauth2.service_account import Credentials
+
 from app.i18n import t
+# The pure half of the storage layer — the grid-to-frame rules, the metadata
+# row, the A1 chunk arithmetic — lives in tabular_io so the nightly Tableau job
+# can share it: that job runs in a container with no Streamlit, so it cannot
+# import THIS module at all, and a second copy of these rules would be a second
+# opinion about the same bytes. `_col_letter` keeps its private name so the
+# existing callers and tests read unchanged.
+from app.db.tabular_io import (
+    WRITE_CHUNK_ROWS, col_letter as _col_letter, frame_from_values, meta_row,
+    plan_write_chunks,
+)
 
 _SCOPES = [
     "https://spreadsheets.google.com/feeds",
@@ -89,38 +100,10 @@ def _read_tab_cached(tab_name: str, header_marker: str = None) -> pd.DataFrame:
     uncaught so Streamlit does NOT memoize a failure. See read_tab()."""
     try:
         ws = _get_worksheet(tab_name)
-        rows = ws.get_all_values()
-        if not rows or len(rows) < 2:
-            return pd.DataFrame()
-        header_idx = 0
-        if header_marker:
-            for i, r in enumerate(rows[:5]):
-                if header_marker in [str(c).strip() for c in r]:
-                    header_idx = i
-                    break
-            else:
-                return pd.DataFrame()
-        headers = rows[header_idx]
-        # Deduplicate blank/duplicate headers so DataFrame builds cleanly
-        seen = {}
-        clean_headers = []
-        for h in headers:
-            h = str(h).strip()
-            if not h:
-                h = "_blank"
-            if h in seen:
-                seen[h] += 1
-                h = f"{h}_{seen[h]}"
-            else:
-                seen[h] = 0
-            clean_headers.append(h)
-        df = pd.DataFrame(rows[header_idx + 1:], columns=clean_headers)
-        # Drop fully-blank columns (were empty header cells)
-        df = df.loc[:, ~df.columns.str.startswith("_blank")]
-        # Drop repeated header rows (agents rewrite their header on each run)
-        if header_marker and header_marker in df.columns:
-            df = df[df[header_marker].astype(str).str.strip() != header_marker]
-        return df
+        # The grid-to-frame rules live in app/db/tabular_io.frame_from_values,
+        # so the nightly Tableau job (which cannot import this module — no
+        # Streamlit in its container) reads a tab exactly as the app does.
+        return frame_from_values(ws.get_all_values(), header_marker)
     except gspread.exceptions.WorksheetNotFound:
         return pd.DataFrame()
 
@@ -298,43 +281,6 @@ def get_last_row_number(tab_name: str) -> int:
     return ws.row_count if ws.row_count else 1
 
 
-# One ws.update() puts its whole payload in a single JSON request body, and
-# the Sheets API caps that. Measured against the real Tableau Detail export
-# (89,824 rows x 14 cols = 1,257,536 cells): one call is a 17.4 MB body. At
-# 10,000 rows a call it is 1.94 MB across 9 calls — comfortably inside both the
-# request cap and the 60-writes-per-minute-per-user quota.
-WRITE_CHUNK_ROWS = 10_000
-
-
-def _col_letter(n: int) -> str:
-    """1-based column index -> A1 letters ('A', 'Z', 'AA', 'AB')."""
-    out = ""
-    while n > 0:
-        n, rem = divmod(n - 1, 26)
-        out = chr(65 + rem) + out
-    return out
-
-
-def plan_write_chunks(n_rows: int, n_cols: int, chunk_size: int = WRITE_CHUNK_ROWS,
-                      start_row: int = 1) -> list:
-    """[(a1_range, lo, hi)] slicing n_rows into writable chunks, where rows[lo:hi]
-    is the slice and a1_range is exactly where it lands.
-
-    Pure, and separated out so the arithmetic can be tested without a network:
-    an A1 range off by one silently shifts every row beneath it, which is the
-    kind of corruption nobody notices until a number looks wrong months later.
-    """
-    if n_rows <= 0 or n_cols <= 0:
-        return []
-    last = _col_letter(n_cols)
-    step = max(1, chunk_size)
-    plan = []
-    for lo in range(0, n_rows, step):
-        hi = min(lo + step, n_rows)
-        plan.append((f"A{start_row + lo}:{last}{start_row + hi - 1}", lo, hi))
-    return plan
-
-
 def save_dataframe(tab_name: str, df: pd.DataFrame, uploaded_by: str = "") -> None:
     """
     Overwrite a tab completely with a DataFrame.
@@ -352,13 +298,9 @@ def save_dataframe(tab_name: str, df: pd.DataFrame, uploaded_by: str = "") -> No
         if n_cols == 0:
             raise ValueError("refusing to write a frame with no columns")
 
-        # Add metadata row at top for "last uploaded by / when"
-        from datetime import datetime, timezone
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        meta = [f"_uploaded_by:{uploaded_by}", f"_uploaded_at:{ts}"] + [""] * max(0, n_cols - 2)
         # Header row first so read_tab() returns df.columns = real column names;
         # meta row becomes df.iloc[0] so get_tableau_*() can extract uploaded_by/at.
-        rows = [df.columns.tolist(), meta[:n_cols]] + df.values.tolist()
+        rows = [df.columns.tolist(), meta_row(n_cols, uploaded_by)] + df.values.tolist()
 
         try:
             ws = _get_worksheet(tab_name)

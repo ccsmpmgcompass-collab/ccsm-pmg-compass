@@ -498,6 +498,13 @@ ES: dict[str, str] = {
     "Tableau export in **Manual upload** below.":
         "Aún no hay datos de búsqueda. Se sincronizan automáticamente cada mañana, "
         "o cargue una exportación de Tableau en **Carga manual** más abajo.",
+    "Sync from Tableau now": "Sincronizar desde Tableau ahora",
+    "A scheduled job re-pulls this month and the one before it from Tableau every night, and refreshes the Detail export. Run it now if you need today's figures before tonight.":
+        "Un trabajo programado vuelve a traer de Tableau este mes y el anterior cada noche, y actualiza la exportación de Detalle. Ejécutelo ahora si necesita las cifras de hoy antes de esta noche.",
+    "Pulling the finding exports from Tableau...":
+        "Trayendo las exportaciones de búsqueda desde Tableau...",
+    "Synced from Tableau · {note}":
+        "Sincronizado desde Tableau · {note}",
     "Auto-synced · {source} · {at}":
         "Sincronizado automáticamente · {source} · {at}",
     "Uploaded by {by} · {at}": "Cargado por {by} · {at}",

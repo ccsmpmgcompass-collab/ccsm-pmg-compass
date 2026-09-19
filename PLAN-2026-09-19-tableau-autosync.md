@@ -281,3 +281,100 @@ both framings.
 source, not of any of this. Far smaller than being six weeks stale — but it
 means the number is *current*, not *final*, and §1a's provisional derivation is
 what keeps the page honest about the difference.
+
+---
+
+## §4 — Track B as built *(2026-09-19)*
+
+Written, tested and pushed. **It cannot run until Zackary adds the two secrets
+in §2.1**; everything else is in place, and the first live run is expected to
+need selector adjustment inside the download flyout (see below), exactly as the
+IMOS runner did.
+
+### 4.1 — What landed
+
+| File | What it is |
+|---|---|
+| `.github/workflows/tableau-reports.yml` | nightly 09:00 UTC cron + `workflow_dispatch`, one command behind both |
+| `app/ingestion/tableau_finding_portal.py` | the Playwright layer, and the only file a REST rewrite would touch |
+| `app/ingestion/tableau_finding_runner.py` | the decisions: which windows, verify, merge, write, refuse |
+| `app/db/tabular_io.py` | the Streamlit-free storage primitives both the app and the runner write through |
+| `tests/test_tableau_finding_runner.py` | 17 tests over every part of the above that is not a browser |
+| `views/07_Embudo_de_Búsqueda.py` | "Sync from Tableau now", dispatching the same workflow |
+
+`cloud_job_wrapper`, `cloud_job_status`, `github_actions` and `cloud_job_ui` are
+reused **unchanged**, as planned. `requirements_cloud.txt` gains `pypdf` and
+`openpyxl` — the runner reads what it downloads before storing it.
+
+### 4.2 — Four decisions the build made
+
+**The file verifies the request.** §2.2 established the date window is a URL
+parameter; nothing establishes that it will still be one next month. So every
+Summary PDF is parsed and *its own printed window* is compared against the
+window that was asked for, and a mismatch aborts before anything is written
+(`verify_window`). A renamed workbook parameter now fails loudly instead of
+storing a correct-looking figure for the wrong days. This is why the Summary is
+pulled as a PDF and not as data: the PDF prints its window, and the canvas
+cannot be read.
+
+**A narrower Detail export is refused, not confirmed.** The Embudo page offers
+"Replace anyway" because a human is standing there. A nightly job has nobody to
+ask, so `describe_replacement`'s `narrower` verdict simply fails that half of
+the run — and the Detail window is computed to reach back at least as far as
+the store already does, so the case should never arise unhandled.
+
+The build also found a hole next to that guard and closed it: an export of the
+WRONG SHEET cleans to a frame with none of the milestone columns and therefore
+no date span at all, which `narrower` reads as "nothing to lose" and would wave
+through on top of the whole history. `guard_detail_replacement` now asks "is
+this the Detail view" first, and independently.
+
+**Mission-local dates.** The stored `end_date` is displayed (it labels the
+Panel's month-to-date point), and a job run in the Chilean evening is already
+tomorrow by UTC, so the runner uses `mission_today()` like everything else
+user-facing in this app.
+
+**The storage primitives moved rather than being copied.** The runner writes the
+same tabs and the same Drive blob the app reads, from a container with no
+Streamlit in it — so it cannot import `sheets_client` or `drive_blob` at all.
+The A1 chunk arithmetic, the metadata row, the grid-to-frame rules and the blob
+codec are now in `app/db/tabular_io.py`, imported by all three. Both original
+modules keep their public names; a test walks the runner's import graph and
+fails if anything on it reaches Streamlit at module scope.
+
+### 4.3 — Known soft spot, and how it will announce itself
+
+Only the toolbar selectors were seen live. Everything inside the download
+flyout and its dialogs — the PDF item, the Crosstab item, the CSV option, the
+confirm button — is matched by `data-tb-test-id` pattern first and visible
+label (English *and* Spanish) after. A miss raises with the step named and logs
+the `data-tb-test-id` values actually present, which is enough to re-aim the
+selector in one edit.
+
+It logs **ids and counts only, never page text**: the repo is public, and on the
+Detail view that text is investigator names. For the same reason this workflow
+uploads no artifacts at all — no screenshots, which is the flag §2.3 raises
+against `transfer-roster-pull.yml` and which remains open.
+
+### 4.4 — The sign-in page, finally seen
+
+§2.2's one gap: the live inspection was done through an already-authenticated
+browser, so the login page itself had never been looked at. Closed on
+2026-09-19 through a browser with **no session of its own** — nothing typed,
+nothing submitted.
+
+An unauthenticated view URL lands on
+`https://sso.online.tableau.com/public/idp/SSO`, titled "Login | Tableau
+Cloud", carrying `input#email[name=email]`, a `remember` checkbox and
+`button#login-submit`. **There is no password field on it.** The email
+identifies the organisation and Tableau hands off to its IdP — which for this
+site is Church SSO, the Okta shape `imos_portal` already meets. So the runner's
+login is two hops, the verified selectors lead each list, and the "remember"
+checkbox is left alone.
+
+It also settles a question the parameter design raised: **sign-in happens on
+the bare view URL, never a parameterised one.** Two redirects sit between the
+request and the answer and nothing promises a query string survives them, so
+every windowed navigation happens afterwards, on a session already
+authenticated — which is the state the parameters were verified in.
+

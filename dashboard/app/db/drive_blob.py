@@ -23,77 +23,23 @@ nor domain-wide delegation is available as an alternative. See
 No new dependency: gspread already holds an ``AuthorizedSession``.
 """
 
-import gzip
-import io
-import json
-import time
-from datetime import datetime, timezone
-
 import pandas as pd
 import streamlit as st
 
 from app.db.sheets_client import _get_client
+# The payload format itself lives in tabular_io: the nightly Tableau job writes
+# this same blob from a container with no Streamlit in it, so it cannot import
+# THIS module at all, and two encoders for one file format is one too many.
+# The names stay as they were, so callers and tests are unaffected.
+from app.db.tabular_io import (
+    BLOB_MAGIC as _MAGIC, decode_blob, encode_blob, one_line as _one_line,
+)
 from app.i18n import t
 
 _DRIVE_FILES = "https://www.googleapis.com/drive/v3/files"
 _DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files"
 
-#: First line of the decompressed payload. Carries what the tab's metadata row
-#: carried, so get_tableau_detail() can still report "uploaded by / when"
-#: without a second Drive round-trip just to read file properties.
-_MAGIC = "#PMGBLOB1 "
-
 _TIMEOUT = 120
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PURE — encode / decode. No network, so the payload format is unit-testable.
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _one_line(value) -> str:
-    """Collapse any whitespace run to a single space.
-
-    Applied to the metadata VALUES, not to the serialized JSON. json.dumps
-    already escapes a newline to \\n, so the payload was never in danger of
-    growing a forged second line — but the escape survives the round trip and
-    json.loads hands back a genuine newline, which then lands in a caption.
-    Sanitize the input; the output escaping is not the problem.
-    """
-    return " ".join(str(value or "").split())
-
-
-def encode_blob(df: pd.DataFrame, uploaded_by: str = "", uploaded_at: str = "") -> bytes:
-    """DataFrame -> gzipped `magic-line + CSV` bytes."""
-    at = uploaded_at or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    header = _MAGIC + json.dumps({"uploaded_by": _one_line(uploaded_by),
-                                  "uploaded_at": _one_line(at)}) + "\n"
-    body = df.to_csv(index=False)
-    return gzip.compress((header + body).encode("utf-8"), 6)
-
-
-def decode_blob(data: bytes) -> tuple:
-    """gzipped bytes -> (df, uploaded_by, uploaded_at).
-
-    Everything is read back as text, matching read_tab(): every consumer
-    re-parses dates itself, and letting pandas infer types here would make a
-    column behave differently depending on whether a blank happened to appear.
-    """
-    if not data:
-        return pd.DataFrame(), "", ""
-    raw = gzip.decompress(data).decode("utf-8")
-    by = at = ""
-    if raw.startswith(_MAGIC):
-        line, _, raw = raw.partition("\n")
-        try:
-            meta = json.loads(line[len(_MAGIC):])
-            by, at = str(meta.get("uploaded_by", "")), str(meta.get("uploaded_at", ""))
-        except (ValueError, AttributeError):
-            # A malformed metadata line must not cost us the data itself.
-            by = at = ""
-    if not raw.strip():
-        return pd.DataFrame(), by, at
-    df = pd.read_csv(io.StringIO(raw), dtype=str, keep_default_na=False)
-    return df, by, at
 
 
 # ══════════════════════════════════════════════════════════════════════════════
