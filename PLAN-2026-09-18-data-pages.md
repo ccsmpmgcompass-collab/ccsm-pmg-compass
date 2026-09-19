@@ -1039,3 +1039,98 @@ landed in the same push).
   selectbox under it is the last widget on the page that is not a pill; and
   `06_Puntajes.py` still calls its own section "Daily Activity", which is now
   the name of a different thing on Desgloses.
+- 2026-09-19 — **F1 landed.** The two §7 greps are tests, and passing them
+  meant real work: the Panel carried 24 hex literals, the Embudo one, the
+  Desgloses one, `charts.py` seven. `theme.py` gains the ink scale
+  (`INK`/`MUTED`/`FAINT`/`DIM`/`DIMMEST`/`SURFACE`/`SURFACE_RAISED`), `MARK`
+  (the violet `charts.MARK_LINE` and `design_system._MARK_COLOR` had each
+  typed separately) and `rgba()`, so a tint is the same hue at a lower alpha
+  rather than a second hex. The find that justifies the criterion: **the
+  Panel's two compliance calendars were grading themselves #22c55e /
+  #f59e0b / #ef4444 — a second green, amber and red beside every STATUS one
+  on the same screen** — in two copy-pasted `_pct_color` functions whose
+  85/70 thresholds were retyped again in three legend labels. All of it is
+  now `design_system.compliance_tint` / `compliance_legend_bands`, with the
+  labels built FROM `COMPLIANCE_TIERS`. **Decision: the thresholds stay
+  85/70, not decision 10's 90/60** — that grades progress against a goal,
+  this grades whether the form arrived, and re-grading the mission's
+  compliance silently is not a verification pass's business. Measured live:
+  the calendar cells now draw rgba(62,207,111,·) / (242,177,52,·) /
+  (240,100,90,·) and nothing else. Tests: 10 new (both greps, parametrized
+  over the three pages plus the design system, and one pinning that the one
+  `st.plotly_chart` call site still exists). Suite **11 failed / 1186
+  passed** — the same 11, +10 new.
+- 2026-09-19 — **F2 landed.** The chart legend anchors to the figure's
+  container, not to `y=-0.16` of the plot's height. A paper offset is a fixed
+  distance that knows nothing about how deep the tick labels run: at 375px
+  the drill-down's week labels rotate upright and run ~70px, and the legend
+  was drawn straight through them — "Cambio 2026-5" crossing "7 de sep",
+  measured live on `?ki=ki_new_people_real`. Clean at 375px and unchanged at
+  1400px after the fix. `test_charts.py`'s "below the plot" assertion is
+  retargeted from `legend.y < 0` to the container anchor.
+- 2026-09-19 — **F3 landed: the three items Phase D left for this phase.**
+  (a) `Reset Graph ↻` is gone — its own comment admitted a click was just a
+  rerun and the trend is rebuilt fresh every rerun anyway. (b) The `Eje X`
+  Days/Weeks **selectbox is now pills**, on the same read-`*_val`,
+  key-by-current-value, `st.rerun()`-on-change idiom as the page's four other
+  toggles; it was the last widget on the page that was not one. (c) Scores'
+  `Daily Activity` tab is **`Explorador nocturno`** — the Panel and Desgloses
+  both carry a section of that name now, and this tab is an explorer over
+  DAILY_LOG's raw rows, not a summary of the night. Two i18n finds came with
+  them, both pre-existing and both invisible until a Spanish reader clicked:
+  the granularity options were raw list items, so the control offered
+  "Days"/"Weeks" in English on a Spanish page; and the trend's captions
+  interpolated the bare English unit with an "s" bolted on, rendering "un day
+  sin informe" and "los weeks sin informe". The unit is now two translated
+  forms, a bare singular and one carrying its article, and **every sentence
+  is worded around them in both languages** — "each {unit}" rather than
+  "missed {unit}s". That is not a style choice: `test_renders_spanish`'s
+  placeholder-parity check (rightly) refuses a translation whose tokens
+  differ from its key, so Spanish cannot simply take a different form, and
+  the grammar has to be solved in the wording. "Cada" is invariant where
+  Spanish genders both the article and the plural — UNA semana but UN día,
+  LAS semanas but LOS días. Verified live at area scope on both pills.
+- 2026-09-19 — **F4: the verification pass itself. PHASE F IS COMPLETE, AND
+  WITH IT THE PLAN.** Every section of the three pages read at 1400×1000 and
+  at 375×812, reloading between resizes (a resized viewport without a reload
+  leaves Streamlit's columns at their old widths and reports a false
+  sideways scroll). Sideways scroll was measured, not eyeballed: the document
+  and `stMain` scrollWidth against their clientWidth, plus a walk of every
+  descendant for a right edge past the container's that is not itself a
+  scroller.
+
+  | Page | 1400px | 375px | Sideways scroll at 375px |
+  |---|---|---|---|
+  | Panel | 4.4 screens, 5 sections | 8.6 (9.5 with the calendars open) | none — 375/375 doc, 371/371 main, 0 offenders |
+  | Desgloses (mission) | 2.4 screens, 3 sections | 5.2 with the drill-down open | none — 0 offenders |
+  | Embudo | 2.6 screens | 5.4 | none — 0 offenders |
+
+  Read at 1400px: the Panel's scoreboard and its three-state toggle, Bautismos
+  2026, Zonas por área, Actividad diaria, Trabajo nocturno, and BOTH Informes
+  tabs including the two calendars and the effort chart; Desgloses' three
+  sections at mission scope, the drill-down on `?ki=`, and the trend plus its
+  new pills at area scope; the Embudo's freshness strip, the six KPIs, the
+  stage bars, the share bar, both ranked lists and the weekly trend. Read at
+  375px: the same, with the calendars expanded and the drill-down open.
+
+  Criteria: no `st.plotly_chart` outside `charts.py` and no hex literal on
+  the three pages — now tests, not a grep anyone has to remember to run.
+  `test_i18n_coverage.py` green, and **no ignore-list additions in the whole
+  plan** — the one edit it took (B2) ADDED `ki_drilldown.py` to a coverage
+  group. Suite **11 failed / 1186 passed**, the same 11 inherited failures
+  that were already red before A1 and that no phase touched.
+
+  **Two findings that are Zackary's call, not code defects:**
+  1. **Every nightly row on Desgloses reads red**, at ~15–19% of goal. The
+     bars are pace-adjusted correctly — the arithmetic was checked, the
+     colour comes from actual-vs-pace and not from a fraction of a full
+     period — so this is the data: `AGENT_CONFIG`'s per-area nightly goals
+     sit far above what the mission is doing. 20.250 contacts over 45 areas
+     for the cambio-to-date is about 242 per area per week against roughly 42
+     actual. Eight red rows in a column is exactly what decision 10 warns
+     about — red stops meaning anything — but the fix is a conversation about
+     the goals, not about the page.
+  2. The nightly goal covers the period's **full** span while the value counts
+     only the days that were reported (the caption says "10 días con
+     informe" over a 13-day period), so the percentage is understated by
+     roughly the ratio of the two.
