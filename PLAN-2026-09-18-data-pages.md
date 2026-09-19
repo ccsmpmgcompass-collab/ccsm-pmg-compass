@@ -636,3 +636,36 @@ landed in the same push).
   screen" captions, the two calendar paragraphs under the heat maps (they are
   `st.markdown`, not captions, and their window averages are only known after
   the loop that draws them), and the "Esfuerzo por área" expander's own note.
+- 2026-09-18 — **C3 landed.** Zones are a ranked list of the seven Key
+  Indicators (decision 7), not a nine-column table of the nightly funnel.
+  `zone_comparison.zone_ki_table` / `zone_ki_mission_row` are new and pure:
+  per zone, each KI for ONE reporting week (the last complete one — the seven
+  come from the weekly form), divided by every ACTIVE area, plus a `reporting`
+  count so a quiet week reads as a quiet week rather than a bad one. Zone
+  membership comes from MISSION_ORG, never from the weekly frame's own zone
+  column. `charts.ranked_list` gained `columns` + per-row `cells` /
+  `cell_status`: the row is two halves, who and how much on the left and the
+  seven small numbers on the right, best and worst per column tinted, and the
+  halves STACK below 720px with every number naming itself. Live at 375px the
+  zone rows are 339px wide and the 766px table that scrolled the whole page
+  sideways is gone (audit P5). The funnel is one tap away behind a
+  `Indicadores Clave / Embudo nocturno` toggle and its figures are unchanged
+  (Temuco 138,7 · 60,2 · 15,5 · 2,4 · 57,0, same as before). Rows link to
+  `/Desgloses?bd_zone=<zone>`. Decisions mid-build: (a) the seven get a THIRD,
+  shorter label set for column headers (`_ZONE_KI_LABELS`: Nuevas · Lecciones ·
+  Sacramental · 1ª semana · Con fecha · Bautizados · CR) with the full decision-11
+  name on hover — seven columns share ~600px, and `_ZONE_SHORT_LABELS` has been
+  the same exception for the funnel since before this plan; (b) a row with
+  columns carries NO headline number, because the sort column is already one of
+  the seven and printing it twice reads as a mistake — the bar under the zone's
+  name carries the ranking; (c) the per-area/total radio became pills under a
+  NEW session key (`panel_zone_mode_val`), since Streamlit keeps a retired
+  widget's state under its old key; (d) `_night_window` moved up into the shared
+  header, because zones now renders before the nightly section that used to
+  define it. Suite **13 failed / 1120 passed** (same 13).
+  `tests/test_zone_per_area.py` +6 (the new table's own rules),
+  `tests/test_panel_scoreboard.py` +5, and
+  `test_the_zone_table_ends_with_a_mission_row` was renamed and re-pointed at
+  the ranked list — what it asserts is unchanged. Still scrolling sideways at
+  375px and left for C5: the "Esfuerzo por área" table (751px) and the
+  compliance calendar (417px), both inside sections C5 rebuilds.

@@ -356,3 +356,48 @@ def test_every_section_that_carried_captions_now_carries_an_info_glyph():
     # have it: Key Indicators, Bautismos, Zonas, Actividad diaria, Tasas.
     assert html.count('class="pmg-info"') >= 5, (
         f"only {html.count('class=\"pmg-info\"')} sections carry an ⓘ")
+
+
+# ── Step C3: zones as a ranked list of the seven Key Indicators ──────────────
+
+def _zone_list(html: str) -> str:
+    lists = [b for b in html.split('class="pmg-ranked"') if "Misión" in b]
+    assert lists, "the zone comparison did not render"
+    return lists[0]
+
+
+def test_the_zone_comparison_is_a_ranked_list_not_a_table():
+    """Audit P5: nine columns of plain text, 766px wide on a phone."""
+    html = _html(_run())
+    assert "pmg-rank-row-cells" in html, "the zone rows carry no columns"
+    zones = _zone_list(html)
+    assert "POSICIÓN" not in zones.upper(), "the old table header survives"
+
+
+def test_the_zones_are_compared_on_the_seven_key_indicators():
+    """Decision 7. It used to be the four nightly funnel counts, which is a
+    second vocabulary on a page that is otherwise about the seven."""
+    zones = _zone_list(_html(_run()))
+    for column in ("Nuevas", "Lecciones", "Sacramental", "1ª semana",
+                   "Con fecha", "Bautizados", "CR"):
+        assert column in zones, f"{column!r} is not a column of the comparison"
+
+
+def test_a_zone_row_opens_that_zone_on_desgloses():
+    zones = _zone_list(_html(_run()))
+    assert "/Desgloses?bd_zone=Arauco" in zones, zones[:400]
+
+
+def test_the_zone_row_says_how_much_of_the_zone_reported():
+    """A zone at 6 of 13 is having a quiet week to report, not necessarily a
+    bad one, and the per-area figure cannot say which without this."""
+    zones = _zone_list(_html(_run()))
+    assert "2 de 2 áreas informaron" in zones, zones[:600]
+
+
+def test_the_funnel_view_is_still_reachable():
+    """Decision 7 moved it behind a toggle; it did not delete it."""
+    html = _html(_run(panel_zone_view_val="funnel"))
+    zones = _zone_list(html)
+    assert "Intentos" in zones and "Contactos" in zones, zones[:400]
+    assert "Nuevas" not in zones

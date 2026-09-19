@@ -330,3 +330,95 @@ def test_no_active_areas_yields_nan_not_a_division_by_zero():
         _summary(("Angol", {"friend_lessons": 80})), pd.DataFrame(), FUNNEL)
     assert row["areas"] == 0
     assert pd.isna(row["friend_lessons"])
+
+
+# ── The seven Key Indicators, per zone (data-pages plan C3) ───────────────────
+
+from app.analytics.zone_comparison import zone_ki_table, zone_ki_mission_row
+
+KIS = ["ki_new_people_real", "ki_member_lessons_real"]
+WEEK = "2026-09-13"
+
+
+def _weekly(*spec) -> pd.DataFrame:
+    """spec: (area, zone_written_on_the_form, {metric: value}) -> the tidy
+    frame queries.get_weekly_form_data() returns."""
+    rows = []
+    for area, zone, metrics in spec:
+        row = {"week_end_date": WEEK, "area": area, "zone": zone}
+        row.update(metrics)
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def test_the_ki_divisor_is_every_active_area_not_the_ones_that_filed():
+    """Four of thirteen areas filing 120 between them is not a zone averaging
+    30. The whole point of the per-area reading is that silence counts."""
+    table = zone_ki_table(
+        _weekly(*[(f"Temuco {i}", "Temuco", {"ki_new_people_real": 30})
+                  for i in range(1, 5)]),
+        _areas(("Temuco", 13)), KIS, WEEK,
+    )
+    # _areas names its areas "Temuco 1".."Temuco 13", so four of them filed.
+    row = table.iloc[0]
+    assert row["areas"] == 13
+    assert row["reporting"] == 4
+    assert row["ki_new_people_real"] == pytest.approx(120 / 13)
+
+
+def test_a_zone_nobody_filed_for_is_blank_not_zero():
+    """Same rule the funnel table follows: "did not report" and "reported
+    nothing" are different claims and must not sort alike."""
+    table = zone_ki_table(
+        _weekly(("Angol 1", "Angol", {"ki_new_people_real": 9})),
+        _areas(("Angol", 8), ("San Pedro", 11)), KIS, WEEK,
+    )
+    quiet = table[table["zone"] == "San Pedro"].iloc[0]
+    assert pd.isna(quiet["ki_new_people_real"])
+    assert quiet["areas"] == 11 and quiet["reporting"] == 0
+
+
+def test_zone_membership_comes_from_the_roster_not_from_the_form():
+    """The zone written on the weekly form is whichever section a companionship
+    filed under. An area that moved zones mid-cycle would otherwise be counted
+    under both, and the mission's total would not equal its parts."""
+    table = zone_ki_table(
+        _weekly(("Angol 1", "San Pedro", {"ki_new_people_real": 16})),
+        _areas(("Angol", 8), ("San Pedro", 11)), KIS, WEEK,
+    )
+    angol = table[table["zone"] == "Angol"].iloc[0]
+    san_pedro = table[table["zone"] == "San Pedro"].iloc[0]
+    assert angol["ki_new_people_real"] == pytest.approx(16 / 8)
+    assert pd.isna(san_pedro["ki_new_people_real"])
+
+
+def test_the_total_reading_is_the_raw_sum():
+    table = zone_ki_table(
+        _weekly(("Angol 1", "Angol", {"ki_new_people_real": 9}),
+                ("Angol 2", "Angol", {"ki_new_people_real": 7})),
+        _areas(("Angol", 8)), KIS, WEEK, per_area=False,
+    )
+    assert table.iloc[0]["ki_new_people_real"] == 16
+
+
+def test_the_mission_ki_row_is_not_an_average_of_zone_averages():
+    """Angol: 8 areas, 80 found. San Pedro: 11 areas, 11 found. The mission is
+    91 over 19 areas — 4,8 — not the mean of 10,0 and 1,0, which is 5,5."""
+    weekly = _weekly(("Angol 1", "Angol", {"ki_new_people_real": 80}),
+                     ("San Pedro 1", "San Pedro", {"ki_new_people_real": 11}))
+    areas = _areas(("Angol", 8), ("San Pedro", 11))
+    row = zone_ki_mission_row(weekly, areas, KIS, WEEK)
+    assert row["areas"] == 19
+    assert row["ki_new_people_real"] == pytest.approx(91 / 19)
+    assert row["ki_new_people_real"] != pytest.approx(5.5)
+
+
+def test_a_missing_metric_column_is_blank_rather_than_zero():
+    """A form that never asked a question has not answered it with 0."""
+    table = zone_ki_table(
+        _weekly(("Angol 1", "Angol", {"ki_new_people_real": 9})),
+        _areas(("Angol", 8)), KIS, WEEK,
+    )
+    assert table.iloc[0]["ki_member_lessons_real"] == 0.0
+    empty = zone_ki_table(pd.DataFrame(), _areas(("Angol", 8)), KIS, WEEK)
+    assert pd.isna(empty.iloc[0]["ki_new_people_real"])

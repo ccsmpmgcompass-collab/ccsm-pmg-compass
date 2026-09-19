@@ -59,7 +59,8 @@ from app.db.queries import (
 )
 from app.analytics.zone_comparison import (
     zone_comparison_table, mission_summary_row, effectiveness_is_rankable,
-    ki_scored_area_count, EFFECTIVENESS as ZONE_EFFECTIVENESS,
+    ki_scored_area_count, zone_ki_table, zone_ki_mission_row,
+    EFFECTIVENESS as ZONE_EFFECTIVENESS,
 )
 from app.analytics.period_delta import (
     reporting_dates, window_pair, window_totals, window_areas, days_in_window,
@@ -82,6 +83,7 @@ from app.utils.area_helpers import (
 )
 from datetime import date, timedelta
 from html import escape as _html_escape
+from urllib.parse import urlencode
 
 # Page chrome (set_page_config / inject_global_css / render_sidebar) is
 # owned by Home.py's st.navigation router since 2026-09-02 — the router and
@@ -289,6 +291,35 @@ else:
 
 #: Label under every arrow on this page's rolling-7-day tiles.
 _VS_PRIOR_WEEK = t("vs prior 7 days")
+
+#: The rolling nightly window every figure on this page that is NOT from
+#: the weekly form describes — the zone funnel, nightly activity and the
+#: conversion rates — and, when the prior side is too thin to compare
+#: against, why those sections carry no arrows. Both were captions under
+#: the rows until step C2 (audit X4); the window is a heading's right-hand
+#: line now and the refusal is a chip on the card. Defined here, above
+#: every section that reads it, because zones (§3) comes before nightly
+#: activity (§4a) since step C1, and — when
+#: the prior side is too thin to compare against — why there are no arrows.
+#: Both were captions under the rows until step C2 (audit X4).
+_night_window = (
+    t("{start}–{end} · {n} reporting days",
+      start=fmt_day_month(_cur_start), end=fmt_day_month(_cur_end),
+      n=fmt_int(_cur_days))
+    if _night_anchor is not None else ""
+)
+_night_no_change = ""
+_night_scaled = ""
+if _night_anchor is not None:
+    if _prev_days < MIN_COMPARABLE_DAYS:
+        _night_no_change = t(
+            "No comparison yet: the previous 7 days hold {n} days on which at "
+            "least half the areas reported, and {need} are needed.",
+            n=fmt_int(_prev_days), need=fmt_int(MIN_COMPARABLE_DAYS))
+    elif _prev_days < WINDOW_DAYS:
+        _night_scaled = t(
+            "Compared against {n} reporting days in the previous 7, scaled per "
+            "day.", n=fmt_int(_prev_days))
 
 
 # Card labels for the four rates, and the shared rate computation. Both used to
@@ -895,12 +926,27 @@ if _ab_monthly:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 3. ZONES — PER-AREA AVERAGE ACROSS THE FINDING FUNNEL (last 7 days)
+# 3. ZONES — the seven Key Indicators, per area
 # ═══════════════════════════════════════════════════════════════════════════════
-# Every figure here is divided by the zone's active area count, never shown raw:
-# zones run 8 to 13 areas, so a raw total ranks by size (audit finding C2). The
-# arithmetic — and the reason the divisor is ALL active areas rather than the
-# ones that reported — lives in app/analytics/zone_comparison.py.
+# Data-pages plan §4 step C3, decision 7. This was a nine-column HTML table of
+# the nightly funnel: rank, zone, areas, four counts and Effectiveness as plain
+# text, with no visual encoding and 766px of sideways scroll on a phone (audit
+# P5). Two things changed.
+#
+# WHAT is compared: the seven Key Indicators, not the finding funnel. The
+# mission is judged on the seven, every other section of this page is about the
+# seven, and a zone comparison on a different set of metrics asks the reader to
+# hold two vocabularies at once. The funnel is still here, one tap away, because
+# it answers the other half of the question — how much finding work went in.
+#
+# HOW it is drawn: charts.ranked_list with columns. Rank, dot, zone, coverage
+# and the sort column's bar on the left; the seven small numbers on the right,
+# the best and worst in each column tinted. On a phone the two halves stack and
+# every number names itself, so nothing scrolls sideways.
+#
+# Every figure is still divided by the zone's active area count, never shown
+# raw: zones run 8 to 13 areas, so a raw total ranks by size (audit C2). The
+# arithmetic lives in app/analytics/zone_comparison.py.
 
 #: The funnel, in the order a contact travels it. Fixed here rather than read
 #: from flavor.nightly_highlights: that property is sourced from SCORE_CONFIG's
@@ -914,11 +960,11 @@ _ZONE_FUNNEL_KEYS = [
     "baptismal_invitations",
 ]
 
-#: Column headers, trimmed to keep eight columns readable on one line. Trimmed
-#: phrases in the _KI_SHORT_LABELS style, with one deliberate abbreviation:
-#: "Invitaciones" alone is ambiguous against church_invites ("Invitaciones a la
-#: Iglesia"), and the unabbreviated "Invitaciones al Bautismo" is wide enough to
-#: wrap the column. Naming the wrong thing is the worse failure of the two.
+#: Column headers, trimmed to keep the strip readable. Trimmed phrases in the
+#: KI_SHORT_LABELS style, with one deliberate abbreviation: "Invitaciones" alone
+#: is ambiguous against church_invites ("Invitaciones a la Iglesia"), and the
+#: unabbreviated "Invitaciones al Bautismo" is wide enough to wrap the column.
+#: Naming the wrong thing is the worse failure of the two.
 _ZONE_SHORT_LABELS = {
     "contacts_attempted":    "Attempts",
     "contacts_made":         "Contacts",
@@ -926,16 +972,44 @@ _ZONE_SHORT_LABELS = {
     "baptismal_invitations": "Bapt. Invitations",
 }
 
+#: The seven Key Indicators trimmed AGAIN for a seven-column strip, where each
+#: column has about 80px. The card labels stay what decision 11 fixed them as —
+#: these are column headers, the same exception _ZONE_SHORT_LABELS above has
+#: always been, and every cell carries the full name on hover.
+_ZONE_KI_LABELS = {
+    "ki_new_people_real":         "New",
+    "ki_member_lessons_real":     "Lessons",
+    "ki_friends_sacrament_real":  "Sacrament",
+    "ki_friends_first_week_real": "1st week",
+    "ki_baptismal_date_real":     "With date",
+    "ki_baptized_confirmed_real": "Baptized",
+    "ki_rc_at_church_real":       "RC",
+}
+
 #: Where the sort falls back to while Effectiveness is still missing its Key
 #: Indicator third (see effectiveness_is_rankable). An outcome, complete today,
 #: and hard to inflate.
 _ZONE_FALLBACK_SORT = "friend_lessons"
 
-#: Per-area average or raw zone total. Stored in session_state as these stable
-#: keys rather than as the translated label: a language switch mid-session would
-#: leave a Spanish label sitting in a widget whose options had become English.
-_ZONE_MODE_PER_AREA = "per_area"
-_ZONE_MODE_TOTAL    = "total"
+#: Which comparison is on screen, and whether it reads per area or as a total.
+#: Stored under their own *_val keys rather than as widget keys: these were an
+#: st.radio until this step, and Streamlit keeps a retired widget's state under
+#: its key (see render_section_tabs' note on the same collision).
+_ZONE_VIEW_KI, _ZONE_VIEW_FUNNEL = "ki", "funnel"
+_ZONE_MODE_PER_AREA, _ZONE_MODE_TOTAL = "per_area", "total"
+
+_zone_view = st.session_state.get("panel_zone_view_val", _ZONE_VIEW_KI)
+if _zone_view not in (_ZONE_VIEW_KI, _ZONE_VIEW_FUNNEL):
+    _zone_view = _ZONE_VIEW_KI
+_zone_mode = st.session_state.get("panel_zone_mode_val", _ZONE_MODE_PER_AREA)
+if _zone_mode not in (_ZONE_MODE_PER_AREA, _ZONE_MODE_TOTAL):
+    _zone_mode = _ZONE_MODE_PER_AREA
+_zone_per_area = _zone_mode == _ZONE_MODE_PER_AREA
+
+
+def _zone_view_label(view: str) -> str:
+    return (t("Key Indicators") if view == _ZONE_VIEW_KI
+            else t("Nightly funnel"))
 
 
 def _zone_mode_label(mode: str) -> str:
@@ -943,20 +1017,9 @@ def _zone_mode_label(mode: str) -> str:
             else t("Zone total"))
 
 
-# The heading names the reading, so it has to be decided BEFORE the radio that
-# sets it is drawn — Streamlit renders in source order. Reading session_state
-# first is what lets the control sit under its own heading rather than above it.
-_zone_mode = st.session_state.get("panel_zone_mode", _ZONE_MODE_PER_AREA)
-_zone_per_area = _zone_mode != _ZONE_MODE_TOTAL
-
-# Effectiveness comes from SCORES' newest scored week. It is the one column on
-# a different clock from the rolling 7 days, and the one column the per-area /
-# total switch does not apply to — see zone_comparison_table.
-#
-# All of this is computed ABOVE the heading rather than below it, which it was
-# until step C2: the two captions that used to sit under the table quote these
-# figures, and a heading's ⓘ can only carry them if they already exist when the
-# heading is drawn (Streamlit renders in source order).
+# Effectiveness comes from SCORES' newest scored week. On the funnel view it is
+# the one column on a different clock from the rolling 7 days, and the one the
+# per-area / total switch does not apply to — see zone_comparison_table.
 _zone_eff_week = None
 _zone_scores = pd.DataFrame()
 _zone_scored_weeks = get_scored_weeks()
@@ -964,145 +1027,201 @@ if _zone_scored_weeks:
     _zone_eff_week = _zone_scored_weeks[0]
     _zone_scores = get_scores(_zone_eff_week)
 
-_zone_num = zone_comparison_table(
-    zone_df, get_submitting_areas(), _ZONE_FUNNEL_KEYS, _zone_scores,
-    per_area=_zone_per_area)
+if _zone_view == _ZONE_VIEW_KI:
+    _zone_keys = list(_ki_metrics)
+    _zone_cols = [(k, t(_ZONE_KI_LABELS.get(k, k)), ki_short_label(k))
+                  for k in _zone_keys]
+    _zone_num = zone_ki_table(get_weekly_form_data(), _ki_scope_roster,
+                              _zone_keys, _ki_week_end, per_area=_zone_per_area)
+    _zone_mission = zone_ki_mission_row(get_weekly_form_data(), _ki_scope_roster,
+                                        _zone_keys, _ki_week_end,
+                                        per_area=_zone_per_area)
+    _zone_default_key = ("ki_new_people_real" if "ki_new_people_real" in _zone_keys
+                         else (_zone_keys[0] if _zone_keys else ""))
+    _zone_window = (
+        t("week of {span}", span=fmt_week_span(_ki_week_end - timedelta(days=6),
+                                               _ki_week_end))
+        if _ki_week_end is not None else ""
+    )
+else:
+    _zone_num = zone_comparison_table(
+        zone_df, _ki_scope_roster, _ZONE_FUNNEL_KEYS, _zone_scores,
+        per_area=_zone_per_area)
+    _zone_mission = mission_summary_row(
+        zone_df, _ki_scope_roster, _ZONE_FUNNEL_KEYS, _zone_scores,
+        per_area=_zone_per_area)
+    _zone_cols = [(k, t(_ZONE_SHORT_LABELS[k]), t(_ZONE_SHORT_LABELS[k]))
+                  for k in _ZONE_FUNNEL_KEYS]
+    if ZONE_EFFECTIVENESS in _zone_num.columns:
+        _zone_cols.append((ZONE_EFFECTIVENESS, t("Effectiveness"),
+                           t("Effectiveness")))
+    _zone_keys = [k for k, _short, _full in _zone_cols]
+    _zone_eff_ready = (
+        ZONE_EFFECTIVENESS in _zone_num.columns
+        and effectiveness_is_rankable(_zone_scores, _active_areas)
+    )
+    _zone_default_key = (ZONE_EFFECTIVENESS if _zone_eff_ready
+                         else _ZONE_FALLBACK_SORT)
+    _zone_window = _night_window
 
-_zone_cols = [(k, t(_ZONE_SHORT_LABELS[k])) for k in _ZONE_FUNNEL_KEYS]
-if ZONE_EFFECTIVENESS in _zone_num.columns:
-    _zone_cols.append((ZONE_EFFECTIVENESS, t("Effectiveness")))
-
-_zone_eff_ready = (
-    ZONE_EFFECTIVENESS in _zone_num.columns
-    and effectiveness_is_rankable(_zone_scores, _active_areas)
-)
-
+# ── The heading ───────────────────────────────────────────────────────────────
 _zone_info = [t(
     "Every figure here is divided by the zone's active area count, including "
     "the areas that did not report — these zones run from 8 to 13 areas, so a "
-    "raw total ranks them by size rather than by work. Effectiveness is the "
-    "newest scored week and stays a per-area average in both readings.")]
+    "raw total ranks them by size rather than by work. The best and worst in "
+    "each column are tinted. Tap a zone to open it on Desgloses.")]
+if _zone_view == _ZONE_VIEW_KI:
+    _zone_info.append(t(
+        "The seven indicators come from the weekly form, so this is the last "
+        "complete week rather than a rolling seven days, and a zone's coverage "
+        "is printed beside its name: at 6 of 13 areas a zone is having a quiet "
+        "week to report, not necessarily a bad one."))
+else:
+    _zone_info.append(t(
+        "The nightly funnel is a rolling seven days from the nightly form, so "
+        "it is on a different clock from the Key Indicators."))
+    if _zone_eff_week and not _zone_eff_ready:
+        _zone_info.append(t(
+            "Effectiveness does not lead the ranking yet: its Key Indicator "
+            "component is still 0 for most areas ({n} of {total} scored), "
+            "because a week's KI goals are set on the previous week's form.",
+            n=fmt_int(ki_scored_area_count(_zone_scores)),
+            total=fmt_int(_active_areas)))
 if not _zone_per_area and not _zone_num.empty:
     _zone_info.append(t(
         "Zone totals rank by zone size — these zones run {low} to {high} areas."
         " Effectiveness stays a per-area average.",
         low=fmt_int(_zone_num["areas"].min()),
         high=fmt_int(_zone_num["areas"].max())))
-if _zone_eff_week and not _zone_eff_ready:
-    _zone_info.append(t(
-        "Effectiveness does not lead the ranking yet: its Key Indicator "
-        "component is still 0 for most areas ({n} of {total} scored), "
-        "because a week's KI goals are set on the previous week's form.",
-        n=fmt_int(ki_scored_area_count(_zone_scores)),
-        total=fmt_int(_active_areas)))
 
 render_section_label(
-    t("Zones — Per-Area Average (7 Days)") if _zone_per_area
-    else t("Zones — Zone Totals (7 Days)"),
+    t("Zones — Per Area") if _zone_per_area else t("Zones — Zone Totals"),
+    emphasis=True,
+    right=_zone_window,
     info=" ".join(_zone_info),
-    right=t("nightly summary, refreshed daily at noon"),
 )
-_zone_default_key = (ZONE_EFFECTIVENESS if _zone_eff_ready
-                     else _ZONE_FALLBACK_SORT)
 
-if _zone_num.empty:
-    st.info(t("No zone totals yet — MISSION_ORG lists no active areas, or the "
-              "nightly agent has not written DASHBOARD_SUMMARY."))
+# ── The controls: what to compare, how to read it, what to rank on ────────────
+_zc1, _zc2 = st.columns([2, 1])
+with _zc1:
+    _zone_picked_view = st.pills(
+        t("Compare"), [_ZONE_VIEW_KI, _ZONE_VIEW_FUNNEL],
+        format_func=_zone_view_label, default=_zone_view,
+        label_visibility="collapsed", key=f"panel_zone_view_{_zone_view}")
+    if _zone_picked_view is not None and _zone_picked_view != _zone_view:
+        st.session_state["panel_zone_view_val"] = _zone_picked_view
+        st.rerun()
+    _zone_picked_mode = st.pills(
+        t("Show"), [_ZONE_MODE_PER_AREA, _ZONE_MODE_TOTAL],
+        format_func=_zone_mode_label, default=_zone_mode,
+        label_visibility="collapsed", key=f"panel_zone_mode_{_zone_mode}")
+    if _zone_picked_mode is not None and _zone_picked_mode != _zone_mode:
+        st.session_state["panel_zone_mode_val"] = _zone_picked_mode
+        st.rerun()
+
+_zone_labels = {k: short for k, short, _full in _zone_cols}
+with _zc2:
+    _zone_sort_key = st.selectbox(
+        t("Sort by"), _zone_keys,
+        index=(_zone_keys.index(_zone_default_key)
+               if _zone_default_key in _zone_keys else 0),
+        format_func=lambda k: _zone_labels.get(k, k),
+        key=f"panel_zone_sort_{_zone_view}") if _zone_keys else ""
+
+if _zone_num.empty or not _zone_keys:
+    st.info(t("No zone totals yet — MISSION_ORG lists no active areas, or "
+              "nobody has reported for this window."))
 else:
-    _zone_keys = [k for k, _ in _zone_cols]
-    _zone_lbl  = dict(_zone_cols)
-    _zone_idx  = (_zone_keys.index(_zone_default_key)
-                  if _zone_default_key in _zone_keys else 0)
-
-    # Both controls key on stable identifiers with a format_func, never on the
-    # translated label — a mid-session language switch would otherwise leave a
-    # stored Spanish string in a widget whose options had turned English.
-    _sort_col, _mode_col, _ = st.columns([1, 1, 1])
-    with _sort_col:
-        _zone_sort_key = st.selectbox(
-            t("Sort by"), _zone_keys, index=_zone_idx,
-            format_func=lambda k: _zone_lbl[k], key="panel_zone_sort")
-    with _mode_col:
-        st.radio(
-            t("Show"), [_ZONE_MODE_PER_AREA, _ZONE_MODE_TOTAL],
-            format_func=_zone_mode_label, horizontal=True,
-            key="panel_zone_mode")
-
-    _zone_num = (_zone_num.sort_values(_zone_sort_key, ascending=False)
+    _zone_num = (_zone_num.sort_values(_zone_sort_key, ascending=False,
+                                       na_position="last")
                           .reset_index(drop=True))
 
-    # The Areas column is shown in BOTH modes: per area it is the divisor, so
-    # the arithmetic is checkable without leaving the page; on totals it is the
-    # reason one zone outranks another, which is the whole of finding C2.
-    _zone_tbl = pd.DataFrame({
-        t("Rank"):  [str(i) for i in range(1, len(_zone_num) + 1)],
-        t("Zone"):  _zone_num["zone"],
-        t("Areas"): _zone_num["areas"].map(fmt_int),
+    def _zone_places(key: str) -> int:
+        """Counts follow the per-area switch; Effectiveness is a 0-100 score
+        and keeps its decimal in both readings."""
+        return 1 if (_zone_per_area or key == ZONE_EFFECTIVENESS) else 0
+
+    # Best and worst in each column, tinted. Only where there is something to
+    # tell apart: with fewer than three zones, or a column where every zone
+    # sits on the same number, "best" and "worst" name nothing.
+    _zone_best: dict = {}
+    _zone_worst: dict = {}
+    if len(_zone_num) >= 3:
+        for _k in _zone_keys:
+            _vals = pd.to_numeric(_zone_num[_k], errors="coerce").dropna()
+            if len(_vals) >= 3 and _vals.max() > _vals.min():
+                _zone_best[_k] = float(_vals.max())
+                _zone_worst[_k] = float(_vals.min())
+
+    def _zone_cells(row) -> tuple:
+        cells, status = [], []
+        for _k in _zone_keys:
+            _v = row.get(_k)
+            cells.append(fmt_number(_v, _zone_places(_k)))
+            if pd.isna(_v):
+                status.append(None)
+            elif _k in _zone_best and float(_v) == _zone_best[_k]:
+                status.append("good")
+            elif _k in _zone_worst and float(_v) == _zone_worst[_k]:
+                status.append("bad")
+            else:
+                status.append(None)
+        return cells, status
+
+    def _zone_sub(row) -> str:
+        """How much of the zone is behind the numbers. On the weekly view that
+        is who submitted the form; on the nightly one the area count is the
+        divisor, and printing it is what makes the arithmetic checkable."""
+        areas = fmt_int(row.get("areas"))
+        if _zone_view == _ZONE_VIEW_KI and "reporting" in row:
+            return t("{n} of {total} areas reported",
+                     n=fmt_int(row.get("reporting")), total=areas)
+        return t("{n} areas", n=areas)
+
+    _zone_rows = []
+    for _i, _row in _zone_num.iterrows():
+        _cells, _status = _zone_cells(_row)
+        _zone_rows.append({
+            "rank": _i + 1,
+            "name": _row["zone"],
+            "sub": _zone_sub(_row),
+            # No headline number: the sort column is one of the seven and
+            # printing it twice on a row reads as a mistake. The bar under the
+            # zone's name carries the ranking.
+            "bar": (0 if pd.isna(_row.get(_zone_sort_key))
+                    else float(_row.get(_zone_sort_key))),
+            "cells": _cells,
+            "cell_status": _status,
+            "href": "/Desgloses?" + urlencode({"bd_zone": str(_row["zone"])}),
+        })
+
+    # The mission as a final row: recomputed from the raw totals, never averaged
+    # from the rows above it — averaging four zone averages weights an 8-area
+    # zone the same as a 13-area one. It carries no rank and no tint; it is the
+    # thing the ranked rows are parts of, not a fifth zone.
+    _m_cells, _ = _zone_cells(_zone_mission)
+    _zone_rows.append({
+        "rank": "",
+        "name": t("Mission"),
+        "sub": _zone_sub(_zone_mission),
+        "bar": (0 if pd.isna(_zone_mission.get(_zone_sort_key))
+                else float(_zone_mission.get(_zone_sort_key))),
+        "cells": _m_cells,
+        "cell_status": None,
     })
-    for _k, _lbl in _zone_cols:
-        # Counts follow the switch; Effectiveness is a 0-100 score and keeps its
-        # decimal in both modes.
-        _places = 1 if (_zone_per_area or _k == ZONE_EFFECTIVENESS) else 0
-        _zone_tbl[_lbl] = _zone_num[_k].map(
-            lambda v, p=_places: fmt_number(v, p))
 
-    # ── The mission, as a final row ───────────────────────────────────────────
-    # Recomputed from the raw totals, never summed or averaged from the rows
-    # above it: averaging four zone averages weights an 8-area zone the same as
-    # a 13-area one, so it would not equal the mission's own per-area figure.
-    # It carries no rank — it is the thing the ranked rows are parts of.
-    _mission_row = mission_summary_row(
-        zone_df, get_submitting_areas(), _ZONE_FUNNEL_KEYS, _zone_scores,
-        per_area=_zone_per_area)
-    _mission_cells = {
-        t("Rank"):  "",
-        t("Zone"):  t("Mission"),
-        t("Areas"): fmt_int(_mission_row["areas"]),
-    }
-    for _k, _lbl in _zone_cols:
-        _places = 1 if (_zone_per_area or _k == ZONE_EFFECTIVENESS) else 0
-        _mission_cells[_lbl] = fmt_number(_mission_row.get(_k), _places)
-    _zone_tbl = pd.concat(
-        [_zone_tbl, pd.DataFrame([_mission_cells])], ignore_index=True)
-
-    # Styled rather than rendered plain so the summary reads as a total and not
-    # as a fifth zone. render_table hides a Styler's index, so the row is
-    # addressed by position.
-    _last = len(_zone_tbl) - 1
-    _styled = _zone_tbl.style.apply(
-        lambda row: (["font-weight:700;border-top:2px solid rgba(255,255,255,0.22);"]
-                     * len(row)) if row.name == _last else [""] * len(row),
-        axis=1)
-    render_table(_styled)
-
+    st.markdown(
+        ranked_list(
+            _zone_rows,
+            columns=[(short, full) for _k, short, full in _zone_cols],
+        ),
+        unsafe_allow_html=True,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 4a. NIGHTLY ACTIVITY — mission totals, last 7 days
 # ═══════════════════════════════════════════════════════════════════════════════
-#: The window every figure in this section and the next describes, and — when
-#: the prior side is too thin to compare against — why there are no arrows.
-#: Both were captions under the rows until step C2 (audit X4).
-_night_window = (
-    t("{start}–{end} · {n} reporting days",
-      start=fmt_day_month(_cur_start), end=fmt_day_month(_cur_end),
-      n=fmt_int(_cur_days))
-    if _night_anchor is not None else ""
-)
-_night_no_change = ""
-_night_scaled = ""
-if _night_anchor is not None:
-    if _prev_days < MIN_COMPARABLE_DAYS:
-        _night_no_change = t(
-            "No comparison yet: the previous 7 days hold {n} days on which at "
-            "least half the areas reported, and {need} are needed.",
-            n=fmt_int(_prev_days), need=fmt_int(MIN_COMPARABLE_DAYS))
-    elif _prev_days < WINDOW_DAYS:
-        _night_scaled = t(
-            "Compared against {n} reporting days in the previous 7, scaled per "
-            "day.", n=fmt_int(_prev_days))
-
-
 def _night_card(card: dict) -> dict:
     """A nightly card with the section's refusal on it, where it has a value
     but no arrow."""

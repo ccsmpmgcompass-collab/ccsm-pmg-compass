@@ -211,3 +211,139 @@ def mission_summary_row(
             if eff_div else float("nan")
         )
     return row
+
+
+# ── The seven Key Indicators, per zone ────────────────────────────────────────
+# Data-pages plan §4 step C3, decision 7: the zone comparison is the seven Key
+# Indicators, not the nightly funnel. The funnel stays above, behind a toggle,
+# because it answers a different question (how much finding work) from the one
+# the mission is judged on (what came of it).
+#
+# Everything the module's two rules say about the funnel applies here unchanged:
+# the divisor is every ACTIVE area, never the ones that reported, and a zone
+# with nothing written is NaN rather than 0.
+
+def _area_zone_map(areas_df: pd.DataFrame) -> dict:
+    """``{area name: zone}`` from MISSION_ORG.
+
+    Membership comes from the roster, never from the weekly frame's own zone
+    column: the form's zone is whichever section a companionship filed under,
+    and an area that moved between zones mid-cycle would be counted in both.
+    """
+    if (areas_df is None or areas_df.empty
+            or not {"Area_Name", "Zone"} <= set(areas_df.columns)):
+        return {}
+    return {
+        str(r["Area_Name"]).strip(): str(r["Zone"]).strip()
+        for _, r in areas_df.iterrows()
+        if str(r.get("Area_Name", "")).strip()
+    }
+
+
+def _week_rows(weekly_df: pd.DataFrame, week_end) -> pd.DataFrame:
+    if weekly_df is None or weekly_df.empty or "week_end_date" not in weekly_df.columns:
+        return pd.DataFrame()
+    key = str(week_end)[:10]
+    rows = weekly_df[weekly_df["week_end_date"].astype(str).str[:10] == key]
+    return rows.copy() if not rows.empty else pd.DataFrame()
+
+
+def zone_ki_table(
+    weekly_df: pd.DataFrame,
+    areas_df: pd.DataFrame,
+    metric_keys: list,
+    week_end,
+    per_area: bool = True,
+) -> pd.DataFrame:
+    """One row per zone for ONE reporting week: ``zone``, ``areas``,
+    ``reporting``, and one column per Key Indicator.
+
+    ``weekly_df`` is ``queries.get_weekly_form_data()`` — tidy rows of
+    week_end_date | area | zone | metrics. ``areas_df`` is
+    ``get_submitting_areas()``, which is what says how many areas a zone HAS.
+
+    ``per_area=True`` divides each indicator by the zone's active area count,
+    including the areas that did not file. That is the only fair reading — these
+    zones run 8 to 13 areas — and it is why ``reporting`` is returned beside it:
+    a zone at 6 of 13 is not having a bad week so much as a quiet one, and the
+    caller must be able to say so.
+
+    Values are floats, unsorted and unformatted. A zone no area filed for is
+    NaN, not 0.
+    """
+    counts = active_areas_by_zone(areas_df)
+    zone_of = _area_zone_map(areas_df)
+    rows_this_week = _week_rows(weekly_df, week_end)
+
+    totals: dict = {}
+    reporting: dict = {}
+    if not rows_this_week.empty and "area" in rows_this_week.columns:
+        rows_this_week["__zone"] = (rows_this_week["area"].astype(str).str.strip()
+                                    .map(zone_of))
+        known = rows_this_week[rows_this_week["__zone"].notna()]
+        for zone, grp in known.groupby("__zone"):
+            totals[str(zone)] = {
+                key: float(pd.to_numeric(grp[key], errors="coerce").fillna(0).sum())
+                for key in metric_keys if key in grp.columns
+            }
+            reporting[str(zone)] = int(grp["area"].nunique())
+
+    out = []
+    for zone, n_areas in counts.items():
+        if not n_areas:
+            continue
+        zone_totals = totals.get(zone)
+        row = {"zone": zone, "areas": n_areas,
+               "reporting": int(reporting.get(zone, 0))}
+        for key in metric_keys:
+            if zone_totals is None:
+                row[key] = float("nan")
+                continue
+            total = float(zone_totals.get(key, 0.0))
+            row[key] = total / n_areas if per_area else total
+        out.append(row)
+
+    cols = ["zone", "areas", "reporting"] + list(metric_keys)
+    if not out:
+        return pd.DataFrame(columns=cols)
+    return pd.DataFrame(out)[cols]
+
+
+def zone_ki_mission_row(
+    weekly_df: pd.DataFrame,
+    areas_df: pd.DataFrame,
+    metric_keys: list,
+    week_end,
+    per_area: bool = True,
+) -> dict:
+    """The whole mission as one row, in the shape ``zone_ki_table`` returns.
+
+    Recomputed from the raw totals rather than averaged over the zone rows: an
+    average of four zone averages weights an 8-area zone the same as a 13-area
+    one, so it would not equal the mission's own per-area figure. Same rule, and
+    same reason, as ``mission_summary_row``.
+
+    Unlike the funnel's version this counts EVERY active area in the divisor,
+    including a zone none of whose areas filed. The weekly form is a per-area
+    submission, so an absent area is an area that did not report — there is no
+    "the agent has not written this zone's row yet" case to protect against.
+    """
+    counts = active_areas_by_zone(areas_df)
+    zone_of = _area_zone_map(areas_df)
+    rows_this_week = _week_rows(weekly_df, week_end)
+    divisor = sum(n for n in counts.values() if n)
+
+    row = {"zone": "", "areas": divisor, "reporting": 0}
+    mine = pd.DataFrame()
+    if not rows_this_week.empty and "area" in rows_this_week.columns:
+        names = rows_this_week["area"].astype(str).str.strip()
+        mine = rows_this_week[names.isin(zone_of)]
+        row["reporting"] = int(mine["area"].nunique()) if not mine.empty else 0
+
+    for key in metric_keys:
+        if not divisor or mine.empty or key not in mine.columns:
+            row[key] = float("nan")
+            continue
+        total = float(pd.to_numeric(mine[key], errors="coerce").fillna(0).sum())
+        row[key] = total / divisor if per_area else total
+    return row

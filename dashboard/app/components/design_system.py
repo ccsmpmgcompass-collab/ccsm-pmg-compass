@@ -56,6 +56,25 @@ _CSS = """
     .pmg-kpi { padding: 0.75rem 0.8rem !important; }
     .pmg-kpi-value { font-size: 1.5rem !important; }
 }
+/* A ranked row that carries several columns (charts.ranked_list with
+   `columns`) is two halves: who and how much on the left, the columns on the
+   right. On a phone they stack, so the Panel's four zones against the seven
+   Key Indicators read as a card each instead of scrolling sideways the way the
+   nine-column table did (audit P5). The header row hides with them — a header
+   over a stacked row names nothing. */
+@media (max-width: 720px) {
+    .pmg-rank-row-cells { grid-template-columns: minmax(0, 1fr) !important; }
+    .pmg-rank-row-cells .pmg-rank-cells {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+        row-gap: 0.35rem;
+        padding-left: 2.9rem;
+    }
+    .pmg-ranked > .pmg-rank-head { display: none !important; }
+    .pmg-rank-row-cells .pmg-rank-cells > span { text-align: left !important; }
+    /* Each number names itself once the header above it is gone. */
+    .pmg-rank-row-cells .pmg-cell-k { display: inline !important; }
+}
+.pmg-cell-k { display: none; }
 /* Section labels with an ⓘ are a <details>; the browser's own disclosure
    triangle would fight the label's rule, so it is hidden here. */
 details.pmg-sec > summary { list-style: none; }

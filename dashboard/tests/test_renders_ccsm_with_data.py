@@ -615,11 +615,18 @@ def test_the_key_indicator_heading_carries_the_emphasis_treatment():
     )
 
 
-def test_the_zone_table_ends_with_a_mission_row():
+def test_the_zone_comparison_ends_with_a_mission_row():
     """The ranked zones are parts of a whole, and the whole was not on the page.
-    It carries no rank — it is not a fifth zone."""
+    It carries no rank — it is not a fifth zone.
+
+    The comparison was a nine-column HTML table until step C3 of the data-pages
+    plan and is a ranked list now (audit P5: the table was 766px wide on a
+    phone). What is asserted is unchanged — the mission is the last row, and it
+    has no rank — only where to look for it."""
     at = _run("views/01_Panel.py")
-    tables = [str(m.value) for m in at.markdown if "pmg-tbl" in str(m.value)]
-    zone_tbl = next((h for h in tables if "POSICIÓN" in h.upper()), None)
-    assert zone_tbl is not None, "zone table did not render"
-    assert "Misión" in zone_tbl
+    lists = [str(m.value) for m in at.markdown if "pmg-ranked" in str(m.value)]
+    zones = next((h for h in lists if "Misión" in h), None)
+    assert zones is not None, "the zone comparison did not render"
+    rows = [r for r in zones.split('class="pmg-rank-row') if ">" in r]
+    assert "Misión" in rows[-1], "the mission is not the last row"
+    assert len(rows) > 1, "the mission row is the only row"

@@ -363,9 +363,51 @@ _ROW_TINT = {
 }
 
 
+def _cells_html(cells: Sequence, tints: Sequence | None,
+                columns: Sequence[str], *, header: bool = False) -> str:
+    """The right-hand strip of small numbers on a row that carries columns.
+
+    Each cell carries its own column name in a span that is hidden on a laptop,
+    where the header row above already names it, and shown on a phone, where
+    the halves stack and the header is gone. Without it a stacked row would be
+    seven bare numbers.
+    """
+    cols = [(c, c) if isinstance(c, str) else (c[0], c[1]) for c in columns]
+    n = len(cols)
+    parts = []
+    for i in range(n):
+        label, full = cols[i]
+        text = "" if i >= len(cells) else ("" if cells[i] is None else str(cells[i]))
+        tint = None
+        if tints and i < len(tints) and tints[i]:
+            tint = STATUS.get(_STATUS_ALIAS.get(str(tints[i]).lower(), ""), None)
+        color = MUTED if header else (tint or INK)
+        weight = "600" if (tint or header) else "500"
+        size = "0.68rem" if header else "0.8rem"
+        key = (f'<i class="pmg-cell-k" style="font-style:normal;color:{MUTED};'
+               f'font-weight:500;font-size:0.68rem;">'
+               f'{_html.escape(str(label))} </i>') if not header else ""
+        # Seven columns share about 600px, so a header is trimmed to fit and
+        # carries its full name on hover. The same title rides on every value,
+        # which is what a reader hovers first.
+        title = f' title="{_html.escape(str(full))}"' if full else ""
+        parts.append(
+            f'<span{title} style="color:{color};font-weight:{weight};font-size:{size};'
+            f'text-align:right;font-variant-numeric:tabular-nums;overflow:hidden;'
+            f'text-overflow:ellipsis;white-space:nowrap;">'
+            f'{key}{_html.escape(str(label)) if header else ""}{_html.escape(text)}</span>'
+        )
+    return (
+        f'<span class="pmg-rank-cells" style="display:grid;'
+        f'grid-template-columns:repeat({n},minmax(0,1fr));gap:0.5rem;'
+        f'align-items:center;">' + "".join(parts) + '</span>'
+    )
+
+
 def ranked_list(rows: Sequence[dict], *, value_fmt: Callable = fmt_int,
                 bar_max: float | None = None,
-                href: Callable[[dict], str | None] | None = None) -> str:
+                href: Callable[[dict], str | None] | None = None,
+                columns: Sequence[str] | None = None) -> str:
     """rank · dot · name · sub-line · inline bar · change · value, one row per
     entry, as HTML. Extracted from the Panel's compliance rankings so every
     ranked comparison on the data pages is the same row.
@@ -378,10 +420,23 @@ def ranked_list(rows: Sequence[dict], *, value_fmt: Callable = fmt_int,
     ``href`` (the row becomes a link). ``href`` the argument is a function of
     the row for callers that derive it; a row's own ``href`` wins.
     ``bar_max`` fills the bar; default the largest bar in the list.
+
+    ``columns`` turns the row into a comparison across several measures at
+    once. Each entry is a label, or a ``(label, full name)`` pair where the
+    label had to be trimmed to fit — seven columns share about 600px, and the
+    full name then rides on hover — the Panel's four zones against the seven Key Indicators (plan step
+    C3). Each row then carries ``cells``, a list of already-formatted strings
+    the same length as ``columns``, and optionally ``cell_status``, a matching
+    list of "good"/"bad"/None that tints the best and worst in each column.
+    A header row names the columns above the list. The strip takes the row's
+    right half on a laptop and its own second line on a phone, which is what a
+    nine-column table could not do — the zone table was 766px wide at 375px and
+    scrolled the whole page sideways (audit P5).
     """
     rows = list(rows)
     if not rows:
         return ""
+    n_cells = len(columns) if columns else 0
     bars = []
     for r in rows:
         b = r.get("bar", r.get("value"))
@@ -392,6 +447,16 @@ def ranked_list(rows: Sequence[dict], *, value_fmt: Callable = fmt_int,
     full = bar_max if bar_max else (max([b for b in bars if b is not None] + [0]) or 1.0)
 
     out = ['<div class="pmg-ranked">']
+    if n_cells:
+        # The header sits over the cells half only, indented past the rank, the
+        # dot and the name so each label lands on its own column.
+        out.append(
+            f'<div class="pmg-rank-head" style="display:grid;'
+            f'grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:0.7rem;'
+            f'padding:0 0.9rem 0.3rem 0.9rem;">'
+            f'<span></span>{_cells_html([], None, columns, header=True)}'
+            f'</div>'
+        )
     for i, (r, b) in enumerate(zip(rows, bars), start=1):
         status = _STATUS_ALIAS.get(str(r.get("status") or "").lower(), "none")
         bg, dot = _ROW_TINT[status]
@@ -404,6 +469,55 @@ def ranked_list(rows: Sequence[dict], *, value_fmt: Callable = fmt_int,
         change_color = r.get("change_color") or MUTED
         link = r.get("href") or (href(r) if href else None)
         tag, attrs = ("a", f' href="{_html.escape(str(link))}" target="_self"') if link else ("div", "")
+
+        if n_cells:
+            # Two halves: who and how much on the left, the columns on the
+            # right. The halves stack on a phone (see .pmg-rank-row-cells in
+            # the stylesheet), so seven numbers never force a sideways scroll.
+            #
+            # A row that carries columns usually has no separate headline
+            # number: the quantity it is ranked on is already one of the
+            # columns, and printing it twice on one line reads as a mistake.
+            # Omit ``value`` and the bar under the name carries the ranking on
+            # its own.
+            has_value = "value" in r
+            left_cols = ("1.6rem 0.6rem minmax(0,1fr) auto" if has_value
+                         else "1.6rem 0.6rem minmax(0,1fr)")
+            value_html = (
+                f'<span style="color:{INK};font-weight:700;font-size:0.95rem;'
+                f'text-align:right;min-width:3.2rem;font-variant-numeric:tabular-nums;">'
+                f'{_html.escape(shown)}</span>' if has_value else ""
+            )
+            out.append(
+                f'<{tag} class="pmg-rank-row pmg-rank-row-cells"{attrs} '
+                f'style="display:grid;'
+                f'grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);'
+                f'align-items:center;gap:0.7rem;background:{bg};border-radius:8px;'
+                f'padding:0.55rem 0.9rem;margin-bottom:0.35rem;color:inherit;'
+                f'text-decoration:none;{"cursor:pointer;" if link else ""}">'
+                f'<span style="display:grid;'
+                f'grid-template-columns:{left_cols};'
+                f'align-items:center;gap:0.7rem;min-width:0;">'
+                f'<span style="text-align:right;color:#6b7280;font-size:0.8rem;">{_html.escape(str(rank))}</span>'
+                f'<span style="width:0.6rem;height:0.6rem;border-radius:50%;background:{dot};"></span>'
+                f'<span style="min-width:0;">'
+                f'<span style="display:block;color:{INK};font-weight:600;font-size:0.92rem;'
+                f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
+                f'{_html.escape(str(r.get("name", "")))}</span>'
+                + (f'<span style="display:block;color:{MUTED};font-size:0.75rem;">'
+                   f'{_html.escape(str(sub))}</span>' if sub else "")
+                + f'<span style="display:block;height:6px;margin-top:5px;border-radius:3px;'
+                f'background:rgba(255,255,255,0.06);overflow:hidden;">'
+                f'<span style="display:block;height:100%;width:{width:.1f}%;'
+                f'background:{dot};border-radius:3px;"></span></span>'
+                f'</span>'
+                + value_html
+                + f'</span>'
+                + _cells_html(r.get("cells") or [], r.get("cell_status"), columns)
+                + f'</{tag}>'
+            )
+            continue
+
         out.append(
             f'<{tag} class="pmg-rank-row"{attrs} style="display:grid;'
             f'grid-template-columns:1.6rem 0.6rem minmax(0,1fr) minmax(48px,26%) auto auto;'

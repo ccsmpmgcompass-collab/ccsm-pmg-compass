@@ -2964,4 +2964,45 @@ ES: dict[str, str] = {
         "misión; el Puntaje de Esfuerzo se promedia sobre los días-área que SÍ "
         "respondieron, porque un formulario sin enviar es una falla de "
         "cumplimiento y no evidencia de que una compañería haya trabajado mal.",
+    # ── Panel §3: zones as a ranked list of the seven Key Indicators (C3) ─────
+    "Zones — Per Area": "Zonas — por área",
+    "Zones — Zone Totals": "Zonas — totales por zona",
+    "Compare": "Comparar",
+    "Nightly funnel": "Embudo nocturno",
+    "No zone totals yet — MISSION_ORG lists no active areas, or nobody has "
+    "reported for this window.":
+        "Aún no hay totales por zona — MISSION_ORG no lista áreas activas, o "
+        "nadie ha informado en esta ventana.",
+    "Every figure here is divided by the zone's active area count, including "
+    "the areas that did not report — these zones run from 8 to 13 areas, so a "
+    "raw total ranks them by size rather than by work. The best and worst in "
+    "each column are tinted. Tap a zone to open it on Desgloses.":
+        "Cada cifra aquí se divide por la cantidad de áreas activas de la "
+        "zona, incluidas las que no informaron — estas zonas tienen entre 8 y "
+        "13 áreas, así que un total bruto las ordena por tamaño y no por "
+        "trabajo. La mejor y la peor de cada columna van resaltadas. Toque una "
+        "zona para abrirla en Desgloses.",
+    "The seven indicators come from the weekly form, so this is the last "
+    "complete week rather than a rolling seven days, and a zone's coverage is "
+    "printed beside its name: at 6 of 13 areas a zone is having a quiet week "
+    "to report, not necessarily a bad one.":
+        "Los siete indicadores vienen del informe semanal, así que esta es la "
+        "última semana completa y no siete días móviles, y la cobertura de "
+        "cada zona va junto a su nombre: con 6 de 13 áreas, una zona está "
+        "teniendo una semana silenciosa para informar, no necesariamente mala.",
+    "The nightly funnel is a rolling seven days from the nightly form, so it "
+    "is on a different clock from the Key Indicators.":
+        "El embudo nocturno son siete días móviles del informe nocturno, así "
+        "que va en un reloj distinto al de los Indicadores Clave.",
+    # The seven Key Indicators trimmed to column headers — about 80px each in
+    # the seven-column strip. The cards keep decision 11's full labels, and
+    # every cell carries the full name on hover. Reached through
+    # _ZONE_KI_LABELS, which the extractor cannot see (a dict value is not a
+    # literal argument to t()), so these are kept here by hand — the same as
+    # _ZONE_SHORT_LABELS and _RATE_SHORT_LABELS above.
+    "New": "Nuevas",
+    "Sacrament": "Sacramental",
+    "1st week": "1ª semana",
+    "With date": "Con fecha",
+    "RC": "CR",
 }
