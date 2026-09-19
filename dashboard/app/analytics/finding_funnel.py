@@ -235,14 +235,94 @@ def compute_funnel_stage_counts(det_df: pd.DataFrame) -> dict:
     return counts
 
 
-def trend_series(det_df: pd.DataFrame, max_daily_days: int = 120):
+def previous_window(start: date, end: date) -> tuple[date, date]:
+    """The equal-length window ending the day before `start`.
+
+    What the trend's ghost bars are drawn from: 5 Jul - 3 Aug (30 days) is
+    compared against 5 Jun - 4 Jul, not against "last month".
+    """
+    span = (end - start).days + 1
+    prev_end = start - timedelta(days=1)
+    return prev_end - timedelta(days=span - 1), prev_end
+
+
+def window_buckets(start: date, end: date, *, max_daily_days: int = 14,
+                   max_weekly_days: int = 370) -> tuple[list, str]:
+    """[(bucket_start, bucket_end), ...] and the granularity that produced it.
+
+    Day for a short window, a SEVEN-DAY BLOCK once it passes `max_daily_days`,
+    calendar month past `max_weekly_days`.
+
+    The blocks are counted BACK FROM `end`, not forward from `start` and not
+    from a calendar Sunday, and that is the whole point of this function:
+
+      * back from the end, so the most recent block is always a whole seven
+        days and any short one is the oldest -- the block a reader cares least
+        about. Counted forward, the newest bar would be a 2-day stub that
+        reads as a collapse.
+      * from the window rather than the calendar, so the previous
+        equal-length window buckets IDENTICALLY -- two 30-day windows both
+        give 4x7 + 1x2, whatever weekday each happens to start on. Calendar
+        weeks would cut the two differently and the ghost bars would compare
+        six days against seven.
+    """
+    span = (end - start).days + 1
+    if span <= max_daily_days:
+        return ([(start + timedelta(days=i), start + timedelta(days=i))
+                 for i in range(span)], "day")
+    if span <= max_weekly_days:
+        blocks, cursor = [], end
+        while cursor >= start:
+            first = max(start, cursor - timedelta(days=6))
+            blocks.append((first, cursor))
+            cursor = first - timedelta(days=1)
+        return list(reversed(blocks)), "week"
+    blocks, cursor = [], start.replace(day=1)
+    while cursor <= end:
+        nxt = (cursor.replace(day=28) + timedelta(days=4)).replace(day=1)
+        blocks.append((max(cursor, start), min(nxt - timedelta(days=1), end)))
+        cursor = nxt
+    return blocks, "month"
+
+
+def bucket_counts(det_df: pd.DataFrame, buckets) -> list:
+    """How many people were found in each bucket. An empty bucket is 0, not a
+    gap: a week nobody found anybody is a fact about that week."""
+    if not buckets:
+        return []
+    if det_df is None or det_df.empty:
+        return [0] * len(buckets)
+    ev = parse_dates(det_df, "event_date_selected").dropna()
+    if ev.empty:
+        return [0] * len(buckets)
+    days = ev.dt.date
+    return [int(((days >= a) & (days <= b)).sum()) for a, b in buckets]
+
+
+def trend_series(det_df: pd.DataFrame, max_daily_days: int = 120, *,
+                 start: date | None = None, end: date | None = None,
+                 max_weekly_days: int = 370):
     """(labels, values, granularity) for the findings-over-time chart.
 
-    Buckets by day for a short window and by MONTH once the data spans more
-    than `max_daily_days`. Removing the bogus DATA_FLOOR made "All" a 2.6-year
-    range, which as a daily bar chart is ~950 bars with unreadable labels.
-    `granularity` is "day" or "month" so the caller can say which it drew.
+    Without a window: buckets by day for a short span and by MONTH once the
+    data spans more than `max_daily_days`. Removing the bogus DATA_FLOOR made
+    "All" a 2.6-year range, which as a daily bar chart is ~950 bars with
+    unreadable labels.
+
+    With `start` and `end` the window is explicit and the middle granularity
+    exists: day, then seven-day block, then month (`window_buckets`). Every
+    bucket is drawn even when nobody was found in it, and the labels are the
+    bucket START dates in ISO form for the caller to format. `max_daily_days`
+    defaults to 120 for the windowless call that predates this and to 14 for
+    a windowed one, because a windowed trend is read beside the previous
+    period and 30 daily bars is not a comparison anyone can make.
     """
+    if start is not None and end is not None:
+        buckets, gran = window_buckets(
+            start, end, max_daily_days=min(max_daily_days, 14),
+            max_weekly_days=max_weekly_days)
+        return ([a.isoformat() for a, _ in buckets],
+                bucket_counts(det_df, buckets), gran)
     if det_df is None or det_df.empty:
         return [], [], "day"
     ev = parse_dates(det_df, "event_date_selected").dropna()

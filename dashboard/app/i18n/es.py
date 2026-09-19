@@ -546,6 +546,28 @@ ES: dict[str, str] = {
     "top {n}": "las {n} primeras",
     "{n} zones": "{n} zonas",
     "Pilot zone": "Zona piloto",
+    # E5/E6: the trend against the window before it, and one data drawer
+    "Findings per Week": "Hallazgos por semana",
+    "This window": "Esta ventana",
+    "Previous window": "Ventana anterior",
+    "vs. {range}": "vs. {range}",
+    "Each bar counts the people found in that stretch. Seven-day "
+    "blocks are counted back from the end of the window, so the most "
+    "recent block is always a whole week and only the oldest can be "
+    "short.":
+        "Cada barra cuenta las personas encontradas en ese tramo. Los tramos "
+        "de siete días se cuentan hacia atrás desde el final de la ventana, "
+        "así que el más reciente siempre es una semana completa y solo el más "
+        "antiguo puede quedar corto.",
+    "The export does not reach back far enough to draw the "
+    "previous window behind it.":
+        "La exportación no llega lo bastante atrás como para dibujar la "
+        "ventana anterior detrás.",
+    "Data and upload": "Datos y carga",
+    "Area rankings": "Clasificación de áreas",
+    "Finding records": "Registros de búsqueda",
+    "Raw Tableau export": "Exportación de Tableau sin procesar",
+    "**Manual upload / re-sync**": "**Carga manual / resincronización**",
     "Certified — Tableau summary PDF": "Certificado — PDF resumen de Tableau",
     "Pick a range of full calendar months to see this":
         "Elija un rango de meses calendario completos para ver esto",

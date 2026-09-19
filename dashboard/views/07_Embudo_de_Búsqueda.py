@@ -3,10 +3,11 @@ from datetime import date
 
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
 
 from app.auth.auth import require_auth
-from app.components.charts import chart, ranked_list, share_bar, stage_bars
+from app.components.charts import (
+    bars_vs_goal, chart, ranked_list, share_bar, stage_bars,
+)
 from app.components.design_system import (
     render_page_header, render_section_label,
     render_table, render_kpi_row,
@@ -27,12 +28,14 @@ from app.ingestion.tableau_upload import (
 )
 from app.analytics.finding_funnel import (
     DEFAULT_PRESET, FUNNEL_STAGES, PRESET_LABELS, PRESETS, REFERRED_STAGE,
-    build_area_rankings, compute_funnel_stage_counts, data_date_bounds,
-    export_age_days, export_is_stale, filter_by_range, preset_range,
-    trend_series,
+    bucket_counts, build_area_rankings, compute_funnel_stage_counts,
+    data_date_bounds, export_age_days, export_is_stale, filter_by_range,
+    preset_range, previous_window, window_buckets,
 )
 from app.i18n import t
-from app.i18n.formats import NA, fmt_date_range, fmt_day_month, fmt_int, fmt_percent
+from app.i18n.formats import (
+    NA, fmt_date_range, fmt_day_month, fmt_int, fmt_month_abbr, fmt_percent,
+)
 from app.utils.area_helpers import mission_today
 
 # Page chrome (set_page_config / inject_global_css / render_sidebar) is
@@ -138,8 +141,30 @@ def _save_detail(df: pd.DataFrame) -> None:
     save_dataframe("TABLEAU_DETAIL", df, uploaded_by=who)
 
 
+def _upload_controls() -> None:
+    """The three uploaders and the note above them, with no container of their
+    own — Streamlit forbids an expander inside an expander, and on the normal
+    path these sit inside "Datos y carga" (E6)."""
+    st.caption(t("Export the Mission Finding Summary view from Tableau and drop the "
+                 "files here. The Detail export REPLACES the stored data, so export "
+                 "the full view, not a recent slice. Summary PDFs merge by month — "
+                 "upload as many as you like at once."))
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        # .xlsx first: that is what the real export is. This uploader was
+        # pd.read_csv only, so the actual file could never be loaded.
+        st.file_uploader(t("Detail export (.xlsx or .csv)"),
+                         type=["xlsx", "xlsm", "xls", "csv"], key="detail")
+    with c2:
+        st.file_uploader(t("Ranking export (.xlsx or .csv)"),
+                         type=["xlsx", "xlsm", "xls", "csv"], key="ranking")
+    with c3:
+        st.file_uploader(t("Summary PDFs (one per month)"), type=["pdf"],
+                         key="summary", accept_multiple_files=True)
+
+
 def _render_uploaders(expanded: bool = False) -> None:
-    """The manual upload controls.
+    """The manual upload controls in an expander of their own.
 
     A function, and not inline at the foot of the page, because the no-data
     branch `st.stop()`s — so the page told you to upload the export "in Manual
@@ -148,22 +173,7 @@ def _render_uploaders(expanded: bool = False) -> None:
     uploader meant no data. It is rendered in that branch too, opened.
     """
     with st.expander(t("Manual upload / re-sync"), expanded=expanded):
-        st.caption(t("Export the Mission Finding Summary view from Tableau and drop the "
-                     "files here. The Detail export REPLACES the stored data, so export "
-                     "the full view, not a recent slice. Summary PDFs merge by month — "
-                     "upload as many as you like at once."))
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            # .xlsx first: that is what the real export is. This uploader was
-            # pd.read_csv only, so the actual file could never be loaded.
-            st.file_uploader(t("Detail export (.xlsx or .csv)"),
-                             type=["xlsx", "xlsm", "xls", "csv"], key="detail")
-        with c2:
-            st.file_uploader(t("Ranking export (.xlsx or .csv)"),
-                             type=["xlsx", "xlsm", "xls", "csv"], key="ranking")
-        with c3:
-            st.file_uploader(t("Summary PDFs (one per month)"), type=["pdf"],
-                             key="summary", accept_multiple_files=True)
+        _upload_controls()
 
 
 def _source_caption(by: str, at: str) -> str:
@@ -173,6 +183,14 @@ def _source_caption(by: str, at: str) -> str:
     if by:
         return t("Uploaded by {by} · {at}", by=by, at=at)
     return ""
+
+
+def _bucket_label(day: date, granularity: str) -> str:
+    """A trend bucket's x-axis label: `ago 26` for a month, `5 de jul` for a
+    day or a seven-day block (the block's first day)."""
+    if granularity == "month":
+        return f"{fmt_month_abbr(day.month)} {day.year % 100:02d}"
+    return fmt_day_month(day)
 
 
 def _fmt_range(a: date, b: date) -> str:
@@ -621,145 +639,187 @@ if not det_df.empty:
                 for k, v in zn.items()
             ]), unsafe_allow_html=True)
 
-    # Finding trend. Buckets by month once the window is long — with the bogus
-    # DATA_FLOOR gone, "All" spans 2.6 years and a per-day chart is ~950 bars
-    # of illegible labels. trend_series() decides and says which it drew.
-    _tlabels, _tvalues, _tgran = trend_series(det_df)
-    if _tlabels:
-        render_section_label(t("Findings per Month") if _tgran == "month"
-                             else t("Findings per Day"))
-        tbar = go.Figure(go.Bar(
-            x=_tlabels, y=_tvalues,
-            marker=dict(color="#8b5cf6"), text=_tvalues,
-            textposition="outside", cliponaxis=False,
-            textfont=dict(color="#ffffff", size=12)))
-        tbar.update_layout(yaxis=dict(visible=False, range=[0, max(_tvalues) * 1.2]))
-        chart(tbar, height=240)
+    # ── E5: the trend, against the window before it ──────────────────────────
+    # Buckets come from the WINDOW, not from the data's own span: day for a
+    # short window, seven-day blocks counted back from its end, month once it
+    # passes a year. The blocks are what let the previous equal-length window
+    # ride behind as ghost bars — two 30-day windows bucket identically, so
+    # bar for bar the comparison is exact (window_buckets' docstring has why
+    # calendar weeks would not be).
+    _tbuckets, _tgran = window_buckets(sel_start, sel_end)
+    _tvalues = bucket_counts(det_df, _tbuckets)
+    if _tbuckets:
+        _pstart, _pend = previous_window(sel_start, sel_end)
+        # Only when the export actually covers it. A window that runs off the
+        # front of the data would draw a row of zeroes, which reads as "nobody
+        # was found" rather than "nothing was exported".
+        _twin = (bucket_counts(filter_by_range(det_all, _pstart, _pend),
+                               window_buckets(_pstart, _pend)[0])
+                 if _pstart >= _lo else None)
+        _trend_info = t(
+            "Each bar counts the people found in that stretch. Seven-day "
+            "blocks are counted back from the end of the window, so the most "
+            "recent block is always a whole week and only the oldest can be "
+            "short.")
+        if _twin is None:
+            _trend_info += " " + t(
+                "The export does not reach back far enough to draw the "
+                "previous window behind it.")
+        render_section_label(
+            t("Findings per Month") if _tgran == "month"
+            else t("Findings per Week") if _tgran == "week"
+            else t("Findings per Day"),
+            info=_trend_info,
+            right=(t("vs. {range}", range=_fmt_range(_pstart, _pend))
+                   if _twin is not None else ""),
+        )
+        chart(bars_vs_goal(
+            [_bucket_label(a, _tgran) for a, _ in _tbuckets],
+            _tvalues, None, twin=_twin,
+            actual_label=t("This window"), twin_label=t("Previous window"),
+        ), height=280)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SECTION 5 — RAW DATA  (dropdowns)
+# SECTION 5 — DATA AND UPLOAD  (E6)
 # ══════════════════════════════════════════════════════════════════════════════
 
-render_section_label(t("Detailed Data"))
+# Two tables, a raw dump, a PDF viewer and the upload controls used to be five
+# expanders stacked under a "DATOS DETALLADOS" heading — a screen and a half
+# of page spent saying "there is more down here". They are one expander now,
+# with the four readings behind st.pills so only the one asked for is built.
+# That is not only tidiness: the records table formats every row of the window
+# one cell at a time, and the raw dump renders 200 rows of every column.
+#
+# The uploaders are NOT behind a pill. Streamlit drops a widget's session
+# state the moment the widget stops being rendered, and this page reads
+# st.session_state["detail"] / ["ranking"] / ["summary"] at the top of the
+# script to decide whether a fresh export is in hand. A pill that un-rendered
+# them would throw a just-uploaded file away as soon as the reader looked at
+# something else, so they sit under the pills' output, always drawn.
+with st.expander(t("Data and upload"), expanded=False):
+    _DATA_VIEWS = {
+        t("Area rankings"): "rankings",
+        t("Finding records"): "records",
+        t("Raw Tableau export"): "raw",
+        t("Finding Summary PDF"): "pdf",
+    }
+    _view = _DATA_VIEWS.get(st.pills(
+        t("Data and upload"), list(_DATA_VIEWS), key="ff_data_view",
+        label_visibility="collapsed"))
 
-# ── Area Rankings table ───────────────────────────────────────────────────────
-with st.expander(t("Area Rankings (per-area table)"), expanded=False):
-    ranks = build_area_rankings(det_df)
-    if ranks.empty:
-        st.caption(t("No finding records in the selected range to rank."))
-    else:
-        _pct_cols = {"Contact %", "Contacted %"}
-        disp = pd.DataFrame()
-        for label in ranks.columns:
-            if label == "Area":
-                disp[label] = ranks[label]
-            elif label in _pct_cols:
-                disp[label] = ranks[label].map(_disp_pct)
-            else:
-                disp[label] = ranks[label].map(_disp_int)
-        # Headers translated only for display; the loop above matched on the
-        # English names build_area_rankings() produces, and the CSV below is
-        # exported from `ranks`, so downloads keep their English columns.
-        disp = disp.rename(columns={c: t(c) for c in disp.columns})
-        st.caption(t("{n} areas with activity · sorted by people found "
-                     "· reflects the selected date range", n=disp.shape[0]))
-        st.caption(t("Baptized here is a lower bound — Tableau only certifies "
-                     "mission/zone totals, not a per-area breakdown (see "
-                     "Official Baptisms above)."))
-        render_table(disp.reset_index(drop=True))
-        st.download_button(t("Download Rankings CSV"),
-                           data=ranks.to_csv(index=False).encode("utf-8"),
-                           file_name="finding_rankings.csv", mime="text/csv")
+    if _view == "rankings":
+        ranks = build_area_rankings(det_df)
+        if ranks.empty:
+            st.caption(t("No finding records in the selected range to rank."))
+        else:
+            _pct_cols = {"Contact %", "Contacted %"}
+            disp = pd.DataFrame()
+            for label in ranks.columns:
+                if label == "Area":
+                    disp[label] = ranks[label]
+                elif label in _pct_cols:
+                    disp[label] = ranks[label].map(_disp_pct)
+                else:
+                    disp[label] = ranks[label].map(_disp_int)
+            # Headers translated only for display; the loop above matched on the
+            # English names build_area_rankings() produces, and the CSV below is
+            # exported from `ranks`, so downloads keep their English columns.
+            disp = disp.rename(columns={c: t(c) for c in disp.columns})
+            st.caption(t("{n} areas with activity · sorted by people found "
+                         "· reflects the selected date range", n=disp.shape[0]))
+            st.caption(t("Baptized here is a lower bound — Tableau only certifies "
+                         "mission/zone totals, not a per-area breakdown (see "
+                         "Official Baptisms above)."))
+            render_table(disp.reset_index(drop=True))
+            st.download_button(t("Download Rankings CSV"),
+                               data=ranks.to_csv(index=False).encode("utf-8"),
+                               file_name="finding_rankings.csv", mime="text/csv")
 
-# ── Finding Records table ─────────────────────────────────────────────────────
-with st.expander(t("Finding Records — {n} people",
-                   n=0 if det_df.empty else len(det_df)),
-                 expanded=False):
-    if det_df.empty:
-        st.caption(t("No detail export loaded."))
-    else:
-        colmap = [
-            ("Date",     _col(det_df, "event_date_selected")),
-            ("Zone",     _col(det_df, "latest_zone")),
-            ("District", _col(det_df, "latest_district")),
-            ("Area",     _col(det_df, "latest_teaching_area")),
-            ("Source",   _col(det_df, "finding_source")),
-            ("Category", _col(det_df, "finding_category")),
-            ("Name",     _col(det_df, "full_name")),
-        ]
-        recs = pd.DataFrame()
-        for label, src in colmap:
-            if src is not None:
-                recs[label] = det_df[src].astype(str).str.strip().replace({"nan": ""})
+    elif _view == "records":
+        st.caption(t("Finding Records — {n} people",
+                     n=0 if det_df.empty else len(det_df)))
+        if det_df.empty:
+            st.caption(t("No detail export loaded."))
+        else:
+            colmap = [
+                ("Date",     _col(det_df, "event_date_selected")),
+                ("Zone",     _col(det_df, "latest_zone")),
+                ("District", _col(det_df, "latest_district")),
+                ("Area",     _col(det_df, "latest_teaching_area")),
+                ("Source",   _col(det_df, "finding_source")),
+                ("Category", _col(det_df, "finding_category")),
+                ("Name",     _col(det_df, "full_name")),
+            ]
+            recs = pd.DataFrame()
+            for label, src in colmap:
+                if src is not None:
+                    recs[label] = det_df[src].astype(str).str.strip().replace({"nan": ""})
 
-        # The "All" sentinel is translated for display and compared against
-        # the same _all below. Every other option is a zone/category/source
-        # value read from the sheet, which stays exactly as stored so the
-        # equality filters keep matching.
-        _all = t("All")
-        fc1, fc2, fc3 = st.columns(3)
-        with fc1:
-            zsel = (st.selectbox(t("Zone"), [_all] + sorted(recs["Zone"].dropna().unique()),
-                                 key="rec_zone") if "Zone" in recs.columns else _all)
-        with fc2:
-            csel = (st.selectbox(t("Category"), [_all] + sorted(recs["Category"].dropna().unique()),
-                                 key="rec_cat") if "Category" in recs.columns else _all)
-        with fc3:
-            ssel = (st.selectbox(t("Source"), [_all] + sorted(recs["Source"].dropna().unique()),
-                                 key="rec_src") if "Source" in recs.columns else _all)
-        filt = recs.copy()
-        if "Zone" in filt.columns and zsel != _all:
-            filt = filt[filt["Zone"] == zsel]
-        if "Category" in filt.columns and csel != _all:
-            filt = filt[filt["Category"] == csel]
-        if "Source" in filt.columns and ssel != _all:
-            filt = filt[filt["Source"] == ssel]
-        st.caption(t("{shown} of {total} records",
-                     shown=filt.shape[0], total=recs.shape[0]))
-        render_table(filt.head(250).rename(columns={c: t(c) for c in filt.columns})
-                     .reset_index(drop=True))
-        if filt.shape[0] > 250:
-            st.caption(t("Showing first 250 — download for the full set."))
-        st.download_button(t("Download Records CSV"),
-                           data=det_df.to_csv(index=False).encode("utf-8"),
-                           file_name="finding_records.csv", mime="text/csv")
+            # The "All" sentinel is translated for display and compared against
+            # the same _all below. Every other option is a zone/category/source
+            # value read from the sheet, which stays exactly as stored so the
+            # equality filters keep matching.
+            _all = t("All")
+            fc1, fc2, fc3 = st.columns(3)
+            with fc1:
+                zsel = (st.selectbox(t("Zone"), [_all] + sorted(recs["Zone"].dropna().unique()),
+                                     key="rec_zone") if "Zone" in recs.columns else _all)
+            with fc2:
+                csel = (st.selectbox(t("Category"), [_all] + sorted(recs["Category"].dropna().unique()),
+                                     key="rec_cat") if "Category" in recs.columns else _all)
+            with fc3:
+                ssel = (st.selectbox(t("Source"), [_all] + sorted(recs["Source"].dropna().unique()),
+                                     key="rec_src") if "Source" in recs.columns else _all)
+            filt = recs.copy()
+            if "Zone" in filt.columns and zsel != _all:
+                filt = filt[filt["Zone"] == zsel]
+            if "Category" in filt.columns and csel != _all:
+                filt = filt[filt["Category"] == csel]
+            if "Source" in filt.columns and ssel != _all:
+                filt = filt[filt["Source"] == ssel]
+            st.caption(t("{shown} of {total} records",
+                         shown=filt.shape[0], total=recs.shape[0]))
+            render_table(filt.head(250).rename(columns={c: t(c) for c in filt.columns})
+                         .reset_index(drop=True))
+            if filt.shape[0] > 250:
+                st.caption(t("Showing first 250 — download for the full set."))
+            st.download_button(t("Download Records CSV"),
+                               data=det_df.to_csv(index=False).encode("utf-8"),
+                               file_name="finding_records.csv", mime="text/csv")
 
-# ── Raw Tableau export (every column, untouched) ──────────────────────────────
-with st.expander(t("Raw Tableau export (all columns)"), expanded=False):
-    if not rank_df.empty:
-        st.markdown(t("**Ranking — raw**"))
-        render_table(rank_df.head(200))
-    if not det_df.empty:
-        st.markdown(t("**Detail — raw**"))
-        # Drop the giant '(combined)' mashup column from the on-screen raw view
-        raw_det = det_df[[c for c in det_df.columns if "(combined)" not in str(c).lower()]]
-        render_table(raw_det.head(200))
-        if len(det_df) > 200:
-            st.caption(t("Showing first 200 of {n} rows — download above for all.",
-                         n=len(det_df)))
+    elif _view == "raw":
+        if not rank_df.empty:
+            st.markdown(t("**Ranking — raw**"))
+            render_table(rank_df.head(200))
+        if not det_df.empty:
+            st.markdown(t("**Detail — raw**"))
+            # Drop the giant '(combined)' mashup column from the on-screen raw view
+            raw_det = det_df[[c for c in det_df.columns if "(combined)" not in str(c).lower()]]
+            render_table(raw_det.head(200))
+            if len(det_df) > 200:
+                st.caption(t("Showing first 200 of {n} rows — download above for all.",
+                             n=len(det_df)))
 
-# ── Finding Summary PDF ───────────────────────────────────────────────────────
-# Only ever previews the LAST file: uploading 31 at once for a backfill should
-# not try to render 31 embedded viewers.
-with st.expander(t("Finding Summary PDF"), expanded=False):
-    _pdfs = ([] if not summary_file
-             else summary_file if isinstance(summary_file, list) else [summary_file])
-    if not _pdfs:
-        st.caption(t("Upload the Finding Summary PDF in Manual upload below to view it here."))
-    else:
-        _pdf = _pdfs[-1]
-        if len(_pdfs) > 1:
-            st.caption(t("{n} PDFs uploaded — previewing the last.", n=len(_pdfs)))
-        _pdf.seek(0)
-        pdf_bytes = _pdf.read()
-        st.caption(t('{name} · {value:.1f} KB', name=_pdf.name, value=len(pdf_bytes) / 1024))
-        st.download_button(t("Download Summary PDF"), data=pdf_bytes,
-                           file_name=_pdf.name, mime="application/pdf")
-        b64 = base64.b64encode(pdf_bytes).decode("utf-8")
-        st.components.v1.html(
-            f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="800px" '
-            f'type="application/pdf" sandbox="allow-same-origin"></iframe>', height=820)
+    elif _view == "pdf":
+        _pdfs = ([] if not summary_file
+                 else summary_file if isinstance(summary_file, list) else [summary_file])
+        if not _pdfs:
+            st.caption(t("Upload the Finding Summary PDF in Manual upload below to view it here."))
+        else:
+            _pdf = _pdfs[-1]
+            if len(_pdfs) > 1:
+                st.caption(t("{n} PDFs uploaded — previewing the last.", n=len(_pdfs)))
+            _pdf.seek(0)
+            pdf_bytes = _pdf.read()
+            st.caption(t('{name} · {value:.1f} KB', name=_pdf.name, value=len(pdf_bytes) / 1024))
+            st.download_button(t("Download Summary PDF"), data=pdf_bytes,
+                               file_name=_pdf.name, mime="application/pdf")
+            b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+            st.components.v1.html(
+                f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="800px" '
+                f'type="application/pdf" sandbox="allow-same-origin"></iframe>', height=820)
 
-# ── Manual upload / re-sync ───────────────────────────────────────────────────
-_render_uploaders()
+    st.divider()
+    st.markdown(t("**Manual upload / re-sync**"))
+    _upload_controls()

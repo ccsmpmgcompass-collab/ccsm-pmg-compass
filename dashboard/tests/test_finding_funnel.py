@@ -19,6 +19,7 @@ from app.analytics.finding_funnel import (
     PRESETS,
     REFERRED_STAGE,
     _STAGE_COLS,
+    bucket_counts,
     build_area_rankings,
     compute_funnel_stage_counts,
     data_date_bounds,
@@ -27,8 +28,10 @@ from app.analytics.finding_funnel import (
     filter_by_range,
     full_month_range,
     preset_range,
+    previous_window,
     resolve_col,
     trend_series,
+    window_buckets,
 )
 
 
@@ -313,6 +316,85 @@ def test_trend_buckets_by_month_once_the_window_is_long():
     assert gran == "month"
     assert labels[0] == "2024-01"
     assert values[0] == 2
+
+
+def test_the_previous_window_is_equal_length_and_ends_the_day_before():
+    """5 Jul - 3 Aug (30 days) is compared against 5 Jun - 4 Jul, not against
+    "last month"."""
+    assert previous_window(date(2026, 7, 5), date(2026, 8, 3)) == (
+        date(2026, 6, 5), date(2026, 7, 4))
+
+
+def test_a_one_day_window_compares_against_the_day_before():
+    assert previous_window(date(2026, 8, 3), date(2026, 8, 3)) == (
+        date(2026, 8, 2), date(2026, 8, 2))
+
+
+def test_a_short_window_is_bucketed_one_bar_per_day():
+    buckets, gran = window_buckets(date(2026, 7, 28), date(2026, 8, 3))
+    assert gran == "day"
+    assert len(buckets) == 7
+    assert buckets[0] == (date(2026, 7, 28), date(2026, 7, 28))
+    assert buckets[-1] == (date(2026, 8, 3), date(2026, 8, 3))
+
+
+def test_seven_day_blocks_are_counted_back_from_the_end():
+    """So the most recent block is always a whole week. Counted forward, a
+    30-day window would end on a 2-day stub that reads as a collapse."""
+    buckets, gran = window_buckets(date(2026, 7, 5), date(2026, 8, 3))
+    assert gran == "week"
+    assert buckets[-1] == (date(2026, 7, 28), date(2026, 8, 3))
+    assert buckets[0] == (date(2026, 7, 5), date(2026, 7, 6))   # the short one
+    assert [(b - a).days + 1 for a, b in buckets] == [2, 7, 7, 7, 7]
+
+
+def test_the_previous_window_buckets_identically_so_the_ghosts_line_up():
+    """The whole reason the blocks come from the window and not the calendar:
+    bar i of one window and bar i of the other cover the same number of days,
+    whatever weekday each happens to start on."""
+    a = window_buckets(date(2026, 7, 5), date(2026, 8, 3))[0]
+    b = window_buckets(*previous_window(date(2026, 7, 5), date(2026, 8, 3)))[0]
+    assert len(a) == len(b)
+    assert ([(y - x).days for x, y in a] == [(y - x).days for x, y in b])
+
+
+def test_a_multi_year_window_is_bucketed_by_calendar_month():
+    buckets, gran = window_buckets(date(2024, 1, 1), date(2026, 8, 3))
+    assert gran == "month"
+    assert len(buckets) == 32
+    assert buckets[0] == (date(2024, 1, 1), date(2024, 1, 31))
+    assert buckets[-1] == (date(2026, 8, 1), date(2026, 8, 3))
+
+
+def test_a_bucket_nobody_was_found_in_counts_zero_not_a_gap():
+    """A week nobody found anybody is a fact about that week."""
+    df = _detail([{"event_date_selected": "2026-07-30"}])
+    buckets, _ = window_buckets(date(2026, 7, 5), date(2026, 8, 3))
+    assert bucket_counts(df, buckets) == [0, 0, 0, 0, 1]
+
+
+def test_bucket_counts_of_an_empty_frame_are_zeroes_of_the_right_length():
+    buckets, _ = window_buckets(date(2026, 7, 28), date(2026, 8, 3))
+    assert bucket_counts(pd.DataFrame(), buckets) == [0] * 7
+    assert bucket_counts(pd.DataFrame(), []) == []
+
+
+def test_a_windowed_trend_draws_every_bucket_and_labels_it_by_its_start():
+    df = _detail([{"event_date_selected": "2026-07-30"},
+                  {"event_date_selected": "2026-08-01"}])
+    labels, values, gran = trend_series(df, start=date(2026, 7, 5),
+                                        end=date(2026, 8, 3))
+    assert gran == "week"
+    assert labels == ["2026-07-05", "2026-07-07", "2026-07-14",
+                      "2026-07-21", "2026-07-28"]
+    assert values == [0, 0, 0, 0, 2]
+
+
+def test_the_windowless_trend_is_unchanged_by_the_window_path():
+    """The old call still buckets day-or-month off the data's own span."""
+    df = _detail([{"event_date_selected": "2026-08-01"},
+                  {"event_date_selected": "2026-08-03"}])
+    assert trend_series(df)[2] == "day"
 
 
 def test_trend_on_an_empty_frame_returns_nothing_to_draw():
