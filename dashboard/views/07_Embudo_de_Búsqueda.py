@@ -6,12 +6,12 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from app.auth.auth import require_auth
-from app.components.charts import chart
+from app.components.charts import chart, ranked_list, share_bar, stage_bars
 from app.components.design_system import (
     render_page_header, render_section_label,
     render_table, render_kpi_row,
 )
-from app.config.theme import SERIES_COLORS, STATUS
+from app.config.theme import STATUS
 from app.db.drive_blob import save_dataframe_blob
 from app.db.queries import (
     get_baptisms_actual_for_range, get_tableau_detail, get_tableau_detail_file_id,
@@ -20,6 +20,7 @@ from app.db.queries import (
 from app.db.sheets_client import read_tab, save_dataframe
 from app.ingestion.tableau_detail_transform import clean_detail
 from app.ingestion.tableau_summary_parser import baptisms_rows, parse_summary_pdf
+from app.ingestion.transfer_apply_service import pilot_zones
 from app.ingestion.tableau_upload import (
     describe_replacement, merge_baptism_rows, read_tabular, summarize_months,
     upload_token,
@@ -507,83 +508,55 @@ render_kpi_row([
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SECTION 2 — PIPELINE FUNNEL  +  FINDING MIX
+# SECTION 2 — THE PIPELINE, AND WHAT FOUND THESE PEOPLE  (E3)
 # ══════════════════════════════════════════════════════════════════════════════
 
-fcol, dcol = st.columns([3, 2])
+# Stage bars, not a Plotly funnel. A funnel's shrinking trapezoids encode
+# nothing that a bar and a percentage do not, its stage labels were clipped,
+# and at 375px it was unreadable. The step conversions are written between the
+# rows, and the step that loses the most people is named rather than left for
+# the reader to find (live: 2.545 being taught → 167 at sacrament, 7%).
+_pipeline_info = t("Each stage = people found in range who reached at least that "
+                   "far. A milestone that was never logged is inherited from a "
+                   "later one, so the funnel never widens.")
+if (official_baptisms is not None
+        and official_baptisms != stage_counts.get("Baptized", 0)):
+    # This was a six-line caption under the chart. It is the same sentence,
+    # one tap away, under the section it belongs to (plan A4).
+    _pipeline_info += " " + t(
+        "⚠️ Baptized here only counts people with a tracked finding "
+        "record — {tracked} here vs. {official} certified by Tableau's "
+        "own monthly summary for this period. The gap is people "
+        "baptized before their finding record existed in the app. "
+        "Official Baptisms above is the number that matters for "
+        "reporting.",
+        tracked=fmt_int(stage_counts.get("Baptized", 0)),
+        official=fmt_int(official_baptisms))
 
-with fcol:
-    render_section_label(t("Finding Pipeline"))
-    if stage_counts:
-        # Translate for the axis only; the counts stay keyed in English.
-        labels = [t(l) for l, _ in FUNNEL_STAGES]
-        values = [stage_counts[l] for l, _ in FUNNEL_STAGES]
-        # Labels OUTSIDE each bar in white: readable on every slice color and
-        # on the thin lower stages. Widen the x-range so the full-width "Found"
-        # bar's label isn't clipped at the right edge.
-        _fmax = max(values) or 1
-        fig = go.Figure(go.Funnel(
-            y=labels, x=values,
-            textposition="outside", textinfo="value+percent initial",
-            textfont=dict(color="#ffffff", size=13),
-            outsidetextfont=dict(color="#ffffff", size=13),
-            # Seventh colour is gold — Baptized is the outcome the whole funnel
-            # exists for, and it was the stage this chart used to leave out.
-            marker=dict(color=["#6366f1", "#22c55e", "#06b6d4", "#f59e0b",
-                               "#ec4899", "#ef4444", "#facc15"],
-                        line=dict(width=0)),
-            connector=dict(line=dict(color="rgba(255,255,255,0.10)", width=1)),
-        ))
-        fig.update_layout(xaxis=dict(visible=False, range=[-_fmax * 0.05, _fmax * 1.35]))
-        chart(fig, height=430)
-        st.caption(t("Each stage = people found in range who reached at least that "
-                     "far. A milestone that was never logged is inherited from a "
-                     "later one, so the funnel never widens."))
-        if official_baptisms is not None and official_baptisms != stage_counts.get("Baptized", 0):
-            st.caption(t(
-                "⚠️ Baptized here only counts people with a tracked finding "
-                "record — {tracked} here vs. {official} certified by Tableau's "
-                "own monthly summary for this period. The gap is people "
-                "baptized before their finding record existed in the app. "
-                "Official Baptisms above is the number that matters for "
-                "reporting.",
-                tracked=fmt_int(stage_counts.get("Baptized", 0)),
-                official=fmt_int(official_baptisms)))
-    else:
-        st.caption(t("Detail records needed to build the pipeline funnel."))
+render_section_label(t("Finding Pipeline"), emphasis=True, info=_pipeline_info,
+                     right=t("{n} people found", n=fmt_int(found)) if found else "")
+if stage_counts:
+    st.markdown(
+        stage_bars([(t(label), stage_counts[label]) for label, _ in FUNNEL_STAGES],
+                   highlight_worst=True),
+        unsafe_allow_html=True,
+    )
+else:
+    st.caption(t("Detail records needed to build the pipeline funnel."))
 
-with dcol:
+# The mix is one 100% stacked bar. It was a donut whose labels sat outside the
+# ring — at 375px that left about 120px of ring — and whose four arcs the
+# reader had to compare by eye.
+_cat_col = _col(det_df, "finding_category") if not det_df.empty else None
+if _cat_col is not None:
+    _cats = (det_df[_cat_col].astype(str).str.strip()
+             .replace({"": "Unknown", "nan": "Unknown"}).value_counts())
     render_section_label(t("Finding Mix"))
-    cat_col = _col(det_df, "finding_category") if not det_df.empty else None
-    if cat_col:
-        cats = (det_df[cat_col].astype(str).str.strip()
-                .replace({"": "Unknown", "nan": "Unknown"}).value_counts())
-        # The sheet's category values are English and stay so in the data;
-        # only the legend is translated. A value not in the map is shown as
-        # the sheet wrote it rather than hidden (plan A6).
-        _cat_labels = [_finding_category_label(c) for c in cats.index]
-        # Labels sit OUTSIDE the ring in a single white color: high-contrast on
-        # the dark background and version-proof (Cloud's plotly ignores per-point
-        # text-color arrays and won't fit a horizontal % inside the thin ring).
-        _total = int(cats.sum()) or 1
-        _pct_text = [f"{v / _total * 100:.0f}%" if v / _total >= 0.02 else ""
-                     for v in cats.values]
-        donut = go.Figure(go.Pie(
-            labels=_cat_labels, values=cats.values.tolist(),
-            hole=0.62, sort=False, rotation=270, automargin=True,
-            marker=dict(colors=SERIES_COLORS, line=dict(color="#08080e", width=2)),
-            text=_pct_text, textinfo="text", textposition="outside",
-            textfont=dict(color="#ffffff", size=14),
-            outsidetextfont=dict(color="#ffffff", size=14),
-            insidetextfont=dict(color="#ffffff", size=14),
-        ))
-        donut.update_layout(
-            annotations=[dict(text=f"{int(found)}<br>{t('found')}", x=0.5, y=0.5,
-                              font=dict(size=18, color="#f4f4f8"), showarrow=False)],
-        )
-        chart(donut, height=400)
-    else:
-        st.caption(t("No detail records to break down."))
+    st.markdown(
+        share_bar([(_finding_category_label(c), int(v))
+                   for c, v in _cats.items()]),
+        unsafe_allow_html=True,
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -611,36 +584,42 @@ if not det_df.empty:
     src_col  = _col(det_df, "finding_source")
     zone_col = _col(det_df, "latest_zone")
 
+    # Both were horizontal Plotly bar charts with a 10px left margin, so every
+    # category name was clipped to two letters — audit E2, the finding that
+    # made a chart of source names unreadable. A ranked row writes the name in
+    # HTML: it cannot be clipped by a margin, it carries the full name on
+    # hover when the column is narrow, and it wraps instead of scrolling.
+    _pilot = {z.casefold() for z in pilot_zones()}
+
     s1, s2 = st.columns(2)
     with s1:
-        render_section_label(t("Top Finding Sources"))
+        render_section_label(t("Top Finding Sources"),
+                             right=t("top {n}", n=10))
         if src_col:
             src = (det_df[src_col].astype(str).str.strip()
                    .replace({"": "Unknown", "nan": "Unknown"})
-                   .value_counts().head(10).sort_values())
-            bar = go.Figure(go.Bar(
-                x=src.values.tolist(), y=[_unknown_label(v) for v in src.index],
-                orientation="h",
-                marker=dict(color="#6366f1"), text=src.values.tolist(),
-                textposition="outside", cliponaxis=False,
-                textfont=dict(color="#ffffff", size=12)))
-            bar.update_layout(xaxis=dict(visible=False, range=[0, int(src.max()) * 1.18]))
-            chart(bar, height=340)
+                   .value_counts().head(10))
+            st.markdown(ranked_list([
+                {"name": _unknown_label(k), "value": int(v),
+                 "sub": fmt_percent(v / found * 100) if found else ""}
+                for k, v in src.items()
+            ]), unsafe_allow_html=True)
 
     with s2:
-        render_section_label(t("Findings by Zone"))
+        render_section_label(t("Findings by Zone"),
+                             right=t("{n} zones", n=fmt_int(
+                                 0 if zone_col is None
+                                 else det_df[zone_col].astype(str).str.strip()
+                                 .replace({"": "Unknown", "nan": "Unknown"}).nunique())))
         if zone_col:
             zn = (det_df[zone_col].astype(str).str.strip()
-                  .replace({"": "Unknown", "nan": "Unknown"})
-                  .value_counts().sort_values())
-            zbar = go.Figure(go.Bar(
-                x=zn.values.tolist(), y=[_unknown_label(v) for v in zn.index],
-                orientation="h",
-                marker=dict(color="#22c55e"), text=zn.values.tolist(),
-                textposition="outside", cliponaxis=False,
-                textfont=dict(color="#ffffff", size=12)))
-            zbar.update_layout(xaxis=dict(visible=False, range=[0, int(zn.max()) * 1.18]))
-            chart(zbar, height=340)
+                  .replace({"": "Unknown", "nan": "Unknown"}).value_counts())
+            st.markdown(ranked_list([
+                {"name": _unknown_label(k), "value": int(v),
+                 "sub": (t("Pilot zone")
+                         if str(k).casefold() in _pilot else "")}
+                for k, v in zn.items()
+            ]), unsafe_allow_html=True)
 
     # Finding trend. Buckets by month once the window is long — with the bogus
     # DATA_FLOOR gone, "All" spans 2.6 years and a per-day chart is ~950 bars

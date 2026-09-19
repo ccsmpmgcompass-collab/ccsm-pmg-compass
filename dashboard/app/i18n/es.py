@@ -540,6 +540,12 @@ ES: dict[str, str] = {
         "calendario completos — cualquier otra ventana muestra un guion en "
         "lugar de un total equivocado.",
     "Whole calendar months only": "Solo meses calendario completos",
+    # E3/E4: the pipeline, the mix and the two ranked lists
+    "largest drop": "mayor caída",
+    "{n} people found": "{n} personas encontradas",
+    "top {n}": "las {n} primeras",
+    "{n} zones": "{n} zonas",
+    "Pilot zone": "Zona piloto",
     "Certified — Tableau summary PDF": "Certificado — PDF resumen de Tableau",
     "Pick a range of full calendar months to see this":
         "Elija un rango de meses calendario completos para ver esto",

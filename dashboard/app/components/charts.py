@@ -14,6 +14,7 @@ Everything here has ONE look:
 * ``bars_vs_goal`` is the drill-down's bar chart (Phase B, mockup 3.2).
 * ``small_multiples`` replaces the eight-week spaghetti (audit P4).
 * ``stage_bars`` replaces both Plotly funnels (audit D5, E4) with HTML.
+* ``share_bar`` is one 100% stacked bar: a mix, where a donut was.
 * ``ranked_list`` is the Panel's compliance-rankings row, generalised.
 
 Colour: ``SERIES_COLORS[0]`` (blue) is the one magnitude hue — "this metric,
@@ -363,34 +364,63 @@ def spark_multiples(series: dict[str, Sequence], *, value_fmt: Callable = fmt_in
 
 # ── stage bars ───────────────────────────────────────────────────────────────
 
+def _widest_drop(values: Sequence[float]) -> int | None:
+    """Index of the step that loses the most PEOPLE, i.e. the largest absolute
+    fall from one stage to the next; the returned index is the lower stage.
+
+    Absolute, not the lowest conversion rate. On the live export the two
+    disagree and only one of them is worth pointing at: found → church is
+    2.545 → 167, so 2.378 people are lost there, while baptism-date → baptized
+    is 68 → 3, a 4% step that costs 65. The 4% is the smaller number in every
+    sense, and calling it the pipeline's problem would be wrong.
+    """
+    best, best_i = 0.0, None
+    for i in range(1, len(values)):
+        fall = values[i - 1] - values[i]
+        if fall > best:
+            best, best_i = fall, i
+    return best_i
+
+
 def stage_bars(stages: Iterable[tuple[str, float]], *,
-               value_fmt: Callable = fmt_int) -> str:
+               value_fmt: Callable = fmt_int,
+               highlight_worst: bool = False) -> str:
     """Horizontal single-hue bars, one per stage, with the step conversion
     written between rows (mockup 3.3). Pure HTML — a funnel chart's shrinking
     trapezoids encode nothing a bar and a percentage do not, and its labels
-    clip. The first stage sets the bar's full width."""
+    clip. The first stage sets the bar's full width.
+
+    ``highlight_worst`` marks the step that loses the most people: its
+    conversion line turns amber and says so. A funnel always narrows, so this
+    is a "look here", not a grade — which is why it is amber and named rather
+    than red and silent.
+    """
     rows = [(str(lbl), (0.0 if v is None else float(v))) for lbl, v in stages]
     if not rows:
         return ""
     full = max([v for _, v in rows] + [0]) or 1.0
+    worst = _widest_drop([v for _, v in rows]) if highlight_worst else None
     out = ['<div class="pmg-stages" style="margin:4px 0 12px 0;">']
     prev = None
-    for lbl, v in rows:
+    for i, (lbl, v) in enumerate(rows):
         if prev is not None:
             conv = f"{fmt_int(round(v / prev * 100))}%" if prev > 0 else "—"
+            worst_here = (i == worst)
+            note = (f'<span style="font-weight:600;">· '
+                    f'{_html.escape(t("largest drop"))}</span>') if worst_here else ""
             out.append(
                 f'<div class="pmg-stage-conv" style="display:flex;align-items:center;'
                 f'gap:6px;padding:2px 0 2px 0;margin-left:34%;font-size:0.7rem;'
-                f'color:{MUTED};">'
-                f'<span style="opacity:.7;">↓</span><span>{conv}</span></div>'
+                f'color:{STATUS["warn"] if worst_here else MUTED};">'
+                f'<span style="opacity:.7;">↓</span><span>{conv}</span>{note}</div>'
             )
         width = max(0.0, min(100.0, v / full * 100))
         out.append(
             f'<div class="pmg-stage" style="display:grid;'
             f'grid-template-columns:minmax(0,34%) minmax(0,1fr) auto;'
             f'align-items:center;gap:10px;">'
-            f'<span style="font-size:0.8rem;color:{INK};overflow:hidden;'
-            f'text-overflow:ellipsis;white-space:nowrap;" title="{_html.escape(lbl)}">'
+            f'<span style="font-size:0.8rem;color:{INK};min-width:0;'
+            f'overflow-wrap:anywhere;" title="{_html.escape(lbl)}">'
             f'{_html.escape(lbl)}</span>'
             f'<span style="display:block;height:14px;border-radius:3px;'
             f'background:rgba(255,255,255,0.06);overflow:hidden;">'
@@ -404,6 +434,60 @@ def stage_bars(stages: Iterable[tuple[str, float]], *,
         prev = v
     out.append("</div>")
     return "".join(out)
+
+
+# ── share bar ────────────────────────────────────────────────────────────────
+
+def share_bar(parts: Sequence[tuple[str, float]], *,
+              value_fmt: Callable = fmt_int, min_label_share: float = 7.0) -> str:
+    """One 100% stacked bar and a legend beneath it — a mix, where the page
+    used to draw a donut.
+
+    A donut asks the reader to compare arcs; a single bar puts every category
+    on one axis and reads at a glance. It is also the only shape of this that
+    survives a phone: the donut it replaces carried its labels OUTSIDE the
+    ring, which at 375px left the ring about 120px across.
+
+    Hues are ``SERIES_COLORS`` in order — identity, not magnitude: these are
+    four different things, not four sizes of one. A slice narrower than
+    ``min_label_share`` percent keeps its colour and its legend row but drops
+    the percentage written inside it, where it would not fit.
+    """
+    rows = [(str(lbl), max(0.0, float(v or 0))) for lbl, v in parts]
+    total = sum(v for _, v in rows)
+    if not rows or total <= 0:
+        return ""
+    segs, legend = [], []
+    for i, (lbl, v) in enumerate(rows):
+        share = v / total * 100
+        hue = SERIES_COLORS[i % len(SERIES_COLORS)]
+        inner = (f'{fmt_int(round(share))}%' if share >= min_label_share else "")
+        segs.append(
+            f'<span title="{_html.escape(lbl)}: {_html.escape(str(value_fmt(v)))} '
+            f'({fmt_int(round(share))}%)" '
+            f'style="flex:0 0 {share:.3f}%;display:flex;align-items:center;'
+            f'justify-content:center;background:{hue};color:#08080e;'
+            f'font-size:0.72rem;font-weight:700;overflow:hidden;">{inner}</span>'
+        )
+        legend.append(
+            f'<span style="display:inline-flex;align-items:center;gap:0.4rem;'
+            f'font-size:0.78rem;color:{MUTED};min-width:0;">'
+            f'<span style="flex:none;width:0.6rem;height:0.6rem;border-radius:2px;'
+            f'background:{hue};"></span>'
+            f'<span style="color:{INK};overflow:hidden;text-overflow:ellipsis;'
+            f'white-space:nowrap;">{_html.escape(lbl)}</span>'
+            f'<span style="flex:none;font-variant-numeric:tabular-nums;">'
+            f'{_html.escape(str(value_fmt(v)))} · {fmt_int(round(share))}%</span>'
+            f'</span>'
+        )
+    return (
+        '<div class="pmg-share">'
+        '<span style="display:flex;height:30px;border-radius:6px;overflow:hidden;'
+        'background:rgba(255,255,255,0.06);">' + "".join(segs) + '</span>'
+        '<span style="display:flex;flex-wrap:wrap;gap:0.4rem 1.1rem;'
+        'margin-top:0.55rem;">' + "".join(legend) + '</span>'
+        '</div>'
+    )
 
 
 # ── ranked list ──────────────────────────────────────────────────────────────
@@ -559,7 +643,8 @@ def ranked_list(rows: Sequence[dict], *, value_fmt: Callable = fmt_int,
                 f'<span style="text-align:right;color:#6b7280;font-size:0.8rem;">{_html.escape(str(rank))}</span>'
                 f'<span style="width:0.6rem;height:0.6rem;border-radius:50%;background:{dot};"></span>'
                 f'<span style="min-width:0;">'
-                f'<span style="display:block;color:{INK};font-weight:600;font-size:0.92rem;'
+                f'<span title="{_html.escape(str(r.get("name", "")))}" '
+                f'style="display:block;color:{INK};font-weight:600;font-size:0.92rem;'
                 f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
                 f'{_html.escape(str(r.get("name", "")))}</span>'
                 + (f'<span style="display:block;color:{MUTED};font-size:0.75rem;">'
@@ -585,7 +670,8 @@ def ranked_list(rows: Sequence[dict], *, value_fmt: Callable = fmt_int,
             f'<span style="text-align:right;color:#6b7280;font-size:0.8rem;">{_html.escape(str(rank))}</span>'
             f'<span style="width:0.6rem;height:0.6rem;border-radius:50%;background:{dot};"></span>'
             f'<span style="min-width:0;">'
-            f'<span style="display:block;color:{INK};font-weight:600;font-size:0.92rem;'
+            f'<span title="{_html.escape(str(r.get("name", "")))}" '
+            f'style="display:block;color:{INK};font-weight:600;font-size:0.92rem;'
             f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{_html.escape(str(r.get("name", "")))}</span>'
             + (f'<span style="display:block;color:{MUTED};font-size:0.75rem;">{_html.escape(str(sub))}</span>' if sub else "")
             + f'</span>'

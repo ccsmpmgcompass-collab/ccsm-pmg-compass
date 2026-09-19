@@ -14,7 +14,8 @@ import pytest
 
 from app.components import charts
 from app.components.charts import (
-    apply_layout, bars_vs_goal, chart, ranked_list, small_multiples, stage_bars,
+    apply_layout, bars_vs_goal, chart, ranked_list, share_bar, small_multiples,
+    stage_bars,
 )
 from app.config.theme import SERIES_COLORS, STATUS
 
@@ -218,9 +219,92 @@ def test_stage_bars_handle_a_zero_previous_stage():
     assert "—" in html
 
 
+def test_stage_bars_name_the_step_that_loses_the_most_people():
+    """The live pipeline: 2.545 being taught -> 167 at sacrament loses 2.378
+    people, which is what a reader needs pointed out."""
+    html = stage_bars([("Found", 4411), ("Attempted", 4140), ("Contacted", 3432),
+                       ("Taught", 2545), ("Church", 167), ("Date set", 68),
+                       ("Baptized", 3)], highlight_worst=True)
+    convs = re.findall(r'pmg-stage-conv[^>]*>(.*?)</div>', html)
+    assert len(convs) == 6
+    marked = [i for i, c in enumerate(convs) if "largest drop" in c
+              or "mayor" in c]
+    assert marked == [3]          # the taught -> church step
+    assert "7%" in convs[3]
+
+
+def test_the_worst_step_is_the_biggest_fall_not_the_lowest_rate():
+    """The step rates here are 58%, 7%, 41%, 4%. The LOWEST rate is the last
+    one -- and it costs 65 people, against 2.378 at the 7% step. Calling a
+    68-person stage the pipeline's problem would be wrong, so the highlight
+    is the biggest absolute fall."""
+    html = stage_bars([("Found", 4411), ("Taught", 2545), ("Church", 167),
+                       ("Date set", 68), ("Baptized", 3)], highlight_worst=True)
+    convs = re.findall(r'pmg-stage-conv[^>]*>(.*?)</div>', html)
+    marked = [i for i, c in enumerate(convs)
+              if "largest drop" in c or "mayor" in c]
+    assert marked == [1]          # taught -> church, the 7% step
+    assert "4%" in convs[3] and "largest drop" not in convs[3]
+
+
+def test_stage_bars_say_nothing_about_the_worst_step_unless_asked():
+    html = stage_bars([("A", 100), ("B", 10), ("C", 9)])
+    assert "largest drop" not in html and "mayor" not in html
+
+
+def test_a_stage_label_wraps_rather_than_being_clipped():
+    """At 375px the label column is 115px and "Fecha de Bautismo Fijada"
+    needs 137 -- an ellipsis there loses the row's whole point."""
+    html = stage_bars([("Fecha de Bautismo Fijada", 68)])
+    assert "white-space:nowrap" not in html
+    assert "overflow-wrap:anywhere" in html
+
+
 def test_stage_bars_escape_labels_and_return_empty_for_nothing():
     assert "<script>" not in stage_bars([("<script>x</script>", 1)])
     assert stage_bars([]) == ""
+
+
+# ── share_bar ────────────────────────────────────────────────────────────────
+
+def test_share_bar_segments_are_the_shares_and_sum_to_a_hundred():
+    html = share_bar([("Missionary", 3375), ("Media", 838),
+                      ("Member", 159), ("Events", 39)])
+    flex = [float(x) for x in re.findall(r"flex:0 0 ([0-9.]+)%", html)]
+    assert len(flex) == 4
+    assert round(sum(flex)) == 100
+    assert round(flex[0]) == 77
+
+
+def test_share_bar_hues_are_identity_not_magnitude():
+    """Four different things, not four sizes of one: SERIES_COLORS in order."""
+    from app.config.theme import SERIES_COLORS
+    html = share_bar([("A", 1), ("B", 1), ("C", 1)])
+    for hue in SERIES_COLORS[:3]:
+        assert hue in html
+    assert SERIES_COLORS[3] not in html
+
+
+def test_a_sliver_keeps_its_legend_row_but_drops_the_number_inside_it():
+    html = share_bar([("Big", 990), ("Sliver", 10)])
+    segments = re.findall(r'flex:0 0 [0-9.]+%;[^>]*>([^<]*)<', html)
+    assert segments == ["99%", ""]             # the 1% would not fit inside it
+    assert "Sliver" in html                    # but it keeps its legend row
+
+
+def test_share_bar_prints_the_count_beside_the_share_in_the_legend():
+    html = share_bar([("Missionary", 3375), ("Media", 838)])
+    assert "3.375" in html or "3,375" in html
+    assert "80%" in html
+
+
+def test_share_bar_is_empty_for_nothing_and_for_all_zeroes():
+    assert share_bar([]) == ""
+    assert share_bar([("A", 0), ("B", 0)]) == ""
+
+
+def test_share_bar_escapes_its_labels():
+    assert "<script>" not in share_bar([("<script>x</script>", 5), ("B", 5)])
 
 
 # ── ranked_list ──────────────────────────────────────────────────────────────
@@ -238,6 +322,13 @@ def test_ranked_list_row_order_and_parts():
     assert "80%" in html and "55%" in html
     assert "width:80.0%" in html and "width:55.0%" in html
     assert STATUS["good"] in html and STATUS["warn"] in html
+
+
+def test_a_ranked_name_too_wide_for_its_column_keeps_the_full_one_on_hover():
+    """E4's "full labels": the name is ellipsised in a narrow column, and the
+    chart it replaced clipped every label to two letters (audit E2)."""
+    html = ranked_list([{"name": "Sought out Church or Missionaries", "value": 24}])
+    assert 'title="Sought out Church or Missionaries"' in html
 
 
 def test_ranked_list_escapes_names():
