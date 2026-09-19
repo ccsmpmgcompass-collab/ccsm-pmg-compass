@@ -57,6 +57,28 @@ st.markdown("""
     color: #a5b4fc !important;
 }
 
+/* Reload / Clear / Send labels must never break mid-word. Streamlit's default
+   `white-space: normal` was rendering "Recargar" as "Rec / arg / ar" stacked
+   over three lines once the action column got narrow. Scoped by key (and by
+   the form-submit testid) so it can't reach the starter-question chips below,
+   whose full-sentence labels are *supposed* to wrap. */
+.st-key-chat_reload button p,
+.st-key-chat_clear button p,
+[data-testid="stBaseButton-secondaryFormSubmit"] p {
+    white-space: nowrap !important;
+}
+/* ...and the box is never narrower than the label it holds. `nowrap` alone
+   just moved the problem: at 900px the text spilled past the button's own
+   border. `fit-content` lets the button grow into the column gap instead,
+   which is the one direction there is room in. */
+.st-key-chat_reload button,
+.st-key-chat_clear button,
+[data-testid="stBaseButton-secondaryFormSubmit"] {
+    padding-left: 0.6rem !important;
+    padding-right: 0.6rem !important;
+    min-width: fit-content !important;
+}
+
 /* Send button (form submit) */
 [data-testid="stBaseButton-secondaryFormSubmit"] {
     background: rgba(99,102,241,0.85) !important;
@@ -185,21 +207,32 @@ if "chat_history" not in st.session_state:
     st.session_state["chat_history"] = []
 
 # ── Chat ──────────────────────────────────────────────────────────────────────
-col_chat_header, col_chat_actions = st.columns([7, 2])
+# The action column is sized for the words that go in it. At [7, 2] each of the
+# two buttons got ~55px on a 1100px-wide window — narrower than "Recargar" — so
+# the label wrapped mid-word. And the second column was reserved even when
+# Clear was hidden, halving Reload's room for nothing: the split below is made
+# only when there is history to clear.
+col_chat_header, col_chat_actions = st.columns([5, 3])
 with col_chat_header:
     render_section_label(t("Mission Assistant"))
 with col_chat_actions:
-    action_col1, action_col2 = st.columns(2)
-    with action_col1:
-        if st.button(t("Reload"), use_container_width=True, help=t("Refresh live mission data")):
+    _can_clear = bool(st.session_state["chat_history"])
+    _action_cols = st.columns(2 if _can_clear else 1)
+    with _action_cols[0]:
+        # Not use_container_width: stretched to the column, a lone "Recargar"
+        # became a 200px slab at desktop widths. The CSS above already keeps
+        # the box from shrinking under its label, so natural width is safe.
+        if st.button(t("Reload"), key="chat_reload",
+                     help=t("Refresh live mission data")):
             st.session_state.pop("live_data_context", None)
             st.session_state.pop("supplemental_contexts", None)
             st.session_state["live_data_context"] = load_live_data_context()
             st.session_state["supplemental_contexts"] = load_supplemental_contexts()
             st.rerun()
-    with action_col2:
-        if st.session_state["chat_history"]:
-            if st.button(t("Clear"), use_container_width=True, help=t("Clear chat history")):
+    if _can_clear:
+        with _action_cols[1]:
+            if st.button(t("Clear"), key="chat_clear",
+                         help=t("Clear chat history")):
                 st.session_state["chat_history"] = []
                 st.rerun()
 
@@ -229,7 +262,7 @@ if not st.session_state["chat_history"]:
 
 # Input form — in normal page flow so it stays visible on mobile
 with st.form(key="chat_form", clear_on_submit=True):
-    col_q, col_send = st.columns([8, 1])
+    col_q, col_send = st.columns([6, 1])
     with col_q:
         question = st.text_input(
             t("question"),
@@ -238,6 +271,16 @@ with st.form(key="chat_form", clear_on_submit=True):
         )
     with col_send:
         submitted = st.form_submit_button(t("Send"), use_container_width=True)
+
+def _detail_note(detail: str) -> str:
+    """The API's own message, appended under a failure so it isn't lost.
+
+    Kept short and in a code span: it is for whoever has to diagnose the
+    failure, not for the reader of the answer.
+    """
+    detail = " ".join(detail.split())[:300]
+    return f"\n\n`{detail}`" if detail else ""
+
 
 # A question can arrive either from the form or from a clicked starter chip.
 _pending = st.session_state.pop("pending_question", None)
@@ -266,10 +309,33 @@ if q:
                 api_key=api_key,
                 extra_contexts=st.session_state.get("supplemental_contexts", {}),
             )
-        except GeminiRateLimitError:
-            answer = t("Gemini is rate-limited — please wait a few seconds and try again.")
-        except (GeminiError, Exception):
-            answer = t("I wasn't able to generate an answer. Please rephrase your question.")
+        # Every failure used to collapse into "rephrase your question", which
+        # sent the reader after their own wording while the real cause — a
+        # server-side 503, or an exhausted daily quota — stayed invisible in
+        # the logs. Each cause now says what it is, and carries the API's own
+        # message underneath so the next failure is diagnosable from the page.
+        except GeminiRateLimitError as exc:
+            _detail = str(exc)
+            if "PerDay" in _detail or "per day" in _detail.lower():
+                answer = t(
+                    "The Gemini daily request quota for this API key is used up. "
+                    "It resets at midnight Pacific time; raising it needs billing "
+                    "enabled on the Google AI Studio project."
+                )
+            else:
+                answer = t("Gemini is rate-limited — please wait a few seconds and try again.")
+            answer += _detail_note(_detail)
+        except GeminiError as exc:
+            answer = (
+                t("Gemini couldn't answer that — this is a problem on Gemini's side, "
+                  "not with your question. Try again in a moment.")
+                + _detail_note(str(exc))
+            )
+        except Exception as exc:
+            answer = (
+                t("Something went wrong while building the answer.")
+                + _detail_note(f"{type(exc).__name__}: {exc}")
+            )
 
     st.session_state["chat_history"].append({"role": "assistant", "content": answer})
     st.rerun()

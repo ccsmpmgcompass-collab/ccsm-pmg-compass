@@ -93,8 +93,18 @@ ES: dict[str, str] = {
         "GEMINI_API_KEY no está configurada. Agréguela en .streamlit/secrets.toml.",
     "Gemini is rate-limited — please wait a few seconds and try again.":
         "Gemini alcanzó su límite de solicitudes — espere unos segundos e inténtelo de nuevo.",
-    "I wasn't able to generate an answer. Please rephrase your question.":
-        "No pude generar una respuesta. Por favor reformule su pregunta.",
+    "The Gemini daily request quota for this API key is used up. "
+    "It resets at midnight Pacific time; raising it needs billing "
+    "enabled on the Google AI Studio project.":
+        "La cuota diaria de solicitudes de Gemini para esta clave API está agotada. "
+        "Se restablece a medianoche, hora del Pacífico; para ampliarla hay que "
+        "habilitar la facturación en el proyecto de Google AI Studio.",
+    "Gemini couldn't answer that — this is a problem on Gemini's side, "
+    "not with your question. Try again in a moment.":
+        "Gemini no pudo responder — es un problema del lado de Gemini, no de su "
+        "pregunta. Inténtelo de nuevo en un momento.",
+    "Something went wrong while building the answer.":
+        "Algo salió mal al construir la respuesta.",
 
     # ── Starter questions ────────────────────────────────────────────────────
     "Give me a 30-second briefing on the mission right now":

@@ -59,6 +59,20 @@ def _key_metrics() -> list[tuple[str, str]]:
 
 _MAX_OUTPUT_TOKENS = 8192
 
+# Thinking budget. This was 16000 — nearly twice _MAX_OUTPUT_TOKENS, which the
+# budget is spent out of — and on this page's real prompt (~14k tokens of KB,
+# live data and eight supplemental blocks) the API rejected every single call
+# with a 503 "high demand". Verified 2026-09-19: budget 16000 failed 5/5 on the
+# real prompt at both 8192 and 24576 max tokens, while 4000 answered 4/5 (the
+# one miss a genuine transient 503 the retry loop below now absorbs). Keep this
+# comfortably under _MAX_OUTPUT_TOKENS so the answer itself still has room.
+_THINKING_BUDGET = 4000
+
+# Transient 503s do happen on their own. Three tries at 1.5s was too thin to
+# ride one out, so the loop below gets more attempts and a longer backoff.
+_MAX_ATTEMPTS = 4
+_BACKOFF_BASE_SECONDS = 2.0
+
 
 class GeminiRateLimitError(Exception):
     pass
@@ -855,6 +869,14 @@ def _get_genai_client(api_key: str) -> genai.Client:
     return genai.Client(api_key=api_key)
 
 
+def _finish_reason(response) -> str:
+    """Best-effort finish reason for an empty response, for the error message."""
+    try:
+        return str(response.candidates[0].finish_reason)
+    except Exception:
+        return "no candidates"
+
+
 def ask_gemini(
     question: str,
     history: list,
@@ -868,31 +890,44 @@ def ask_gemini(
     history: prior messages as [{"role": "user"|"assistant", "content": str}]
     extra_contexts: {label: content} of supplemental data blocks (goals, org,
         daily, trends, compliance, notes, glossary). Order is preserved.
-    Raises GeminiRateLimitError on 429, GeminiError on other failures.
+    Raises GeminiRateLimitError on 429, GeminiError on other failures. Both
+    carry the API's own message: the page shows it, because "rephrase your
+    question" sent Zackary chasing his own wording for a server-side fault.
     """
     client = _get_genai_client(api_key)
     prompt = _build_prompt(question, history, kb_context, live_context, extra_contexts)
 
     last_exc = None
-    for attempt in range(3):  # one call + up to 2 retries on transient overload
+    for attempt in range(_MAX_ATTEMPTS):
         try:
             response = client.models.generate_content(
                 model="gemini-3.6-flash",
                 contents=prompt,
                 config={
                     "max_output_tokens": _MAX_OUTPUT_TOKENS,
-                    "thinking_config": {"thinking_budget": 16000},
+                    "thinking_config": {"thinking_budget": _THINKING_BUDGET},
                 },
             )
-            return response.text
+            text = response.text
+            if text and text.strip():
+                return text
+            # A 200 with no text: the model spent the whole budget thinking, or
+            # a safety filter dropped the candidate. Returning None here put a
+            # blank bubble in the transcript with nothing to explain it, so say
+            # which it was instead.
+            raise GeminiError(f"empty response ({_finish_reason(response)})")
+        except GeminiError:
+            raise
         except Exception as e:
             last_exc = e
             err = str(e).lower()
             if "429" in err or "resource_exhausted" in err or "quota" in err:
                 raise GeminiRateLimitError(str(e)) from e
             # 503 / overloaded / unavailable are transient — back off and retry
-            if attempt < 2 and ("503" in err or "unavailable" in err or "overloaded" in err):
-                time.sleep(1.5 * (attempt + 1))
+            if attempt < _MAX_ATTEMPTS - 1 and (
+                "503" in err or "unavailable" in err or "overloaded" in err
+            ):
+                time.sleep(_BACKOFF_BASE_SECONDS * (attempt + 1))
                 continue
             raise GeminiError(str(e)) from e
     raise GeminiError(str(last_exc))
