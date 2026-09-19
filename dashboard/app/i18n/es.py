@@ -819,7 +819,9 @@ ES: dict[str, str] = {
     "Score Summary": "Resumen de Puntajes",
     "Score Tier Key": "Leyenda de Niveles de Puntaje",
     "Effectiveness Score by Area": "Puntaje de Efectividad por Área",
-    "Daily Activity": "Actividad Diaria",
+    # Scores' own tab. NOT "Actividad diaria" — that names the nightly summary
+    # on the Panel and on Desgloses, and this is an explorer over the raw rows.
+    "Nightly Explorer": "Explorador nocturno",
     "Analyze": "Analizar",
     "Raw Data": "Datos sin Procesar",
     "Raw Daily Records": "Registros Diarios sin Procesar",
@@ -1076,8 +1078,16 @@ ES: dict[str, str] = {
     "A gap in a line is a week with no recorded weekly total from that area.":
         "Un espacio en la línea es una semana sin total semanal registrado de "
         "esa área.",
-    "A gap in a line is a {unit} with no nightly report from that area.":
-        "Un espacio en la línea es un {unit} sin informe nocturno de esa área.",
+    "A gap in a line is {unit_a} with no nightly report from that area.":
+        "Un espacio en la línea es {unit_a} sin informe nocturno de esa área.",
+    # The trend's x-axis unit, as its own words. They used to be the bare
+    # English "week"/"day" interpolated into these Spanish sentences, with an
+    # "s" bolted on for the plural — "un day sin informe", "los weeks sin
+    # informe". The singular carries its article because Spanish genders it.
+    "week": "semana",
+    "day": "día",
+    "a week": "una semana",
+    "a day": "un día",
 
     # Funnel stages. "Found" and "Baptized" are already in this file.
     "Taught": "Enseñadas",
@@ -1238,7 +1248,10 @@ ES: dict[str, str] = {
         "el {start}.",
     "Period": "Período",
     "X-Axis": "Eje X",
-    "Reset Graph ↻": "Restablecer Gráfico ↻",
+    # The two granularity pills under the trend. They were raw list items in a
+    # selectbox until Phase F and rendered as the English "Days" / "Weeks" on a
+    # Spanish page; going through t() is what surfaced the gap.
+    "Days": "Días",
     "No area data for the trend chart.":
         "No hay datos de área para el gráfico de tendencia.",
     "No daily-log metrics available for this group yet.":
@@ -2280,10 +2293,10 @@ ES: dict[str, str] = {
         "Expectativa {categories}",
     "{prefix} {rate} (≈{n} this period)":
         "{prefix} {rate} (≈{n} en este período)",
-    "Missed {unit}s are marked with a red ✕ and the dotted red line traces where the trend went through them.":
-        "Los {unit}s sin informe se marcan con una ✕ roja y la línea roja punteada traza por dónde pasó la tendencia.",
-    "Click an area in the legend to see just that one — its missed {unit}s are traced with red ✕s so the line shows where it went instead of disappearing. Click another area to switch straight to it, or click it again to show all.":
-        "Haga clic en un área en la leyenda para ver solo esa — sus {unit}s sin informe se trazan con ✕ rojas para que la línea muestre por dónde fue en vez de desaparecer. Haga clic en otra área para cambiar directamente a ella, o de nuevo en la misma para mostrar todas.",
+    "Each {unit} with no report is marked with a red ✕, and the dotted red line traces where the trend went through them.":
+        "Cada {unit} sin informe se marca con una ✕ roja, y la línea roja punteada traza por dónde pasó la tendencia.",
+    "Click an area in the legend to see just that one — each {unit} it missed is traced with a red ✕ so the line shows where it went instead of disappearing. Click another area to switch straight to it, or click it again to show all.":
+        "Haga clic en un área en la leyenda para ver solo esa — cada {unit} sin informe se traza con una ✕ roja para que la línea muestre por dónde fue en vez de desaparecer. Haga clic en otra área para cambiar directamente a ella, o de nuevo en la misma para mostrar todas.",
     "A gap in a line is a week with no weekly (Sunday) form from that area; a submitted form with nothing to report shows as a dot at 0.":
         "Un hueco en una línea es una semana sin informe semanal (domingo) de esa área; un informe enviado sin nada que reportar se muestra como un punto en 0.",
     "{date} — no areas yet":

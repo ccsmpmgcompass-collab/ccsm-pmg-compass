@@ -2057,7 +2057,10 @@ def _render_analyze_tab():
 _active_tab = render_section_tabs(
     {
         "scores":  t("Scores"),
-        "daily":   t("Daily Activity"),
+        # Not "Daily Activity": the Panel and Desgloses both carry a section
+        # of that name now, and this tab is a different thing — an explorer
+        # over DAILY_LOG's raw rows by category, not a summary of the night.
+        "daily":   t("Nightly Explorer"),
         "analyze": t("Analyze"),
     },
     key="scores_page_section",

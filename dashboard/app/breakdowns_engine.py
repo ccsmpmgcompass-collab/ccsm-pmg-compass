@@ -2185,14 +2185,6 @@ def render_group_breakdown(
                "moved and when, and forty-five of them answer nobody. Tap "
                "any card or row on this page to change the metric."))
 
-    # A plain Streamlit button, not a chart control: a click just reruns the
-    # script, and the trend below is rebuilt fresh every rerun anyway (fixed
-    # axes, every line visible, new component each time) — so "rerun" already
-    # IS "reset". Needs no on_click handler and, being a real st.button rather
-    # than HTML drawn inside the chart's iframe, it matches the rest of the
-    # app's buttons for free instead of carrying its own CSS.
-    st.button(t("Reset Graph ↻"), key="bd_trend_reset")
-
     # A bucket only counts as missable once its day has passed the nightly
     # cutoff — the current day isn't held against anyone until 9:30 PM MT
     # (compliance_anchor_date, the same anchor the compliance calendars use),
@@ -2216,7 +2208,7 @@ def render_group_breakdown(
     # this same build — the widget's own render further down reuses this key,
     # so the two stay in sync.
     _GRAN_OPTIONS = ["Days", "Weeks"]
-    _gran_key = "bd_trend_granularity"
+    _gran_key = "bd_trend_granularity_val"
     _default_gran = "Weeks" if kpi_period == "All Time" else "Days"
     granularity = (
         "Weeks" if _is_weekly
@@ -2626,28 +2618,47 @@ def render_group_breakdown(
         # the chart above; `index` only seeds the value the first time this
         # key is ever created, same convention as the Period/Metric pickers.
         if not _is_weekly:
-            _g_col, _, _ = st.columns(3)
-            with _g_col:
-                st.selectbox(
-                    t("X-Axis"), _GRAN_OPTIONS,
-                    index=_GRAN_OPTIONS.index(granularity),
-                    key=_gran_key,
-                )
+            _gran_picked = st.pills(
+                t("X-Axis"), _GRAN_OPTIONS,
+                format_func=lambda o: t("Days") if o == "Days" else t("Weeks"),
+                default=granularity, label_visibility="collapsed",
+                key=f"bd_trend_gran_{granularity}")
+            if _gran_picked is not None and _gran_picked != granularity:
+                st.session_state[_gran_key] = _gran_picked
+                st.rerun()
 
-        _unit = "week" if granularity == "Weeks" else "day"
+        # Translated, and carrying their own article: the templates below
+        # used to interpolate the bare English "week"/"day" and append an "s",
+        # so a Spanish reader was told a gap was "un day with no informe" and
+        # that missed "weeks" are marked with a ✕. Spanish also genders the
+        # article — una semana, un día — so the singular form carries it.
+        # Two forms, and every sentence below is worded around them in BOTH
+        # languages — the placeholders have to match across a translation
+        # pair (test_renders_spanish pins that), so the grammar has to be
+        # solved in the wording rather than by giving Spanish its own token.
+        # Hence "each {unit}" instead of "missed {unit}s": "cada" is
+        # invariant, while Spanish genders both the article and the plural
+        # (UNA semana but UN día, LAS semanas but LOS días). The singular
+        # with its article is its own form for the one sentence that needs it.
+        if granularity == "Weeks":
+            _unit, _unit_a = t("week"), t("a week")
+        else:
+            _unit, _unit_a = t("day"), t("a day")
+        _unit_words = {"unit": _unit, "unit_a": _unit_a}
         # One line (area view): its ✕s are always drawn, so there's nothing to
         # isolate — drop the click instruction. Multiple lines (group view): the
         # ✕s only appear once an area is isolated, to keep the all-areas view clean.
         if _is_area:
-            _click_caption = t("Missed {unit}s are marked with a red ✕ and the "
-                               "dotted red line traces where the trend went "
-                               "through them.", unit=_unit)
+            _click_caption = t("Each {unit} with no report is marked with a red "
+                               "✕, and the dotted red line traces where the "
+                               "trend went through them.", **_unit_words)
         else:
             _click_caption = t("Click an area in the legend to see just that one — "
-                               "its missed {unit}s are traced with red ✕s so the "
-                               "line shows where it went instead of disappearing. "
-                               "Click another area to switch straight to it, or "
-                               "click it again to show all.", unit=_unit)
+                               "each {unit} it missed is traced with a red ✕ so "
+                               "the line shows where it went instead of "
+                               "disappearing. Click another area to switch "
+                               "straight to it, or click it again to show all.",
+                               **_unit_words)
         if metric in _weekly_keys:
             st.caption(t("A gap in a line is a week with no weekly (Sunday) form "
                          "from that area; a submitted form with nothing to "
@@ -2656,8 +2667,8 @@ def render_group_breakdown(
             st.caption(t("A gap in a line is a week with no recorded weekly "
                          "total from that area.") + " " + _click_caption)
         else:
-            st.caption(t("A gap in a line is a {unit} with no nightly report "
-                         "from that area.", unit=_unit) + " " + _click_caption)
+            st.caption(t("A gap in a line is {unit_a} with no nightly report "
+                         "from that area.", **_unit_words) + " " + _click_caption)
 
     _pipeline()
 
