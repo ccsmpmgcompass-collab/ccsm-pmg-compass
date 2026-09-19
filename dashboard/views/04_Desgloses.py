@@ -355,15 +355,30 @@ def _scope_body() -> None:
 
     # Compliance calendars sit below the breakdown. Called from the dispatch
     # site, not inside render_group_breakdown, so it renders once after the
-    # funnel even on the funnel's early-return path — and it has
+    # pipeline even on the trend's early-return paths — and it has
     # daily_hist/group_areas/area_floors right here already.
-    _render_compliance(
-        scope_kind=scope_kind,
-        scope_value=scope_value,
-        group_areas=group_areas,
-        daily_hist=daily_hist,
-        area_floors=area_floors,
-    )
+    #
+    # NOT at mission scope (PLAN-2026-09-18-data-pages.md §5, step D6). The
+    # Panel's Informes tab is the mission-wide compliance view — the headline,
+    # the rankings and both calendars, rebuilt at step C5 — and this page
+    # opening on a second copy of it was two pages answering one question.
+    # Scoped to a zone, a district or an area the calendars answer a different
+    # question: which of THESE areas is missing nights, which is what a leader
+    # comes to this page holding. A pointer rather than a silent absence: this
+    # is the page's landing state, and something that used to be here is not.
+    if scope_kind == "Mission":
+        st.caption(
+            t("Mission-wide submission compliance is on the [Panel](/), under "
+              "Informes. Pick a Zone, District or Area above for that group's "
+              "own calendars."))
+    else:
+        _render_compliance(
+            scope_kind=scope_kind,
+            scope_value=scope_value,
+            group_areas=group_areas,
+            daily_hist=daily_hist,
+            area_floors=area_floors,
+        )
 
     if _level == "area":
         _render_area_notes(selected_area, selected_zone, selected_district)

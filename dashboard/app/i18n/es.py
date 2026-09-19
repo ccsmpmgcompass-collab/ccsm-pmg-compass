@@ -3022,6 +3022,14 @@ ES: dict[str, str] = {
         "lista de nombres, así que quien asiste varios domingos en este "
         "período se cuenta cada semana.",
 
+
+    # ── Desgloses §5: compliance is scoped now (plan step D6) ────────────────
+    "Mission-wide submission compliance is on the [Panel](/), under Informes. "
+    "Pick a Zone, District or Area above for that group's own calendars.":
+        "El cumplimiento de envío de toda la misión está en el [Panel](/), "
+        "bajo Informes. Elija una Zona, Distrito o Área arriba para ver los "
+        "calendarios de ese grupo.",
+
     # ── Panel §2: the year against the baptismal goal ────────────────────────
     "{year} Baptisms": "Bautismos {year}",
     "certified through {month}": "certificado hasta {month}",

@@ -1016,3 +1016,26 @@ landed in the same push).
   the trend with three early returns and every one of them has to render this
   section. The "This Week" suppression stays. Suite **11 failed / 1176 passed**
   (the same 11).
+- 2026-09-19 — **D6 landed. PHASE D IS COMPLETE.** The compliance calendars are
+  skipped at mission scope. The Panel's Informes tab is the mission-wide
+  compliance view — headline, rankings and both calendars, rebuilt at C5 — and
+  Desgloses opening on a second copy of it was two pages answering one
+  question. Scoped to a zone, district or area they answer a different one
+  (which of THESE areas is missing nights), so they stay there. One decision:
+  **a pointer, not a silent absence** — mission scope is this page's landing
+  state, so a `st.caption` says where mission-wide compliance lives and links
+  to it, rather than leaving a reader to wonder where it went.
+  **Acceptance, measured live at 1400px:** mission scope is **three sections
+  and 2.7 screens** (Indicadores clave · Actividad diaria · Proceso de
+  enseñanza, plus the drill-down and the pointer), down from eight blocks —
+  the progression header, two Key Indicator sections, twenty nightly cards, a
+  Metric picker, a forty-five-bar chart, a trend and two calendars. Zone scope
+  is five sections and 3.1 screens; district and area add the trend. **Zero
+  sideways scroll at 375px** at every scope tested. Suite **11 failed / 1176
+  passed** (the same 11 as after Phase C).
+  **Left for Phase F, noted not fixed:** the `Reset Graph ↻` button above the
+  trend is a rerun dressed as a chart control and probably has no reason to
+  exist now that the trend is at most eight lines; the `Eje X` Days/Weeks
+  selectbox under it is the last widget on the page that is not a pill; and
+  `06_Puntajes.py` still calls its own section "Daily Activity", which is now
+  the name of a different thing on Desgloses.
