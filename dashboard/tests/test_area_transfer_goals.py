@@ -246,6 +246,21 @@ def test_areas_with_goals_counts_only_the_areas_that_set_one(sheet):
     assert gq.areas_with_goals(T6) == 1
 
 
+def test_areas_with_goals_takes_the_same_scope_as_the_total_beside_it(sheet):
+    """A zone's total and the count behind it must cover the same areas.
+
+    Desgloses read a zone's summed goal against the MISSION's count until
+    2026-09-19, and the Key Indicator card divided the two sides by different
+    denominators: one baptism from seven reporting areas against a goal of 10
+    set by nine of them, with a basis of forty-five, printed "64%".
+    """
+    _save(sheet, "Arauco 1", T6, {"ki_new_people_real": 6})
+    _save(sheet, "Lota 1", T6, {"ki_new_people_real": 4})
+    assert gq.areas_with_goals(T6) == 2
+    assert gq.areas_with_goals(T6, ["Arauco 1"]) == 1
+    assert gq.areas_with_goals(T6, ["Concepcion 1"]) == 0
+
+
 # ── what the year summary reads ──────────────────────────────────────────────
 
 def test_goals_by_cycle_start_is_keyed_by_a_real_date(sheet):

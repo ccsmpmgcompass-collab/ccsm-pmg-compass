@@ -227,14 +227,22 @@ def cycles_with_goals(areas=None) -> set:
             if any(v for v in metrics.values())}
 
 
-def areas_with_goals(transfer_start) -> int:
-    """How many areas have a non-zero goal saved for this cycle.
+def areas_with_goals(transfer_start, areas=None) -> int:
+    """How many areas have a non-zero goal saved for this cycle — across
+    `areas`, or the whole mission when it is None.
 
     Shown beside any summed total, for the same reason `_ki_goal_note` exists on
     the Panel: a mission figure resting on six areas out of forty-three must not
     read the same as one every area signed up to.
+
+    It takes the SAME scope as `group_goal_totals` because the two are always
+    read together, as a total and the count behind it. Desgloses read a zone's
+    total against the mission's count until 2026-09-19, and a zone with one
+    baptism against a goal of 10 reported "64%": the goal was nine areas' and
+    its basis said forty-five, so render_kpi_row's per-area reduction divided
+    the two sides by different numbers (audit F8's arithmetic, one level down).
     """
-    df = get_area_transfer_goals(transfer_start)
+    df = _scoped(get_area_transfer_goals(transfer_start), areas)
     if df.empty:
         return 0
     metrics = [c for c in _metric_cols() if c in df.columns]

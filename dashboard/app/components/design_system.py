@@ -1156,6 +1156,13 @@ def render_section_label(text: str, *, emphasis: bool = False,
     string at the label's right edge: the period, the coverage. It wraps, and
     drops to its own row under the label when the two cannot share one.
 
+    The label itself WRAPS. It did not until 2026-09-19 (plan step D1): every
+    heading on Desgloses carries its scope's name, so "Indicadores Clave —
+    Chile Concepción South Mission" is 542px of unbreakable line and all seven
+    of that page's sections scrolled the main pane sideways on a phone. A
+    heading on two lines costs one line; a heading that overflows costs the
+    reader the right-hand edge of every card below it (PLAN STATUS, B3 note a).
+
     ``numbered=True`` prefixes the circled number the page hands out in render
     order (①②③…). Numbers were the DEFAULT until 2026-09-18: the Panel was
     twelve sections over ten screens and they were its only wayfinding
@@ -1189,7 +1196,8 @@ def render_section_label(text: str, *, emphasis: bool = False,
             f'background:linear-gradient(180deg,#6366f1,#8b5cf6);"></span>'
             f'{marker}'
             f'<span style="font-size:1.05rem;font-weight:800;letter-spacing:0.12em;'
-            f'color:#f4f4f8;text-transform:uppercase;white-space:nowrap;">{label}</span>'
+            f'color:#f4f4f8;text-transform:uppercase;min-width:0;'
+            f'overflow-wrap:anywhere;">{label}</span>'
             f'{info_glyph}'
             f'<div style="flex:1;height:1px;background:rgba(99,102,241,0.35);"></div>'
             f'{right_html}'
@@ -1200,7 +1208,8 @@ def render_section_label(text: str, *, emphasis: bool = False,
         row = (
             f'{marker}'
             f'<span style="font-size:0.8rem;font-weight:700;letter-spacing:0.12em;'
-            f'color:#9ca3af;text-transform:uppercase;white-space:nowrap;">{label}</span>'
+            f'color:#9ca3af;text-transform:uppercase;min-width:0;'
+            f'overflow-wrap:anywhere;">{label}</span>'
             f'{info_glyph}'
             f'<div style="flex:1;height:1px;background:rgba(255,255,255,0.07);"></div>'
             f'{right_html}'

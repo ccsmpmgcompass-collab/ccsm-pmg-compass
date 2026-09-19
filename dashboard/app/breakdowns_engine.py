@@ -26,7 +26,6 @@ from app.analytics.period_delta import (
     MIN_COMPARABLE_DAYS,
     NEUTRAL_BAND_PCT,
     REPORTING_MIN_SHARE,
-    SEVERE_DROP_PCT,
     SMALL_COUNT_MAX,
     days_in_window,
     period_delta,
@@ -1392,13 +1391,6 @@ def render_lineage_marker(area: str, area_val_key: str) -> bool:
 # reader to skip it. The two indicators that PRECEDE a baptism ride underneath,
 # so a zone at zero still sees whether its pipeline is filling or emptying,
 # which is the fact it can act on this week.
-_HEADER_METRICS = (
-    "ki_baptized_confirmed_real",
-    "ki_baptismal_date_real",
-    "ki_friends_sacrament_real",
-)
-
-
 def _weeks_in(weekly: pd.DataFrame, start: date | None, end: date | None):
     """`weekly` rows whose week_end_date falls inside [start, end]."""
     if weekly is None or weekly.empty or "week_end_date" not in weekly.columns:
@@ -1440,45 +1432,88 @@ def _header_window(weekly: pd.DataFrame, p_start: date | None, p_end: date | Non
     return earlier[earlier["week_end_date"] == latest], [latest], True
 
 
-def _header_lines(weekly_cur: pd.DataFrame, weekly_prior: pd.DataFrame):
-    """One line per header metric: ``(label, value, change or None)``.
+def _metas_for_weeks(weekly: pd.DataFrame, week_ends: list,
+                     metrics) -> tuple[dict, dict]:
+    """What the companionships in this frame set themselves for `week_ends`.
 
-    The basis is REPORTING AREAS, not days. A weekly indicator does not grow
-    with the number of days behind it, it grows with the number of
-    companionships that filed, so that is what period_delta normalizes on — a
-    week in which five fewer areas reported must not read as a mission that
-    fell.
+    Returns ``({metric: summed meta}, {metric: areas that set one})`` — the two
+    halves of the Key Indicator card's goal bar under decision 6, where the bar
+    is the companionships' own ``ki_*_meta`` and leadership's transfer goal is
+    the mark beside it (PLAN-2026-09-18-data-pages.md §1).
 
-    Which means period_delta's own MIN_COMPARABLE_DAYS floor of 5 cannot be
-    used here: it counts DAYS, and applying it to areas would silence the arrow
-    on every district in the mission — CCSM's districts hold two to four areas,
-    so none of them could ever clear a floor of five. The floor that belongs to
-    this unit is relative: the prior week must carry at least half as many
-    reporting areas as the current one, so a week is never reconstructed by
-    scaling one companionship up to stand for eight. Same 0.5 share as
-    period_delta.REPORTING_MIN_SHARE, for the same reason.
+    A week's meta is written on the PREVIOUS week's form — "las metas que usted
+    estableció durante la planificación semanal para la SEMANA SIGUIENTE"
+    (WeeklyReportForm_ES.gs) — so the rows carrying the goals FOR these weeks
+    are the ones ending seven days earlier. Reading them off the same rows as
+    the results grades a week against the target set for the week after it,
+    which is the bug get_ki_goals_for_week exists to avoid.
+
+    The weeks are passed in rather than derived from the period's dates,
+    because the scoreboard falls back to the latest complete week when the
+    selected period holds no weekly report at all: computed off p_start/p_end
+    that fallback week would have been graded against nothing.
+
+    The basis counts DISTINCT AREAS, not rows. A multi-week window holds one
+    row per area per week, so counting rows reported "78 areas set a goal" on a
+    mission that has 43 — and fed that 78 to render_kpi_row as the goal's
+    basis, which then reduced a 41-area total against a 78-area goal and
+    produced a percentage of nothing (audit F8, in reverse).
+
+    A metric nobody wrote a meta for is absent from both dicts rather than
+    present as a zero: an area that left the goal blank committed to nothing,
+    and a zero goal would draw a full bar for any result at all (§1.1).
     """
-    cur_areas = (weekly_cur["area"].nunique()
-                 if not weekly_cur.empty and "area" in weekly_cur.columns else 0)
-    pri_areas = (weekly_prior["area"].nunique()
-                 if not weekly_prior.empty and "area" in weekly_prior.columns else 0)
-    lines = []
-    for key in _HEADER_METRICS:
-        if weekly_cur.empty or key not in weekly_cur.columns:
+    if (weekly is None or weekly.empty or not week_ends
+            or "week_end_date" not in weekly.columns):
+        return {}, {}
+    wanted = {(date.fromisoformat(str(w)) - timedelta(days=7)).isoformat()
+              for w in week_ends}
+    rows = weekly[weekly["week_end_date"].astype(str).isin(wanted)]
+    if rows.empty:
+        return {}, {}
+    totals, basis = {}, {}
+    for metric in metrics:
+        col = goal_metric_key(metric)
+        if not col or col not in rows.columns:
             continue
-        value = int(pd.to_numeric(weekly_cur[key], errors="coerce").fillna(0).sum())
-        change = None
-        comparable = (pri_areas >= max(1, cur_areas * REPORTING_MIN_SHARE))
-        if (not weekly_prior.empty and key in weekly_prior.columns
-                and pri_areas and comparable):
-            prior = int(
-                pd.to_numeric(weekly_prior[key], errors="coerce").fillna(0).sum())
-            change = period_delta(value, prior, current_basis=cur_areas,
-                                  prior_basis=pri_areas, min_basis=1)
-        # The one KI vocabulary (decision 11): the short label, never the
-        # form's "(Real)" wording.
-        lines.append((ki_short_label(key), value, change))
-    return lines
+        values = pd.to_numeric(rows[col], errors="coerce").fillna(0)
+        total = float(values.sum())
+        if total > 0:
+            totals[metric] = total
+            basis[metric] = (int(rows.loc[values > 0, "area"].nunique())
+                             if "area" in rows.columns else 0)
+    return totals, basis
+
+
+def _scoreboard_window_line(week_ends: list, reporting: int, total: int,
+                            fell_back: bool, kpi_period: str) -> str:
+    """The Key Indicators scoreboard's right-hand line: which weeks it is
+    reading, how much of the scope stands behind them, and — when the selected
+    period holds no weekly report at all — that it fell back to the latest one.
+
+    The three facts the retired progression header carried as its title and its
+    footer (PLAN-2026-09-18-data-pages.md §5, D1). Pure, and the only place
+    this page states the scoreboard's own window, so the heading and the cards
+    under it can never name different weeks.
+
+    Every string here is one the header already used, so the Spanish is the
+    Spanish the page has been printing since the header was built.
+    """
+    if not week_ends:
+        return ""
+    last = fmt_day_month(date.fromisoformat(week_ends[-1]))
+    parts = [t("week ending {d}", d=last) if len(week_ends) == 1
+             else t("{n} weeks to {d}", n=fmt_int(len(week_ends)), d=last)]
+    if total:
+        parts.append(t("{n} of {m} areas filed a weekly report · {pct}%",
+                       n=fmt_int(reporting), m=fmt_int(total),
+                       pct=fmt_int(round(reporting / total * 100))))
+    if fell_back:
+        # Sentence case, on the same line as the rest: uppercased in the
+        # header's title it ran to two shouted lines above the numbers.
+        parts.append(t("{period} holds no weekly report yet",
+                       period=t(kpi_period).lower()))
+    return " · ".join(p for p in parts if p)
 
 
 def _totals_axis_spec(title: str, top: float) -> dict:
@@ -1565,105 +1600,6 @@ def _bar_delta_chip(current: float, prior: float | None) -> str:
     if abs(pct) < NEUTRAL_BAND_PCT:
         return "→"
     return f"{'↑' if pct > 0 else '↓'} {fmt_int(abs(pct))}%"
-
-
-def _change_chip(change) -> str:
-    """A change as one short coloured phrase, in the same visual language as the
-    arrows on the cards below — one page, one meaning for a red down-arrow."""
-    if not change:
-        return ""
-    direction = int(change.get("direction", 0))
-    pct, show = change.get("pct"), change.get("show")
-    severe = pct is not None and pct < SEVERE_DROP_PCT
-    if direction > 0:
-        color, arrow = STATUS["good"], "↑"
-    elif direction == 0:
-        color, arrow = "#6b7280", "→"
-    else:
-        color, arrow = (STATUS["bad"] if severe else STATUS["warn"]), "↓"
-    if show == "absolute" and change.get("change") is not None:
-        n = round(float(change["change"]))
-        text = f"{'+' if n > 0 else ''}{fmt_int(n)}"
-    elif pct is not None:
-        text = f"{fmt_int(abs(pct))}%"
-    else:
-        return ""
-    return (f'<span style="color:{color};font-weight:600;">{arrow} '
-            f'{html.escape(text)}</span>')
-
-
-def _render_progression_header(
-    scope_value: str, kpi_period: str, group_areas: set,
-    p_start: date | None, p_end: date | None,
-    pr_start: date | None, pr_end: date | None,
-) -> None:
-    """The block at the top of the page: outcome, pipeline, coverage."""
-    weekly = get_weekly_form_data()
-    if weekly.empty or "area" not in weekly.columns:
-        return
-    weekly = _scope_to_areas(weekly, "area", group_areas)
-    if weekly.empty:
-        return
-
-    cur, week_ends, fell_back = _header_window(weekly, p_start, p_end)
-    if cur.empty:
-        return
-
-    if fell_back and week_ends:
-        # A fallback on the current side against a period-accurate twin would
-        # compare two windows chosen by different rules. When the header falls
-        # back, its twin is the week before the one actually shown.
-        earlier = weekly[weekly["week_end_date"] < week_ends[0]]
-        prior = (earlier[earlier["week_end_date"] == max(earlier["week_end_date"])]
-                 if not earlier.empty else pd.DataFrame())
-    else:
-        prior, _, _ = _header_window(weekly, pr_start, pr_end)
-
-    lines = _header_lines(cur, prior)
-    if not lines:
-        return
-
-    reporting = cur["area"].nunique()
-    total = len(group_areas) or reporting
-    pct = round(reporting / total * 100) if total else 0
-
-    rows_html = "".join(
-        f'<div style="display:flex;align-items:baseline;gap:0.6rem;margin-top:3px;">'
-        f'<span style="flex:1;min-width:0;color:#9ca3af;font-size:0.78rem;">'
-        f'{html.escape(label)}</span>'
-        f'<span style="font-size:1.15rem;font-weight:800;color:#f4f4f8;'
-        f'font-variant-numeric:tabular-nums;">{fmt_int(value)}</span>'
-        f'<span style="font-size:0.75rem;min-width:5.5rem;text-align:right;">'
-        f'{_change_chip(change)}</span></div>'
-        for label, value, change in lines
-    )
-
-    last_week = fmt_day_month(date.fromisoformat(week_ends[-1]))
-    span = (t("week ending {d}", d=last_week) if len(week_ends) == 1
-            else t("{n} weeks to {d}", n=fmt_int(len(week_ends)), d=last_week))
-
-    coverage = t("{n} of {m} areas filed a weekly report · {pct}%",
-                 n=fmt_int(reporting), m=fmt_int(total), pct=fmt_int(pct))
-    if fell_back:
-        # On the footer line, in sentence case, rather than appended to the
-        # small-caps title: uppercased it ran to two shouted lines above the
-        # numbers and buried the scope name it was supposed to qualify.
-        coverage += " · " + t(
-            "{period} holds no weekly report yet", period=t(kpi_period).lower())
-
-    st.markdown(
-        f'<div style="background:rgba(255,255,255,0.04);'
-        f'border:1px solid rgba(255,255,255,0.08);border-radius:12px;'
-        f'padding:0.9rem 1.1rem;margin-bottom:1.25rem;">'
-        f'<div style="font-size:0.68rem;font-weight:700;letter-spacing:0.1em;'
-        f'color:#6b7280;text-transform:uppercase;">'
-        f'{html.escape(scope_value)} · {html.escape(span)}</div>'
-        f'{rows_html}'
-        f'<div style="font-size:0.65rem;color:#4b5563;margin-top:8px;'
-        f'border-top:1px solid rgba(255,255,255,0.06);padding-top:6px;">'
-        f'{html.escape(coverage)}</div></div>',
-        unsafe_allow_html=True,
-    )
 
 
 def render_group_breakdown(
@@ -1806,12 +1742,6 @@ def render_group_breakdown(
         rows_prior = _slice_to_window(_hist, pr_start, pr_end)
     has_prior = not rows_prior.empty
 
-    # The header goes here — after the period and its twin are known, before
-    # Section 1 — so the first thing on the page is where this scope stands,
-    # not the first of sixteen cards.
-    _render_progression_header(scope_value, kpi_period, group_areas,
-                               p_start, p_end, pr_start, pr_end)
-
     span = (
         f"{rows['Date'].min()} → {rows['Date'].max()}" if has_rows and p_start is None
         else "—" if not has_rows
@@ -1872,21 +1802,24 @@ def render_group_breakdown(
     _vs = _twin_label(kpi_period)
 
     # ══════════════════════════════════════════════════════════════════════════
-    # 1. INDICADORES CLAVE — the mission's seven, for this group and period
+    # 1. INDICADORES CLAVE — the scoreboard this page opens on
     # ══════════════════════════════════════════════════════════════════════════
-    # New in Step 7 (PLAN §7.5), and it is a BUILD rather than a rewire: until
-    # now the seven Key Indicators had NO card on this page at all. The grid
-    # below — which was called "Key Indicators" — takes its keys from
-    # LIVE_SNAPSHOT's *_7d columns, and LIVE_SNAPSHOT holds 22 of them, every one
-    # a NIGHTLY metric and not one `ki_*` (probed live 2026-09-05). So a reader
-    # coming to Desgloses for the mission's headline outcomes found a section
-    # with the right name and the wrong seven metrics in it, and a transfer goal
-    # wired into that grid would have been unreachable code.
+    # PLAN-2026-09-18-data-pages.md §5, step D1. The page used to open on a
+    # three-line header block — baptisms, friends with a baptismal date,
+    # friends at sacrament — sitting directly above a row of seven cards that
+    # already carried all three of those metrics (audit D1: two blocks, one
+    # subject). The header is retired: its window and coverage are this
+    # section's right-hand line, its captions are the ⓘ, and its three numbers
+    # are three of the seven cards.
     #
-    # The values come from the weekly form, the only place they exist, scoped to
-    # this group and cut to the selected period. Same render_kpi_row the grid
-    # below uses, so the goal bar, the pace tick, the twin arrow and the
-    # value/goal basis handling all behave identically on both.
+    # DECISION 6 IS APPLIED HERE and it reverses what this page's goal bar has
+    # meant. The bar is now the COMPANIONSHIPS' own meta — the ki_*_meta each
+    # area wrote on the previous week's form, which is the number the Church's
+    # own app shows them — and leadership's transfer goal is the violet MARK on
+    # the same bar. Until this step the card drew the leadership goal while the
+    # drill-down directly beneath it drew the meta, and the two disagreed by
+    # design (PLAN STATUS, B3 note b). The Panel made the same flip at C1, so
+    # the three places a Key Indicator's goal appears now all draw one quantity.
     _ki_keys_weekly = list(key_indicator_metrics())
     _ki_scope_param = {"Zone": "bd_zone", "District": "bd_district",
                        "Area": "bd_area"}.get(scope_kind)
@@ -1894,6 +1827,68 @@ def render_group_breakdown(
     _ki_wk_all = get_weekly_form_data()
     if not _ki_wk_all.empty and "area" in _ki_wk_all.columns:
         _ki_wk_all = _scope_to_areas(_ki_wk_all, "area", group_areas)
+
+    # ── Which weeks the scoreboard reads ──────────────────────────────────────
+    # The weeks inside the selected period — or, when it holds no weekly report
+    # at all, the latest complete one, said out loud in the heading's
+    # right-hand line. That rule and its tests come from the retired header,
+    # which existed largely because of it: these seven are collected once a
+    # week, so "This Week" before Sunday and "This Month So Far" on the 3rd are
+    # both periods with nothing in them, and they are two of this page's most
+    # common views. Without the fallback the top of the page goes blank on most
+    # days of most months.
+    _ki_cur, _ki_week_ends, _ki_fell_back = _header_window(_ki_wk_all, p_start, p_end)
+    if _ki_fell_back and _ki_week_ends:
+        # A fallback on the current side against a period-accurate twin would
+        # compare two windows chosen by different rules. When the scoreboard
+        # falls back, its twin is the week before the one actually shown.
+        _ki_earlier = _ki_wk_all[_ki_wk_all["week_end_date"] < _ki_week_ends[0]]
+        _ki_prior = (_ki_earlier[_ki_earlier["week_end_date"]
+                                 == max(_ki_earlier["week_end_date"])]
+                     if not _ki_earlier.empty else pd.DataFrame())
+    elif pr_start is not None and pr_end is not None:
+        _ki_prior, _, _ = _header_window(_ki_wk_all, pr_start, pr_end)
+    else:
+        # All Time has no twin. The header handed its own None bounds straight
+        # to _header_window, whose _weeks_in returns the WHOLE frame for them —
+        # so All Time quietly compared itself against itself and every arrow
+        # read flat. Guarded here rather than inside _header_window, which is
+        # right to treat None as "unbounded" for the window it is choosing.
+        _ki_prior = pd.DataFrame()
+
+    _ki_value_basis = (int(_ki_cur["area"].nunique())
+                       if not _ki_cur.empty and "area" in _ki_cur.columns else 0)
+    _ki_prior_basis = (int(_ki_prior["area"].nunique())
+                       if _ki_prior is not None and not _ki_prior.empty
+                       and "area" in _ki_prior.columns else 0)
+
+    # ── The sparkline: the scope's last six well-reported weeks ───────────────
+    # Only weeks at least half the scope's areas filed, the same gate the Panel
+    # applies (C1) and the same one the arrows below pass: a weekly total is a
+    # sum over whoever submitted, so a week 2 areas reported and a week 20 did
+    # are not two points on one line — drawn together they make a collapse out
+    # of a reporting gap. The gate also keeps the week in progress out without
+    # needing a second definition of "this week".
+    _KI_SPARK_WEEKS = 6
+    _ki_spark_min = max(1, round(len(group_areas) * REPORTING_MIN_SHARE))
+    _ki_spark_weeks: list = []
+    if (not _ki_wk_all.empty and "week_end_date" in _ki_wk_all.columns
+            and "area" in _ki_wk_all.columns):
+        _ki_week_filers = _ki_wk_all.groupby("week_end_date")["area"].nunique()
+        _ki_spark_weeks = [str(w) for w, n in sorted(_ki_week_filers.items())
+                           if n >= _ki_spark_min][-_KI_SPARK_WEEKS:]
+
+    def _ki_spark(metric: str) -> list | None:
+        """The metric's last six well-reported weeks for this scope, or None
+        when there is too little history to draw a line."""
+        if len(_ki_spark_weeks) < 2 or metric not in _ki_wk_all.columns:
+            return None
+        return [
+            float(pd.to_numeric(
+                _ki_wk_all.loc[_ki_wk_all["week_end_date"].astype(str) == _w, metric],
+                errors="coerce").fillna(0).sum())
+            for _w in _ki_spark_weeks
+        ]
 
     def _ki_window(df, start, end):
         """`df` rows whose week_end_date falls in [start, end]."""
@@ -1904,18 +1899,14 @@ def render_group_breakdown(
         return df[(df["week_end_date"] >= start.isoformat())
                   & (df["week_end_date"] <= end.isoformat())]
 
-    _ki_cur = _ki_window(_ki_wk_all, p_start, p_end)
-    _ki_prior = _ki_window(_ki_wk_all, pr_start, pr_end)
-
     if not _ki_wk_all.empty and not _ki_cur.empty:
-        render_section_label(t('Key Indicators — {scope_value}', scope_value=scope_value))
-
-        # ── Tier 2: the leadership goal for the cycle this period sits in ─────
-        # A transfer goal is a period TOTAL, and _resolve_group_goal's contract
-        # is a WEEKLY figure, so it enters as total / the cycle's real weeks.
-        # When the period IS that transfer, _goal_factor multiplies it straight
-        # back and the bar reads the transfer total exactly; for any other
-        # period it degrades to a sensible weekly rate.
+        # ── Leadership's goal for the cycle this period sits in ───────────────
+        # A transfer goal is a period TOTAL, and it enters as a WEEKLY figure
+        # (total ÷ the cycle's real weeks) so that _goal_factor returns it to
+        # whatever the selected period is worth: on "This Transfer So Far" that
+        # multiplies straight back to the transfer total, on "This Week" it is
+        # one week's share. The mark therefore always means "leadership's
+        # target for the period on screen", whichever period that is.
         _ki_transfer_weekly: dict = {}
         _ki_transfer_note = ""
         _ki_transfer_basis = 0
@@ -1930,7 +1921,11 @@ def render_group_breakdown(
             _cyc_weeks = max(1.0, transfer_year.weeks_in_cycle(
                 _ki_cycle["start"], _ki_cycle["end"]))
             _cyc_totals = group_goal_totals(_ki_cycle["start"], group_areas)
-            _ki_transfer_basis = areas_with_goals(_ki_cycle["start"])
+            # Scoped, like the total above it: the count and the total
+            # must cover the same areas or the card divides them by
+            # different denominators.
+            _ki_transfer_basis = areas_with_goals(_ki_cycle["start"],
+                                                  group_areas)
             _ki_transfer_weekly = {k: v / _cyc_weeks for k, v in _cyc_totals.items() if v}
             if _ki_transfer_weekly:
                 _ki_transfer_note = t(
@@ -1939,45 +1934,10 @@ def render_group_breakdown(
                     or fmt_day_month(_ki_cycle["start"]),
                     weeks=fmt_number(_cyc_weeks, 0))
 
-        # ── Tier 4: the companionships' own goals, as the last resort ─────────
-        # A week's meta is written on the PREVIOUS week's form, so the rows
-        # carrying the goals FOR this period are the ones ending a week earlier.
-        # Reading them off the same rows as the results grades a week against
-        # the target set for the week after it — the bug get_ki_goals_for_week
-        # exists to avoid, and it applies just as much to a multi-week window.
-        _ki_meta_weekly: dict = {}
-        _ki_meta_basis: dict = {}
-        if p_start is not None and p_end is not None and _goal_factor:
-            _meta_rows = _ki_window(_ki_wk_all,
-                                    p_start - timedelta(days=7),
-                                    p_end - timedelta(days=7))
-            if _meta_rows is not None and not _meta_rows.empty:
-                for _k in _ki_keys_weekly:
-                    _mk = goal_metric_key(_k)
-                    if not _mk or _mk not in _meta_rows.columns:
-                        continue
-                    _mvals = pd.to_numeric(_meta_rows[_mk], errors="coerce").fillna(0)
-                    _tot = float(_mvals.sum())
-                    if _tot > 0:
-                        # Back to a weekly equivalent, so _goal_factor below
-                        # returns it to the period total it came from.
-                        _ki_meta_weekly[_k] = _tot / _goal_factor
-                        # DISTINCT AREAS, not rows. A multi-week window holds one
-                        # row per area PER WEEK, so counting rows reported "78
-                        # areas set a goal" on a mission that has 43 — and fed
-                        # that 78 to render_kpi_row as the goal's basis, which
-                        # then reduced a 41-area total against a 78-area goal
-                        # and produced a percentage of nothing (audit F8, in
-                        # reverse). Caught in the running app, not by the suite.
-                        _ki_meta_basis[_k] = (
-                            int(_meta_rows.loc[_mvals > 0, "area"].nunique())
-                            if "area" in _meta_rows.columns else 0)
-
-        _ki_value_basis = (int(_ki_cur["area"].nunique())
-                           if "area" in _ki_cur.columns else 0)
-        _ki_prior_basis = (int(_ki_prior["area"].nunique())
-                           if _ki_prior is not None and not _ki_prior.empty
-                           and "area" in _ki_prior.columns else 0)
+        # The companionships' metas for the weeks ON SCREEN — the bar itself,
+        # after decision 6.
+        _ki_meta_total, _ki_meta_basis = _metas_for_weeks(
+            _ki_wk_all, _ki_week_ends, _ki_keys_weekly)
 
         _ki_row_cards = []
         _ki_any_goal = False
@@ -1986,15 +1946,18 @@ def render_group_breakdown(
             if _k not in _ki_cur.columns:
                 continue
             _v = int(pd.to_numeric(_ki_cur[_k], errors="coerce").fillna(0).sum())
-            # The whole card opens the drill-down on this metric, and the
-            # link carries the scope so the full reload it causes lands back
-            # here (render_scope_selectors seeds from the same params).
+            # The whole card opens the drill-down on this metric, and the link
+            # carries the scope so the full reload it causes lands back here
+            # (render_scope_selectors seeds from the same params).
             _c: dict = {"label": ki_short_label(_k), "value": _v,
-                        "href": ki_href(_k, _ki_scope_params)}
+                        "href": ki_href(_k, _ki_scope_params),
+                        "spark": _ki_spark(_k)}
 
-            # The basis is REPORTING AREAS, not days: a weekly indicator does not
-            # grow with the days behind it, it grows with the companionships that
-            # filed. Same rule _header_lines applies to the progression header.
+            # The basis is REPORTING AREAS, not days: a weekly indicator does
+            # not grow with the days behind it, it grows with the companionships
+            # that filed. The prior week must carry at least half as many of
+            # them, or a week gets reconstructed by scaling one companionship up
+            # to stand for eight.
             if (_ki_prior is not None and not _ki_prior.empty
                     and _k in _ki_prior.columns and _ki_prior_basis
                     and _ki_prior_basis >= max(1, _ki_value_basis * REPORTING_MIN_SHARE)):
@@ -2005,43 +1968,108 @@ def render_group_breakdown(
                     _c["change"] = _chg
                     _c["delta_label"] = _vs
 
-            _wg, _note, _basis, _src = _resolve_group_goal(
-                _k, goals, _per_area_goals, len(group_areas),
-                transfer_weekly=_ki_transfer_weekly,
-                transfer_note=_ki_transfer_note,
-                transfer_basis=_ki_transfer_basis,
-                meta_weekly=_ki_meta_weekly,
-                meta_basis=_ki_meta_basis.get(_k, 0))
-            if _goal_factor and _wg > 0:
+            # ── The bar: decision 6 ──────────────────────────────────────────
+            # The companionships' meta first. Only when nobody in scope wrote
+            # one for these weeks does the card fall through the rest of the
+            # precedence chain — an entered GOALS_CONFIG goal, or leadership's
+            # target scaled to the period, is still a target; it is just not
+            # theirs, and the note says which one it is.
+            _goal_total = _ki_meta_total.get(_k, 0.0)
+            _goal_basis = _ki_meta_basis.get(_k, 0)
+            _is_meta = _goal_total > 0 and _goal_basis > 0
+            _goal_note = (t("the companionships' own goal — {n} areas set one",
+                            n=fmt_int(_goal_basis)) if _is_meta else "")
+            if not _is_meta:
+                _wg, _goal_note, _b, _src = _resolve_group_goal(
+                    _k, goals, _per_area_goals, len(group_areas),
+                    transfer_weekly=_ki_transfer_weekly,
+                    transfer_note=_ki_transfer_note,
+                    transfer_basis=_ki_transfer_basis)
+                if _goal_factor and _wg > 0:
+                    _goal_total, _goal_basis = _wg * _goal_factor, _b
+
+            if _goal_total > 0:
                 _ki_any_goal = True
-                _c["goal"] = _wg * _goal_factor
-                if _note:
-                    _c["goal_note"] = _note
-                if _src == "meta":
-                    _ki_any_meta = True
-                if _ki_value_basis and _basis:
+                _ki_any_meta = _ki_any_meta or _is_meta
+                _c["goal"] = _goal_total
+                if _goal_note:
+                    _c["goal_note"] = _goal_note
+                if _ki_value_basis and _goal_basis:
                     _c["value_basis"] = _ki_value_basis
-                    _c["goal_basis"] = _basis
-                if _pace_factor is not None:
-                    _c["pace"] = _wg * _pace_factor
-                    if _period_end_full is not None:
-                        _c["goal_by"] = fmt_day_month(_period_end_full)
+                    _c["goal_basis"] = _goal_basis
+                # The violet mark beside the amber bar: leadership's goal for
+                # this period. Drawn only when the bar IS the metas — a card
+                # whose bar is already the leadership goal would otherwise
+                # carry two ticks saying one thing.
+                _mark = (float(_ki_transfer_weekly.get(_k, 0) or 0)
+                         * float(_goal_factor or 0))
+                if _is_meta and _mark > 0:
+                    _c["mark"] = _mark
+                    _c["mark_label"] = t("Leadership goal for this period")
+            # No pace tick on these seven: their values are weekly-form totals
+            # over COMPLETE weeks, so there is no part-period to be partway
+            # through — a week is either reported or it is not, and the bar
+            # covers exactly the weeks the value does. The pace against
+            # leadership's target is the drill-down's, which draws it as a tick
+            # on the weekly bars (B2).
             _ki_row_cards.append(_c)
 
-        _ki_weeks_seen = (_ki_cur["week_end_date"].nunique()
-                          if "week_end_date" in _ki_cur.columns else 0)
-        st.caption(t(
-            "The mission's seven Key Indicators, from the weekly report — "
-            "{weeks} weeks in this period, {areas} areas reporting.",
-            weeks=fmt_int(_ki_weeks_seen), areas=fmt_int(_ki_value_basis)))
-        if not _ki_any_goal:
-            st.caption(t("No goal set for this cambio yet — set one on the Metas "
-                         "page and these bars light up."))
-        elif _ki_any_meta:
-            # Tier 4 must never be mistaken for a leadership target.
-            st.caption(t("A bar with no goal for the cambio falls back to what "
-                         "the companionships set for themselves, and says so."))
+        # ── The heading: its window, its coverage, and its explanation ────────
+        _ki_right = _scoreboard_window_line(
+            _ki_week_ends, _ki_value_basis, len(group_areas),
+            _ki_fell_back, kpi_period)
 
+        # Why an arrow is missing, said once. C2's rule: the sentence reaches
+        # the ⓘ (for the phone, which has no hover) AND the card's own chip.
+        _ki_no_change_reason = ""
+        if _ki_prior is None or _ki_prior.empty:
+            _ki_no_change_reason = t(
+                "No comparison: there is no earlier weekly report to measure "
+                "these weeks against.")
+        elif _ki_prior_basis < max(1, _ki_value_basis * REPORTING_MIN_SHARE):
+            _ki_no_change_reason = t(
+                "No comparison: {n} areas filed the earlier weekly report and "
+                "at least {need} are needed at this scope.",
+                n=fmt_int(_ki_prior_basis),
+                need=fmt_int(max(1, round(_ki_value_basis * REPORTING_MIN_SHARE))))
+
+        _ki_info = t(
+            "The seven indicators the mission is judged on, from the weekly "
+            "Sunday form. The bar is the goal the companionships set "
+            "themselves on the previous week's form — the same number the "
+            "Church's app shows them — and the violet mark is the goal "
+            "leadership set on the Metas page, scaled to this period. Totals "
+            "are compared per reporting area, because a week's total is a sum "
+            "over whoever filed. Tap any card for that indicator's history.")
+        if not _ki_any_goal:
+            _ki_info += " " + t(
+                "No goal set for this cambio yet — set one on the Metas page "
+                "and these bars light up.")
+        elif not _ki_any_meta or any("mark" not in _c and "goal" in _c
+                                     for _c in _ki_row_cards):
+            # Decision 6 reversed which way this falls: the bar is the
+            # companionships' meta, and where none was written for these weeks
+            # it is leadership's goal instead. The old sentence said the
+            # opposite, which was true of this page until this step.
+            _ki_info += " " + t(
+                "Where no companionship wrote a meta for these weeks the bar "
+                "is leadership's goal for the period instead, and carries no "
+                "violet mark.")
+        if _ki_no_change_reason:
+            _ki_info += " " + _ki_no_change_reason
+
+        render_section_label(
+            t('Key Indicators — {scope_value}', scope_value=scope_value),
+            emphasis=True, right=_ki_right, info=_ki_info)
+
+        for _c in _ki_row_cards:
+            # A refused comparison is the card's own chip, not a paragraph
+            # under the row (C2) — and only where there was a number to have
+            # compared.
+            if (_ki_no_change_reason and _c.get("change") is None
+                    and isinstance(_c.get("value"), (int, float))):
+                _c["change_note"] = t("no comparison")
+                _c["change_note_title"] = _ki_no_change_reason
         render_kpi_row(_ki_row_cards)
 
         # The drill-down under the cards — the same panel the Panel draws,

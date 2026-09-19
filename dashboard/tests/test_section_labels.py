@@ -198,10 +198,19 @@ def test_the_label_row_wraps_and_its_right_hand_line_wraps_with_it():
         assert "margin-left:auto" in right,             "the right-hand line would not sit at the right edge on its own row"
 
 
-def test_the_label_itself_still_does_not_wrap_mid_phrase():
-    """The label is two or three words and reads as one unit; only the line
-    beside it is allowed to break."""
-    html = _rendered("Indicadores clave")
-    cut = html.index("Indicadores clave")
+def test_a_long_label_wraps_rather_than_overflowing():
+    """Reversed at plan step D1, and the reason is worth keeping.
+
+    It used to assert the opposite — the label refused to wrap, on the premise
+    that it was two or three words and read as one unit. That premise holds on
+    the Panel and nowhere else: every heading on Desgloses carries its scope's
+    name, so "Indicadores Clave — Chile Concepción South Mission" is 542px of
+    unbreakable line, and all seven of that page's sections scrolled the main
+    pane sideways at 375px. A heading on two lines costs one line; a heading
+    that overflows costs the reader the right-hand edge of every card under it.
+    """
+    html = _rendered("Indicadores Clave — Chile Concepción South Mission")
+    cut = html.index("Indicadores Clave")
     label_span = html[html.rindex("<span", 0, cut):cut]
-    assert "white-space:nowrap" in label_span, label_span
+    assert "white-space:nowrap" not in label_span, label_span
+    assert "overflow-wrap:anywhere" in label_span, label_span

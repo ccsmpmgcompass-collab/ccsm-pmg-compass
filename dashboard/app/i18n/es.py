@@ -2790,10 +2790,13 @@ ES: dict[str, str] = {
     "light up.":
         "Todavía no hay una meta fijada para este cambio — fíjela en la página "
         "Metas y estas barras se encienden.",
-    "A bar with no goal for the cambio falls back to what the companionships "
-    "set for themselves, and says so.":
-        "Una barra sin meta del cambio recurre a lo que los compañerismos se "
-        "propusieron a sí mismos, y lo dice.",
+    # Decision 6 reversed the precedence: the bar is the companionships' meta
+    # and leadership's goal is what it falls back TO, not the other way round.
+    "Where no companionship wrote a meta for these weeks the bar is "
+    "leadership's goal for the period instead, and carries no violet mark.":
+        "Donde ninguna compañería escribió una meta para estas semanas, la "
+        "barra es la meta del liderazgo para el período, y no lleva marca "
+        "violeta.",
     "goal for {cycle}, spread over its {weeks} weeks":
         "meta del cambio {cycle}, repartida en sus {weeks} semanas",
     "the companionships' own goal — {n} areas set one":
@@ -2902,6 +2905,38 @@ ES: dict[str, str] = {
         "Los totales se comparan por área, porque el total de una semana es "
         "la suma de quienes informaron. Toque cualquier tarjeta para ver el "
         "historial de ese indicador.",
+
+
+    # ── Desgloses §1: the Key Indicator scoreboard (data-pages plan, step D1) ─
+    # The retired progression header's own strings stay where they were — the
+    # scoreboard's right-hand line reuses them verbatim ("week ending {d}",
+    # "{n} of {m} areas filed a weekly report · {pct}%", "{period} holds no
+    # weekly report yet"), so the Spanish there is the Spanish this page has
+    # printed since the header was built.
+    "Leadership goal for this period": "Meta del liderazgo para este período",
+    "No comparison: there is no earlier weekly report to measure these weeks "
+    "against.":
+        "Sin comparación: no hay un informe semanal anterior contra el cual "
+        "medir estas semanas.",
+    "No comparison: {n} areas filed the earlier weekly report and at least "
+    "{need} are needed at this scope.":
+        "Sin comparación: {n} áreas entregaron el informe semanal anterior y "
+        "se necesitan al menos {need} en este nivel.",
+    "The seven indicators the mission is judged on, from the weekly Sunday "
+    "form. The bar is the goal the companionships set themselves on the "
+    "previous week's form — the same number the Church's app shows them — "
+    "and the violet mark is the goal leadership set on the Metas page, "
+    "scaled to this period. Totals are compared per reporting area, because "
+    "a week's total is a sum over whoever filed. Tap any card for that "
+    "indicator's history.":
+        "Los siete indicadores por los que se mide la misión, del informe "
+        "semanal del domingo. La barra es la meta que las compañerías se "
+        "fijaron en el informe de la semana anterior — el mismo número que "
+        "les muestra la aplicación de la Iglesia — y la marca violeta es la "
+        "meta que el liderazgo fijó en la página Metas, ajustada a este "
+        "período. Los totales se comparan por área informante, porque el "
+        "total de una semana es la suma de quienes informaron. Toque "
+        "cualquier tarjeta para ver el historial de ese indicador.",
 
     # ── Panel §2: the year against the baptismal goal ────────────────────────
     "{year} Baptisms": "Bautismos {year}",

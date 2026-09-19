@@ -810,3 +810,56 @@ landed in the same push).
   they render REFERRED / CONTACT % / CONTACTED % / TEACHING / CHURCH / BAP
   DATE in English on the Spanish interface. Six dictionary entries whenever
   someone wants them.
+- 2026-09-19 — **D1 landed.** The progression header is retired and the seven
+  Key Indicator cards are the scoreboard the page opens on. The header's three
+  lines (baptisms, friends with a date, friends at sacrament) were three of the
+  seven cards printed a second time six inches higher; its window and its
+  coverage are now the heading's `right=` line ("semana al 13 de sep · 39 de 45
+  áreas enviaron informe semanal · 87%") and its captions are the ⓘ.
+  `_header_lines`, `_change_chip` and `_HEADER_METRICS` went with it;
+  `_header_window` stayed, because the fallback is the reason the header
+  existed — these seven arrive once a week, so "Esta semana" before Sunday and
+  "Este mes hasta hoy" on the 3rd are periods with no weekly report in them,
+  and the scoreboard falls back to the latest complete week and says so in the
+  same line ("· esta semana aún no tiene informe semanal"). **Decision 6 is
+  applied**: the bar is the companionships' summed `ki_*_meta` and leadership's
+  transfer goal is the violet mark, so the card and the drill-down under it
+  finally draw one quantity (live at mission scope: "77% de 203" with the mark
+  at 2.038, where it read "13% de 2.038" before). Decisions made mid-build:
+  (a) the metas are found from the weeks ON SCREEN (each shown week minus
+  seven days), not from the period's dates — computed off p_start/p_end the
+  fallback week would have been graded against nothing; extracted as
+  `_metas_for_weeks` with its own tests, since decision 6 rests on that
+  arithmetic; (b) **no pace tick on these seven** — their values are
+  weekly-form totals over COMPLETE weeks, so there is no part-period to be
+  partway through, and a tick on a bar made of metas-so-far would mean nothing;
+  the pace against leadership's target stays in the drill-down (B2); (c) where
+  no companionship wrote a meta the bar falls through to leadership's goal and
+  carries NO mark, because two ticks saying one thing is not a comparison —
+  live, Bautizados is the case; (d) the ⓘ's old "falls back to what the
+  companionships set for themselves" sentence was reversed by decision 6 and
+  now says the opposite, which is what the page actually does; (e) All Time's
+  twin: the header handed `_header_window` its own None bounds, whose
+  `_weeks_in` returns the WHOLE frame for them, so All Time compared itself
+  against itself and every arrow read flat — now an explicit empty twin.
+  **Two bugs fixed on the way, both found in the running app:** (1)
+  `areas_with_goals` took no scope while `group_goal_totals` beside it did, so
+  a zone's summed goal was divided by the MISSION's count of goal-setters —
+  Angol's one baptism against a goal of 10 printed "64%", and now prints 13%;
+  it takes `areas=` like its twin, and `tests/test_area_transfer_goals.py` +1.
+  (2) `render_section_label`'s label span was `white-space:nowrap`, which was
+  fine on the Panel and fatal here: every heading on this page carries its
+  scope's name, "Indicadores Clave — Chile Concepción South Mission" is 542px,
+  and all SEVEN sections scrolled the main pane sideways at 375px (B3 note a).
+  The label wraps now, and the page's sideways scroll is **zero** — the first
+  time on this page. `test_section_labels.py`'s
+  `test_the_label_itself_still_does_not_wrap_mid_phrase` asserted the old
+  behaviour and is reversed, with the reason in its docstring. Verified live at
+  1400px (7 cards 4+3 at 216px, no sideways scroll) and 375px (2 per row at
+  164px, the right-hand line on its own rows, nothing overflowing), at mission
+  and at zone scope, and on the fallback period. Suite **11 failed / 1161
+  passed** (the same 11). `tests/test_progression_header.py` is
+  `tests/test_desgloses_scoreboard.py`: its `_header_window` tests are
+  unchanged, its `_header_lines`/`_change_chip` tests went with those
+  functions, and it gained six on `_scoreboard_window_line` and six on
+  `_metas_for_weeks`.
