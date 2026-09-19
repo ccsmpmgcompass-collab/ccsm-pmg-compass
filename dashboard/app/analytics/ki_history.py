@@ -379,6 +379,208 @@ def area_rows(scope_areas: Iterable[str], metric: str,
     return out
 
 
+# ── The nightly series ───────────────────────────────────────────────────────
+# PLAN-2026-09-18-data-pages.md §5, step D3: the twenty nightly rows link into
+# the same drill-down the seven Key Indicators open, so the panel needs their
+# history in the shape it already draws. DAILY_LOG is one row per area per
+# NIGHT, so it is bucketed into the mission's Mon–Sun weeks first and then read
+# exactly like the weekly form — same WeekPoint, same CyclePoint, same AreaRow,
+# so ki_drilldown draws all four tabs with no second set of charts.
+#
+# The one real difference is the goal. A nightly metric has no companionship
+# meta and no leadership transfer goal; what it has is AGENT_CONFIG's
+# GOAL_<metric>, a target PER AREA PER WEEK. So a week's goal here is that
+# figure times the areas that actually reported it — the same arithmetic
+# _resolve_group_goal's third tier does for the cards, which is what keeps the
+# row's "18% de 20.250" and the panel's bars saying one thing.
+
+
+def _load_daily(daily: pd.DataFrame | None, scope_areas: Iterable[str]) -> pd.DataFrame:
+    """DAILY_LOG cut to the scope's areas, with a Mon–Sun ``week_end_date``.
+
+    Returns the weekly-form SHAPE — one row per area per week, ``area`` and
+    ``week_end_date`` lowercase — so every reader below this line is the one
+    the weekly series already uses.
+    """
+    if daily is None:
+        from app.db.queries import get_daily_log
+        daily = get_daily_log()
+    areas = {str(a).strip() for a in scope_areas}
+    if daily is None or daily.empty or not areas:
+        return pd.DataFrame()
+    if "week_end_date" in daily.columns and "area" in daily.columns:
+        # Already bucketed: a caller reading several cycles (daily_cycle_series)
+        # buckets once and hands the result down. Without this the second pass
+        # found no Date column and returned nothing, which emptied "Por cambio"
+        # for every nightly metric.
+        return daily[daily["area"].isin(areas)]
+    if "Area" not in daily.columns or "Date" not in daily.columns:
+        return pd.DataFrame()
+    df = daily[daily["Area"].astype(str).str.strip().isin(areas)].copy()
+    if df.empty:
+        return pd.DataFrame()
+    parsed = pd.to_datetime(df["Date"], errors="coerce")
+    df = df[parsed.notna()]
+    if df.empty:
+        return pd.DataFrame()
+    parsed = parsed[parsed.notna()]
+    # The Sunday that ends each row's week — the same convention WEEKLY_KI's
+    # week_end_date and every other weekly bucket in the app uses.
+    df["week_end_date"] = (
+        parsed + pd.to_timedelta(6 - parsed.dt.weekday, unit="D")
+    ).dt.strftime("%Y-%m-%d")
+    df["area"] = df["Area"].astype(str).str.strip()
+    value_cols = [c for c in df.columns
+                  if c not in ("Date", "Area", "area", "week_end_date")]
+    for c in value_cols:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    if not value_cols:
+        return pd.DataFrame()
+    return (df.groupby(["area", "week_end_date"], as_index=False)[value_cols]
+              .sum(min_count=1))
+
+
+def daily_series(scope_areas: Iterable[str], metric: str, cycle: dict, *,
+                 daily: pd.DataFrame | None = None,
+                 goal_per_area: float | None = None,
+                 today: date | None = None) -> list[WeekPoint]:
+    """``weekly_series`` for a NIGHTLY metric — one point per week of the
+    cycle, from DAILY_LOG.
+
+    ``reporting`` counts the areas with at least one night in the week, and
+    the goal is ``goal_per_area`` times that count: a week's target belongs to
+    the areas that were there for it, so a week two areas reported is not held
+    to forty-five areas' goal. Without a ``goal_per_area`` the points carry no
+    goal at all, exactly as a Key Indicator week nobody wrote a meta for does.
+    """
+    df = _load_daily(daily, scope_areas)
+    today = _today(today)
+    out: list[WeekPoint] = []
+    for monday, sunday in cycle_weeks(cycle):
+        rows = _week_rows(df, sunday)
+        reporting = _reporting(rows)
+        actual = _sum(rows, metric) if reporting and metric in rows.columns else None
+        meta = (float(goal_per_area) * reporting
+                if goal_per_area and reporting else None)
+        out.append(WeekPoint(
+            start=monday, end=sunday, actual=actual, meta=meta,
+            meta_set_by=reporting if meta is not None else 0,
+            reporting=reporting,
+            is_current=monday <= today <= sunday,
+            is_future=monday > today,
+        ))
+    return out
+
+
+def daily_twin(scope_areas: Iterable[str], metric: str, cycle: dict,
+               prev_cycle: dict | None, *,
+               daily: pd.DataFrame | None = None) -> list[float | None]:
+    """``twin_weekly`` for a nightly metric: the previous cambio's weeks at the
+    same indices."""
+    n = len(cycle_weeks(cycle))
+    if prev_cycle is None:
+        return [None] * n
+    prev = daily_series(scope_areas, metric, prev_cycle, daily=daily,
+                        today=prev_cycle["end"])
+    return [(prev[i].actual if i < len(prev) else None) for i in range(n)]
+
+
+def daily_cycle_series(scope_areas: Iterable[str], metric: str, *,
+                       cycles: list[dict] | None = None,
+                       daily: pd.DataFrame | None = None,
+                       goal_per_area: float | None = None,
+                       today: date | None = None) -> list[CyclePoint]:
+    """``cycle_series`` for a nightly metric. A cycle with no nights at all is
+    left out, same rule as the weekly one — "Por cambio" starts with what the
+    mission has actually reported."""
+    if cycles is None:
+        from app.utils.transfer_helpers import transfer_cycles
+        cycles = transfer_cycles()
+    areas = list(scope_areas)
+    df = _load_daily(daily, areas)
+    today = _today(today)
+    out: list[CyclePoint] = []
+    for cycle in cycles:
+        points = daily_series(areas, metric, cycle, daily=df,
+                              goal_per_area=goal_per_area, today=today)
+        covered = [p for p in points if p.reporting]
+        if not covered:
+            continue
+        metas = [p.meta for p in points if not p.is_future and p.meta is not None]
+        out.append(CyclePoint(
+            number=str(cycle.get("number") or "").strip(),
+            start=cycle["start"], end=cycle["end"],
+            actual=sum(p.actual or 0.0 for p in covered),
+            meta_so_far=sum(metas) if metas else None,
+            # There is no leadership transfer goal for a nightly metric:
+            # AREA_TRANSFER_GOALS is keyed on the seven Key Indicators.
+            leadership=None,
+            weeks_covered=len(covered), weeks_total=len(points),
+            is_current=cycle["start"] <= today <= cycle["end"],
+        ))
+    return out
+
+
+def daily_area_rows(scope_areas: Iterable[str], metric: str,
+                    window: tuple[date, date],
+                    twin_window: tuple[date, date] | None = None, *,
+                    daily: pd.DataFrame | None = None,
+                    goal_per_area: float | None = None,
+                    today: date | None = None) -> list[AreaRow]:
+    """``area_rows`` for a nightly metric — every area of the scope over the
+    window, ranked by % of its own weekly goal where there is one.
+
+    The window is measured in the WEEKS it covers, not in days, because that
+    is the grain the goal has: an area's target is per week, so its goal over
+    the window is that figure times the weeks it reported. An area that filed
+    nothing is still a row, with ``reported`` False.
+    """
+    areas = sorted({str(a).strip() for a in scope_areas if str(a).strip()})
+    if daily is None:
+        from app.db.queries import get_daily_log
+        daily = get_daily_log()
+    # The raw frame as well as the bucketed one: the weeks come from the
+    # buckets, but a missed NIGHT is only visible one row per night, and on a
+    # nightly metric that count is the first thing a leader asks about.
+    df = _load_daily(daily, areas)
+    today = _today(today)
+    start, end = window
+    weeks = sundays_between(start, end)
+    out: list[AreaRow] = []
+    for area in areas:
+        mine = (df[df["area"] == area] if not df.empty and "area" in df.columns
+                else pd.DataFrame())
+        actual = 0.0
+        reported = 0
+        for sunday in weeks:
+            rows = _week_rows(mine, sunday)
+            if not rows.empty:
+                reported += 1
+                actual += _sum(rows, metric)
+        meta = (float(goal_per_area) * reported
+                if goal_per_area and reported else None)
+        change = None
+        if twin_window is not None:
+            t_actual, t_weeks = 0.0, 0
+            for sunday in sundays_between(*twin_window):
+                rows = _week_rows(mine, sunday)
+                if not rows.empty:
+                    t_weeks += 1
+                    t_actual += _sum(rows, metric)
+            if t_weeks:
+                change = period_delta(actual, t_actual, current_basis=1,
+                                      prior_basis=1, min_basis=1)
+        out.append(AreaRow(
+            area=area, actual=actual, meta=meta,
+            pct=(actual / meta * 100.0) if meta else None,
+            change=change, reported=reported > 0, weeks_reported=reported,
+            nights_missed=_nights_missed(daily, area, start,
+                                         min(end, today - timedelta(days=1))),
+        ))
+    out.sort(key=lambda r: (r.pct is None, -(r.pct or 0.0), -r.actual, r.area))
+    return out
+
+
 def leadership_total(scope_areas: Iterable[str], cycle: dict, metric: str, *,
                      totals: dict | None = None) -> float | None:
     """The leadership transfer goal for the scope and metric, or None."""

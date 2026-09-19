@@ -41,9 +41,11 @@ from app.components.charts import (
 from app.components.design_system import (
     goal_bar_status, render_section_label, render_table,
 )
-from app.config.metric_catalog import key_indicator_metrics, ki_short_label
+from app.config.metric_catalog import (
+    key_indicator_metrics, ki_short_label, nightly_metrics,
+)
 from app.db.goals_queries import group_goal_totals
-from app.db.queries import get_daily_log
+from app.db.queries import get_area_weekly_goals, get_daily_log
 from app.i18n import t
 from app.i18n.formats import fmt_day_month, fmt_int
 from app.utils.area_helpers import mission_today
@@ -73,14 +75,29 @@ def _param(name: str) -> str | None:
     return raw or None
 
 
-def selected_ki() -> str | None:
-    """The metric ``?ki=`` names, or None when absent or not a Key Indicator.
+def is_nightly(metric: str | None) -> bool:
+    """True for a metric asked on the NIGHTLY form rather than the weekly one.
 
-    Validated against the catalogue: a stale or mistyped key closes the panel
-    rather than opening it on nothing.
+    The two have different histories — DAILY_LOG against WEEKLY_FORM_RAW — and
+    different goals: a Key Indicator's is the companionships' meta and
+    leadership's transfer goal, a nightly metric's is AGENT_CONFIG's per-area
+    weekly figure. Everything else about the panel is the same.
+    """
+    return bool(metric) and metric in nightly_metrics()
+
+
+def selected_ki() -> str | None:
+    """The metric ``?ki=`` names, or None when absent or unknown.
+
+    Validated against the catalogue — a stale or mistyped key closes the panel
+    rather than opening it on nothing. Since plan step D3 that catalogue is the
+    seven Key Indicators AND the nightly metrics, because the nightly rows on
+    Desgloses link here too.
     """
     raw = _param(KI_PARAM)
-    return raw if raw and raw in key_indicator_metrics() else None
+    if not raw:
+        return None
+    return raw if (raw in key_indicator_metrics() or raw in nightly_metrics()) else None
 
 
 def ki_href(metric: str, params: dict | None = None) -> str:
@@ -140,6 +157,41 @@ class _Ctx:
     totals: dict
     today: date
     key: str
+    #: A nightly metric reads DAILY_LOG bucketed into weeks and is graded
+    #: against AGENT_CONFIG's per-area weekly goal; a Key Indicator reads the
+    #: weekly form and is graded against the companionships' meta. The four
+    #: accessors below are the only place that difference lives — every chart,
+    #: caption and ranking underneath is the same one (plan step D3).
+    nightly: bool = False
+    goal_per_area: float | None = None
+
+
+def _points(ctx: _Ctx) -> list[kh.WeekPoint]:
+    """The cycle's weeks for this metric, whichever form it is asked on."""
+    if ctx.nightly:
+        return kh.daily_series(ctx.areas, ctx.metric, ctx.cycle,
+                               goal_per_area=ctx.goal_per_area, today=ctx.today)
+    return kh.weekly_series(ctx.areas, ctx.metric, ctx.cycle, today=ctx.today)
+
+
+def _twin_points(ctx: _Ctx) -> list[float | None] | None:
+    if not ctx.prev:
+        return None
+    if ctx.nightly:
+        return kh.daily_twin(ctx.areas, ctx.metric, ctx.cycle, ctx.prev)
+    return kh.twin_weekly(ctx.areas, ctx.metric, ctx.cycle, ctx.prev)
+
+
+def _cycle_points(ctx: _Ctx) -> list[kh.CyclePoint]:
+    if ctx.nightly:
+        return kh.daily_cycle_series(ctx.areas, ctx.metric,
+                                     goal_per_area=ctx.goal_per_area,
+                                     today=ctx.today)
+    return kh.cycle_series(ctx.areas, ctx.metric, today=ctx.today)
+
+
+def _goal_label(ctx: _Ctx) -> str:
+    return (t("Weekly goal") if ctx.nightly else t("Companionships' meta"))
 
 
 def render_ki_strip(current: str | None, *, key: str) -> None:
@@ -151,7 +203,12 @@ def render_ki_strip(current: str | None, *, key: str) -> None:
     keys = list(key_indicator_metrics())
     if not keys:
         return
-    options = keys + ([_CLOSE] if current else [])
+    # A nightly metric is not one of the seven, but the strip is where the
+    # reader sees WHAT is open — so the open one joins the end of the strip
+    # rather than leaving the panel below it apparently unattached. It also has
+    # to be an option at all: st.pills raises on a default it was not given.
+    extra = [current] if current and current not in keys else []
+    options = keys + extra + ([_CLOSE] if current else [])
 
     def _label(k: str) -> str:
         return t("✕ close") if k == _CLOSE else ki_short_label(k)
@@ -192,11 +249,17 @@ def render_ki_drilldown(scope_kind: str, scope_value: str, scope_areas,
                   "there is no cambio to show by week."))
         return True
 
-    totals = group_goal_totals(cycle["start"], set(areas))
-    lead_total = kh.leadership_total(areas, cycle, current, totals=totals)
+    nightly = is_nightly(current)
+    # A nightly metric has no AREA_TRANSFER_GOALS row — that tab is keyed on
+    # the seven Key Indicators — so it is not asked for one.
+    totals = {} if nightly else group_goal_totals(cycle["start"], set(areas))
+    lead_total = (None if nightly
+                  else kh.leadership_total(areas, cycle, current, totals=totals))
     right = t("{n} areas", n=fmt_int(len(areas)))
     if lead_total:
         right += " · " + t("cambio goal {goal}", goal=fmt_int(lead_total))
+    elif nightly:
+        right += " · " + t("from the nightly report")
     render_section_label(t("{metric} · {scope}", metric=label, scope=scope_value),
                          emphasis=True, right=right)
 
@@ -207,7 +270,14 @@ def render_ki_drilldown(scope_kind: str, scope_value: str, scope_areas,
 
     ctx = _Ctx(metric=current, label=label, scope_value=scope_value,
                areas=areas, cycle=cycle, prev=transfer_window(1, today),
-               totals=totals, today=today, key=key)
+               totals=totals, today=today, key=key,
+               nightly=nightly,
+               # AGENT_CONFIG's GOAL_<metric>: one area's target for one week.
+               # The series multiplies it by the areas that actually reported
+               # each week, which is what _resolve_group_goal's third tier does
+               # for the rows on Desgloses — one goal, two places.
+               goal_per_area=(float(get_area_weekly_goals().get(current, 0) or 0)
+                              or None) if nightly else None)
     if tab == TAB_CYCLE:
         _render_cycle(ctx)
     elif tab == TAB_AREA:
@@ -227,12 +297,13 @@ def _week_labels(points: list[kh.WeekPoint]) -> list[str]:
 
 
 def _render_week(ctx: _Ctx) -> None:
-    points = kh.weekly_series(ctx.areas, ctx.metric, ctx.cycle, today=ctx.today)
-    twin = (kh.twin_weekly(ctx.areas, ctx.metric, ctx.cycle, ctx.prev)
-            if ctx.prev else None)
+    points = _points(ctx)
+    twin = _twin_points(ctx)
     if not any(p.actual is not None or p.meta is not None for p in points):
-        st.info(t("No weekly reports yet for cambio {cycle}.",
-                  cycle=_cycle_name(ctx.cycle)))
+        st.info(t("No nightly reports yet for cambio {cycle}.",
+                  cycle=_cycle_name(ctx.cycle)) if ctx.nightly
+                else t("No weekly reports yet for cambio {cycle}.",
+                       cycle=_cycle_name(ctx.cycle)))
         return
 
     cur_i = next((i for i, p in enumerate(points) if p.is_current), None)
@@ -252,7 +323,7 @@ def _render_week(ctx: _Ctx) -> None:
         actual_label=t("Cambio {cycle}", cycle=_cycle_name(ctx.cycle)),
         twin_label=(t("Cambio {cycle}", cycle=_cycle_name(ctx.prev))
                     if ctx.prev else None),
-        goal_label=t("Companionships' meta"),
+        goal_label=_goal_label(ctx),
         mark_label=t("Leadership goal, per week"),
     )
     chart(fig, height=300, key=f"{ctx.key}_week_chart")
@@ -264,15 +335,17 @@ def _render_week(ctx: _Ctx) -> None:
         line += " · " + t("ghost bars: the same weeks of cambio {prev}",
                           prev=_cycle_name(ctx.prev))
     unset = [p for p in points if not p.is_future and p.meta is None]
-    if unset:
+    if unset and not ctx.nightly:
         line += " · " + t("{n} weeks with no meta written", n=fmt_int(len(unset)))
+    elif unset:
+        line += " · " + t("{n} weeks with no report", n=fmt_int(len(unset)))
     st.caption(line)
 
 
 # ── Por cambio ───────────────────────────────────────────────────────────────
 
 def _render_cycle(ctx: _Ctx) -> None:
-    points = kh.cycle_series(ctx.areas, ctx.metric, today=ctx.today)
+    points = _cycle_points(ctx)
     if not points:
         st.info(t("No weekly reports yet in any cambio."))
         return
@@ -292,7 +365,7 @@ def _render_cycle(ctx: _Ctx) -> None:
         pace_index=cur_i, pace_value=pace_value,
         mark=[p.leadership for p in points],
         actual_label=t("Achieved"),
-        goal_label=t("Proposed so far"),
+        goal_label=(t("Goal so far") if ctx.nightly else t("Proposed so far")),
         mark_label=t("Cambio goal"),
     )
     chart(fig, height=300, key=f"{ctx.key}_cycle_chart")
@@ -300,7 +373,11 @@ def _render_cycle(ctx: _Ctx) -> None:
     if cur_i is not None:
         c = points[cur_i]
         parts = []
-        if c.meta_so_far:
+        if c.meta_so_far and ctx.nightly:
+            parts.append(t("{actual} of {goal}",
+                           actual=fmt_int(c.actual or 0),
+                           goal=fmt_int(c.meta_so_far)))
+        elif c.meta_so_far:
             parts.append(t("{actual} of {meta} proposed",
                            actual=fmt_int(c.actual or 0), meta=fmt_int(c.meta_so_far)))
         else:
@@ -317,14 +394,27 @@ def _render_cycle(ctx: _Ctx) -> None:
 
 def _render_area(ctx: _Ctx) -> None:
     end = min(ctx.today, ctx.cycle["end"])
+    if ctx.nightly:
+        # Whole weeks only, and the caption says which day that reaches: an
+        # area's nightly goal is per WEEK, so a week in progress compared
+        # against a whole week's goal reads as a shortfall it has not had time
+        # to avoid. The weekly form has no such problem — its rows only exist
+        # once the week has ended — so this floor is the nightly path's alone.
+        last_sunday = end - timedelta(days=(end.weekday() + 1) % 7)
+        if last_sunday >= ctx.cycle["start"]:
+            end = last_sunday
     window = (ctx.cycle["start"], end)
     twin_window = None
     if ctx.prev:
         twin_window = (ctx.prev["start"],
                        min(ctx.prev["end"], ctx.prev["start"] + (end - ctx.cycle["start"])))
     daily = get_daily_log((ctx.today - ctx.cycle["start"]).days + 7)
-    rows = kh.area_rows(ctx.areas, ctx.metric, window, twin_window,
-                        daily=daily, today=ctx.today)
+    rows = (kh.daily_area_rows(ctx.areas, ctx.metric, window, twin_window,
+                               daily=daily, goal_per_area=ctx.goal_per_area,
+                               today=ctx.today)
+            if ctx.nightly else
+            kh.area_rows(ctx.areas, ctx.metric, window, twin_window,
+                         daily=daily, today=ctx.today))
     if not rows:
         st.info(t("MISSION_ORG lists no active areas for {scope}.", scope=ctx.scope_value))
         return
@@ -333,10 +423,12 @@ def _render_area(ctx: _Ctx) -> None:
     for r in rows:
         sub = []
         if not r.reported:
-            sub.append(t("no weekly report"))
+            sub.append(t("no nightly report") if ctx.nightly
+                       else t("no weekly report"))
         elif r.meta:
-            sub.append(t("meta {meta}", meta=fmt_int(r.meta)))
-        else:
+            sub.append(t("goal {goal}", goal=fmt_int(r.meta)) if ctx.nightly
+                       else t("meta {meta}", meta=fmt_int(r.meta)))
+        elif not ctx.nightly:
             sub.append(t("no meta written"))
         if r.reported:
             sub.append(t("1 week") if r.weeks_reported == 1
@@ -358,9 +450,13 @@ def _render_area(ctx: _Ctx) -> None:
         })
     top = max([r.pct for r in rows if r.pct is not None] + [100.0])
     st.markdown(ranked_list(items, bar_max=top), unsafe_allow_html=True)
-    line = t("Ranked by % of the companionships' own meta, cambio {cycle} "
-             "through {day}. Tap an area to open it on Desgloses.",
-             cycle=_cycle_name(ctx.cycle), day=fmt_day_month(end))
+    line = (t("Ranked by % of each area's weekly goal, cambio {cycle} through "
+              "{day}. Tap an area to open it on Desgloses.",
+              cycle=_cycle_name(ctx.cycle), day=fmt_day_month(end))
+            if ctx.nightly else
+            t("Ranked by % of the companionships' own meta, cambio {cycle} "
+              "through {day}. Tap an area to open it on Desgloses.",
+              cycle=_cycle_name(ctx.cycle), day=fmt_day_month(end)))
     if ctx.prev:
         line += " " + t("The arrow compares the same weeks of cambio {prev}.",
                         prev=_cycle_name(ctx.prev))
@@ -370,13 +466,12 @@ def _render_area(ctx: _Ctx) -> None:
 # ── Tabla ────────────────────────────────────────────────────────────────────
 
 def _week_frame(ctx: _Ctx) -> pd.DataFrame:
-    points = kh.weekly_series(ctx.areas, ctx.metric, ctx.cycle, today=ctx.today)
-    twin = (kh.twin_weekly(ctx.areas, ctx.metric, ctx.cycle, ctx.prev)
-            if ctx.prev else [None] * len(points))
+    points = _points(ctx)
+    twin = _twin_points(ctx) or [None] * len(points)
     return pd.DataFrame({
         t("Week"): [f"{fmt_day_month(p.start)} – {fmt_day_month(p.end)}" for p in points],
         t("Achieved"): [p.actual for p in points],
-        t("Meta"): [p.meta for p in points],
+        (t("Goal") if ctx.nightly else t("Meta")): [p.meta for p in points],
         t("Areas reporting"): [p.reporting for p in points],
         t("Previous cambio"): twin,
     })

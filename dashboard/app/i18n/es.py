@@ -2967,6 +2967,25 @@ ES: dict[str, str] = {
         "ocho semanas completas. Pase el cursor sobre una fila para ver a "
         "cuánto va camino de llegar.",
 
+
+    # ── The drill-down, opened on a NIGHTLY metric (plan step D3) ────────────
+    # Same four tabs as a Key Indicator's, with the one difference that
+    # matters: the goal is AGENT_CONFIG's per-area weekly figure, not a meta
+    # the companionships wrote or a transfer goal leadership set.
+    "Weekly goal": "Meta semanal",
+    "Goal so far": "Meta hasta hoy",
+    "from the nightly report": "del informe nocturno",
+    "No nightly reports yet for cambio {cycle}.":
+        "Todavía no hay informes nocturnos del cambio {cycle}.",
+    "{n} weeks with no report": "{n} semanas sin informe",
+    "{actual} of {goal}": "{actual} de {goal}",
+    "goal {goal}": "meta {goal}",
+    "no nightly report": "sin informe nocturno",
+    "Ranked by % of each area's weekly goal, cambio {cycle} through {day}. "
+    "Tap an area to open it on Desgloses.":
+        "Ordenado por % de la meta semanal de cada área, cambio {cycle} hasta "
+        "el {day}. Toque un área para abrirla en Desgloses.",
+
     # ── Panel §2: the year against the baptismal goal ────────────────────────
     "{year} Baptisms": "Bautismos {year}",
     "certified through {month}": "certificado hasta {month}",

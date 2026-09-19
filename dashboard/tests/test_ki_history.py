@@ -16,6 +16,7 @@ import pytest
 from app.analytics.ki_history import (
     AreaRow, CyclePoint, WeekPoint,
     area_rows, cycle_position, cycle_series, cycle_weeks,
+    daily_area_rows, daily_cycle_series, daily_series, daily_twin,
     leadership_total, leadership_weekly_mark, meta_key, sundays_between,
     twin_weekly, weekly_series,
 )
@@ -249,3 +250,104 @@ def test_leadership_weekly_mark_is_the_total_over_the_cycles_real_weeks():
 def test_no_leadership_goal_is_none_not_zero():
     assert leadership_weekly_mark({"A"}, CUR, METRIC, totals={}) is None
     assert leadership_weekly_mark({"A"}, CUR, METRIC, totals={METRIC: 0}) is None
+
+
+# ── The nightly series (plan step D3) ────────────────────────────────────────
+# The twenty nightly rows on Desgloses open the same drill-down the seven Key
+# Indicators do, so DAILY_LOG is bucketed into Mon–Sun weeks and read exactly
+# like the weekly form. The goal is the one real difference: a nightly metric
+# has no meta and no transfer goal, only AGENT_CONFIG's per-area weekly figure.
+
+NIGHT = "contacts_made"
+
+
+def _nights(rows) -> pd.DataFrame:
+    """rows: (date, area, value) → the frame get_daily_log returns."""
+    return pd.DataFrame([
+        {"Date": d, "Area": a, NIGHT: v, "friend_lessons": 1}
+        for d, a, v in rows
+    ])
+
+
+def test_nights_are_bucketed_into_the_missions_monday_to_sunday_weeks():
+    """Week 1 of cambio 2026-6 is Mon 7 – Sun 13 September. Three nights of it
+    from two areas is one point, not six."""
+    daily = _nights([("2026-09-07", "A", 5), ("2026-09-08", "A", 4),
+                     ("2026-09-13", "B", 3),
+                     ("2026-09-14", "A", 99)])   # the next week
+    points = daily_series({"A", "B"}, NIGHT, CUR, daily=daily, today=TODAY)
+    assert points[0].actual == 12
+    assert points[0].reporting == 2
+    assert points[1].actual == 99
+
+
+def test_a_week_nobody_filed_is_none_not_zero():
+    """The same rule the weekly series follows: a week with no report is a
+    week with no report, and drawing it as a zero reads as a collapse."""
+    daily = _nights([("2026-09-07", "A", 5)])
+    points = daily_series({"A", "B"}, NIGHT, CUR, daily=daily, today=TODAY)
+    assert points[0].actual == 5
+    assert points[1].actual is None and points[1].reporting == 0
+
+
+def test_the_goal_is_the_per_area_figure_times_who_reported():
+    """AGENT_CONFIG holds one area's weekly target. A week two of the scope's
+    areas reported is held to two areas' worth of it — not to the whole
+    scope's, which would grade a thin week as a failure."""
+    daily = _nights([("2026-09-07", "A", 5), ("2026-09-08", "B", 4)])
+    points = daily_series({"A", "B", "C"}, NIGHT, CUR, daily=daily,
+                          goal_per_area=30.0, today=TODAY)
+    assert points[0].meta == 60.0
+    assert points[0].meta_set_by == 2
+
+
+def test_no_per_area_goal_means_no_goal_at_all():
+    """A metric AGENT_CONFIG has no GOAL_ row for draws bars and no dash,
+    exactly as a Key Indicator week nobody wrote a meta for does."""
+    daily = _nights([("2026-09-07", "A", 5)])
+    points = daily_series({"A"}, NIGHT, CUR, daily=daily, today=TODAY)
+    assert points[0].meta is None and points[0].meta_set_by == 0
+
+
+def test_the_twin_is_the_previous_cambios_weeks_at_the_same_indices():
+    daily = _nights([("2026-07-27", "A", 7),    # 2026-5, week 1
+                     ("2026-09-07", "A", 9)])   # 2026-6, week 1
+    twin = daily_twin({"A"}, NIGHT, CUR, PREV, daily=daily)
+    assert twin[0] == 7
+    assert twin[1] is None
+
+
+def test_a_cambio_with_no_nights_at_all_is_left_out():
+    daily = _nights([("2026-09-07", "A", 5)])
+    cycles = daily_cycle_series({"A"}, NIGHT, cycles=[OLD, PREV, CUR],
+                                daily=daily, goal_per_area=30.0, today=TODAY)
+    assert [c.number for c in cycles] == ["2026-6"]
+    assert cycles[0].actual == 5
+    assert cycles[0].leadership is None   # AREA_TRANSFER_GOALS is KI-only
+
+
+def test_areas_are_ranked_by_percent_of_their_own_weekly_goal():
+    """B files half as many nights as A and does less on each, so it ranks
+    below — and an area that filed nothing is still a row that says so."""
+    daily = _nights([("2026-09-07", "A", 20), ("2026-09-08", "A", 20),
+                     ("2026-09-07", "B", 5)])
+    rows = {r.area: r for r in daily_area_rows(
+        {"A", "B", "C"}, NIGHT, (date(2026, 9, 7), date(2026, 9, 13)),
+        daily=daily, goal_per_area=30.0, today=TODAY)}
+    assert rows["A"].actual == 40 and rows["A"].meta == 30 and rows["A"].pct > 100
+    assert rows["B"].actual == 5
+    assert rows["C"].reported is False and rows["C"].meta is None
+    assert [r.area for r in daily_area_rows(
+        {"A", "B", "C"}, NIGHT, (date(2026, 9, 7), date(2026, 9, 13)),
+        daily=daily, goal_per_area=30.0, today=TODAY)] == ["A", "B", "C"]
+
+
+def test_the_ranking_counts_missed_nights_from_the_raw_log():
+    """The weeks come from the buckets; a missed NIGHT is only visible one row
+    per night, and on a nightly metric it is the first thing a leader asks."""
+    daily = _nights([("2026-09-14", "A", 5), ("2026-09-15", "A", 5)])
+    rows = {r.area: r for r in daily_area_rows(
+        {"A"}, NIGHT, (date(2026, 9, 14), date(2026, 9, 20)),
+        daily=daily, today=TODAY)}
+    # Mon 14 – Thu 17 are due (today is Fri 18); A filed two of them.
+    assert rows["A"].nights_missed == 2

@@ -906,3 +906,47 @@ landed in the same push).
   links yet — the drill-down only accepts the seven Key Indicators, and a
   link to a panel that refuses to open is worse than no link; the nightly
   drill-down is the next commit, and it is what makes them clickable.
+- 2026-09-19 — **D3 landed, the drill-down half. Step D3 is complete.** The
+  twenty nightly rows are links: `?ki=<nightly key>` opens the same panel the
+  seven Key Indicators open, with all four tabs. The plan's "same shape, so B2
+  renders it unchanged" turned out to be exactly right, and the way to get it
+  was to bucket DAILY_LOG into Mon–Sun weeks and then read it with the
+  functions that already exist — `ki_history._load_daily` returns the
+  weekly-form SHAPE (one row per area per week, `area` + `week_end_date`), and
+  `daily_series` / `daily_twin` / `daily_cycle_series` / `daily_area_rows`
+  return the same `WeekPoint` / `CyclePoint` / `AreaRow` the weekly ones do.
+  `ki_drilldown` gained four one-line accessors (`_points`, `_twin_points`,
+  `_cycle_points`, `_goal_label`) and every chart, caption and ranking under
+  them is the one that was already there. Decisions: (a) **the goal is
+  AGENT_CONFIG's per-area weekly figure times the areas that REPORTED that
+  week** — the same arithmetic `_resolve_group_goal`'s third tier does for the
+  rows, so "18% de 20.250" on the row and the amber dash in the panel are one
+  quantity; a week two areas filed is not held to forty-five areas' goal;
+  (b) a nightly metric asks for NO transfer goal — AREA_TRANSFER_GOALS is keyed
+  on the seven, so reading it would be a sheet call that can only return
+  nothing; the header says "del informe nocturno" where a KI says "meta del
+  cambio N"; (c) the open nightly metric joins the END of the pills strip (it
+  must be an option at all — `st.pills` raises on a default it was not given —
+  and the seven do not move aside for a row someone tapped); (d) "Por área"
+  on a nightly metric ends on the last complete SUNDAY, because an area's
+  nightly goal is per week and half a week against a whole week's goal reads
+  as a shortfall it has not had time to avoid. **One bug the tests caught
+  before the app did:** `daily_cycle_series` buckets once and hands the frame
+  down, and `_load_daily` re-bucketed it, found no Date column and returned
+  nothing — "Por cambio" would have been empty for every nightly metric. It is
+  idempotent now. Verified live at 1400px: `?ki=contacts_made` opens
+  "CONTACTOS · CHILE CONCEPCIÓN SOUTH MISSION · 45 áreas · del informe
+  nocturno" with S1 2.133 / S2 1.487 against a 3.100 weekly goal and cambio
+  2026-5 as ghosts; Por área ranks 45 areas by % of a 75/week goal with their
+  missed nights; Por cambio reads "223 de 425 · 2 de 6 semanas informadas" at
+  zone scope; the Tabla and its CSV carry six weeks. At 375px zero sideways
+  scroll. Suite **11 failed / 1176 passed** (the same 11):
+  `tests/test_ki_history.py` +8, `tests/test_ki_drilldown.py` +7, and
+  `test_a_key_that_is_not_a_key_indicator_closes_the_panel` was renamed and
+  re-pointed — its example, `contacts_made`, is a legitimate target now, so it
+  uses a key that exists on neither form. Its fixture gained real nights, and
+  area B files one night a week where A files every night, so the rankings and
+  the missed-night counts have two areas to tell apart.
+  **Worth not re-deriving:** two `navigate` calls to the same URL in quick
+  succession leave the previous render in the DOM, and every count on the page
+  reads double. It is the reader, not the page.

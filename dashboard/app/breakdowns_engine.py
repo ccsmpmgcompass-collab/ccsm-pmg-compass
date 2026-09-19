@@ -2275,6 +2275,11 @@ def render_group_breakdown(
 
             _row["rank"] = ""   # a fixed list, not a ranking — see _NIGHT_GROUPS
             _row["title"] = " · ".join([_row["name"]] + [d for d in _details if d])
+            # The row opens the same drill-down a Key Indicator card does; the
+            # panel reads DAILY_LOG bucketed into weeks for a nightly metric
+            # (ki_history.daily_series). The link carries the scope so the full
+            # reload it causes lands back here.
+            _row["href"] = ki_href(_key, _ki_scope_params)
             _night_rows[_key] = _row
 
         # ── The heading ──────────────────────────────────────────────────────
