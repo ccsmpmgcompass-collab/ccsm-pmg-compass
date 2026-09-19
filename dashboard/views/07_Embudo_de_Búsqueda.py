@@ -23,8 +23,8 @@ from app.ingestion.tableau_detail_transform import clean_detail
 from app.ingestion.tableau_summary_parser import baptisms_rows, parse_summary_pdf
 from app.ingestion.transfer_apply_service import pilot_zones
 from app.ingestion.tableau_upload import (
-    describe_replacement, merge_baptism_rows, read_tabular, summarize_months,
-    upload_token,
+    describe_replacement, is_provisional, merge_baptism_rows, read_tabular,
+    summarize_months, upload_token,
 )
 from app.analytics.finding_funnel import (
     DEFAULT_PRESET, FUNNEL_STAGES, PRESET_LABELS, PRESETS, REFERRED_STAGE,
@@ -318,6 +318,18 @@ if summary_file:
                              "holds {total} months · {span}",
                              n=len(parsed), total=len(merged),
                              span=summarize_months(merged["month"])))
+                # A month-to-date export is stored, but it must never be
+                # mistaken for the finished month — the strict readers hide it
+                # and the reader deserves to know why the figure they just
+                # uploaded is not going to appear on the Panel's annual line.
+                for _s in parsed:
+                    if is_provisional(_s.month, _s.end_date):
+                        st.info(t("{month} is a month-to-date capture ({start} "
+                                  "to {end}), stored as partial. It is left out "
+                                  "of certified monthly figures until the "
+                                  "finished month is exported.",
+                                  month=_s.month, start=_s.start_date,
+                                  end=_s.end_date))
             except Exception as e:
                 st.error(t("Could not save baptism counts: {err}", err=e))
         for msg in failed:
@@ -439,10 +451,11 @@ stage_counts = compute_funnel_stage_counts(det_df)
 # Detail's confirmation_date (the funnel's "Baptized" stage below). Detail only
 # has a row for people whose finding record made it into the app, so it
 # undercounts anyone baptized before that tracking caught up — found live:
-# 301 tracked vs. 403 certified over one full year. Only available when the
-# selected range is a whole number of calendar months, since the PDFs are
-# monthly; see get_baptisms_actual_for_range's docstring for why a partial
-# sum is refused rather than silently returned.
+# 301 tracked vs. 403 certified over one full year. Available for a whole
+# number of calendar months, and — since 2026-09-19 — for one other window:
+# the exact one a stored export was itself run for, which is the certified
+# figure for precisely those days rather than a partial sum of anything. Every
+# other window still shows a dash; see get_baptisms_actual_for_range.
 official_baptisms = get_baptisms_actual_for_range(sel_start, sel_end)
 
 found = len(det_df)
@@ -508,9 +521,10 @@ render_section_label(
     t("Finding snapshot"), emphasis=True, right=_window_note,
     info=t("Every number here counts people whose finding event falls inside "
            "the selected window, from the Detail export. Official Baptisms is "
-           "the exception: it comes from Tableau's own certified monthly "
-           "summary PDFs, so it can only answer for a range of whole calendar "
-           "months — any other window shows a dash rather than a wrong total."),
+           "the exception: it comes from Tableau's own certified summary PDFs, "
+           "so it answers for whole calendar months, or for the exact window "
+           "one of those exports was run for — any other window shows a dash "
+           "rather than a wrong total."),
 )
 render_kpi_row([
     {"label": t("People Found"),      "value": int(found)},
@@ -521,7 +535,7 @@ render_kpi_row([
     {"label": t("Official Baptisms"),
      "value": int(official_baptisms) if official_baptisms is not None else "—",
      "note": (t("Certified — Tableau summary PDF") if official_baptisms is not None
-              else t("Whole calendar months only"))},
+              else t("Whole months, or an exact export window"))},
 ])
 
 

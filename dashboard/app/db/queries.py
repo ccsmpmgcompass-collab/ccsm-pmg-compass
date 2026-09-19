@@ -3481,21 +3481,77 @@ def get_baptisms_actual(month_start: str) -> int | None:
     goals_queries.py). Returns None if no capture has run for that month yet
     (e.g. before this feature existed, or the scheduled job hasn't caught up) —
     callers should fall back to the gate proxy in that case.
+
+    **A PROVISIONAL row also returns None** (2026-09-19). Since the tab began
+    recording the window each export was run for, a row can describe part of a
+    month — and every caller here was written expecting a whole one. Handing
+    back a month-to-date figure would be a silent undercount of exactly the kind
+    get_baptisms_actual_for_range exists to refuse. Callers that genuinely want
+    the partial ask for it by name, through get_baptisms_capture().
+    """
+    from app.ingestion.tableau_upload import is_provisional
+    month_key = str(month_start)[:7]  # 'YYYY-MM'
+    rec = _baptism_capture_row(month_key)
+    if rec is None:
+        return None
+    count, _start, end = rec
+    if is_provisional(month_key, end):
+        return None
+    return count
+
+
+def _baptism_capture_row(month_key: str):
+    """The MISSION capture for 'YYYY-MM' as ``(count, start_date, end_date)``.
+
+    ``None`` when there is no row or its count will not parse. The date cells
+    come back as '' when the columns are absent, which is every row written
+    before 2026-09-19 — see ``tableau_upload.effective_end`` for why a blank
+    reads as a whole month rather than as unknown.
     """
     df = read_tab("TABLEAU_BAPTISMS")
-    if df.empty or "month" not in df.columns:
+    if df.empty or "month" not in df.columns or "zone" not in df.columns:
         return None
-    month_key = str(month_start)[:7]  # 'YYYY-MM'
     match = df[(df["zone"] == "MISSION") & (df["month"].astype(str) == month_key)]
     if match.empty:
         return None
+    row = match.iloc[-1]
     try:
-        return int(float(match.iloc[-1]["baptisms"]))
-    except (ValueError, TypeError):
+        count = int(float(row["baptisms"]))
+    except (ValueError, TypeError, KeyError):
         return None
 
+    def _cell(key: str) -> str:
+        if key not in match.columns:
+            return ""
+        text = str(row[key]).strip()
+        return "" if text.lower() in ("nan", "none", "nat") else text
 
-def get_mission_baptisms_by_month() -> dict[str, int]:
+    return count, _cell("start_date"), _cell("end_date")
+
+
+def get_baptisms_capture(month: str) -> dict | None:
+    """The full certified capture for a month, partial ones included.
+
+    ``{"baptisms", "start_date", "end_date", "provisional"}`` or None. This is
+    the deliberate way to read a month-to-date figure: get_baptisms_actual()
+    refuses one on purpose, so a caller that wants it has to say so and is
+    therefore obliged to label it.
+    """
+    from app.ingestion.tableau_upload import is_provisional
+    month_key = str(month)[:7]
+    rec = _baptism_capture_row(month_key)
+    if rec is None:
+        return None
+    count, start, end = rec
+    return {
+        "baptisms": count,
+        "start_date": start,
+        "end_date": end,
+        "provisional": is_provisional(month_key, end),
+    }
+
+
+def get_mission_baptisms_by_month(include_provisional: bool = False) -> dict[str, int]:
     """Every certified mission-wide monthly baptism figure TABLEAU_BAPTISMS
     holds, as ``{"YYYY-MM": count}``.
 
@@ -3509,16 +3565,31 @@ def get_mission_baptisms_by_month() -> dict[str, int]:
 
     A row whose count will not parse is skipped rather than counted as zero: a
     month that failed to capture is not a month with no baptisms.
+
+    **Provisional months are excluded unless asked for** (2026-09-19). The
+    annual chart draws this series cumulatively, and a month-to-date figure
+    plotted as an ordinary point renders the current month as a collapse — the
+    line drops to a fifth of its usual step every time the page is opened
+    mid-month. The Panel fetches the partial separately and draws it as the
+    open-ended thing it is.
     """
+    from app.ingestion.tableau_upload import is_provisional
     df = read_tab("TABLEAU_BAPTISMS")
     if df.empty or "month" not in df.columns or "zone" not in df.columns:
         return {}
     mission = df[df["zone"].astype(str).str.strip() == "MISSION"]
+    has_end = "end_date" in df.columns
     out: dict[str, int] = {}
     for _, r in mission.iterrows():
         key = str(r.get("month", "")).strip()[:7]
         if len(key) != 7:
             continue
+        if not include_provisional and has_end:
+            end = str(r.get("end_date", "") or "").strip()
+            if end.lower() in ("nan", "none", "nat"):
+                end = ""
+            if is_provisional(key, end):
+                continue
         try:
             out[key] = int(float(str(r.get("baptisms", "")).strip()))
         except (ValueError, TypeError):
@@ -3538,11 +3609,24 @@ def get_baptisms_actual_for_range(start_date, end_date) -> int | None:
     stage, which counts Detail's confirmation_date instead and was found to
     disagree with Tableau's own certified number by ~25% over a full year).
 
+    **One window that is not a whole month CAN be answered** (2026-09-19): the
+    one a stored capture was itself run for. If TABLEAU_BAPTISMS holds a row
+    whose recorded start and end match the request exactly, that row IS the
+    certified figure for exactly these days — there is no partial sum and
+    nothing to undercount. Every other non-month window still returns None.
+
     start_date/end_date: date or 'YYYY-MM-DD' string.
     """
     from app.analytics.finding_funnel import full_month_range
     start = start_date if isinstance(start_date, date) else date.fromisoformat(str(start_date)[:10])
     end = end_date if isinstance(end_date, date) else date.fromisoformat(str(end_date)[:10])
+
+    rec = _baptism_capture_row(f"{start.year:04d}-{start.month:02d}")
+    if rec is not None:
+        count, r_start, r_end = rec
+        if (r_start[:10], r_end[:10]) == (start.isoformat(), end.isoformat()):
+            return count
+
     if not full_month_range(start, end):
         return None
     total = 0

@@ -9,6 +9,7 @@ be tested without a browser or a network.
 
 from __future__ import annotations
 
+import calendar
 import re
 from datetime import date
 
@@ -22,8 +23,17 @@ from app.ingestion.tableau_detail_transform import normalize_headers
 EXCEL_SUFFIXES = (".xlsx", ".xlsm", ".xls")
 CSV_SUFFIXES = (".csv", ".txt", ".tsv")
 
-#: TABLEAU_BAPTISMS' contract, per get_baptisms_actual().
-BAPTISM_COLUMNS = ("zone", "month", "baptisms")
+#: TABLEAU_BAPTISMS' contract, per get_baptisms_actual(). The last two are
+#: additive (2026-09-19): they record the window the export was actually run
+#: for, so a month-to-date capture stops being indistinguishable from a
+#: finished month. "Provisional" is derived from them, never stored.
+BAPTISM_COLUMNS = ("zone", "month", "baptisms", "start_date", "end_date")
+
+#: What a row must have to be READ at all. Deliberately NOT BAPTISM_COLUMNS:
+#: the 31 rows already on the live tab predate the date columns, and requiring
+#: those here would make _stored_baptism_rows() return nothing and the next
+#: merge silently wipe two and a half years of history.
+BAPTISM_CORE_COLUMNS = ("zone", "month", "baptisms")
 
 _MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
 
@@ -108,17 +118,54 @@ def describe_replacement(existing: pd.DataFrame, incoming: pd.DataFrame) -> dict
     }
 
 
+def month_last_day(month: str) -> date:
+    """The last calendar day of a 'YYYY-MM' month."""
+    y, m = int(month[:4]), int(month[5:7])
+    return date(y, m, calendar.monthrange(y, m)[1])
+
+
+def effective_end(month: str, end_date: str) -> date:
+    """The day a stored row actually reaches, for comparing two captures.
+
+    **A blank ``end_date`` means the whole month**, not "unknown" and certainly
+    not "day zero". Every row written before 2026-09-19 has no dates and every
+    one of them is a finished month, so a blank has to rank as maximally
+    complete — otherwise the first month-to-date upload would out-rank all 31
+    of them and overwrite real history with a partial.
+    """
+    raw = str(end_date or "").strip()[:10]
+    if not raw:
+        return month_last_day(month)
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return month_last_day(month)
+
+
+def is_provisional(month: str, end_date: str) -> bool:
+    """True when a row stops short of its month's last day."""
+    return effective_end(month, end_date) < month_last_day(month)
+
+
 def _stored_baptism_rows(existing: pd.DataFrame) -> list[list]:
     """The real rows out of a TABLEAU_BAPTISMS read.
 
     read_tab() hands back the metadata row save_dataframe stamps at the top as
     ordinary data, so rows are kept only when ``month`` looks like YYYY-MM.
+
+    Rows are normalised to the full five columns. Missing date columns read as
+    empty strings rather than being rejected: see BAPTISM_CORE_COLUMNS for why
+    requiring them would be a history-destroying bug.
     """
     if existing is None or existing.empty:
         return []
     cols = {c.lower(): c for c in existing.columns}
-    if not all(c in cols for c in BAPTISM_COLUMNS):
+    if not all(c in cols for c in BAPTISM_CORE_COLUMNS):
         return []
+
+    def _opt(r, key: str) -> str:
+        return str(r[cols[key]]).strip() if key in cols else ""
+
     rows = []
     for _, r in existing.iterrows():
         month = str(r[cols["month"]]).strip()
@@ -128,7 +175,8 @@ def _stored_baptism_rows(existing: pd.DataFrame) -> list[list]:
             count = int(float(str(r[cols["baptisms"]]).strip()))
         except (ValueError, TypeError):
             continue
-        rows.append([str(r[cols["zone"]]).strip(), month, count])
+        rows.append([str(r[cols["zone"]]).strip(), month, count,
+                     _opt(r, "start_date"), _opt(r, "end_date")])
     return rows
 
 
@@ -140,8 +188,16 @@ def merge_baptism_rows(existing: pd.DataFrame, new_rows) -> pd.DataFrame:
     both wins from the new upload — a re-download of a month is the corrected
     version of it.
 
-    Rows are (zone, month, baptisms) as ``baptisms_rows()`` produces them.
-    Sorted by month within zone so the tab reads chronologically.
+    Rows are (zone, month, baptisms, start_date, end_date) as
+    ``baptisms_rows()`` produces them. Sorted by month within zone so the tab
+    reads chronologically.
+
+    **A narrower capture never beats a wider one.** New wins on ties, but for
+    one (zone, month) the row reaching the later day is the one kept, so
+    uploading Sep 1-5 cannot clobber a finished September. This is the
+    baptism-side twin of the ``narrower`` check ``describe_replacement()``
+    already performs for the Detail export, and it is what makes a repeated
+    month-to-date capture safe to run unattended.
     """
     merged: dict[tuple, list] = {}
     for row in _stored_baptism_rows(existing):
@@ -150,7 +206,12 @@ def merge_baptism_rows(existing: pd.DataFrame, new_rows) -> pd.DataFrame:
         zone, month, count = str(row[0]).strip(), str(row[1]).strip(), int(row[2])
         if not _MONTH_RE.match(month):
             raise UploadError(f"'{month}' is not a YYYY-MM month key")
-        merged[(zone, month)] = [zone, month, count]
+        start = str(row[3]).strip() if len(row) > 3 else ""
+        end = str(row[4]).strip() if len(row) > 4 else ""
+        prior = merged.get((zone, month))
+        if prior is not None and effective_end(month, end) < effective_end(month, prior[4]):
+            continue  # the stored capture reaches further; keep it
+        merged[(zone, month)] = [zone, month, count, start, end]
     ordered = [merged[k] for k in sorted(merged, key=lambda k: (k[0], k[1]))]
     return pd.DataFrame(ordered, columns=list(BAPTISM_COLUMNS))
 

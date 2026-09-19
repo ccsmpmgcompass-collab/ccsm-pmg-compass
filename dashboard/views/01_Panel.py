@@ -34,6 +34,7 @@ from app.i18n.formats import (
 from app.components.charts import GOAL_LINE, MAGNITUDE
 from app.config.theme import DIM, INK, MUTED, SERIES_COLORS, STATUS
 from app.db.queries import (
+    get_baptisms_capture,
     get_mission_baptisms_by_month,
     get_mission_totals,
     get_zone_totals,
@@ -850,9 +851,25 @@ if _ab_monthly:
         # stopped rather than an export that has not run.
         _ab_last = fmt_month_abbr(_ab_n)
 
+        # The month in progress, if the last export stopped inside one. Kept
+        # out of _ab_series on purpose (get_mission_baptisms_by_month hides
+        # provisional rows): folded into the solid cumulative line, a
+        # month-to-date figure reads as a collapse for the whole of every
+        # month. It is drawn as its own dotted, hollow-markered segment below.
+        _ab_mtd = None
+        if _ab_n < ab.MONTHS_IN_YEAR:
+            _cap = get_baptisms_capture(f"{_ab_year:04d}-{_ab_n + 1:02d}")
+            if _cap and _cap["provisional"]:
+                _ab_mtd = _cap
+
+        _ab_right = t("certified through {month}", month=_ab_last)
+        if _ab_mtd:
+            _ab_right += " · " + t("{month} to date",
+                                   month=fmt_month_abbr(_ab_n + 1))
+
         render_section_label(
             t("{year} Baptisms", year=_ab_year), emphasis=True,
-            right=t("certified through {month}", month=_ab_last),
+            right=_ab_right,
             info=t(
                 "Certified monthly totals from the Tableau export, counted "
                 "cumulatively against the mission's annual goal. The dashed "
@@ -925,6 +942,25 @@ if _ab_monthly:
             hovertemplate="%{y:.0f}<extra>" + str(_ab_year) + "</extra>",
             cliponaxis=False,
         ))
+        # The month in progress: one dotted segment reaching from the last
+        # certified point to a hollow marker. Hollow and dotted because the
+        # point will move — it is however far the last export got into the
+        # month, not the month. Nones either side leave a gap Plotly does not
+        # bridge, so only this one segment draws.
+        if _ab_mtd:
+            _mtd_y = [None] * ab.MONTHS_IN_YEAR
+            _mtd_y[_ab_n - 1] = _ab_series[_ab_n - 1]
+            _mtd_y[_ab_n] = _ab_series[_ab_n - 1] + _ab_mtd["baptisms"]
+            fig_ab.add_trace(go.Scatter(
+                x=_ab_x, y=_mtd_y, mode="lines+markers",
+                name=t("Month to date"),
+                line=dict(color=MAGNITUDE, width=3, dash="dot"),
+                marker=dict(size=9, symbol="circle-open",
+                            line=dict(color=MAGNITUDE, width=2)),
+                hovertemplate="%{y:.0f}<extra>" + t(
+                    "through {date}", date=_ab_mtd["end_date"]) + "</extra>",
+                cliponaxis=False,
+            ))
         fig_ab.update_layout(
             xaxis=dict(type="category"),
             yaxis=dict(title=t("Baptisms, cumulative"), rangemode="tozero"),

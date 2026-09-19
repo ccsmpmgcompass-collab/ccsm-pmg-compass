@@ -540,16 +540,27 @@ ES: dict[str, str] = {
     "Finding snapshot": "Resumen de búsqueda",
     "Every number here counts people whose finding event falls inside "
     "the selected window, from the Detail export. Official Baptisms is "
-    "the exception: it comes from Tableau's own certified monthly "
-    "summary PDFs, so it can only answer for a range of whole calendar "
-    "months — any other window shows a dash rather than a wrong total.":
+    "the exception: it comes from Tableau's own certified summary PDFs, "
+    "so it answers for whole calendar months, or for the exact window "
+    "one of those exports was run for — any other window shows a dash "
+    "rather than a wrong total.":
         "Cada cifra aquí cuenta personas cuyo evento de búsqueda cae dentro de "
         "la ventana elegida, según la exportación Detail. Bautismos Oficiales "
-        "es la excepción: proviene de los PDF resumen mensuales certificados "
-        "de Tableau, así que solo puede responder por un rango de meses "
-        "calendario completos — cualquier otra ventana muestra un guion en "
-        "lugar de un total equivocado.",
-    "Whole calendar months only": "Solo meses calendario completos",
+        "es la excepción: proviene de los PDF resumen certificados de Tableau, "
+        "así que responde por meses calendario completos, o por la ventana "
+        "exacta para la que se corrió una de esas exportaciones — cualquier "
+        "otra ventana muestra un guion en lugar de un total equivocado.",
+    "Whole months, or an exact export window":
+        "Meses completos, o la ventana exacta de una exportación",
+    # The window a capture was run for (2026-09-19). A month-to-date export is
+    # stored but deliberately invisible to the certified monthly figures, and
+    # the uploader is told so rather than left wondering where it went.
+    "{month} is a month-to-date capture ({start} to {end}), stored as "
+    "partial. It is left out of certified monthly figures until the "
+    "finished month is exported.":
+        "{month} es una captura del mes hasta la fecha ({start} al {end}), "
+        "guardada como parcial. Queda fuera de las cifras mensuales "
+        "certificadas hasta que se exporte el mes terminado.",
     # E3/E4: the pipeline, the mix and the two ranked lists
     "largest drop": "mayor caída",
     "{n} people found": "{n} personas encontradas",
@@ -1163,6 +1174,9 @@ ES: dict[str, str] = {
 
     # ── Panel §3b: the year against the baptismal goal (2026-09-03) ──────────
     "{year} Baptisms — Year to Date": "Bautismos {year} — Acumulado del Año",
+    "Month to date": "Mes hasta la fecha",
+    "{month} to date": "{month} hasta la fecha",
+    "through {date}": "hasta el {date}",
     "Baptisms, cumulative": "Bautismos, acumulado",
     "Goal pace ({goal})": "Ritmo meta ({goal})",
     "goal pace": "ritmo meta",

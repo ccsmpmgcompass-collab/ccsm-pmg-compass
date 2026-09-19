@@ -146,7 +146,10 @@ def test_baptisms_rows_matches_the_tab_contract():
         JULY_2024.replace("7/1/2024", "12/1/2024").replace("7/31/2024", "12/31/2024")
     )
     rows = baptisms_rows([dec, jul])
-    assert rows == [["MISSION", "2024-07", 22], ["MISSION", "2024-12", 22]]
+    assert rows == [
+        ["MISSION", "2024-07", 22, "2024-07-01", "2024-07-31"],
+        ["MISSION", "2024-12", 22, "2024-12-01", "2024-12-31"],
+    ]
 
 
 def test_baptisms_rows_sorts_chronologically():
@@ -164,7 +167,8 @@ def test_baptisms_rows_is_empty_for_no_input():
 def test_duplicate_downloads_of_the_same_month_collapse_to_one_row():
     """A real download folder holds 'August 2024.pdf' AND 'August 2024 (1).pdf'."""
     jul = parse_summary_text(JULY_2024)
-    assert baptisms_rows([jul, jul, jul]) == [["MISSION", "2024-07", 22]]
+    assert baptisms_rows([jul, jul, jul]) == [
+        ["MISSION", "2024-07", 22, "2024-07-01", "2024-07-31"]]
 
 
 def test_two_exports_of_one_month_that_disagree_raise():
@@ -176,3 +180,60 @@ def test_two_exports_of_one_month_that_disagree_raise():
     )
     with pytest.raises(SummaryParseError, match="disagree"):
         baptisms_rows([jul, other])
+
+
+# ── the window a capture was run for  (2026-09-19) ────────────────────────────
+#
+# Until this date baptisms_rows() emitted three columns and discarded
+# start_date/end_date, which is what made TABLEAU_BAPTISMS monthly-only: a
+# month-to-date export was stored as though it described the finished month.
+
+def _july_through(day: int, baptized: int) -> str:
+    """July 2024 re-cut as a capture ending mid-month. Both the Grand Total
+    block and the funnel's own value have to move together or the parser's
+    cross-check refuses the text — which is the point of that cross-check."""
+    return (JULY_2024
+            .replace("7/31/2024", f"7/{day}/2024")
+            .replace("Grand\tTotal 22", f"Grand\tTotal {baptized}")
+            .replace("22\n49", f"{baptized}\n49"))
+
+
+def test_a_month_to_date_export_carries_its_real_window():
+    s = parse_summary_text(_july_through(19, 14))
+    assert (s.month, s.start_date, s.end_date) == ("2024-07", "2024-07-01", "2024-07-19")
+    assert s.baptized == 14
+
+
+def test_a_wider_capture_of_the_same_month_wins_whatever_the_order():
+    """Sep 1-19 and Sep 1-20 SHOULD disagree. Treating that as a contradiction
+    aborted the job; the longer window is simply the newer reading."""
+    partial = parse_summary_text(_july_through(19, 14))
+    full = parse_summary_text(JULY_2024)
+    for pair in ([partial, full], [full, partial]):
+        assert baptisms_rows(pair) == [
+            ["MISSION", "2024-07", 22, "2024-07-01", "2024-07-31"]]
+
+
+def test_a_narrower_capture_does_not_overwrite_a_wider_one():
+    partial = parse_summary_text(_july_through(5, 3))
+    wider = parse_summary_text(_july_through(19, 14))
+    assert baptisms_rows([wider, partial])[0][2] == 14
+
+
+def test_two_windows_that_overlap_without_nesting_still_raise():
+    """Jul 1-19 against Jul 5-31 is not one month captured twice; it is two
+    different questions, and neither answer is the month's."""
+    a = parse_summary_text(_july_through(19, 14))
+    b = parse_summary_text(
+        _july_through(31, 20).replace("7/1/2024", "7/5/2024"))
+    with pytest.raises(SummaryParseError, match="neither covers the other"):
+        baptisms_rows([a, b])
+
+
+def test_an_identical_window_that_disagrees_is_still_an_error():
+    """The guard was fixed, not removed: two files describing exactly the same
+    days and disagreeing about them still means the export changed."""
+    a = parse_summary_text(_july_through(19, 14))
+    b = parse_summary_text(_july_through(19, 17))
+    with pytest.raises(SummaryParseError, match="disagree"):
+        baptisms_rows([a, b])

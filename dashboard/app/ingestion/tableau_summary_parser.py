@@ -185,31 +185,75 @@ def parse_summary_pdf(path) -> MonthlySummary:
     return parse_summary_text(reader.pages[0].extract_text() or "")
 
 
+def _more_complete(a: MonthlySummary, b: MonthlySummary):
+    """Of two summaries for the same month, the one covering more of it.
+
+    ``None`` when the two cannot be reconciled, which the caller turns into a
+    :class:`SummaryParseError`. Three cases, and the distinction between the
+    first two is the whole point of this function:
+
+    * **Same window, different counts** - irreconcilable. Two files claiming to
+      describe exactly the same days and disagreeing about them means the export
+      changed under us, and silently picking one would bury that.
+    * **One window contains the other** - the container wins. This is the
+      ordinary case under any repeated capture of a month in progress: Sep 1-19
+      and Sep 1-20 SHOULD disagree, and the longer window is simply the newer
+      reading. Treating it as a contradiction (as this did until 2026-09-19)
+      would abort a nightly re-pull every single day.
+    * **Overlapping but neither contains the other** - irreconcilable. Sep 1-19
+      against Sep 5-20 is not a month captured twice; it is two different
+      questions, and neither answer is the month's.
+    """
+    if (a.start_date, a.end_date) == (b.start_date, b.end_date):
+        return a if a.baptized == b.baptized else None
+    if a.start_date <= b.start_date and a.end_date >= b.end_date:
+        return a
+    if b.start_date <= a.start_date and b.end_date >= a.end_date:
+        return b
+    return None
+
+
 def baptisms_rows(summaries) -> list[list]:
     """Shape parsed summaries into ``TABLEAU_BAPTISMS`` rows.
 
-    That tab's contract, per ``get_baptisms_actual()``: columns ``zone`` /
-    ``month`` / ``baptisms``, where the reader selects ``zone == "MISSION"``.
-    These exports are mission-wide (every Tableau filter reads "Todo"), so every
-    row is a MISSION row. Sorted by month so the tab reads chronologically.
+    That tab's contract: ``zone`` / ``month`` / ``baptisms`` / ``start_date`` /
+    ``end_date``, where the reader selects ``zone == "MISSION"``. These exports
+    are mission-wide (every Tableau filter reads "Todo"), so every row is a
+    MISSION row. Sorted by month so the tab reads chronologically.
+
+    **The window is carried, not discarded.** Until 2026-09-19 this emitted
+    three columns and threw ``start_date``/``end_date`` away, which is what made
+    the whole tab monthly-only: a month-to-date capture was stored as though it
+    described the finished month, so it read as a collapse. The month key is
+    still derived from the start date and still first, so every existing reader
+    is unaffected; the dates are additive. A row is "provisional" when its
+    ``end_date`` falls before the month's last day - derived from these two
+    columns, never stored as a flag of its own that could contradict them.
 
     **Deduplicated by month**, because a folder of downloads realistically holds
     the same month twice - the live set had both ``Mission Finding Summary
     (August 2024).pdf`` and ``... (August 2024) (1).pdf``, which without this
     put two rows for 2024-08 into the tab. ``get_baptisms_actual`` reads
     ``match.iloc[-1]``, so a duplicate would not crash; it would just make which
-    row wins depend on file ordering. Duplicates of the same month are expected
-    to be byte-identical re-downloads; if two disagree, that is a signal the
-    export changed and :class:`SummaryParseError` is raised rather than silently
-    picking one.
+    row wins depend on file ordering. Which of two duplicates survives is
+    :func:`_more_complete`'s call, and a pair it cannot reconcile is still a
+    :class:`SummaryParseError` rather than a silent pick.
     """
     by_month: dict[str, MonthlySummary] = {}
     for s in summaries:
         prior = by_month.get(s.month)
-        if prior is not None and prior.baptized != s.baptized:
+        if prior is None:
+            by_month[s.month] = s
+            continue
+        keep = _more_complete(prior, s)
+        if keep is None:
             raise SummaryParseError(
-                f"two exports for {s.month} disagree: "
-                f"{prior.baptized} vs {s.baptized} baptisms"
+                f"two exports for {s.month} disagree and neither covers the "
+                f"other: {prior.start_date}..{prior.end_date} says "
+                f"{prior.baptized} baptisms, {s.start_date}..{s.end_date} says "
+                f"{s.baptized}"
             )
-        by_month[s.month] = s
-    return [["MISSION", m, by_month[m].baptized] for m in sorted(by_month)]
+        by_month[s.month] = keep
+    return [["MISSION", m, by_month[m].baptized,
+             by_month[m].start_date, by_month[m].end_date]
+            for m in sorted(by_month)]

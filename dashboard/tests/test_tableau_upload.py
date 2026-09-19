@@ -20,6 +20,9 @@ from app.ingestion.tableau_upload import (
     read_tabular,
     summarize_months,
     upload_token,
+    effective_end,
+    is_provisional,
+    month_last_day,
 )
 
 
@@ -148,7 +151,8 @@ def test_a_re_uploaded_month_wins_over_the_stored_one():
 
 def test_merging_into_an_empty_tab_just_writes_the_new_rows():
     out = merge_baptism_rows(pd.DataFrame(), [["MISSION", "2024-01", 26]])
-    assert list(out.columns) == ["zone", "month", "baptisms"]
+    assert list(out.columns) == ["zone", "month", "baptisms",
+                                 "start_date", "end_date"]
     assert len(out) == 1
 
 
@@ -187,3 +191,80 @@ def test_summarize_months_counts_what_is_missing():
 def test_summarize_months_ignores_junk():
     assert summarize_months(["_uploaded_by:x", "2024-01"]).startswith("2024-01")
     assert summarize_months([]) == "no months"
+
+
+# ── window-aware merging  (2026-09-19) ────────────────────────────────────────
+
+def _stored5(rows):
+    """A TABLEAU_BAPTISMS read carrying the two date columns."""
+    meta = ["_uploaded_by:someone@example.org",
+            "_uploaded_at:2026-08-01 00:00 UTC", "", "", ""]
+    return pd.DataFrame([meta] + rows,
+                        columns=["zone", "month", "baptisms",
+                                 "start_date", "end_date"])
+
+
+def test_legacy_three_column_rows_still_read_and_survive_a_merge():
+    """The 31 rows on the live tab predate the date columns. Requiring those
+    columns to read a row would make the next merge wipe 2.6 years."""
+    out = merge_baptism_rows(_stored([["MISSION", "2026-06", "44"],
+                                      ["MISSION", "2026-07", "43"]]),
+                             [["MISSION", "2026-08", 46, "2026-08-01", "2026-08-31"]])
+    assert list(out["month"]) == ["2026-06", "2026-07", "2026-08"]
+    assert list(out["baptisms"]) == [44, 43, 46]
+
+
+def test_a_narrower_capture_never_clobbers_a_finished_month():
+    """Uploading Sep 1-5 over a stored whole September must not win. A blank
+    stored end_date means the whole month, so legacy rows are protected too."""
+    out = merge_baptism_rows(_stored([["MISSION", "2026-09", "41"]]),
+                             [["MISSION", "2026-09", 4, "2026-09-01", "2026-09-05"]])
+    assert list(out["baptisms"]) == [41]
+
+
+def test_a_later_capture_of_the_same_month_replaces_an_earlier_one():
+    """The nightly re-pull case: yesterday's month-to-date is superseded."""
+    out = merge_baptism_rows(
+        _stored5([["MISSION", "2026-09", "18", "2026-09-01", "2026-09-19"]]),
+        [["MISSION", "2026-09", 21, "2026-09-01", "2026-09-20"]])
+    assert list(out["baptisms"]) == [21]
+    assert list(out["end_date"]) == ["2026-09-20"]
+
+
+def test_a_finished_month_supersedes_the_month_to_date_it_grew_from():
+    out = merge_baptism_rows(
+        _stored5([["MISSION", "2026-09", "21", "2026-09-01", "2026-09-20"]]),
+        [["MISSION", "2026-09", 41, "2026-09-01", "2026-09-30"]])
+    assert list(out["baptisms"]) == [41]
+
+
+def test_a_three_column_incoming_row_is_still_accepted():
+    """merge_baptism_rows is called with hand-built rows in places; a row
+    without dates must not raise."""
+    out = merge_baptism_rows(pd.DataFrame(), [["MISSION", "2024-01", 26]])
+    assert list(out["baptisms"]) == [26]
+    assert list(out["end_date"]) == [""]
+
+
+# ── provisional is derived, never stored ──────────────────────────────────────
+
+def test_a_blank_end_date_reads_as_the_whole_month():
+    assert effective_end("2026-09", "") == date(2026, 9, 30)
+    assert is_provisional("2026-09", "") is False
+
+
+def test_an_end_date_short_of_the_month_end_is_provisional():
+    assert is_provisional("2026-09", "2026-09-19") is True
+    assert is_provisional("2026-09", "2026-09-30") is False
+
+
+def test_february_knows_its_own_length():
+    assert month_last_day("2024-02") == date(2024, 2, 29)
+    assert month_last_day("2026-02") == date(2026, 2, 28)
+    assert is_provisional("2026-02", "2026-02-28") is False
+
+
+def test_an_unparseable_end_date_falls_back_to_the_whole_month():
+    """A junk cell must not make a finished month look partial and lose to the
+    next narrow upload."""
+    assert is_provisional("2026-09", "not a date") is False
