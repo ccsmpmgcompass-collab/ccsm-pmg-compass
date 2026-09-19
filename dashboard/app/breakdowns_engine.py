@@ -31,8 +31,11 @@ from app.analytics.period_delta import (
     period_delta,
     reporting_dates,
 )
-from app.components.charts import chart
-from app.components.design_system import render_kpi_row, render_section_label
+from app.components.charts import chart, change_text, ranked_list
+from app.components.design_system import (
+    goal_bar_state, goal_bar_status, projection_caption, render_kpi_row,
+    render_section_label,
+)
 from app.components.ki_drilldown import ki_href, render_ki_drilldown
 from app.config.theme import series_style, STATUS
 from app.i18n.formats import fmt_day_month, fmt_int, fmt_number
@@ -1485,6 +1488,51 @@ def _metas_for_weeks(weekly: pd.DataFrame, week_ends: list,
     return totals, basis
 
 
+#: How many complete weeks the nightly rows' sparkline shows (plan step D3).
+_NIGHT_SPARK_WEEKS = 8
+
+#: The nightly metrics that stay above the fold — decision 9, listed in
+#: PLAN-2026-09-18-data-pages.md §1.2 and kept in the order it argued them
+#: rather than the form's. The other twelve are one tap away under "Ver todos",
+#: in the same component, so this is a fold and not a cut.
+#:
+#: `member_referrals_received`, not the plan's `referrals_received`: that key is
+#: Utah Provo's, and a metric with no DAILY_LOG column is skipped silently —
+#: the same correction step C4 had to make on the Panel.
+_NIGHT_SHORTLIST = (
+    "contacts_made",
+    "contacts_attempted",
+    "friend_lessons",
+    "lessons_member_present",
+    "baptismal_invitations",
+    "church_invites",
+    "member_referrals_received",
+    "baptismal_calendars",
+)
+
+#: The four headings the rest are grouped under (§1.2). The titles are
+#: callables, not strings, because a module-level t() would freeze the language
+#: at import and a mid-session switch would leave the old one on screen.
+#:
+#: QUESTIONS_CONFIG is live and this list is not, so a question added to the
+#: nightly form after today lands in an "Otros" group rather than disappearing
+#: from the page — the grouping is an editorial convenience, never a filter.
+_NIGHT_GROUPS = (
+    (lambda: t("Contacting"), (
+        "contacts_attempted", "contacts_made", "meaningful_conversations",
+        "new_people_found")),
+    (lambda: t("Teaching"), (
+        "roleplays", "friend_lessons", "pmf_lessons", "rc_lessons",
+        "rc_lessons_mcp", "baptism_doctrine_lessons")),
+    (lambda: t("Working with members"), (
+        "member_contacts", "lessons_member_present", "references_asked",
+        "member_referrals_received")),
+    (lambda: t("Inviting"), (
+        "friend_texts", "friend_calls", "bom_shared", "church_invites",
+        "baptismal_invitations", "baptismal_calendars")),
+)
+
+
 def _scoreboard_window_line(week_ends: list, reporting: int, total: int,
                             fell_back: bool, kpi_period: str) -> str:
     """The Key Indicators scoreboard's right-hand line: which weeks it is
@@ -2078,27 +2126,31 @@ def render_group_breakdown(
 
 
     # ══════════════════════════════════════════════════════════════════════════
-    # 2. ACTIVIDAD DIARIA — the nightly metrics, over the selected period
+    # 2. ACTIVIDAD DIARIA — the nightly metrics, as rows
     # ══════════════════════════════════════════════════════════════════════════
-    # RENAMED from "Key Indicators" (PLAN §7.5). It never showed the mission's
-    # Key Indicators: WHICH metrics get a card comes from LIVE_SNAPSHOT's *_7d
-    # columns, and all 22 of those are NIGHTLY metrics — probed live 2026-09-05,
-    # not one `ki_*` column among them. The seven KIs now have their own section
-    # above, and two sections cannot share the name while only one of them means
-    # it.
+    # PLAN-2026-09-18-data-pages.md §5, step D3. Twenty KPI cards became twenty
+    # ROWS, eight of them above the fold and the other twelve behind "Ver todos"
+    # in four groups (decision 9, §1.2).
+    #
+    # Twenty cards is not a scoreboard, it is an inventory: at 1400px they ran
+    # five rows deep and pushed everything below them off the page, and no
+    # reader has twenty questions. The eight in the shortlist are the ones the
+    # mission acts on nightly; the other twelve are still here, one tap away,
+    # in the same component so nothing about them changes except how much of
+    # the page they cost.
+    #
+    # Each row says the same five things the card did — what it is, how much,
+    # which way it moved, how far toward the period's goal, and the shape of
+    # the last eight weeks — in one line instead of a tile, and the projection
+    # that used to sit under the bar rides on the row's hover.
     #
     # The VALUES come from DAILY_LOG, the only source with the per-day
-    # granularity an arbitrary period needs. All three levels get cards (Carson,
-    # 2026-07-17); `goals` decides whether they carry a target — zone and
-    # district both roll up their areas' goals, an area has its own directly
-    # (Carson, 2026-07-24: district wanted the same goal bars zone/area had).
+    # granularity an arbitrary period needs. All four scopes get them;
+    # `goals` decides whether they carry a target — zone and district both roll
+    # up their areas' goals, an area has its own directly.
     if snap_scope is not None and not snap_scope.empty and has_rows:
-        render_section_label(
-            t('Daily Activity — {scope_value}', scope_value=scope_value))
-
-        # Rates can't be summed across areas or days (and render_kpi_row int()s
-        # its value, so a 0.42 rate would read as 0). LIVE_SNAPSHOT is built from
-        # DAILY_LOG counts so it shouldn't carry any — guard regardless.
+        # Rates can't be summed across areas or days. LIVE_SNAPSHOT is built
+        # from DAILY_LOG counts so it shouldn't carry any — guard regardless.
         _kpi_keys = [
             c[:-3] for c in snap_scope.columns
             if c.endswith("_7d")
@@ -2108,7 +2160,7 @@ def render_group_breakdown(
         _expectation_totals = get_group_weekly_expectation_totals(group_areas)
 
         # How many of the group's areas actually filed anything this period.
-        # The denominator behind every card's VALUE, as against the goal's own.
+        # The denominator behind every row's VALUE, as against the goal's own.
         _value_basis = (int(rows["Area"].nunique())
                         if "Area" in rows.columns else 0)
 
@@ -2121,19 +2173,19 @@ def render_group_breakdown(
         _cur_days = days_in_window(_report_dates, p_start, p_end)
         _prior_days = days_in_window(_report_dates, pr_start, pr_end)
 
-        _kpi_cards = []
+        _night_rows: dict = {}
+        _night_any_goal = False
         for _key in _kpi_keys:
             if _key not in rows.columns:
                 continue  # active metric with no DAILY_LOG column yet
             _val = int(pd.to_numeric(rows[_key], errors="coerce").fillna(0).sum())
-            _card: dict = {"label": format_metric_label(_key), "value": _val}
+            _row: dict = {"name": format_metric_label(_key), "value": _val}
+            _details = []
 
             # The arrow means ONE thing on this page: movement against the twin.
             # It used to mean distance from goal on a completed period and
             # nothing at all on a running one, so the same glyph in the same
-            # place answered two different questions depending on the date. The
-            # goal keeps the bar and the caption beneath it, which is where a
-            # target belongs and where Steps B1/B2 make it honest.
+            # place answered two different questions depending on the date.
             if has_prior and _key in rows_prior.columns:
                 _prior_val = int(
                     pd.to_numeric(rows_prior[_key], errors="coerce").fillna(0).sum())
@@ -2141,86 +2193,147 @@ def render_group_breakdown(
                     _val, _prior_val,
                     current_basis=_cur_days, prior_basis=_prior_days)
                 if _change is not None:
-                    _card["change"] = _change
-                    _card["delta_label"] = _vs
+                    _row["change"], _row["change_color"] = change_text(_change)
+                    _details.append(f"{_row['change']} {_vs}")
 
             # Nightly metrics only reach tiers 1 and 3 — AREA_TRANSFER_GOALS and
             # the ki_*_meta goals are both keyed on the seven Key Indicators, so
-            # the two new tiers are empty here by construction.
+            # the two KI tiers are empty here by construction.
             _weekly_goal, _derived_note, _goal_basis, _goal_src = _resolve_group_goal(
                 _key, goals, _per_area_goals, len(group_areas))
             if _goal_factor and _weekly_goal > 0:
-                _card["goal"] = _weekly_goal * _goal_factor
-                if _derived_note:
-                    _card["goal_note"] = _derived_note
-                # Audit F8: the value is a total across the areas that REPORTED
-                # and the goal is a total across the areas that HAVE one. When
-                # those two counts differ, the ratio between the totals is not a
-                # percentage of anything — on 2026-08-21 a Panel tile read
-                # 2.040% for exactly this reason. Passing both bases lets
-                # render_kpi_row reduce each side to a per-area rate first, at
-                # which point the mismatch cancels. In the steady state they are
-                # equal and this changes nothing.
-                if _value_basis and _goal_basis:
-                    _card["value_basis"] = _value_basis
-                    _card["goal_basis"] = _goal_basis
+                _night_any_goal = True
+                _goal = _weekly_goal * _goal_factor
                 # A running period is graded against where it should be TODAY,
                 # not against a month's goal it has had three days to meet. Two
                 # days into a thirty-day month a zone exactly on pace has 7% of
                 # the month's target, and grading that 7% told it it was
-                # failing. The bar still fills toward the full goal; the tick
-                # marks the pace, and the colour comes from the gap between.
-                if _pace_factor is not None:
-                    _card["pace"] = _weekly_goal * _pace_factor
+                # failing. The bar still fills toward the full goal; the colour
+                # comes from the gap against the pace.
+                #
+                # Audit F8 rides in the same call: the value is a total across
+                # the areas that REPORTED and the goal a total across the areas
+                # that HAVE one, so both are reduced to per-area rates first —
+                # on 2026-08-21 a tile read 2.040% for want of exactly that.
+                _pace = _weekly_goal * _pace_factor if _pace_factor is not None else None
+                _state = goal_bar_state(
+                    _val, _goal, pace=_pace,
+                    value_basis=_value_basis or None,
+                    goal_basis=_goal_basis or None)
+                # The bar is % OF GOAL, not the raw value: these twenty metrics
+                # run from 36 calendars to 7.792 contact attempts, and a bar
+                # scaled to the largest would leave eighteen of them invisible.
+                # Every row's bar therefore means one thing — how far into this
+                # period's goal it is — and they are comparable down the column.
+                _row["bar"] = _state["width"]
+                _row["status"] = goal_bar_status(_state["grade_pct"])
+                _row["sub"] = t("{pct}% of {goal}",
+                                pct=fmt_int(_state["pct"]), goal=fmt_int(_goal))
+                if _pace is not None:
+                    _details.append(t("{pace} expected by today",
+                                      pace=fmt_int(_pace)))
                     if _period_end_full is not None:
-                        _card["goal_by"] = fmt_day_month(_period_end_full)
+                        _details.append(t("full goal {goal} by {date}",
+                                          goal=fmt_int(_goal),
+                                          date=fmt_day_month(_period_end_full)))
+                if _derived_note:
+                    _details.append(_derived_note)
 
-            # Where the period is heading. Only for a running one — a completed
-            # period has already landed, and All Time has no end to land at.
+            # ── The last eight complete weeks, and where this is heading ─────
+            # ONE pass over the history for both. The sparkline runs up to the
+            # period's own end, so the line ends where the number beside it
+            # does; the projection is fitted only on the weeks BEFORE the
+            # period, because a fit that included the period it is projecting
+            # would be predicting what it had already been told.
+            _wk_values, _wk_dates = _completed_weekly_series(
+                _hist, _key, (p_end or mission_today()) + timedelta(days=1))
+            if _wk_values:
+                _row["spark"] = _wk_values[-_NIGHT_SPARK_WEEKS:]
             if _elapsed_days is not None and p_days:
-                _wk_values, _wk_dates = _completed_weekly_series(
-                    _hist, _key, p_start)
+                _before = [(v, d) for v, d in zip(_wk_values, _wk_dates)
+                           if p_start is None or d < p_start.isoformat()]
                 _projection = _landing_estimate(
-                    _val, _elapsed_days, p_days, _wk_values, _wk_dates)
-                if _projection is not None:
-                    _card["projection"] = _projection
-            # The expectation bar is the AREA-TYPE reference, a different thing
-            # from the goal — but both fall back to AGENT_CONFIG's GOAL_* rows,
-            # so with GOALS_CONFIG empty they resolve to the same number and the
-            # card drew two bars saying one fact (seen live 2026-09-03: "meta
-            # completa 1.290" directly above "2% de la expectativa de 1.290").
-            # Two bars must mean two things; when they don't, only the goal —
-            # the one carrying the pace tick — is drawn. Populating GOALS_CONFIG
-            # separates them again and the expectation bar comes back on its own.
+                    _val, _elapsed_days, p_days,
+                    [v for v, _ in _before], [d for _, d in _before])
+                # The projection is the one figure here describing something
+                # that has not happened, so it stays off the row itself and
+                # rides on its hover, where it cannot be read as a measurement
+                # (plan step D3). projection_caption carries the tilde and the
+                # "early estimate" hedge the cards have always printed.
+                _proj_line = projection_caption(_projection, fmt_int)
+                if _proj_line:
+                    _details.append(_proj_line)
+            # The AREA-TYPE expectation is a different thing from the goal and
+            # only ever drew a bar when the two disagreed — which, with
+            # GOALS_CONFIG empty, they never do. It keeps its place in the
+            # row's details rather than a second bar nobody has yet seen.
             _weekly_expectation = float(_expectation_totals.get(_key, 0) or 0)
             if (_goal_factor and _weekly_expectation > 0
                     and round(_weekly_expectation) != round(_weekly_goal)):
-                _card["expectation"] = _weekly_expectation * _goal_factor
-            _kpi_cards.append(_card)
+                _details.append(t("expectation {n} this period",
+                                  n=fmt_int(_weekly_expectation * _goal_factor)))
 
-        # Whether a goal is SHOWN, not whether GOALS_CONFIG had a row: since
-        # _resolve_group_goal added the AGENT_CONFIG fallback, an empty
-        # GOALS_CONFIG no longer means an empty bar, and the old test on
-        # `goals` would have captioned a page full of goal bars "no goals at
-        # this level".
-        _any_goal = any("goal" in _c for _c in _kpi_cards)
-        _goal_note = (
-            t("totals for the period — no goals at this level") if not _any_goal
-            else t("no goal for unbounded history") if _goal_factor is None
-            else t("the mark on each bar is where this period should stand "
-                   "today; the bar fills toward the full goal")
-            if _pace_factor is not None
-            else t("measured against the weekly goal × {factor}",
-                   factor=fmt_number(_goal_factor, 2))
-        )
-        st.caption(f"{span}  |  {_goal_note}")
-        st.caption(_comparison_note(kpi_period, pr_start, pr_end,
-                                    _cur_days, _prior_days))
+            _row["rank"] = ""   # a fixed list, not a ranking — see _NIGHT_GROUPS
+            _row["title"] = " · ".join([_row["name"]] + [d for d in _details if d])
+            _night_rows[_key] = _row
 
-        if _kpi_cards:
-            render_kpi_row(_kpi_cards)
+        # ── The heading ──────────────────────────────────────────────────────
+        _night_right_parts = [span]
+        if _cur_days:
+            _night_right_parts.append(
+                t("{n} reporting days", n=fmt_int(_cur_days)))
+        _night_info = t(
+            "Everything the companionships report at night, for this period. "
+            "The bar on each row is how far into the period's goal it is, so "
+            "the rows are comparable down the column however different their "
+            "sizes; its colour is graded against where the period should "
+            "stand TODAY, not against the whole goal. The line under each name "
+            "is its last eight complete weeks. Hover a row for what it is on "
+            "track to land at.")
+        if not _night_any_goal:
+            _night_info += " " + t("No goals are set at this level, so the rows "
+                                   "carry totals and no bars.")
+        _night_info += " " + _comparison_note(kpi_period, pr_start, pr_end,
+                                              _cur_days, _prior_days)
+        render_section_label(
+            t('Daily Activity — {scope_value}', scope_value=scope_value),
+            right=" · ".join(p for p in _night_right_parts if p),
+            info=_night_info)
+
+        if not _night_rows:
+            st.info(t('No snapshot metrics found for {scope_value}.',
+                      scope_value=scope_value))
         else:
-            st.info(t('No snapshot metrics found for {scope_value}.', scope_value=scope_value))
+            # The eight the mission acts on nightly, in the plan's own order
+            # (§1.2) rather than the form's — this is a shortlist, and the
+            # order it was chosen in is the order it was argued in.
+            _short = [_night_rows[k] for k in _NIGHT_SHORTLIST if k in _night_rows]
+            st.markdown(ranked_list(_short, bar_max=100), unsafe_allow_html=True)
+
+            _rest = [k for k in _night_rows if k not in _NIGHT_SHORTLIST]
+            if _rest:
+                with st.expander(t("See every nightly indicator"), expanded=False):
+                    _grouped = set()
+                    for _title, _keys in _NIGHT_GROUPS:
+                        _in_group = [_night_rows[k] for k in _keys
+                                     if k in _night_rows and k in _rest]
+                        _grouped.update(_keys)
+                        if not _in_group:
+                            continue
+                        render_section_label(_title())
+                        st.markdown(ranked_list(_in_group, bar_max=100),
+                                    unsafe_allow_html=True)
+                    # A question added to the nightly form after this grouping
+                    # was written belongs SOMEWHERE. QUESTIONS_CONFIG is live
+                    # and this list is not, so anything unplaced lands here
+                    # rather than vanishing from the page.
+                    _ungrouped = [_night_rows[k] for k in _rest
+                                  if k not in _grouped]
+                    if _ungrouped:
+                        render_section_label(t("Other"))
+                        st.markdown(ranked_list(_ungrouped, bar_max=100),
+                                    unsafe_allow_html=True)
+
 
     # ══════════════════════════════════════════════════════════════════════════
     # 3. METRIC PICKER + PER-AREA BAR — the selected indicator, this period

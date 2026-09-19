@@ -35,11 +35,13 @@ import pandas as pd
 import streamlit as st
 
 from app.analytics import ki_history as kh
-from app.analytics.period_delta import SEVERE_DROP_PCT
-from app.components.charts import bars_vs_goal, chart, ranked_list
-from app.components.design_system import render_section_label, render_table
+from app.components.charts import (
+    bars_vs_goal, change_text, chart, ranked_list,
+)
+from app.components.design_system import (
+    goal_bar_status, render_section_label, render_table,
+)
 from app.config.metric_catalog import key_indicator_metrics, ki_short_label
-from app.config.theme import STATUS
 from app.db.goals_queries import group_goal_totals
 from app.db.queries import get_daily_log
 from app.i18n import t
@@ -59,8 +61,6 @@ _CLOSE = "__close__"
 TAB_WEEK, TAB_CYCLE, TAB_AREA, TAB_TABLE = "week", "cycle", "area", "table"
 TABS = [TAB_WEEK, TAB_CYCLE, TAB_AREA, TAB_TABLE]
 
-#: Decision 10: three grading states, no blue.
-_ON_PACE_PCT, _BEHIND_PCT = 90.0, 60.0
 
 
 # ── The URL ──────────────────────────────────────────────────────────────────
@@ -104,39 +104,12 @@ def _set_ki(metric: str | None) -> None:
 
 # ── Small formatters ─────────────────────────────────────────────────────────
 
-def _change_text(change: dict | None) -> tuple[str, str]:
-    """A period_delta result as ("↑ 12%", colour) — the same rules as the
-    arrows on the cards and the progression header's chip, so a red arrow
-    means one thing everywhere."""
-    if not change:
-        return "", "#6b7280"
-    direction = int(change.get("direction", 0))
-    pct, show = change.get("pct"), change.get("show")
-    severe = pct is not None and pct < SEVERE_DROP_PCT
-    if direction > 0:
-        color, arrow = STATUS["good"], "↑"
-    elif direction == 0:
-        color, arrow = "#6b7280", "→"
-    else:
-        color, arrow = (STATUS["bad"] if severe else STATUS["warn"]), "↓"
-    if show == "absolute" and change.get("change") is not None:
-        n = round(float(change["change"]))
-        text = f"{'+' if n > 0 else ''}{fmt_int(n)}"
-    elif pct is not None:
-        text = f"{fmt_int(abs(pct))}%"
-    else:
-        return "", "#6b7280"
-    return f"{arrow} {text}", color
-
-
-def _grade(pct: float | None) -> str | None:
-    if pct is None:
-        return None
-    if pct >= _ON_PACE_PCT:
-        return "good"
-    if pct >= _BEHIND_PCT:
-        return "warn"
-    return "bad"
+# The change chip and the three grading states moved to the design system when
+# the nightly rows became their second caller (plan step D3): charts.change_text
+# sits beside ranked_list, which consumes it, and goal_bar_status is the one
+# home for decision 10's 90 / 60 thresholds.
+_change_text = change_text
+_grade = goal_bar_status
 
 
 def _cycle_name(cycle: dict | None) -> str:

@@ -32,6 +32,7 @@ import plotly.io as pio
 import streamlit as st
 from plotly.subplots import make_subplots
 
+from app.analytics.period_delta import SEVERE_DROP_PCT
 from app.components.design_system import _register_plotly_template
 from app.components.design_system import sparkline_svg as _spark
 from app.config.theme import SERIES_COLORS, STATUS
@@ -546,6 +547,39 @@ def _cells_html(cells: Sequence, tints: Sequence | None,
     )
 
 
+def change_text(change: dict | None) -> tuple[str, str]:
+    """A ``period_delta`` result as ``("↑ 12%", colour)`` — the short form a
+    ranked row's change column takes.
+
+    The same rules as the arrows on the KPI cards, so a red down-arrow means
+    one thing on every page. A severe drop is red, an ordinary one amber, a
+    move inside the neutral band a grey "→", and a small count prints its
+    absolute change rather than a percentage of almost nothing.
+
+    Lived in ki_drilldown until the nightly rows (plan step D3) became its
+    second caller; it belongs beside ``ranked_list``, which is what consumes it.
+    """
+    if not change:
+        return "", MUTED
+    direction = int(change.get("direction", 0))
+    pct, show = change.get("pct"), change.get("show")
+    severe = pct is not None and pct < SEVERE_DROP_PCT
+    if direction > 0:
+        color, arrow = STATUS["good"], "↑"
+    elif direction == 0:
+        color, arrow = MUTED, "→"
+    else:
+        color, arrow = (STATUS["bad"] if severe else STATUS["warn"]), "↓"
+    if show == "absolute" and change.get("change") is not None:
+        n = round(float(change["change"]))
+        text = f"{'+' if n > 0 else ''}{fmt_int(n)}"
+    elif pct is not None:
+        text = f"{fmt_int(abs(pct))}%"
+    else:
+        return "", MUTED
+    return f"{arrow} {text}", color
+
+
 def ranked_list(rows: Sequence[dict], *, value_fmt: Callable = fmt_int,
                 bar_max: float | None = None,
                 href: Callable[[dict], str | None] | None = None,
@@ -562,6 +596,11 @@ def ranked_list(rows: Sequence[dict], *, value_fmt: Callable = fmt_int,
     ``href`` (the row becomes a link). ``href`` the argument is a function of
     the row for callers that derive it; a row's own ``href`` wins.
     ``bar_max`` fills the bar; default the largest bar in the list.
+
+    ``spark`` (a list of numbers, oldest first) draws a sparkline under the
+    name — the shape behind the one number at the right. ``title`` overrides
+    what the name shows on hover, for a row with something more to say than its
+    own name (the nightly rows' landing projection, plan step D3).
 
     ``columns`` turns the row into a comparison across several measures at
     once. Each entry is a label, or a ``(label, full name)`` pair where the
@@ -661,6 +700,15 @@ def ranked_list(rows: Sequence[dict], *, value_fmt: Callable = fmt_int,
             )
             continue
 
+        # The sparkline rides UNDER the name rather than in a column of its
+        # own: the row is already six columns wide at 1400px, and a seventh
+        # would have to be hidden on a phone — where the shape is exactly as
+        # useful as it is on a laptop.
+        spark_html = _spark(
+            [v for v in (r.get("spark") or []) if v is not None], width=104,
+            height=18) if r.get("spark") else ""
+        name = str(r.get("name", ""))
+        hover = str(r.get("title") or name)
         out.append(
             f'<{tag} class="pmg-rank-row"{attrs} style="display:grid;'
             f'grid-template-columns:1.6rem 0.6rem minmax(0,1fr) minmax(48px,26%) auto auto;'
@@ -670,10 +718,11 @@ def ranked_list(rows: Sequence[dict], *, value_fmt: Callable = fmt_int,
             f'<span style="text-align:right;color:#6b7280;font-size:0.8rem;">{_html.escape(str(rank))}</span>'
             f'<span style="width:0.6rem;height:0.6rem;border-radius:50%;background:{dot};"></span>'
             f'<span style="min-width:0;">'
-            f'<span title="{_html.escape(str(r.get("name", "")))}" '
+            f'<span class="pmg-rank-name" title="{_html.escape(hover)}" '
             f'style="display:block;color:{INK};font-weight:600;font-size:0.92rem;'
-            f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{_html.escape(str(r.get("name", "")))}</span>'
+            f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{_html.escape(name)}</span>'
             + (f'<span style="display:block;color:{MUTED};font-size:0.75rem;">{_html.escape(str(sub))}</span>' if sub else "")
+            + spark_html
             + f'</span>'
             f'<span style="display:block;height:6px;border-radius:3px;background:rgba(255,255,255,0.06);overflow:hidden;">'
             f'<span style="display:block;height:100%;width:{width:.1f}%;background:{dot};border-radius:3px;"></span></span>'

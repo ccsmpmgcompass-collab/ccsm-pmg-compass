@@ -863,3 +863,46 @@ landed in the same push).
   unchanged, its `_header_lines`/`_change_chip` tests went with those
   functions, and it gained six on `_scoreboard_window_line` and six on
   `_metas_for_weeks`.
+- 2026-09-19 — **D2 needed no work.** Step B3 already wired the drill-down
+  under this page's Key Indicator cards (`render_ki_drilldown(scope_kind,
+  scope_value, group_areas, key="bd_ki")` inside the fragment, every card an
+  `?ki=` link carrying the scope). D1 left that call where it was.
+- 2026-09-19 — **D3 landed, the rows half.** Twenty nightly KPI cards became
+  twenty ROWS: the eight of §1.2's shortlist above the fold and the other
+  twelve behind "Ver todos los indicadores nocturnos", grouped Contactar ·
+  Enseñar · Trabajar con miembros · Invitar. Each row carries what the card
+  did — name, value, Δ chip, a goal bar and its "18% de 20.250" — plus the
+  last eight complete weeks as a sparkline under the name; the landing
+  projection, the pace, the full-goal date and the derived goal's arithmetic
+  moved to the row's hover `title`, which is what the card's `details` already
+  held. Decisions: (a) the bar is **% of goal, not the raw value** — these
+  twenty run from 36 calendars to 7.792 contact attempts, and a bar scaled to
+  the largest leaves eighteen of them invisible; every bar now means the same
+  thing and they read down the column; (b) ONE pass over the history serves
+  both the sparkline and the projection, but the sparkline runs to the
+  period's END (so the line ends where the number beside it does) while the
+  projection is still fitted only on the weeks BEFORE the period, which is
+  the slice `_landing_estimate` has always been given; (c) the AREA-TYPE
+  expectation, which only ever drew a second bar when it disagreed with the
+  goal — and with GOALS_CONFIG empty it never does — became a detail on the
+  hover rather than a bar nobody has seen; (d) a nightly question added to
+  QUESTIONS_CONFIG after today lands in an "Otros" group rather than
+  disappearing, because the grouping is an editorial convenience and must
+  never act as a filter. Three helpers were consolidated rather than copied
+  again: `charts.change_text` (was `ki_drilldown._change_text`) now sits
+  beside `ranked_list`, which consumes it, and `design_system.goal_bar_status`
+  is the one home for decision 10's 90/60 thresholds — the drill-down had its
+  own `_ON_PACE_PCT`/`_BEHIND_PCT` copy. `ranked_list` gained per-row `spark`
+  and `title`. **One shared fix, measured live:** the PLAIN ranked row kept
+  six columns at 375px, which left the name 69px and ellipsised every nightly
+  metric to "Cont…"; it now breaks into two lines below 720px — name across
+  the top, bar and value beneath — the same treatment `.pmg-rank-row-cells`
+  has had since C3. That also repairs the Panel's compliance rankings and the
+  Embudo's lists on a phone. Verified live at 1400px (8 rows, the twelve
+  grouped inside the expander, hovers carrying "va camino a ~11.075
+  (estimación temprana)") and 375px (339px rows, full names, zero sideways
+  scroll), and the Panel and Embudo re-checked at 375px for the shared
+  change. Suite **11 failed / 1161 passed** (the same 11). The rows are NOT
+  links yet — the drill-down only accepts the seven Key Indicators, and a
+  link to a panel that refuses to open is worse than no link; the nightly
+  drill-down is the next commit, and it is what makes them clickable.

@@ -67,6 +67,27 @@ _CSS = """
 @media (max-width: 640px) {
     .pmg-sparks { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 }
+/* The PLAIN ranked row (no columns) becomes two lines on a phone: the name
+   across the top, then the bar, the change and the value under it. Six
+   columns inside 339px left the name 69px and it ellipsised to "Cont…" —
+   which is every nightly metric reduced to the same four characters (plan
+   step D3, measured live at 375px). The children are always in the same
+   order, so the second line is placed by column rather than by class. */
+@media (max-width: 720px) {
+    .pmg-rank-row:not(.pmg-rank-row-cells) {
+        grid-template-columns: 1.6rem 0.6rem minmax(0, 1fr) auto auto !important;
+        row-gap: 0.4rem;
+    }
+    .pmg-rank-row:not(.pmg-rank-row-cells) > :nth-child(3) { grid-column: 3 / -1; }
+    .pmg-rank-row:not(.pmg-rank-row-cells) > :nth-child(4) { grid-column: 3 / 4; }
+    .pmg-rank-row:not(.pmg-rank-row-cells) > :nth-child(5) { grid-column: 4 / 5; }
+    .pmg-rank-row:not(.pmg-rank-row-cells) > :nth-child(6) { grid-column: 5 / -1; }
+    .pmg-rank-row:not(.pmg-rank-row-cells) .pmg-rank-name {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+    }
+}
 @media (max-width: 720px) {
     .pmg-rank-row-cells { grid-template-columns: minmax(0, 1fr) !important; }
     .pmg-rank-row-cells .pmg-rank-cells {
@@ -644,6 +665,23 @@ def goal_bar_state(value, goal, *, pace=None, value_basis=None, goal_basis=None)
         "pct": pct, "width": max(0, min(100, pct)) if measured else 0,
         "grade_pct": grade_pct, "tick": tick,
     }
+
+
+def goal_bar_status(grade_pct: float | None) -> str | None:
+    """A graded percentage as "good" / "warn" / "bad" — decision 10's three
+    states, in the vocabulary theme.STATUS and charts.ranked_list both speak.
+
+    The one home for those two thresholds. The drill-down carried its own copy
+    (_ON_PACE_PCT / _BEHIND_PCT) until the nightly rows needed a third caller,
+    and three copies of "90 and 60" is how a page ends up grading the same
+    number two ways.
+    """
+    if grade_pct is None:
+        return None
+    for threshold, _ in _GOAL_BAR_TIERS:
+        if grade_pct >= threshold:
+            return "good" if threshold == _GOAL_BAR_TIERS[0][0] else "warn"
+    return "bad"
 
 
 def goal_bar_color(grade_pct: float) -> str:

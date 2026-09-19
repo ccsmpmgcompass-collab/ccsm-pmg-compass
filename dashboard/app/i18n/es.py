@@ -2938,6 +2938,35 @@ ES: dict[str, str] = {
         "total de una semana es la suma de quienes informaron. Toque "
         "cualquier tarjeta para ver el historial de ese indicador.",
 
+
+    # ── Desgloses §2: the nightly rows (data-pages plan, step D3) ─────────────
+    # Twenty cards became twenty rows, eight of them above the fold. The four
+    # group titles are the mission's own division of the nightly form.
+    "{n} reporting days": "{n} días con informe",
+    "See every nightly indicator": "Ver todos los indicadores nocturnos",
+    "Contacting": "Contactar",
+    "Teaching": "Enseñar",
+    "Working with members": "Trabajar con miembros",
+    "Inviting": "Invitar",
+    "Other": "Otros",
+    "expectation {n} this period": "expectativa {n} en este período",
+    "No goals are set at this level, so the rows carry totals and no bars.":
+        "No hay metas fijadas en este nivel, así que las filas llevan totales "
+        "y no barras.",
+    "Everything the companionships report at night, for this period. The bar "
+    "on each row is how far into the period's goal it is, so the rows are "
+    "comparable down the column however different their sizes; its colour is "
+    "graded against where the period should stand TODAY, not against the "
+    "whole goal. The line under each name is its last eight complete weeks. "
+    "Hover a row for what it is on track to land at.":
+        "Todo lo que las compañerías informan cada noche, en este período. La "
+        "barra de cada fila es cuánto lleva avanzado de la meta del período, "
+        "así que las filas se comparan entre sí por más distintos que sean sus "
+        "tamaños; su color se califica contra donde el período debería ir HOY, "
+        "no contra la meta completa. La línea bajo cada nombre son sus últimas "
+        "ocho semanas completas. Pase el cursor sobre una fila para ver a "
+        "cuánto va camino de llegar.",
+
     # ── Panel §2: the year against the baptismal goal ────────────────────────
     "{year} Baptisms": "Bautismos {year}",
     "certified through {month}": "certificado hasta {month}",
