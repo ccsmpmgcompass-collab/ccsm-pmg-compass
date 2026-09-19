@@ -616,3 +616,23 @@ landed in the same push).
   TWO headings and now expects one, renamed to the singular.
   `tests/test_panel_scoreboard.py` (15) is new and supplies the weekly-form
   frame the shared fixtures lack; `tests/test_section_labels.py` gained two.
+- 2026-09-18 — **C2 landed.** The Panel's explanatory captions are gone: the
+  page opened with a three-sentence paragraph (one sentence of which — "drill
+  into a zone on the Breakdowns page" — stopped being true when every card
+  became a link), and seven sections carried a caption apiece. Each is now the
+  section's ⓘ, its `right=` line, or a chip on the card it describes. Live
+  count: **8 sections carry an ⓘ, 2 `st.caption` elements remain on the whole
+  page** (one empty, one the rankings' "las 5 mejores y las 5 últimas de 45
+  áreas"). `render_kpi_row` gained `change_note` / `change_note_title`: where a
+  comparison is refused the card says "sin comparación" with the reason on
+  hover, and the page ALSO appends that reason to the section's ⓘ, because a
+  phone has no hover — the plan's "render it as the chip's own text" plus the
+  one thing that would otherwise be lost. Zones and Effort now compute their
+  arithmetic ABOVE their heading so the ⓘ can quote it (Streamlit renders in
+  source order); nothing about the arithmetic changed. Suite **13 failed /
+  1102 passed** (same 13); `tests/test_kpi_card_layout.py` +3,
+  `tests/test_panel_scoreboard.py` +4, 19 in that file now. Left for C5, as
+  they belong to sections it rebuilds: the compliance rankings' "what is on
+  screen" captions, the two calendar paragraphs under the heat maps (they are
+  `st.markdown`, not captions, and their window averages are only known after
+  the loop that draws them), and the "Esfuerzo por área" expander's own note.

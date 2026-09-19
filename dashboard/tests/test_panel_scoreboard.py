@@ -320,3 +320,39 @@ def test_the_year_sits_directly_under_the_key_indicators():
     html = _html(_run()).upper()
     assert html.index("INDICADORES CLAVE") < html.index("BAUTISMOS 20")
     assert html.index("BAUTISMOS 20") < html.index("ZONAS")
+
+
+# ── Step C2: the captions became ⓘ text and chips ────────────────────────────
+
+def test_the_page_no_longer_opens_with_a_paragraph():
+    """Three sentences of explanation sat between the title and the first
+    number. One of them ("drill into a zone on the Breakdowns page") stopped
+    being true when every card became a link."""
+    html = _html(_run())
+    assert "Los datos de resumen se actualizan a diario" not in html
+
+
+def test_a_refused_comparison_is_a_chip_on_the_card_not_a_paragraph():
+    """The schedule holds no cambio before this one, so there is nothing to
+    compare the cambio reading against."""
+    html = _html(_run(panel_ki_period_val="cycle"))
+    card = _card_for(html, "Nuevas personas")
+    assert "pmg-kpi-nochange" in card, card
+    assert "sin comparación" in card, card
+
+
+def test_the_reason_for_a_refused_comparison_is_in_the_sections_info():
+    """The chip alone would leave a phone with no way to learn why — there is
+    no hover on a touch screen, so the ⓘ carries the sentence too."""
+    html = _html(_run(panel_ki_period_val="cycle"))
+    info = html[html.index('class="pmg-sec-info"'):]
+    info = info[:info.index("</p>")]
+    assert "no tiene un cambio anterior" in info, info[:300]
+
+
+def test_every_section_that_carried_captions_now_carries_an_info_glyph():
+    html = _html(_run())
+    # One ⓘ per section, and the sections that had captions are the ones that
+    # have it: Key Indicators, Bautismos, Zonas, Actividad diaria, Tasas.
+    assert html.count('class="pmg-info"') >= 5, (
+        f"only {html.count('class=\"pmg-info\"')} sections carry an ⓘ")

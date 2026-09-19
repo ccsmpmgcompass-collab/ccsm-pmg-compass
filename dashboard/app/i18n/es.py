@@ -2880,4 +2880,88 @@ ES: dict[str, str] = {
     "between them, and at least {need} are needed.":
         "Sin comparación con el cambio {prev}: sus mismas {n} semanas tienen "
         "{reports} entre todas, y se necesitan al menos {need}.",
+    # ── Panel, step C2: the captions became section ⓘ text and card chips ─────
+    # The page carried 31 explanatory captions. Each one is now either the
+    # section's ⓘ, its right-hand line, or — where a comparison is refused —
+    # a chip on the card that could not be compared.
+    "no comparison": "sin comparación",
+    "What the whole mission placed, invited and offered over the last seven "
+    "reporting days, against the same three figures over the seven before. A "
+    "day counts as a reporting day once at least half the areas have filed, so "
+    "a quiet Sunday cannot pass for a collapse. The goal on a bar is the "
+    "per-area weekly target from AGENT_CONFIG times the mission's active "
+    "areas.":
+        "Lo que toda la misión entregó, invitó y ofreció en los últimos siete "
+        "días con informe, comparado con las mismas tres cifras de los siete "
+        "anteriores. Un día cuenta como día con informe cuando ha informado al "
+        "menos la mitad de las áreas, así que un domingo tranquilo no puede "
+        "pasar por una caída. La meta de una barra es el objetivo semanal por "
+        "área de AGENT_CONFIG multiplicado por las áreas activas de la misión.",
+    "No comparison yet: the previous 7 days hold {n} days on which at least "
+    "half the areas reported, and {need} are needed.":
+        "Aún no hay comparación: los 7 días previos tienen {n} días en que "
+        "informó al menos la mitad de las áreas, y se necesitan {need}.",
+    "Compared against {n} reporting days in the previous 7, scaled per day.":
+        "Comparado con {n} días con informe de los 7 previos, ajustado por día.",
+    "Change is shown in percentage points once the previous 7 days hold {need} "
+    "reporting days; they hold {n}.":
+        "El cambio se muestra en puntos porcentuales cuando los 7 días previos "
+        "tengan {need} días con informe; tienen {n}.",
+    "How well, against the how much above, over the same window. Each rate is "
+    "the ratio of the mission's totals, not the average of the areas' own "
+    "rates — averaging lets a few low-volume areas with favourable ratios "
+    "carry the mission figure. Three of the four divide by something other "
+    "than the stage immediately above them, so the table below gives each "
+    "one's arithmetic in full. Movement is in percentage points: a percent "
+    "change of a percentage turns two more invitations per hundred lessons "
+    "into \"+31%\". Targets come from AGENT_CONFIG and are the ones "
+    "CCSM_Agent1A.gs coaches against.":
+        "Qué tan bien, frente al cuánto de arriba, en la misma ventana. Cada "
+        "tasa es la razón de los totales de la misión, no el promedio de las "
+        "tasas de cada área — promediar permite que unas pocas áreas de bajo "
+        "volumen con razones favorables carguen la cifra de la misión. Tres de "
+        "las cuatro dividen por algo distinto de la etapa inmediatamente "
+        "anterior, así que la tabla de abajo entrega la aritmética completa de "
+        "cada una. El movimiento va en puntos porcentuales: un cambio "
+        "porcentual de un porcentaje convierte dos invitaciones más por cada "
+        "cien lecciones en «+31%». Las metas provienen de AGENT_CONFIG y son "
+        "las mismas con que CCSM_Agent1A.gs entrega su asesoramiento.",
+    "Every figure here is divided by the zone's active area count, including "
+    "the areas that did not report — these zones run from 8 to 13 areas, so a "
+    "raw total ranks them by size rather than by work. Effectiveness is the "
+    "newest scored week and stays a per-area average in both readings.":
+        "Cada cifra aquí se divide por la cantidad de áreas activas de la "
+        "zona, incluidas las que no informaron — estas zonas tienen entre 8 y "
+        "13 áreas, así que un total bruto las ordena por tamaño y no por "
+        "trabajo. La Efectividad es la semana más reciente con puntaje y sigue "
+        "siendo un promedio por área en ambas lecturas.",
+    "nightly summary, refreshed daily at noon":
+        "resumen nocturno, actualizado a diario al mediodía",
+    "{n} of {total} complete weeks so far":
+        "{n} de {total} semanas completas hasta ahora",
+    "Complete weeks only — the week in progress is left out, or every line "
+    "would dip on a week that has not finished. The mission began tracking in "
+    "August, so the chart fills in as each week closes.":
+        "Solo semanas completas — la semana en curso se excluye, o cada línea "
+        "caería en una semana que no ha terminado. La misión comenzó a "
+        "registrar en agosto, así que el gráfico se completa a medida que "
+        "cierra cada semana.",
+    "The mission's total for one nightly metric, day by day. A day nobody "
+    "reported is drawn as a gap in the mission's activity rather than dropped, "
+    "so the week keeps its seven days.":
+        "El total de la misión para una métrica nocturna, día a día. Un día "
+        "que nadie informó se dibuja como un vacío en la actividad de la "
+        "misión en vez de omitirse, así que la semana conserva sus siete días.",
+    "{areas} active areas × {days} days = {possible} possible answers. "
+    "{missing} were never filed ({pct}). The three shares are of all of them, "
+    "so a missing form counts against the mission; the Effort Score is "
+    "averaged over the area-days that DID answer, because an unfiled form is a "
+    "compliance failure rather than evidence that a companionship worked "
+    "badly.":
+        "{areas} áreas activas × {days} días = {possible} respuestas posibles. "
+        "{missing} nunca se enviaron ({pct}). Las tres proporciones son sobre "
+        "todas ellas, así que un formulario que falta cuenta en contra de la "
+        "misión; el Puntaje de Esfuerzo se promedia sobre los días-área que SÍ "
+        "respondieron, porque un formulario sin enviar es una falla de "
+        "cumplimiento y no evidencia de que una compañería haya trabajado mal.",
 }

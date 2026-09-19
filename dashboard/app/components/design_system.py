@@ -748,6 +748,13 @@ def render_kpi_row(metrics: list[dict]) -> None:
     card whose big number is a share and whose count would otherwise be lost
     ("143 de 301 días-área").
 
+    change_note (optional str) is what the card says INSTEAD of an arrow when
+    there is no honest comparison to draw — "sin comparación". It renders only
+    when no change was passed, so it can never contradict one, and
+    change_note_title carries the reason on hover. The page that sets it should
+    also put that reason in the section's ⓘ, for the reader on a phone who has
+    no hover.
+
     points_unit (optional str, default "pp") is the suffix on a POINTS change.
     Percentage points are the default because rates were the first caller; a
     card measuring something else in unscaled points (the 1-3 effort score)
@@ -857,6 +864,21 @@ def render_kpi_row(metrics: list[dict]) -> None:
                     f'<div style="font-size:0.78rem;color:{color};font-weight:600;'
                     f'margin-top:4px;">{arrow} {_html.escape(text)} {delta_label}</div>'
                 )
+
+        # A comparison this page REFUSES to make — too few reporting areas or
+        # days behind the prior side — said on the card instead of in a
+        # paragraph under the row (data-pages plan C2). A silently missing arrow
+        # is audit finding M7; a paragraph explaining one is X4. The chip is the
+        # third option: the fact on the card, the arithmetic on hover, and the
+        # section's ⓘ for the reader who cannot hover.
+        if not delta_html and m.get("change_note"):
+            note_title = m.get("change_note_title") or ""
+            title_attr = f' title="{_html.escape(str(note_title))}"' if note_title else ""
+            delta_html = (
+                f'<div class="pmg-kpi-nochange"{title_attr} '
+                f'style="font-size:0.78rem;color:#6b7280;font-weight:600;'
+                f'margin-top:4px;">→ {_html.escape(str(m["change_note"]))}</div>'
+            )
 
         # "note" is a caption in the card's own right, for a card with no goal
         # bar to hang one under. The effort section's cards are percentages of

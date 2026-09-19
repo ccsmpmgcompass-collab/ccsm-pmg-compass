@@ -190,3 +190,32 @@ def test_a_details_string_from_the_caller_rides_with_the_rest(rendered):
                       "details": "meta del cambio 2.038"}])
     assert "meta del cambio 2.038" in re.search(
         r'class="pmg-kpi-cap" title="([^"]*)"', html).group(1)
+
+
+# ── The refused comparison ───────────────────────────────────────────────────
+
+def test_a_card_with_no_comparison_says_so_instead_of_showing_nothing(rendered):
+    """Data-pages plan C2. A refused comparison used to be a paragraph under
+    the row (audit X4); a silently missing arrow is audit M7. The card carries
+    it as its own muted chip, with the reason on hover."""
+    html = rendered([{"label": "A", "value": 20, "change_note": "sin comparación",
+                      "change_note_title": "solo 2 áreas informaron"}])
+    assert 'class="pmg-kpi-nochange"' in html
+    assert "sin comparación" in html
+    assert 'title="solo 2 áreas informaron"' in html
+
+
+def test_a_real_change_always_wins_over_the_note(rendered):
+    """The note may never contradict an arrow that was drawn."""
+    from app.analytics import period_delta as pd_
+
+    change = pd_.period_delta(120, 100, current_basis=7, prior_basis=7)
+    html = rendered([{"label": "A", "value": 120, "change": change,
+                      "change_note": "sin comparación"}])
+    assert "pmg-kpi-nochange" not in html
+    assert "sin comparación" not in html
+
+
+def test_no_note_and_no_change_draws_no_chip(rendered):
+    html = rendered([{"label": "A", "value": 20}])
+    assert "pmg-kpi-nochange" not in html

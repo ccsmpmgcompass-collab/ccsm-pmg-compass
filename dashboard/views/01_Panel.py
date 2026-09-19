@@ -94,11 +94,12 @@ render_page_header(t("PMG Compass"),
 
 _EMPTY_MSG = t("No data for this section yet.")
 
-st.caption(
-    t("Summary data refreshes daily at noon. Submission compliance is computed "
-      "live. Mission-level only — drill into a zone, district or area on the "
-      "Breakdowns page.")
-)
+# The page opened with a three-sentence caption: when the summary refreshes,
+# that compliance is live, and that this page is mission-level only. The last
+# is no longer true in the way it was written — every Key Indicator card opens
+# its own drill-down — and the other two describe particular sections rather
+# than the page, so they are those sections' ⓘ and right-hand lines now
+# (audit X4, data-pages plan C2).
 
 
 # ── Load data ─────────────────────────────────────────────────────────────────
@@ -637,6 +638,40 @@ def _ki_cycle_card(metric: str) -> dict:
     }
 
 
+# ── When this page refuses to compare, and why ────────────────────────────────
+# Every reading has one way of being uncomparable, and it is always the same
+# shape: the prior side rests on too few reporting areas to stand for the
+# mission. The sentence is built once, here, because it has to reach three
+# places — the ⓘ, for the reader on a phone with nothing to hover; the chip on
+# each card, which says only that there is no comparison; and that chip's
+# tooltip. It used to be a paragraph under the row (audit X4).
+_ki_no_change_reason = ""
+if _ki_period == _KI_PERIOD_WEEK and _lw_areas < _wtd_min_areas:
+    _ki_no_change_reason = t(
+        "No comparison with last week: only {n} areas filed a nightly report "
+        "over the same days a week ago.", n=fmt_int(_lw_areas))
+elif _ki_period == _KI_PERIOD_LAST and _prev_ki_reported < _ki_min_areas:
+    _prev_span = (fmt_week_span(_prev_week_end - timedelta(days=6), _prev_week_end)
+                  if _prev_week_end is not None else "")
+    _ki_no_change_reason = t(
+        "No comparison with the previous week: {n} of {total} areas submitted "
+        "the weekly form for {span}, and at least {need} are needed for a "
+        "mission-level comparison.",
+        n=fmt_int(_prev_ki_reported), total=fmt_int(_active_areas),
+        span=_prev_span, need=fmt_int(_ki_min_areas))
+elif _ki_period == _KI_PERIOD_CYCLE and _ki_prev_cycle is None:
+    _ki_no_change_reason = t(
+        "No comparison yet: the schedule holds no cambio before this one.")
+elif _ki_period == _KI_PERIOD_CYCLE and _ki_twin_basis < _ki_min_areas:
+    _ki_no_change_reason = t(
+        "No comparison with cambio {prev}: its matching {n} weeks hold "
+        "{reports} between them, and at least {need} are needed.",
+        prev=_cycle_label(_ki_prev_cycle), n=fmt_int(_ki_cycle_elapsed),
+        reports=(t("1 weekly report") if _ki_twin_basis == 1
+                 else t("{n} weekly reports", n=fmt_int(_ki_twin_basis))),
+        need=fmt_int(_ki_min_areas))
+
+
 # ── The heading, its right-hand line, and the toggle ──────────────────────────
 # The right-hand line is where the window and the coverage live now: which
 # cambio, how far into it, and how much of the mission is behind the numbers.
@@ -670,19 +705,25 @@ else:
             t("{n} of {total} areas filed this week",
               n=fmt_int(_wtd_areas), total=fmt_int(_active_areas)))
 
+#: The section's own explanation, behind the ⓘ. Everything the two Key
+#: Indicator rows used to carry as five captions under them (audit X4).
+_ki_info = t(
+    "The seven indicators the mission is judged on, for every area that "
+    "submits. The bar is the goal the companionships set themselves on the "
+    "weekly form — the same number the Church's app shows them — and the "
+    "violet mark is the goal leadership set for the cambio on the Metas "
+    "page. During the week in progress two indicators are counted live from "
+    "the nightly form and the rest arrive with the weekly form on Sunday; "
+    "the white tick is where the week's goal says today should be. Totals "
+    "are compared per area, because a week's total is a sum over whoever "
+    "reported. Tap any card for that indicator's history.")
+if _ki_no_change_reason:
+    _ki_info += " " + _ki_no_change_reason
+
 render_section_label(
     t("Key Indicators"), emphasis=True,
     right=" · ".join(p for p in _ki_right_parts if p),
-    info=t(
-        "The seven indicators the mission is judged on, for every area that "
-        "submits. The bar is the goal the companionships set themselves on the "
-        "weekly form — the same number the Church's app shows them — and the "
-        "violet mark is the goal leadership set for the cambio on the Metas "
-        "page. During the week in progress two indicators are counted live from "
-        "the nightly form and the rest arrive with the weekly form on Sunday; "
-        "the white tick is where the week's goal says today should be. Totals "
-        "are compared per area, because a week's total is a sum over whoever "
-        "reported. Tap any card for that indicator's history."),
+    info=_ki_info,
 )
 
 _ki_picked = st.pills(
@@ -708,40 +749,20 @@ else:
         _ki_builder = _ki_last_card
     else:
         _ki_builder = _ki_week_card
-    render_kpi_row([_ki_builder(k) for k in _ki_metrics])
 
-    # The one case the row cannot state on its own: a comparison this page
-    # refuses to make. A missing arrow that says why is audit finding M7's rule;
-    # everything else that used to sit here is in the ⓘ above.
-    if _ki_period == _KI_PERIOD_WEEK and _lw_areas < _wtd_min_areas:
-        st.caption(t(
-            "No comparison with last week: only {n} areas filed a nightly "
-            "report over the same days a week ago.", n=fmt_int(_lw_areas)))
-    elif _ki_period == _KI_PERIOD_LAST and _prev_ki_reported < _ki_min_areas:
-        _prev_span = (fmt_week_span(_prev_week_end - timedelta(days=6),
-                                    _prev_week_end)
-                      if _prev_week_end is not None else "")
-        st.caption(t(
-            "No comparison with the previous week: {n} of {total} areas "
-            "submitted the weekly form for {span}, and at least {need} are "
-            "needed for a mission-level comparison.",
-            n=fmt_int(_prev_ki_reported), total=fmt_int(_active_areas),
-            span=_prev_span, need=fmt_int(_ki_min_areas)))
-    elif _ki_period == _KI_PERIOD_CYCLE and _ki_prev_cycle is None:
-        st.caption(t("No comparison yet: the schedule holds no cambio before "
-                     "this one."))
-    elif _ki_period == _KI_PERIOD_CYCLE and _ki_twin_basis < _ki_min_areas:
-        # The twin exists but is too thinly reported to compare against — cambio
-        # 2026-5 began mid-cycle for this mission and its first weeks carry a
-        # handful of areas. Saying so beats an arrow that measures the reporting
-        # gap rather than the work.
-        st.caption(t(
-            "No comparison with cambio {prev}: its matching {n} weeks hold "
-            "{reports} between them, and at least {need} are needed.",
-            prev=_cycle_label(_ki_prev_cycle), n=fmt_int(_ki_cycle_elapsed),
-            reports=(t("1 weekly report") if _ki_twin_basis == 1
-                     else t("{n} weekly reports", n=fmt_int(_ki_twin_basis))),
-            need=fmt_int(_ki_min_areas)))
+    _ki_cards = []
+    for _k in _ki_metrics:
+        _card = _ki_builder(_k)
+        # A refused comparison is the card's own chip now, not a paragraph
+        # under the row: "sin comparación", with the reason on hover and in
+        # the ⓘ above. Only where there IS a number to have compared — a card
+        # still waiting for Sunday has nothing to say about last week.
+        if (_ki_no_change_reason and _card.get("change") is None
+                and isinstance(_card.get("value"), (int, float))):
+            _card["change_note"] = t("no comparison")
+            _card["change_note_title"] = _ki_no_change_reason
+        _ki_cards.append(_card)
+    render_kpi_row(_ki_cards)
 
 # ── The drill-down — a tapped Key Indicator, by week / cambio / area ──────────
 # Opened by ?ki=<metric>, which every card above links to; the pills strip is
@@ -928,12 +949,14 @@ def _zone_mode_label(mode: str) -> str:
 _zone_mode = st.session_state.get("panel_zone_mode", _ZONE_MODE_PER_AREA)
 _zone_per_area = _zone_mode != _ZONE_MODE_TOTAL
 
-render_section_label(t("Zones — Per-Area Average (7 Days)") if _zone_per_area
-                     else t("Zones — Zone Totals (7 Days)"))
-
 # Effectiveness comes from SCORES' newest scored week. It is the one column on
 # a different clock from the rolling 7 days, and the one column the per-area /
 # total switch does not apply to — see zone_comparison_table.
+#
+# All of this is computed ABOVE the heading rather than below it, which it was
+# until step C2: the two captions that used to sit under the table quote these
+# figures, and a heading's ⓘ can only carry them if they already exist when the
+# heading is drawn (Streamlit renders in source order).
 _zone_eff_week = None
 _zone_scores = pd.DataFrame()
 _zone_scored_weeks = get_scored_weeks()
@@ -952,6 +975,32 @@ if ZONE_EFFECTIVENESS in _zone_num.columns:
 _zone_eff_ready = (
     ZONE_EFFECTIVENESS in _zone_num.columns
     and effectiveness_is_rankable(_zone_scores, _active_areas)
+)
+
+_zone_info = [t(
+    "Every figure here is divided by the zone's active area count, including "
+    "the areas that did not report — these zones run from 8 to 13 areas, so a "
+    "raw total ranks them by size rather than by work. Effectiveness is the "
+    "newest scored week and stays a per-area average in both readings.")]
+if not _zone_per_area and not _zone_num.empty:
+    _zone_info.append(t(
+        "Zone totals rank by zone size — these zones run {low} to {high} areas."
+        " Effectiveness stays a per-area average.",
+        low=fmt_int(_zone_num["areas"].min()),
+        high=fmt_int(_zone_num["areas"].max())))
+if _zone_eff_week and not _zone_eff_ready:
+    _zone_info.append(t(
+        "Effectiveness does not lead the ranking yet: its Key Indicator "
+        "component is still 0 for most areas ({n} of {total} scored), "
+        "because a week's KI goals are set on the previous week's form.",
+        n=fmt_int(ki_scored_area_count(_zone_scores)),
+        total=fmt_int(_active_areas)))
+
+render_section_label(
+    t("Zones — Per-Area Average (7 Days)") if _zone_per_area
+    else t("Zones — Zone Totals (7 Days)"),
+    info=" ".join(_zone_info),
+    right=t("nightly summary, refreshed daily at noon"),
 )
 _zone_default_key = (ZONE_EFFECTIVENESS if _zone_eff_ready
                      else _ZONE_FALLBACK_SORT)
@@ -1026,26 +1075,55 @@ else:
         axis=1)
     render_table(_styled)
 
-    if not _zone_per_area:
-        st.caption(t("Zone totals rank by zone size — these zones run "
-                     "{low} to {high} areas."
-                     " Effectiveness stays a per-area average.",
-                     low=fmt_int(_zone_num["areas"].min()),
-                     high=fmt_int(_zone_num["areas"].max())))
-
-    if _zone_eff_week and not _zone_eff_ready:
-        st.caption(t(
-            "Effectiveness does not lead the ranking yet: its Key Indicator "
-            "component is still 0 for most areas ({n} of {total} scored), "
-            "because a week's KI goals are set on the previous week's form.",
-            n=fmt_int(ki_scored_area_count(_zone_scores)),
-            total=fmt_int(_active_areas)))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 4a. NIGHTLY ACTIVITY — mission totals, last 7 days
 # ═══════════════════════════════════════════════════════════════════════════════
-render_section_label(t("Nightly Activity — Last 7 Days"))
+#: The window every figure in this section and the next describes, and — when
+#: the prior side is too thin to compare against — why there are no arrows.
+#: Both were captions under the rows until step C2 (audit X4).
+_night_window = (
+    t("{start}–{end} · {n} reporting days",
+      start=fmt_day_month(_cur_start), end=fmt_day_month(_cur_end),
+      n=fmt_int(_cur_days))
+    if _night_anchor is not None else ""
+)
+_night_no_change = ""
+_night_scaled = ""
+if _night_anchor is not None:
+    if _prev_days < MIN_COMPARABLE_DAYS:
+        _night_no_change = t(
+            "No comparison yet: the previous 7 days hold {n} days on which at "
+            "least half the areas reported, and {need} are needed.",
+            n=fmt_int(_prev_days), need=fmt_int(MIN_COMPARABLE_DAYS))
+    elif _prev_days < WINDOW_DAYS:
+        _night_scaled = t(
+            "Compared against {n} reporting days in the previous 7, scaled per "
+            "day.", n=fmt_int(_prev_days))
+
+
+def _night_card(card: dict) -> dict:
+    """A nightly card with the section's refusal on it, where it has a value
+    but no arrow."""
+    if _night_no_change and card.get("change") is None:
+        card["change_note"] = t("no comparison")
+        card["change_note_title"] = _night_no_change
+    return card
+
+
+render_section_label(
+    t("Nightly Activity — Last 7 Days"),
+    right=_night_window,
+    info=" ".join(x for x in [
+        t("What the whole mission placed, invited and offered over the last "
+          "seven reporting days, against the same three figures over the seven "
+          "before. A day counts as a reporting day once at least half the "
+          "areas have filed, so a quiet Sunday cannot pass for a collapse. The "
+          "goal on a bar is the per-area weekly target from AGENT_CONFIG times "
+          "the mission's active areas."),
+        _night_scaled, _night_no_change] if x),
+)
 
 #: The three tiles the page opens with. Fixed here, not read from
 #: flavor.nightly_highlights: that property derives from SCORE_CONFIG's *effort*
@@ -1073,7 +1151,7 @@ else:
     # be DASHBOARD_SUMMARY's val_7d, whose window is one day wider, which would
     # have put a number and a change describing different spans on one card.
     render_kpi_row([
-        {
+        _night_card({
             "label": METRIC_LABELS.get(k, k),
             "value": int(_cur_totals.get(k, 0)),
             "goal":  _mission_goal(k),
@@ -1082,28 +1160,9 @@ else:
                 _cur_totals.get(k, 0), _prev_totals.get(k, 0),
                 current_basis=_cur_days, prior_basis=_prev_days),
             "delta_label": _VS_PRIOR_WEEK,
-        }
+        })
         for k in _nightly_keys
     ])
-
-    # The window is stated, and so is the reason there is no comparison yet.
-    # A silently missing arrow is the audit's own M7 finding (empty states that
-    # never say why) reintroduced one section higher up.
-    _win_note = t("{start}–{end} · {n} reporting days",
-                  start=fmt_day_month(_cur_start), end=fmt_day_month(_cur_end),
-                  n=fmt_int(_cur_days))
-    if _prev_days < MIN_COMPARABLE_DAYS:
-        st.caption(t(
-            "{window}. No comparison yet: the previous 7 days hold {n} days on "
-            "which at least half the areas reported, and {need} are needed.",
-            window=_win_note, n=fmt_int(_prev_days),
-            need=fmt_int(MIN_COMPARABLE_DAYS)))
-    elif _prev_days < WINDOW_DAYS:
-        st.caption(t(
-            "{window}. Compared against {n} reporting days in the previous 7, "
-            "scaled per day.", window=_win_note, n=fmt_int(_prev_days)))
-    else:
-        st.caption(t("{window}, against the 7 days before.", window=_win_note))
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 4b. CONVERSION RATES — how well, against §4a's how much (audit H2)
@@ -1133,7 +1192,31 @@ else:
 # its "contact rate" is attempted ÷ found — a different ratio that happens to
 # share a name. There is nothing to duplicate and nowhere to send anyone, so the
 # arithmetic is shown here instead, in an expander. Revisit once Tableau syncs.
-render_section_label(t("Conversion Rates — Last 7 Days"))
+#: A rate does not grow with the days behind it, so unlike the section above
+#: there is no scaled middle case: a short prior window cannot be corrected
+#: for, only refused. See period_delta.point_delta.
+_rate_no_change = (
+    t("Change is shown in percentage points once the previous 7 days hold "
+      "{need} reporting days; they hold {n}.",
+      n=fmt_int(_prev_days), need=fmt_int(MIN_COMPARABLE_DAYS))
+    if _night_anchor is not None and _prev_days < MIN_COMPARABLE_DAYS else ""
+)
+
+render_section_label(
+    t("Conversion Rates — Last 7 Days"),
+    right=_night_window,
+    info=" ".join(x for x in [
+        t("How well, against the how much above, over the same window. Each "
+          "rate is the ratio of the mission's totals, not the average of the "
+          "areas' own rates — averaging lets a few low-volume areas with "
+          "favourable ratios carry the mission figure. Three of the four "
+          "divide by something other than the stage immediately above them, so "
+          "the table below gives each one's arithmetic in full. Movement is in "
+          "percentage points: a percent change of a percentage turns two more "
+          "invitations per hundred lessons into \"+31%\". Targets come from "
+          "AGENT_CONFIG and are the ones CCSM_Agent1A.gs coaches against."),
+        _rate_no_change] if x),
+)
 
 if _night_anchor is None:
     st.info(t("No nightly reports yet — DAILY_LOG has no day on which at least "
@@ -1162,26 +1245,14 @@ else:
             "decimals": 1,
             "change": r["change"],
             "delta_label": _VS_PRIOR_WEEK,
+            # Same rule as the section above: where there is a reading but no
+            # arrow, the card says so and carries the reason on hover.
+            **({"change_note": t("no comparison"),
+                "change_note_title": _rate_no_change}
+               if _rate_no_change and r["change"] is None else {}),
         }
         for r in _rate_rows
     ])
-
-    _rate_win = t("{start}–{end} · {n} reporting days",
-                  start=fmt_day_month(_cur_start), end=fmt_day_month(_cur_end),
-                  n=fmt_int(_cur_days))
-    if _prev_days < MIN_COMPARABLE_DAYS:
-        # Same honesty rule as §1: a missing arrow says why it is missing.
-        # Unlike §1 there is no scaled middle case — a rate does not grow with
-        # the days behind it, so a short prior window cannot be corrected for,
-        # only refused. See period_delta.point_delta.
-        st.caption(t(
-            "{window}. Change is shown in percentage points once the previous 7 "
-            "days hold {need} reporting days; they hold {n}.",
-            window=_rate_win, n=fmt_int(_prev_days),
-            need=fmt_int(MIN_COMPARABLE_DAYS)))
-    else:
-        st.caption(t("{window}, against the 7 days before, in percentage points.",
-                     window=_rate_win))
 
     # The arithmetic, in full. This is what the Embudo link was meant to be for.
     # Printing both the words and the numbers matters more than it looks: three
@@ -1202,11 +1273,6 @@ else:
             }
             for r in _rate_rows
         ]))
-        st.caption(t(
-            "Each rate is the ratio of the mission's totals, not the average of "
-            "the areas' own rates — averaging lets a few low-volume areas with "
-            "favourable ratios carry the mission figure. Targets come from "
-            "AGENT_CONFIG and are the same ones CCSM_Agent1A.gs coaches against."))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1220,12 +1286,29 @@ else:
 # DAILY_LOG), same fix already applied to the Effort score's per-area source.
 # The two charts are also independent questions with independent sources, so
 # a missing one no longer blanks out the other — each has its own guard.
-render_section_label(t("8-Week Trend — Mission Totals"))
-
 nightly_chart = exclude_current_week(nightly_trends_df)
 ki_chart      = exclude_current_week(ki_df)
 _has_nightly_trend = not nightly_chart.empty and "week_end_date" in nightly_chart.columns
 _has_ki_trend      = not ki_chart.empty and "week_end_date" in ki_chart.columns
+
+# "8-Week Trend" over three points is not a lie, but it invites the reader to
+# wonder what happened to the other five weeks. The count is in the heading's
+# right-hand line rather than in a caption under the charts (step C2), and
+# disappears once there are eight.
+_TREND_WEEKS = 8
+_weeks_plotted = max(
+    len(nightly_chart) if _has_nightly_trend else 0,
+    len(ki_chart) if _has_ki_trend else 0,
+)
+render_section_label(
+    t("8-Week Trend — Mission Totals"),
+    right=(t("{n} of {total} complete weeks so far",
+             n=fmt_int(_weeks_plotted), total=fmt_int(_TREND_WEEKS))
+           if 0 < _weeks_plotted < _TREND_WEEKS else ""),
+    info=t("Complete weeks only — the week in progress is left out, or every "
+           "line would dip on a week that has not finished. The mission began "
+           "tracking in August, so the chart fills in as each week closes."),
+)
 
 if not _has_nightly_trend and not _has_ki_trend:
     st.info(_EMPTY_MSG)
@@ -1276,21 +1359,6 @@ else:
         else:
             st.info(_EMPTY_MSG)
 
-    # "8-Week Trend" over three points is not a lie, but it does invite the
-    # reader to wonder what happened to the other five weeks. Say it: the
-    # mission started tracking in August, and the chart fills in as the weeks
-    # arrive (audit step 1.5 — a thin section should state that it is thin
-    # rather than look broken). Silent once there are eight.
-    _TREND_WEEKS = 8
-    _weeks_plotted = max(
-        len(nightly_chart) if _has_nightly_trend else 0,
-        len(ki_chart) if _has_ki_trend else 0,
-    )
-    if 0 < _weeks_plotted < _TREND_WEEKS:
-        st.caption(t(
-            "Building history — {n} of {total} complete weeks so far. The "
-            "chart fills in as each week closes.",
-            n=fmt_int(_weeks_plotted), total=fmt_int(_TREND_WEEKS)))
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # THE NIGHTLY WINDOW — shared by sections 4d and 5a
@@ -1335,7 +1403,11 @@ _daily_label = METRIC_LABELS.get(_daily_key, _daily_key)
 
 render_section_label(
     t("Daily {metric} — Last 7 Days", metric=_daily_label) if _daily_key
-    else t("Daily Trend — Last 7 Days")
+    else t("Daily Trend — Last 7 Days"),
+    right=_night_span,
+    info=t("The mission's total for one nightly metric, day by day. A day "
+           "nobody reported is drawn as a gap in the mission's activity rather "
+           "than dropped, so the week keeps its seven days."),
 )
 
 if not _daily_metric_options:
@@ -1373,7 +1445,6 @@ else:
         yaxis_title=_daily_label,
     )
     chart(fig_daily, height=280)
-    st.caption(t("{span} · mission total per day.", span=_night_span))
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 5a. EFFORT LEVEL — last 7 days, over every active area
@@ -1389,7 +1460,6 @@ else:
 # area-days, and the effort SCORE is computed over the areas that answered and
 # only them (a missing form is a compliance failure — section 7 grades it by
 # name — not evidence that a companionship worked badly).
-render_section_label(t("Effort Level — Last 7 Days"))
 
 #: How far the effort score must move before the card calls it a change. The
 #: rates' 2,0 is percentage POINTS on a 0-100 scale; this score lives on 1-3,
@@ -1408,6 +1478,26 @@ _eff_transfer = date.fromisoformat(_eff_transfer_start)
 _eff_cur = eb.build_window(
     _eff_log, _eff_areas, start=_night_start, end=_night_end,
     system_start=_eff_floor, transfer_start=_eff_transfer,
+)
+
+# Drawn after the window is built, so the denominator can be stated in the
+# heading rather than in a caption under the cards (step C2). It is the whole
+# point of this section: the shares are of every answer that COULD have been
+# filed, not of the ones that were.
+render_section_label(
+    t("Effort Level — Last 7 Days"),
+    right=_night_span,
+    info=t("{areas} active areas × {days} days = {possible} possible answers. "
+           "{missing} were never filed ({pct}). The three shares are of all of "
+           "them, so a missing form counts against the mission; the Effort "
+           "Score is averaged over the area-days that DID answer, because an "
+           "unfiled form is a compliance failure rather than evidence that a "
+           "companionship worked badly.",
+           areas=fmt_int(_eff_cur.area_count),
+           days=fmt_int(len(_eff_cur.days)),
+           possible=fmt_int(_eff_cur.possible),
+           missing=fmt_int(_eff_cur.missing),
+           pct=fmt_percent(_eff_cur.missing_share)) if _eff_cur.possible > 0 else None,
 )
 
 if _eff_cur.possible <= 0:
@@ -1464,16 +1554,6 @@ else:
         },
     ])
 
-    st.caption(
-        t("{areas} active areas × {days} days = {possible} possible answers. "
-          "{missing} were never filed ({pct}). {span}.",
-          areas=fmt_int(_eff_cur.area_count),
-          days=fmt_int(len(_eff_cur.days)),
-          possible=fmt_int(_eff_cur.possible),
-          missing=fmt_int(_eff_cur.missing),
-          pct=fmt_percent(_eff_cur.missing_share),
-          span=_night_span)
-    )
 
     # ── Per day, as a share of that day's areas ───────────────────────────────
     # The old chart was three bars holding the same three numbers as the tiles
