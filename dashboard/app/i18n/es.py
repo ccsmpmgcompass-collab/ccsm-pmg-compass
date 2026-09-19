@@ -514,6 +514,32 @@ ES: dict[str, str] = {
         "hasta ahí. Un hito que nunca se registró se hereda de uno posterior, "
         "así que el embudo nunca se ensancha.",
     "Official Baptisms": "Bautismos Oficiales",
+    # ── Embudo, data-pages plan E1/E2: freshness, the window, the scoreboard
+    "Tableau export · data from {first} to {last}":
+        "Exportación de Tableau · datos del {first} al {last}",
+    "updated today": "actualizada hoy",
+    "1 day old": "1 día de antigüedad",
+    "{n} days old": "{n} días de antigüedad",
+    "{n} days": "{n} días",
+    # The presets count back from the export's last date, never from today, and
+    # the labels have to say so — the export can be six weeks stale.
+    "Last 7 days of the export": "Últimos 7 días de la exportación",
+    "Last 14 days of the export": "Últimos 14 días de la exportación",
+    "Last 30 days of the export": "Últimos 30 días de la exportación",
+    "All of the export": "Toda la exportación",
+    "Finding snapshot": "Resumen de búsqueda",
+    "Every number here counts people whose finding event falls inside "
+    "the selected window, from the Detail export. Official Baptisms is "
+    "the exception: it comes from Tableau's own certified monthly "
+    "summary PDFs, so it can only answer for a range of whole calendar "
+    "months — any other window shows a dash rather than a wrong total.":
+        "Cada cifra aquí cuenta personas cuyo evento de búsqueda cae dentro de "
+        "la ventana elegida, según la exportación Detail. Bautismos Oficiales "
+        "es la excepción: proviene de los PDF resumen mensuales certificados "
+        "de Tableau, así que solo puede responder por un rango de meses "
+        "calendario completos — cualquier otra ventana muestra un guion en "
+        "lugar de un total equivocado.",
+    "Whole calendar months only": "Solo meses calendario completos",
     "Certified — Tableau summary PDF": "Certificado — PDF resumen de Tableau",
     "Pick a range of full calendar months to see this":
         "Elija un rango de meses calendario completos para ver esto",

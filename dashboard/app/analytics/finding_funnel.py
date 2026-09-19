@@ -22,6 +22,43 @@ PRESETS = {
 # current picture, so it opens recent and the full history is one click away.
 DEFAULT_PRESET = "Last 30 days"
 
+# Preset key -> the label the reader sees. The keys above are what
+# preset_range() looks up and must stay exactly as they are; only these labels
+# are translated, and every one of them names THE EXPORT.
+#
+# That is not decoration. preset_range() anchors on the export's last found
+# date, never on today, and the export is pulled by hand: on 2026-09-19 the
+# stored one ended 2026-08-03, so "Last 30 days" drew 5 Jul - 3 Aug. A reader
+# who takes the label to mean "up to today" is wrong by the whole staleness
+# (audit E1, plan step E1).
+PRESET_LABELS = {
+    "Last 7 days":  "Last 7 days of the export",
+    "Last 14 days": "Last 14 days of the export",
+    "Last 30 days": "Last 30 days of the export",
+    "All":          "All of the export",
+    "Custom":       "Custom",
+}
+
+#: An export older than this reads as stale and the page's freshness strip
+#: turns amber. A week, because the export is pulled by hand and a Monday pull
+#: is still the current picture on Friday.
+EXPORT_FRESH_DAYS = 7
+
+
+def export_age_days(last: date | None, today: date) -> int:
+    """How many days behind `today` the export's last found date is, floored at
+    zero. A missing `last` is reported as 0 rather than a negative or a crash:
+    the caller has nothing to be stale about."""
+    if last is None:
+        return 0
+    return max(0, (today - last).days)
+
+
+def export_is_stale(last: date | None, today: date,
+                    fresh_days: int = EXPORT_FRESH_DAYS) -> bool:
+    """True once the export is more than `fresh_days` days behind today."""
+    return export_age_days(last, today) > fresh_days
+
 
 def resolve_col(df: pd.DataFrame, *needles: str):
     """Exact (case-insensitive) match wins; else the SHORTEST column whose

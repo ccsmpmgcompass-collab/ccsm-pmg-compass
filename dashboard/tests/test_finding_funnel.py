@@ -13,13 +13,17 @@ import pytest
 
 from app.analytics.finding_funnel import (
     DEFAULT_PRESET,
+    EXPORT_FRESH_DAYS,
     FUNNEL_STAGES,
+    PRESET_LABELS,
     PRESETS,
     REFERRED_STAGE,
     _STAGE_COLS,
     build_area_rankings,
     compute_funnel_stage_counts,
     data_date_bounds,
+    export_age_days,
+    export_is_stale,
     filter_by_range,
     full_month_range,
     preset_range,
@@ -90,6 +94,53 @@ def test_default_preset_is_a_real_preset_and_is_not_all():
     opening view."""
     assert DEFAULT_PRESET in PRESETS
     assert PRESETS[DEFAULT_PRESET] is not None
+
+
+def test_every_preset_has_a_label_and_the_labels_name_the_export():
+    """The window counts back from the export's last found date, never from
+    today, and a reader who assumes otherwise is wrong by the staleness. A
+    preset with no label would also KeyError the page's radio outright."""
+    assert set(PRESET_LABELS) == set(PRESETS) | {"Custom"}
+    for key in PRESETS:
+        assert PRESET_LABELS[key].endswith("of the export"), key
+
+
+def test_the_preset_keys_are_untranslated_lookup_keys_not_labels():
+    """preset_range() looks the KEY up in PRESETS; only the label is shown."""
+    for key, label in PRESET_LABELS.items():
+        if key == "Custom":
+            continue
+        assert key in PRESETS
+        assert label != key
+
+
+def test_an_export_pulled_today_is_neither_old_nor_stale():
+    today = date(2026, 9, 19)
+    assert export_age_days(today, today) == 0
+    assert export_is_stale(today, today) is False
+
+
+def test_the_freshness_edge_is_the_seventh_day_not_the_eighth():
+    today = date(2026, 9, 19)
+    assert export_is_stale(date(2026, 9, 12), today) is False   # 7 days
+    assert export_is_stale(date(2026, 9, 11), today) is True    # 8 days
+    assert EXPORT_FRESH_DAYS == 7
+
+
+def test_the_live_export_is_stale_and_says_by_how_much():
+    """The stored export ended 2026-08-03 when this was written."""
+    today, last = date(2026, 9, 19), date(2026, 8, 3)
+    assert export_age_days(last, today) == 47
+    assert export_is_stale(last, today) is True
+
+
+def test_an_export_dated_in_the_future_is_zero_days_old_not_negative():
+    assert export_age_days(date(2026, 9, 25), date(2026, 9, 19)) == 0
+
+
+def test_no_export_at_all_has_nothing_to_be_stale_about():
+    assert export_age_days(None, date(2026, 9, 19)) == 0
+    assert export_is_stale(None, date(2026, 9, 19)) is False
 
 
 def test_preset_range_anchors_on_the_latest_found_date_and_clamps_to_lo():

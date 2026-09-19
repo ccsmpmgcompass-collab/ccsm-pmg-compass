@@ -11,7 +11,7 @@ from app.components.design_system import (
     render_page_header, render_section_label,
     render_table, render_kpi_row,
 )
-from app.config.theme import SERIES_COLORS
+from app.config.theme import SERIES_COLORS, STATUS
 from app.db.drive_blob import save_dataframe_blob
 from app.db.queries import (
     get_baptisms_actual_for_range, get_tableau_detail, get_tableau_detail_file_id,
@@ -25,12 +25,14 @@ from app.ingestion.tableau_upload import (
     upload_token,
 )
 from app.analytics.finding_funnel import (
-    DEFAULT_PRESET, FUNNEL_STAGES, PRESETS, REFERRED_STAGE, build_area_rankings,
-    compute_funnel_stage_counts, data_date_bounds, filter_by_range, preset_range,
+    DEFAULT_PRESET, FUNNEL_STAGES, PRESET_LABELS, PRESETS, REFERRED_STAGE,
+    build_area_rankings, compute_funnel_stage_counts, data_date_bounds,
+    export_age_days, export_is_stale, filter_by_range, preset_range,
     trend_series,
 )
 from app.i18n import t
 from app.i18n.formats import NA, fmt_date_range, fmt_day_month, fmt_int, fmt_percent
+from app.utils.area_helpers import mission_today
 
 # Page chrome (set_page_config / inject_global_css / render_sidebar) is
 # owned by Home.py's st.navigation router since 2026-09-02 — the router and
@@ -312,59 +314,85 @@ if rank_df.empty and det_df.empty:
 
 sync_note = _source_caption(rank_by, rank_at) or _source_caption(det_by, det_at)
 
-# ── Global date filter — re-slices every section below ────────────────────────
+# ── E1: freshness first — what this export is, and how old ─────────────────────
+# The page is a Tableau export somebody pulls by hand, and every window below
+# is measured from the export's own last date, not from today. Until this strip
+# existed the page said neither: on 2026-09-19 it opened on "last 30 days" and
+# drew 5 Jul – 3 Aug, six weeks stale, with nothing on screen to say so
+# (audit E1). The span, who loaded it and its age lead the page now, and the
+# strip turns amber past a week.
 _lo, _hi = data_date_bounds(det_df)
+_today = mission_today()
+_age_days = export_age_days(_hi, _today)
+_stale = export_is_stale(_hi, _today)
+_fresh = t("Tableau export · data from {first} to {last}",
+           first=fmt_day_month(_lo, with_year=True),
+           last=fmt_day_month(_hi, with_year=True))
+if sync_note:
+    _fresh += " · " + sync_note
+_fresh += " · " + (t("updated today") if _age_days == 0
+                   else t("1 day old") if _age_days == 1
+                   else t("{n} days old", n=_age_days))
+st.markdown(
+    f'<div style="display:flex;align-items:flex-start;gap:0.5rem;'
+    f'background:{"rgba(242,177,52,0.12)" if _stale else "rgba(255,255,255,0.035)"};'
+    f'border:1px solid {"rgba(242,177,52,0.40)" if _stale else "rgba(255,255,255,0.10)"};'
+    f'border-radius:8px;padding:0.5rem 0.8rem;margin:0 0 0.75rem 0;'
+    f'font-size:0.8rem;line-height:1.45;'
+    f'color:{STATUS["warn"] if _stale else "#9ca3af"};">'
+    f'<span style="flex:none;">{"&#9888;" if _stale else "&#128197;"}</span>'
+    f'<span>{_fresh}</span></div>',
+    unsafe_allow_html=True,
+)
+
+# ── The window — every preset counts back from the export's last date ─────────
 # Translated label -> English preset key. The key is what preset_range() looks
-# up in PRESETS, so it must stay English; only the label is translated.
-_opt_labels = {t(k): k for k in list(PRESETS.keys()) + ["Custom"]}
+# up in PRESETS, so it must stay English; only the label is translated. The
+# labels say "of the export" because that is what the window is anchored on:
+# a reader who takes "last 30 days" to run up to today is wrong by exactly the
+# staleness named above.
+_opt_labels = {t(PRESET_LABELS[k]): k for k in list(PRESETS.keys()) + ["Custom"]}
 # Open on DEFAULT_PRESET rather than whatever sits first. The page used to open
 # on "All", which was a harmless ~3-week window only because DATA_FLOOR was
 # wrongly clamping the data to May 2026; with the real 2.6 years visible, "All"
 # as an opening view is 89,800 people and ~950 daily bars.
 _keys = list(_opt_labels.values())
 _default_idx = _keys.index(DEFAULT_PRESET) if DEFAULT_PRESET in _keys else 0
-_pc, _cc = st.columns([3, 2])
-with _pc:
-    _preset = _opt_labels[st.radio(t("Date range"), list(_opt_labels),
-                                   index=_default_idx, horizontal=True,
-                                   key="ff_preset", label_visibility="collapsed")]
+# The row is full width. It used to be the left three fifths of a 3:2 split
+# reserved for the custom date boxes, which at these longer labels wrapped the
+# five presets onto three lines at 1400px; the boxes now take their own row and
+# only when Custom is chosen, which is the only time they are live anyway.
+_preset = _opt_labels[st.radio(t("Date range"), list(_opt_labels),
+                               index=_default_idx, horizontal=True,
+                               key="ff_preset", label_visibility="collapsed")]
 if _preset == "Custom":
-    with _cc:
-        _d1, _d2 = st.columns(2)
-        with _d1:
-            sel_start = st.date_input(t("Start"), value=_lo, min_value=_lo,
-                                      max_value=_hi, key="ff_start")
-        with _d2:
-            sel_end = st.date_input(t("End"), value=_hi, min_value=_lo,
-                                    max_value=_hi, key="ff_end")
+    _d1, _d2, _spacer = st.columns([1, 1, 3])
+    with _d1:
+        sel_start = st.date_input(t("Start"), value=_lo, min_value=_lo,
+                                  max_value=_hi, key="ff_start")
+    with _d2:
+        sel_end = st.date_input(t("End"), value=_hi, min_value=_lo,
+                                max_value=_hi, key="ff_end")
     if sel_start > sel_end:
         sel_start, sel_end = sel_end, sel_start
 else:
     sel_start, sel_end = preset_range(_preset, _lo, _hi)
 
+# The unfiltered frame stays reachable: E5's trend draws the equal-length
+# window BEFORE this one as ghost bars, and that cannot be recovered from a
+# frame already cut to the selection.
+det_all = det_df
 det_df = filter_by_range(det_df, sel_start, sel_end)
 if det_df.empty:
     st.info(t("No findings in the selected date range — widen the range to see data."))
 
-# Report window — the date range Tableau was pulled for + how many days it spans
-_rstart, _rend = sel_start, sel_end
-if _rstart and _rend:
-    _days = (_rend - _rstart).days + 1
-    st.markdown(
-        f'<div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;'
-        f'margin:0 0 0.5rem 0;">'
-        f'<span style="display:inline-flex;align-items:center;gap:0.4rem;'
-        f'background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.35);'
-        f'color:#a5b4fc;border-radius:999px;padding:0.3rem 0.85rem;font-size:0.8rem;'
-        f'font-weight:700;letter-spacing:0.02em;">📅 {_fmt_range(_rstart, _rend)}</span>'
-        f'<span style="color:#6b7280;font-size:0.8rem;font-weight:600;">'
-        f'{_days} day{"s" if _days != 1 else ""}</span>'
-        f'{"<span style=\'color:#4b5563;font-size:0.78rem;\'>·&nbsp;" + sync_note + "</span>" if sync_note else ""}'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
-elif sync_note:
-    st.caption(sync_note)
+#: The window every section below reports on, for a section label's right-hand
+#: line. It replaces the indigo chip that used to sit under the presets
+#: restating what the selected pill already said — and whose day count was
+#: the one string on this page that never went through t().
+_window_days = (sel_end - sel_start).days + 1 if sel_start and sel_end else 0
+_window_note = (f"{_fmt_range(sel_start, sel_end)} · "
+                + t("{n} days", n=_window_days)) if _window_days else ""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -449,9 +477,22 @@ def _unknown_label(value: str) -> str:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SECTION 1 — TOP-LINE KPIs
+# SECTION 1 — THE SCOREBOARD  (E2)
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Six cards under one heading whose right-hand line names the window and whose
+# ⓘ carries the one rule a reader needs: why Official Baptisms is sometimes a
+# dash. It used to be a caption under the card, phrased as an instruction
+# ("pick a range of full calendar months") rather than as the reason; the
+# explanation belongs to the section, the card keeps a four-word note (plan A4).
+render_section_label(
+    t("Finding snapshot"), emphasis=True, right=_window_note,
+    info=t("Every number here counts people whose finding event falls inside "
+           "the selected window, from the Detail export. Official Baptisms is "
+           "the exception: it comes from Tableau's own certified monthly "
+           "summary PDFs, so it can only answer for a range of whole calendar "
+           "months — any other window shows a dash rather than a wrong total."),
+)
 render_kpi_row([
     {"label": t("People Found"),      "value": int(found)},
     {"label": t("Contact Attempted"), "value": int(attempted)},
@@ -461,7 +502,7 @@ render_kpi_row([
     {"label": t("Official Baptisms"),
      "value": int(official_baptisms) if official_baptisms is not None else "—",
      "note": (t("Certified — Tableau summary PDF") if official_baptisms is not None
-              else t("Pick a range of full calendar months to see this"))},
+              else t("Whole calendar months only"))},
 ])
 
 
