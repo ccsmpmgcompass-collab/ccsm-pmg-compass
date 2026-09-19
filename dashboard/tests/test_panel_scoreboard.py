@@ -22,6 +22,7 @@ progress and the cambio both have real weeks in them.
 
 import re
 from datetime import date, timedelta
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -191,7 +192,9 @@ def test_the_key_indicators_are_the_pages_first_section():
     rates, and the seven indicators the mission is judged on came third."""
     html = _html(_run()).upper()
     ki = html.index("INDICADORES CLAVE")
-    for later in ("ACTIVIDAD DIARIA", "TASAS DE CONVERSIÓN", "ZONAS"):
+    # "Tasas de conversión" was its own heading until step C4 merged it into
+    # Actividad diaria — the two described one subject over one window.
+    for later in ("ACTIVIDAD DIARIA", "ZONAS"):
         assert later in html, f"{later} vanished from the page"
         assert ki < html.index(later), \
             f"{later} still renders above the Key Indicators"
@@ -361,9 +364,17 @@ def test_every_section_that_carried_captions_now_carries_an_info_glyph():
 # ── Step C3: zones as a ranked list of the seven Key Indicators ──────────────
 
 def _zone_list(html: str) -> str:
-    lists = [b for b in html.split('class="pmg-ranked"') if "Misión" in b]
-    assert lists, "the zone comparison did not render"
-    return lists[0]
+    """Just the zone comparison's own markup.
+
+    Cut at the next section label: everything the page writes afterwards is in
+    the same string, and step C4's sparkline grid names every Key Indicator a
+    second time, so an uncut chunk would answer for the wrong block."""
+    for block in html.split('class="pmg-ranked"'):
+        if "Misión" not in block:
+            continue
+        end = block.find('class="pmg-sec"')
+        return block if end < 0 else block[:end]
+    raise AssertionError("the zone comparison did not render")
 
 
 def test_the_zone_comparison_is_a_ranked_list_not_a_table():
@@ -401,3 +412,35 @@ def test_the_funnel_view_is_still_reachable():
     zones = _zone_list(html)
     assert "Intentos" in zones and "Contactos" in zones, zones[:400]
     assert "Nuevas" not in zones
+
+
+# ── Step C4: nightly activity, rates and the trends, merged ──────────────────
+
+def test_the_nightly_shortlist_is_eight_distinct_keys_this_mission_asks():
+    """Decision 9's shortlist, pinned against the one mistake it has already
+    made. PLAN §1.2 listed `referrals_received`; CCSM's nightly form asks
+    `member_referrals_received`. A metric the frame has no column for is
+    skipped in silence, so that key drew nothing at all and the chart simply
+    had seven panels where it should have eight.
+
+    The keys cannot be checked against the catalogue here — these fixtures
+    carry a deliberately partial QUESTIONS_CONFIG — so this pins the count,
+    their distinctness, and the wrong key by name. Verified against the live
+    catalogue on 2026-09-18.
+    """
+    src = (Path(__file__).resolve().parent.parent / "views" / "01_Panel.py")
+    block = re.search(r"_PANEL_TREND_KEYS = \[(.*?)\n\]",
+                      src.read_text(encoding="utf-8"), re.S).group(1)
+    keys = re.findall(r'^\s*"([a-z_]+)",', block, re.M)
+    assert len(keys) == 8, keys
+    assert len(set(keys)) == 8, f"a metric is charted twice: {keys}"
+    assert "referrals_received" not in keys, (
+        "referrals_received is not a CCSM nightly metric; the form asks "
+        "member_referrals_received")
+
+
+def test_the_rate_cards_carry_the_two_figures_the_ratio_came_from():
+    """The arithmetic was a table behind an expander on a second screen (audit
+    P6). The cards show it where the ratio is."""
+    html = _html(_run())
+    assert re.search(r"\d+ de \d+", html), "no rate card shows its two figures"

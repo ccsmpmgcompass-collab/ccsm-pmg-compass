@@ -265,3 +265,46 @@ def test_ranked_list_without_a_value_prints_a_dash_and_no_bar():
 
 def test_ranked_list_is_empty_for_no_rows():
     assert ranked_list([]) == ""
+
+
+# ── spark_multiples ──────────────────────────────────────────────────────────
+
+def test_spark_multiples_draws_a_panel_per_metric_with_its_last_value():
+    from app.components.charts import spark_multiples
+
+    html = spark_multiples({"Intentos de Contacto": [10, 40, 90],
+                            "Contactos": [5, 5, 5]})
+    assert html.count("pmg-spark-cell") == 2
+    assert html.count("<svg") == 2, "a panel is missing its sparkline"
+    assert ">90<" in html and ">5<" in html
+
+
+def test_spark_multiples_is_a_grid_that_wraps():
+    """The reason this exists rather than small_multiples: a Plotly subplot
+    grid's column count is fixed when the figure is built, and four columns at
+    375px gives each panel about 80px. This is a CSS grid, so it reflows, and
+    the phone breakpoint lives in the stylesheet with the KPI grid's."""
+    import re
+
+    from app.components import design_system as ds
+    from app.components.charts import spark_multiples
+
+    html = spark_multiples({"A": [1, 2], "B": [2, 1]})
+    assert "display:grid" in html and "auto-fit" in html
+    assert re.search(r"@media \(max-width: ?640px\)[^}]*\{[^}]*\.pmg-sparks",
+                     ds._CSS, re.S)
+
+
+def test_spark_multiples_survives_a_metric_with_no_readings():
+    from app.components.charts import spark_multiples
+
+    html = spark_multiples({"Sin datos": [], "Con datos": [1, 2, 3]})
+    assert "—" in html, "a metric with no readings must not print a number"
+    assert html.count("pmg-spark-cell") == 2
+
+
+def test_spark_multiples_escapes_its_labels():
+    from app.components.charts import spark_multiples
+
+    html = spark_multiples({"<img src=x onerror=alert(1)>": [1, 2]})
+    assert "<img" not in html

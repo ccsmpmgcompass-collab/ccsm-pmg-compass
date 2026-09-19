@@ -12,7 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 from app.auth.auth import require_auth
-from app.components.charts import chart, ranked_list
+from app.components.charts import chart, ranked_list, spark_multiples
 from app.components.ki_drilldown import (
     ki_href, render_ki_drilldown, TAB_CYCLE, TAB_WEEK,
 )
@@ -42,7 +42,6 @@ from app.db.queries import (
     get_weekly_form_data,
     select_reporting_week,
     exclude_current_week,
-    get_daily_summary,
     get_alltime_compliance,
     get_mission_goals,
     get_area_weekly_goals,
@@ -109,7 +108,6 @@ _EMPTY_MSG = t("No data for this section yet.")
 mission_df = get_mission_totals()
 zone_df    = get_zone_totals()
 nightly_trends_df = get_nightly_weekly_trends(8)
-daily_df   = get_daily_summary(7)
 ki_df      = get_weekly_ki_totals(8)
 app_goals  = get_mission_goals()
 
@@ -117,7 +115,6 @@ all_empty = (
     mission_df.empty
     and zone_df.empty
     and nightly_trends_df.empty
-    and daily_df.empty
     and ki_df.empty
 )
 if all_empty:
@@ -320,6 +317,16 @@ if _night_anchor is not None:
         _night_scaled = t(
             "Compared against {n} reporting days in the previous 7, scaled per "
             "day.", n=fmt_int(_prev_days))
+
+#: The same refusal for the four conversion rates, which have no scaled middle
+#: case: a rate does not grow with the days behind it, so a short prior window
+#: cannot be corrected for, only refused. See period_delta.point_delta.
+_rate_no_change = (
+    t("Change is shown in percentage points once the previous 7 days hold "
+      "{need} reporting days; they hold {n}.",
+      n=fmt_int(_prev_days), need=fmt_int(MIN_COMPARABLE_DAYS))
+    if _night_anchor is not None and _prev_days < MIN_COMPARABLE_DAYS else ""
+)
 
 
 # Card labels for the four rates, and the shared rate computation. Both used to
@@ -1220,31 +1227,35 @@ else:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 4a. NIGHTLY ACTIVITY — mission totals, last 7 days
+# 4. DAILY ACTIVITY — how much, how well, and which way it is going
 # ═══════════════════════════════════════════════════════════════════════════════
-def _night_card(card: dict) -> dict:
-    """A nightly card with the section's refusal on it, where it has a value
-    but no arrow."""
-    if _night_no_change and card.get("change") is None:
-        card["change_note"] = t("no comparison")
-        card["change_note_title"] = _night_no_change
-    return card
+# Data-pages plan §4 step C4. Four sections became one: nightly highlights (4a),
+# conversion rates (4b), the eight-week trend (4c) and the per-day bar chart
+# (4d). They described one subject — the nightly form — across four headings,
+# three windows and two chart idioms.
+#
+# What the merge fixes:
+#
+#   P4  the eight-week trend was two spaghetti charts. Seven Key Indicators on
+#       one axis, where "Nuevas personas" is 225 and "Bautizados" is 1, put five
+#       lines flat on zero; all of them were drawn from one blue ramp, so they
+#       were indistinguishable anyway, and the legends were taller than the
+#       plots. Small multiples give every metric its own axis and its own
+#       height, and print the last value.
+#   P6  "Lecciones con amigos por día" was one metric, seven bars and a
+#       dropdown, answering a question nothing else asked. Deleted; the same
+#       metric is one of the eight small multiples below, over eight weeks
+#       rather than seven days.
+#   P6  the rate arithmetic expander repeated on a second screen what the cards
+#       already showed. The formulas — which matter, because three of the four
+#       rates divide by something other than the stage above them — are in the
+#       section's ⓘ, and each rate card carries its own two figures.
+#
+# The window is the one every figure here shares, computed once at the top of
+# the page: the seven days ending on the last date at least half the mission
+# filed for.
 
-
-render_section_label(
-    t("Nightly Activity — Last 7 Days"),
-    right=_night_window,
-    info=" ".join(x for x in [
-        t("What the whole mission placed, invited and offered over the last "
-          "seven reporting days, against the same three figures over the seven "
-          "before. A day counts as a reporting day once at least half the "
-          "areas have filed, so a quiet Sunday cannot pass for a collapse. The "
-          "goal on a bar is the per-area weekly target from AGENT_CONFIG times "
-          "the mission's active areas."),
-        _night_scaled, _night_no_change] if x),
-)
-
-#: The three tiles the page opens with. Fixed here, not read from
+#: The three tiles the section opens with. Fixed here, not read from
 #: flavor.nightly_highlights: that property derives from SCORE_CONFIG's *effort*
 #: weights, which exist to weight the effort score, not to choose what a
 #: president sees first. It yielded contacts_attempted, roleplays and
@@ -1259,236 +1270,168 @@ _PANEL_HIGHLIGHT_KEYS = [
     "baptismal_invitations",
 ]
 
-_nightly_keys = _PANEL_HIGHLIGHT_KEYS
-if not _nightly_keys:
-    st.info(_EMPTY_MSG)
-elif _night_anchor is None:
-    st.info(t("No nightly reports yet — DAILY_LOG has no day on which at least "
-              "half the mission's areas filed."))
-else:
-    # The value comes from the same window as the arrow beneath it. It used to
-    # be DASHBOARD_SUMMARY's val_7d, whose window is one day wider, which would
-    # have put a number and a change describing different spans on one card.
-    render_kpi_row([
-        _night_card({
-            "label": METRIC_LABELS.get(k, k),
-            "value": int(_cur_totals.get(k, 0)),
-            "goal":  _mission_goal(k),
-            "goal_note": _mission_goal_note(k),
-            "change": period_delta(
-                _cur_totals.get(k, 0), _prev_totals.get(k, 0),
-                current_basis=_cur_days, prior_basis=_prev_days),
-            "delta_label": _VS_PRIOR_WEEK,
-        })
-        for k in _nightly_keys
-    ])
+#: The eight nightly metrics that earn a chart (decision 9, PLAN §1.2). The
+#: nightly form asks twenty; the other twelve are on Desgloses, which is where
+#: a reader goes to look at one area's work rather than the mission's shape.
+_PANEL_TREND_KEYS = [
+    "contacts_attempted",
+    "contacts_made",
+    "friend_lessons",
+    "lessons_member_present",
+    "church_invites",
+    "baptismal_invitations",
+    # PLAN §1.2 lists this one as `referrals_received`, which no CCSM form asks.
+    # The nightly form's key is `member_referrals_received` (checked against
+    # nightly_metrics() on 2026-09-18); the plan's key drew nothing at all, and
+    # silently, since a metric the frame has no column for is skipped.
+    "member_referrals_received",
+    "baptismal_calendars",
+]
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 4b. CONVERSION RATES — how well, against §4a's how much (audit H2)
-# ═══════════════════════════════════════════════════════════════════════════════
-# Numbered 1b rather than 2 on purpose: the audit report and the build queue
-# refer to this page's sections by number, and renumbering six of them to insert
-# one would silently invalidate every one of those references.
-#
-# CCSM_Agent1A.gs computes four conversion rates every Monday, each with a target
-# in AGENT_CONFIG, a Preach My Gospel page and a scripture — and until now not
-# one of them appeared anywhere in the dashboard (audit H2). They are the
-# sharpest thing in the dataset: live on 2026-08-21, 4.104 attempts became 673
-# lessons and 65 baptismal invitations. The mission teaches well and does not
-# invite, and no other section on this page can say so.
-#
-# The agent keeps the rates in Script Properties for the coaching emails and
-# never writes them to a tab, so they are derived here from the same DAILY_LOG
-# window §1 uses. That shared window is why this sits directly under §1: the
-# tiles above say how much was done, these say how well, and the reader does not
-# have to re-learn the timeframe between them.
-#
-# The audit's plan also called for a link to 07_Embudo_de_Búsqueda.py, on the
-# grounds that it already carries "Finding Pipeline" and "Contact Performance"
-# and must not be duplicated. That premise did not survive checking: the Embudo
-# page runs entirely on uploaded Tableau exports, its TABLEAU_RANKING and
-# TABLEAU_DETAIL tabs are empty so the page stops on "No finding data yet", and
-# its "contact rate" is attempted ÷ found — a different ratio that happens to
-# share a name. There is nothing to duplicate and nowhere to send anyone, so the
-# arithmetic is shown here instead, in an expander. Revisit once Tableau syncs.
-#: A rate does not grow with the days behind it, so unlike the section above
-#: there is no scaled middle case: a short prior window cannot be corrected
-#: for, only refused. See period_delta.point_delta.
-_rate_no_change = (
-    t("Change is shown in percentage points once the previous 7 days hold "
-      "{need} reporting days; they hold {n}.",
-      n=fmt_int(_prev_days), need=fmt_int(MIN_COMPARABLE_DAYS))
-    if _night_anchor is not None and _prev_days < MIN_COMPARABLE_DAYS else ""
-)
-
-render_section_label(
-    t("Conversion Rates — Last 7 Days"),
-    right=_night_window,
-    info=" ".join(x for x in [
-        t("How well, against the how much above, over the same window. Each "
-          "rate is the ratio of the mission's totals, not the average of the "
-          "areas' own rates — averaging lets a few low-volume areas with "
-          "favourable ratios carry the mission figure. Three of the four "
-          "divide by something other than the stage immediately above them, so "
-          "the table below gives each one's arithmetic in full. Movement is in "
-          "percentage points: a percent change of a percentage turns two more "
-          "invitations per hundred lessons into \"+31%\". Targets come from "
-          "AGENT_CONFIG and are the ones CCSM_Agent1A.gs coaches against."),
-        _rate_no_change] if x),
-)
-
-if _night_anchor is None:
-    st.info(t("No nightly reports yet — DAILY_LOG has no day on which at least "
-              "half the mission's areas filed."))
-else:
-    # _rate_rows is computed once, in §0 above — the verdict banner names the
-    # weakest of these four, so both sections must be reading the same figures.
-    # unit/decimals: one decimal, matching the zone table's fmt_number(v, 1).
-    # A whole number would print close_rate's 9,7% and 10,4% identically, which
-    # on the mission's weakest conversion is exactly where resolution matters.
-    #
-    # The goal bar's percentage is value ÷ target, so a rate at 39% of its target
-    # draws red under the four-tier grading — see render_kpi_row. No value_basis
-    # or goal_basis here: a ratio is already size-neutral, so there is no
-    # mismatched denominator for the per-area rescue to fix.
-    render_kpi_row([
-        {
-            "label": t(_RATE_SHORT_LABELS.get(r["key"], r["key"])),
-            # None, not 0, when the denominator is empty. render_kpi_row treats
-            # a non-numeric value as "no reading yet" and shows the target on
-            # its own, rather than reporting a 0% the mission never had the
-            # chance to avoid.
-            "value": r["value"] if r["value"] is not None else "—",
-            "goal": r["target"],
-            "unit": "%",
-            "decimals": 1,
-            "change": r["change"],
-            "delta_label": _VS_PRIOR_WEEK,
-            # Same rule as the section above: where there is a reading but no
-            # arrow, the card says so and carries the reason on hover.
-            **({"change_note": t("no comparison"),
-                "change_note_title": _rate_no_change}
-               if _rate_no_change and r["change"] is None else {}),
-        }
-        for r in _rate_rows
-    ])
-
-    # The arithmetic, in full. This is what the Embudo link was meant to be for.
-    # Printing both the words and the numbers matters more than it looks: three
-    # of the four rates divide by something other than the stage immediately
-    # above them — lesson_rate is lessons ÷ ATTEMPTS, not lessons ÷ contacts —
-    # and a reader who assumes a single chain will misread every one of them.
-    with st.expander(t("How each rate is calculated")):
-        render_table(pd.DataFrame([
-            {
-                t("Rate"): METRIC_LABELS.get(r["key"], r["key"]),
-                t("Calculation"): "{} ÷ {}".format(
-                    METRIC_LABELS.get(r["metric"].numerator, r["metric"].numerator),
-                    METRIC_LABELS.get(r["metric"].denominator, r["metric"].denominator)),
-                t("Figures"): "{} ÷ {}".format(fmt_int(r["numerator"]),
-                                               fmt_int(r["denominator"])),
-                t("Actual"): fmt_percent(r["value"], 1) if r["value"] is not None else "—",
-                t("Target"): fmt_percent(r["target"], 0),
-            }
-            for r in _rate_rows
-        ]))
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 4c. EIGHT-WEEK TRENDS (mission totals)
-# ═══════════════════════════════════════════════════════════════════════════════
-# B2 (AUDIT-IA-2026-08-22.md): this section used to plot flavor.nightly_highlights
-# (e.g. contacts_attempted) against get_weekly_ki_trends(), which only ever
-# returns the seven ki_* columns from the WEEKLY form — those nightly keys can
-# never be present there, so the left chart silently drew zero traces. Nightly
-# metrics have to come from get_nightly_weekly_trends() (bucketed off
-# DAILY_LOG), same fix already applied to the Effort score's per-area source.
-# The two charts are also independent questions with independent sources, so
-# a missing one no longer blanks out the other — each has its own guard.
+_TREND_WEEKS = 8
 nightly_chart = exclude_current_week(nightly_trends_df)
 ki_chart      = exclude_current_week(ki_df)
 _has_nightly_trend = not nightly_chart.empty and "week_end_date" in nightly_chart.columns
 _has_ki_trend      = not ki_chart.empty and "week_end_date" in ki_chart.columns
-
-# "8-Week Trend" over three points is not a lie, but it invites the reader to
-# wonder what happened to the other five weeks. The count is in the heading's
-# right-hand line rather than in a caption under the charts (step C2), and
-# disappears once there are eight.
-_TREND_WEEKS = 8
 _weeks_plotted = max(
     len(nightly_chart) if _has_nightly_trend else 0,
     len(ki_chart) if _has_ki_trend else 0,
 )
+
+# The four rates' formulas, in words. Three of the four divide by something
+# other than the stage immediately above them — lesson_rate is lessons ÷
+# ATTEMPTS, not lessons ÷ contacts — and a reader who assumes a single chain
+# misreads every one of them. This was a table behind an expander (audit P6);
+# the words are what carried the meaning, and each card now shows its own two
+# figures.
+_rate_formulas = " · ".join(
+    "{} = {} ÷ {}".format(
+        t(_RATE_SHORT_LABELS.get(r["key"], r["key"])),
+        METRIC_LABELS.get(r["metric"].numerator, r["metric"].numerator),
+        METRIC_LABELS.get(r["metric"].denominator, r["metric"].denominator))
+    for r in _rate_rows
+) if _rate_rows else ""
+
 render_section_label(
-    t("8-Week Trend — Mission Totals"),
-    right=(t("{n} of {total} complete weeks so far",
-             n=fmt_int(_weeks_plotted), total=fmt_int(_TREND_WEEKS))
-           if 0 < _weeks_plotted < _TREND_WEEKS else ""),
-    info=t("Complete weeks only — the week in progress is left out, or every "
-           "line would dip on a week that has not finished. The mission began "
-           "tracking in August, so the chart fills in as each week closes."),
+    t("Daily Activity"), emphasis=True,
+    right=_night_window,
+    info=" ".join(x for x in [
+        t("What the mission placed, invited and offered over the window, then "
+          "how well it converted. A day counts as a reporting day once at least "
+          "half the areas have filed, so a quiet Sunday cannot pass for a "
+          "collapse. Each rate is the ratio of the mission's totals, not the "
+          "average of the areas' own rates — averaging lets a few low-volume "
+          "areas with favourable ratios carry the mission figure — and moves in "
+          "percentage points, because a percent change of a percentage turns "
+          "two more invitations per hundred lessons into \"+31%\". Targets come "
+          "from AGENT_CONFIG and are the ones CCSM_Agent1A.gs coaches against."),
+        _rate_formulas, _night_scaled, _night_no_change,
+        _rate_no_change] if x),
 )
 
+
+def _night_card(card: dict) -> dict:
+    """A nightly card with the section's refusal on it, where it has a value
+    but no arrow. The reason is in the ⓘ above for the reader who cannot
+    hover, and on the chip for the one who can (step C2)."""
+    if _night_no_change and card.get("change") is None:
+        card["change_note"] = t("no comparison")
+        card["change_note_title"] = _night_no_change
+    return card
+
+
+if not _night_anchor:
+    st.info(t("No nightly reports yet — DAILY_LOG has no day on which at least "
+              "half the mission's areas filed."))
+else:
+    # One grid, seven cards: how much, then how well. They were two rows under
+    # two headings, and the reader had to re-learn the window between them —
+    # which was the same window both times.
+    _activity_cards = []
+    for _k in _PANEL_HIGHLIGHT_KEYS:
+        _activity_cards.append(_night_card({
+            "label": METRIC_LABELS.get(_k, _k),
+            "value": int(_cur_totals.get(_k, 0)),
+            "goal":  _mission_goal(_k),
+            "goal_note": _mission_goal_note(_k),
+            "change": period_delta(
+                _cur_totals.get(_k, 0), _prev_totals.get(_k, 0),
+                current_basis=_cur_days, prior_basis=_prev_days),
+            "delta_label": _VS_PRIOR_WEEK,
+        }))
+    for _r in _rate_rows:
+        _activity_cards.append({
+            "label": t(_RATE_SHORT_LABELS.get(_r["key"], _r["key"])),
+            # None, not 0, when the denominator is empty. render_kpi_row treats
+            # a non-numeric value as "no reading yet" and shows the target on
+            # its own, rather than reporting a 0% the mission never had the
+            # chance to avoid.
+            "value": _r["value"] if _r["value"] is not None else "—",
+            "goal": _r["target"],
+            "unit": "%",
+            "decimals": 1,
+            # The two figures the ratio came from. This is what the arithmetic
+            # expander was for, on the card that needs it.
+            "note": t("{num} of {den}", num=fmt_int(_r["numerator"]),
+                      den=fmt_int(_r["denominator"])),
+            "change": _r["change"],
+            "delta_label": _VS_PRIOR_WEEK,
+            **({"change_note": t("no comparison"),
+                "change_note_title": _rate_no_change}
+               if _rate_no_change and _r["change"] is None else {}),
+        })
+    render_kpi_row(_activity_cards)
+
+# ── Week by week, one small chart per metric ──────────────────────────────────
+# Replaces both spaghetti charts (audit P4). One hue, one metric per panel, its
+# own y-axis, the last value printed — see charts.small_multiples.
 if not _has_nightly_trend and not _has_ki_trend:
     st.info(_EMPTY_MSG)
 else:
-    col_a, col_b = st.columns(2)
+    _trend_right = (t("{n} of {total} complete weeks so far",
+                      n=fmt_int(_weeks_plotted), total=fmt_int(_TREND_WEEKS))
+                    if 0 < _weeks_plotted < _TREND_WEEKS else "")
 
-    with col_a:
-        if _has_nightly_trend:
-            weeks = nightly_chart["week_end_date"].astype(str)
-            # The chart's name is a label above it, not a title inside it —
-            # charts.chart() strips in-chart titles so every chart reads alike.
-            render_section_label(t("Nightly Activity"), numbered=False)
-            fig1 = go.Figure()
-            for i, key in enumerate(flavor.nightly_highlights):
-                if key in nightly_chart.columns:
-                    fig1.add_trace(go.Scatter(
-                        x=weeks, y=nightly_chart[key], mode="lines+markers",
-                        name=METRIC_LABELS.get(key, key),
-                        line=dict(color=SERIES_COLORS[i % len(SERIES_COLORS)], width=2),
-                        marker=dict(size=6),
-                    ))
-            fig1.update_layout(
-                xaxis_title=t("Week Ending"), yaxis_title=t("Count"),
-                xaxis_type="category", hovermode="x unified",
-            )
-            chart(fig1, height=320)
-        else:
-            st.info(_EMPTY_MSG)
+    # Drawn with spark_multiples rather than the Plotly small_multiples: a
+    # subplot grid's column count is fixed when the figure is built, and four
+    # columns at 375px gives each panel 80px, where the titles overlap each
+    # other and the values land in the next panel (measured live, 2026-09-18).
+    # This grid wraps — four across on a laptop, two on a phone.
+    if _has_nightly_trend:
+        _n_series = {
+            METRIC_LABELS.get(k, k): nightly_chart[k].tolist()
+            for k in _PANEL_TREND_KEYS if k in nightly_chart.columns
+        }
+        if _n_series:
+            render_section_label(t("Nightly work, week by week"),
+                                 right=_trend_right)
+            st.markdown(spark_multiples(_n_series), unsafe_allow_html=True)
 
-    with col_b:
-        if _has_ki_trend:
-            ki_weeks = ki_chart["week_end_date"].astype(str)
-            render_section_label(t("Key Indicators"), numbered=False)
-            fig2 = go.Figure()
-            for i, key in enumerate(key_indicator_metrics()):
-                if key in ki_chart.columns:
-                    fig2.add_trace(go.Scatter(
-                        x=ki_weeks, y=ki_chart[key], mode="lines+markers",
-                        name=METRIC_LABELS.get(key, key),
-                        line=dict(color=SERIES_COLORS[i % len(SERIES_COLORS)], width=2),
-                        marker=dict(size=6),
-                    ))
-            fig2.update_layout(
-                xaxis_title=t("Week Ending"), yaxis_title=t("Count"),
-                xaxis_type="category", hovermode="x unified",
-            )
-            chart(fig2, height=320)
-        else:
-            st.info(_EMPTY_MSG)
+    if _has_ki_trend:
+        _k_series = {
+            ki_short_label(k): ki_chart[k].tolist()
+            for k in _ki_metrics if k in ki_chart.columns
+        }
+        if _k_series:
+            render_section_label(t("Key Indicators, week by week"),
+                                 right=_trend_right)
+            st.markdown(spark_multiples(_k_series), unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# THE NIGHTLY WINDOW — shared by sections 4d and 5a
+# THE EFFORT WINDOW — the nights whose deadline has passed
 # ═══════════════════════════════════════════════════════════════════════════════
-# Both sections said "last 7 days" and meant different things. Section 5 read
+# Two sections said "last 7 days" and meant different things: one read
 # get_daily_summary(7), whose cutoff is `today - 7` and therefore spans eight
-# dates from the moment tonight's first report lands; section 6 read
-# DASHBOARD_SUMMARY's EFFORT rows, which CCSM_Agent5A.gs cuts the same way. The
-# window is computed once, here, on the anchor section 7 already grades
-# compliance against: the last night whose 9:30 PM deadline has passed. An area
-# with hours left to file has not missed anything yet.
+# dates from the moment tonight's first report lands, and the effort section
+# read DASHBOARD_SUMMARY's EFFORT rows, which CCSM_Agent5A.gs cuts the same way.
+# The window is computed once, here, on the anchor compliance is already graded
+# against: the last night whose 9:30 PM deadline has passed. An area with hours
+# left to file has not missed anything yet.
+#
+# The first of those two sections is gone (step C4 folded the per-day bar chart
+# into the small multiples above), so this now serves the effort section and the
+# compliance rankings below it.
 _due_anchor = compliance_anchor_date()
 _night_start, _night_end = eb.window_bounds(_due_anchor)
 _night_span = t("{start}–{end}", start=fmt_day_month(_night_start),
@@ -1496,74 +1439,6 @@ _night_span = t("{start}–{end}", start=fmt_day_month(_night_start),
 _night_days = [_night_start + timedelta(days=i)
                for i in range((_night_end - _night_start).days + 1)]
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 4d. DAILY TREND — one nightly metric, last 7 days
-# ═══════════════════════════════════════════════════════════════════════════════
-# Was hardcoded to nm_lessons ("Non-Member Lessons per Day"), which CCSM's
-# nightly form does not ask, so this section drew nothing for months; it was
-# then repointed at flavor.nightly_highlights[0] — contacts_attempted, the
-# number section 1b already divides by and section 3 already carries as a
-# column. That was M6: one figure, three appearances. The metric is the
-# reader's choice now, defaulting to one nothing else on the page shows.
-_daily_metric_options = [
-    k for k in nightly_metrics()
-    if k != "effort" and not daily_df.empty and k in daily_df.columns
-]
-_daily_default = ("friend_lessons" if "friend_lessons" in _daily_metric_options
-                  else (_daily_metric_options[0] if _daily_metric_options else ""))
-
-# Read before the widget is drawn, so the heading can name the chosen metric and
-# still sit above its own control (Streamlit renders in source order). Same
-# pattern as section 3's Mostrar switch.
-_daily_key = st.session_state.get("panel_daily_metric", _daily_default)
-if _daily_key not in _daily_metric_options:
-    _daily_key = _daily_default
-_daily_label = METRIC_LABELS.get(_daily_key, _daily_key)
-
-render_section_label(
-    t("Daily {metric} — Last 7 Days", metric=_daily_label) if _daily_key
-    else t("Daily Trend — Last 7 Days"),
-    right=_night_span,
-    info=t("The mission's total for one nightly metric, day by day. A day "
-           "nobody reported is drawn as a gap in the mission's activity rather "
-           "than dropped, so the week keeps its seven days."),
-)
-
-if not _daily_metric_options:
-    st.info(t("No nightly activity has been logged yet, so there is nothing to "
-              "chart by day."))
-else:
-    st.selectbox(
-        t("Metric"), _daily_metric_options,
-        format_func=lambda k: METRIC_LABELS.get(k, k),
-        index=_daily_metric_options.index(_daily_key),
-        key="panel_daily_metric",
-    )
-
-    # Reindexed onto the window's seven dates: a day nobody reported is a gap in
-    # the mission's activity, and dropping the row would redraw the week as if
-    # that day had never been scheduled.
-    _daily_window = pd.DataFrame({"Date": [d.isoformat() for d in _night_days]})
-    _daily_window = _daily_window.merge(
-        daily_df[["Date", _daily_key]], on="Date", how="left"
-    ).fillna({_daily_key: 0})
-    _daily_window["Label"] = [fmt_day_month(d) for d in _night_days]
-
-    fig_daily = px.bar(
-        _daily_window,
-        x="Label",
-        y=_daily_key,
-        labels={"Label": t("Date"), _daily_key: _daily_label},
-        color_discrete_sequence=[MAGNITUDE],
-    )
-    # No in-chart title: the metric selector above and the caption below
-    # already name it.
-    fig_daily.update_layout(
-        xaxis_title=t("Date"),
-        xaxis_type="category",
-        yaxis_title=_daily_label,
-    )
-    chart(fig_daily, height=280)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 5a. EFFORT LEVEL — last 7 days, over every active area

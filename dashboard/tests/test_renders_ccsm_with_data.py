@@ -451,11 +451,23 @@ def test_dashboard_shows_the_four_conversion_rates():
     and not one of them appeared anywhere in the dashboard. They are derived on
     the page from DAILY_LOG, because the agent keeps them in Script Properties
     and never writes them to a tab."""
+    import re
+
     body = _text(_run("views/01_Panel.py"))
-    assert "Tasas de Conversión" in body
+    # The rates had their own heading until step C4 of the data-pages plan
+    # folded them into "Actividad diaria", beside the three nightly outcomes
+    # they are the conversion of.
+    assert "Actividad diaria" in body
+    # Asserted against KPI CARD LABELS, not against the page's whole text. That
+    # section's ⓘ writes out all four formulas ("Contacto = Contactos ÷
+    # Intentos de Contacto · …"), so a page that rendered the explanation and
+    # not one single rate card would pass a plain substring search — the same
+    # false green this file's docstring was written about.
+    labels = re.findall(r'class="pmg-kpi-label"[^>]*>([^<]*)<', body)
     for label in ("Contacto", "Significativas", "Lecciones",
                   "Invitación Bautismal"):
-        assert label in body, f"{label!r} missing from the rate strip"
+        assert label in labels, (
+            f"{label!r} is not a rate card on the page; cards found: {labels}")
 
 
 def test_rate_targets_fall_back_to_the_agents_own_defaults():

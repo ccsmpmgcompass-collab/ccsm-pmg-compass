@@ -3005,4 +3005,31 @@ ES: dict[str, str] = {
     "1st week": "1ª semana",
     "With date": "Con fecha",
     "RC": "CR",
+    # ── Panel §4: nightly activity, rates and the trends, merged (step C4) ────
+    "Daily Activity": "Actividad diaria",
+    "Nightly work, week by week": "Trabajo nocturno, semana a semana",
+    "Key Indicators, week by week": "Indicadores clave, semana a semana",
+    # The two figures a rate came from, on the card itself. This was a table
+    # behind an expander on a second screen (audit P6).
+    "{num} of {den}": "{num} de {den}",
+    "What the mission placed, invited and offered over the window, then how "
+    "well it converted. A day counts as a reporting day once at least half the "
+    "areas have filed, so a quiet Sunday cannot pass for a collapse. Each rate "
+    "is the ratio of the mission's totals, not the average of the areas' own "
+    "rates — averaging lets a few low-volume areas with favourable ratios "
+    "carry the mission figure — and moves in percentage points, because a "
+    "percent change of a percentage turns two more invitations per hundred "
+    "lessons into \"+31%\". Targets come from AGENT_CONFIG and are the ones "
+    "CCSM_Agent1A.gs coaches against.":
+        "Lo que la misión entregó, invitó y ofreció en la ventana, y luego qué "
+        "tan bien convirtió. Un día cuenta como día con informe cuando ha "
+        "informado al menos la mitad de las áreas, así que un domingo tranquilo "
+        "no puede pasar por una caída. Cada tasa es la razón de los totales de "
+        "la misión, no el promedio de las tasas de cada área — promediar "
+        "permite que unas pocas áreas de bajo volumen con razones favorables "
+        "carguen la cifra de la misión — y se mueve en puntos porcentuales, "
+        "porque un cambio porcentual de un porcentaje convierte dos "
+        "invitaciones más por cada cien lecciones en «+31%». Las metas "
+        "provienen de AGENT_CONFIG y son las mismas con que CCSM_Agent1A.gs "
+        "entrega su asesoramiento.",
 }

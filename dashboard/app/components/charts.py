@@ -32,6 +32,7 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from app.components.design_system import _register_plotly_template
+from app.components.design_system import sparkline_svg as _spark
 from app.config.theme import SERIES_COLORS, STATUS
 from app.i18n import t
 from app.i18n.formats import fmt_int
@@ -262,7 +263,13 @@ def small_multiples(series: dict[str, tuple[Sequence, Sequence]], cols: int = 4,
                     row_height: int = 150) -> go.Figure:
     """One mini line per metric, one hue, its own y-axis, the last value
     printed. Replaces a chart that drew every metric on one axis, where the
-    biggest series flattened the rest into the baseline (audit P4)."""
+    biggest series flattened the rest into the baseline (audit P4).
+
+    **Desktop widths only.** ``cols`` is baked into the figure, and a Plotly
+    subplot grid cannot reflow: at 375px a four-column grid gives each panel
+    about 80px, where the titles overlap and the value annotations land in the
+    next panel over. For a grid that has to survive a phone, use
+    ``spark_multiples`` below."""
     names = list(series.keys())
     n = len(names)
     cols = max(1, min(cols, n)) if n else 1
@@ -301,6 +308,57 @@ def small_multiples(series: dict[str, tuple[Sequence, Sequence]], cols: int = 4,
             ann.x = ann.x - (0.5 / cols) * 0.98
     fig.update_layout(height=rows * row_height + 40, showlegend=False)
     return fig
+
+
+# ── spark multiples ──────────────────────────────────────────────────────────
+
+def spark_multiples(series: dict[str, Sequence], *, value_fmt: Callable = fmt_int,
+                    caption: Callable[[str], str] | None = None) -> str:
+    """One small panel per metric — name, latest value, sparkline — as a CSS
+    grid that WRAPS. The small-multiples idiom for a page that has to read at
+    375px as well as 1400px.
+
+    ``small_multiples`` above is a Plotly subplot grid, and its column count is
+    fixed when the figure is built: a four-column grid asked to render at 339px
+    gives every panel about 80px, where the titles overlap each other and the
+    value annotations land in the neighbouring panel. Measured live on the
+    Panel at 375px, 2026-09-18. Plotly cannot reflow a subplot grid
+    responsively, and Streamlit cannot tell the server how wide the browser is,
+    so a grid that must survive both widths is drawn in HTML instead — the same
+    reasoning that made ``stage_bars`` HTML rather than a funnel chart.
+
+    What is lost against the Plotly version: the y-axis and the week ticks.
+    What a reader takes from a small multiple is the shape and where it ends,
+    and those are exactly what a sparkline and the printed last value carry.
+    The real chart, with its axes, is one tap away in the drill-down.
+
+    ``series`` maps a label to its values, oldest first; ``caption`` optionally
+    returns a muted line under each panel.
+    """
+    cells = []
+    for name, values in series.items():
+        nums = [v for v in (values or []) if v is not None]
+        last = value_fmt(nums[-1]) if nums else "—"
+        foot = (caption(name) if caption else "") or ""
+        cells.append(
+            f'<div class="pmg-spark-cell" style="background:rgba(255,255,255,0.03);'
+            f'border:1px solid rgba(255,255,255,0.07);border-radius:10px;'
+            f'padding:0.6rem 0.75rem;min-width:0;">'
+            f'<div title="{_html.escape(str(name))}" style="font-size:0.7rem;'
+            f'font-weight:600;color:{MUTED};line-height:1.2;overflow:hidden;'
+            f'text-overflow:ellipsis;white-space:nowrap;">{_html.escape(str(name))}</div>'
+            f'<div style="font-size:1.15rem;font-weight:700;color:{INK};'
+            f'margin-top:2px;font-variant-numeric:tabular-nums;">{_html.escape(str(last))}</div>'
+            + _spark(nums)
+            + (f'<div style="font-size:0.65rem;color:{MUTED};margin-top:2px;">'
+               f'{_html.escape(str(foot))}</div>' if foot else "")
+            + '</div>'
+        )
+    if not cells:
+        return ""
+    return ('<div class="pmg-sparks" style="display:grid;'
+            'grid-template-columns:repeat(auto-fit,minmax(max(150px,22%),1fr));'
+            'gap:10px;margin-bottom:1.25rem;">' + "".join(cells) + '</div>')
 
 
 # ── stage bars ───────────────────────────────────────────────────────────────

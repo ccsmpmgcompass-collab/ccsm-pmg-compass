@@ -669,3 +669,39 @@ landed in the same push).
   the ranked list — what it asserts is unchanged. Still scrolling sideways at
   375px and left for C5: the "Esfuerzo por área" table (751px) and the
   compliance calendar (417px), both inside sections C5 rebuilds.
+- 2026-09-18 — **C4 landed, and the suite baseline moved to 11.** Four sections
+  became one "Actividad diaria": nightly highlights, conversion rates, the
+  eight-week trend and the per-day bar chart. They described one subject — the
+  nightly form — under four headings, across three windows and two chart
+  idioms. Now: one heading, one window in its right-hand line, seven cards
+  (three outcomes then four rates), then the eight-week history. Deleted:
+  "Lecciones con amigos por día" (audit P6, one metric and a dropdown) and the
+  rate-arithmetic expander, whose formulas are in the ⓘ and whose FIGURES are
+  on each rate card now ("2.442 de 5.331") — better than either, since the
+  evidence sits where the ratio is. `get_daily_summary(7)` is no longer read by
+  the page at all.
+  **The one deliberate departure from the plan:** the trends are drawn with a
+  new `charts.spark_multiples` (a wrapping CSS grid of name · last value ·
+  sparkline), NOT with `charts.small_multiples`. Measured at 375px: a Plotly
+  subplot grid's column count is fixed when the figure is built, so four
+  columns render at ~80px each — titles overlapped their neighbours, the value
+  annotations landed in the next panel and the x labels read "2026-0". Plotly
+  cannot reflow a subplot grid and Streamlit cannot tell the server the browser
+  width, so the grid is HTML — the same reasoning that made `stage_bars` HTML
+  in A2. `small_multiples` stays for desktop-only callers (D4) with that
+  limitation now written into its docstring. Verified: 8 + 7 panels, 4 across
+  at 1400px (301px each), 2 across at 375px (165px each), readable at both.
+  Also fixed: **PLAN §1.2's shortlist has a key this mission does not have** —
+  `referrals_received` is `member_referrals_received` on CCSM's nightly form.
+  The wrong key drew nothing and drew it silently (a metric with no column is
+  skipped), so the chart had seven panels where it should have eight.
+  Suite **11 failed / 1128 passed**: the 13 became 11 because
+  `test_kpi_numbers_use_chilean_separators` and its English twin now PASS —
+  they assert a five-figure mission total reaches the screen in Chilean form,
+  and until this step no component on the page printed one. Nothing was
+  weakened to achieve that. One test WAS tightened:
+  `test_dashboard_shows_the_four_conversion_rates` briefly passed for the wrong
+  reason (the four rate names appear in the section's ⓘ formulas), so it now
+  asserts against KPI card labels and fails again for its original reason —
+  that fixture's DAILY_LOG is two months stale, so no nightly card renders.
+  `tests/test_charts.py` +4, `tests/test_panel_scoreboard.py` +2.

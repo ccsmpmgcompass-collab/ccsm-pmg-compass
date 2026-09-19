@@ -62,6 +62,11 @@ _CSS = """
    Key Indicators read as a card each instead of scrolling sideways the way the
    nine-column table did (audit P5). The header row hides with them — a header
    over a stacked row names nothing. */
+/* The sparkline grid (charts.spark_multiples) follows the KPI grid's rule:
+   four across at the design width, two on a phone. */
+@media (max-width: 640px) {
+    .pmg-sparks { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
 @media (max-width: 720px) {
     .pmg-rank-row-cells { grid-template-columns: minmax(0, 1fr) !important; }
     .pmg-rank-row-cells .pmg-rank-cells {
