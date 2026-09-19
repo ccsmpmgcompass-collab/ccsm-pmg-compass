@@ -5,7 +5,8 @@ import html as _html
 import streamlit as st
 import plotly.io as pio
 import plotly.graph_objects as go
-from app.config.theme import SERIES_COLORS, STATUS
+from app.config.theme import (DIM, DIMMEST, MARK, SERIES_COLORS, STATUS,
+                              rgba)
 from app.i18n import t
 from app.i18n.formats import fmt_int, fmt_number
 from app.analytics import period_delta as _pd
@@ -692,6 +693,54 @@ def goal_bar_color(grade_pct: float) -> str:
     return _GOAL_BAR_BELOW
 
 
+#: Submission compliance: did the form arrive, as a share of the areas that
+#: owe one. Deliberately NOT _GOAL_BAR_TIERS' 90/60 — that grades progress
+#: against a goal, which is a different question, and the mission has read
+#: its compliance calendars at 85/70 since long before the redesign. What the
+#: two DO share is the palette: these used to draw #22c55e / #f59e0b /
+#: #ef4444, a second green beside every STATUS green on the same page.
+COMPLIANCE_TIERS = ((85, "good"), (70, "warn"))
+
+
+def compliance_status(pct: float | None) -> str | None:
+    """A submission percentage as "good" / "warn" / "bad"."""
+    if pct is None:
+        return None
+    for threshold, name in COMPLIANCE_TIERS:
+        if pct >= threshold:
+            return name
+    return "bad"
+
+
+def compliance_tint(pct: float | None) -> tuple[str, str]:
+    """(cell background, ink) for one day or week of a compliance calendar."""
+    status = compliance_status(pct) or "bad"
+    return rgba(STATUS[status], 0.22), STATUS[status]
+
+
+#: The two ungraded cells a calendar can hold. A day that has not happened and
+#: a day before the mission started tracking are both "no reading", not a bad
+#: one, so neither may borrow a grading hue.
+CALENDAR_FUTURE      = ("rgba(255,255,255,0.02)", DIMMEST)
+CALENDAR_PRETRACKING = ("rgba(255,255,255,0.03)", DIM)
+
+
+def compliance_legend_bands() -> list[tuple[str, str]]:
+    """(swatch colour, label) for the three graded bands, in order.
+
+    The labels are built FROM the thresholds. They were typed separately —
+    "&ge;85%", "70-84%", "&lt;70%" beside an 85/70 test — which is two places
+    to change one number, and the kind of drift a legend is least likely to
+    be caught at. Pure numerals, so no t() and nothing for i18n to cover.
+    """
+    (hi, hi_name), (lo, lo_name) = COMPLIANCE_TIERS
+    return [
+        (rgba(STATUS[hi_name], 0.22), f"&ge;{hi}%"),
+        (rgba(STATUS[lo_name], 0.22), f"{lo}–{hi - 1}%"),
+        (rgba(STATUS["bad"], 0.22), f"&lt;{lo}%"),
+    ]
+
+
 def projection_caption(projection, fmt) -> str:
     """The "where this is heading" line under a goal bar, or "" for no line.
 
@@ -728,10 +777,10 @@ _GRID_STYLE = ("display:grid;grid-template-columns:repeat(auto-fit,minmax(max(21
 #: The goal-bar mark for the leadership goal (decision 6): a second tick on the
 #: same track as the pace tick. Violet, so it reads as a reference rather than
 #: as a grade — the same reason the expectation bar is violet.
-_MARK_COLOR = "#9085e9"
+_MARK_COLOR = MARK
 
 
-def sparkline_svg(points, *, color: str = "#3987e5", width: int = 96,
+def sparkline_svg(points, *, color: str = SERIES_COLORS[0], width: int = 96,
                   height: int = 26) -> str:
     """An inline SVG polyline for a KPI card, or "" for fewer than two points.
 
@@ -1276,7 +1325,7 @@ def render_section_tabs(options: dict, *, key: str, per_row: int = 5) -> str:
     ``options`` maps a STABLE id to its display label:
 
         active = render_section_tabs(
-            {"scores": t("Scores"), "daily": t("Daily Activity")},
+            {"scores": t("Scores"), "daily": t("Nightly Explorer")},
             key="scores_section")
 
     Ids are what gets stored, so a mid-session language switch cannot strand a

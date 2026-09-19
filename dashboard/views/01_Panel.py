@@ -17,6 +17,8 @@ from app.components.ki_drilldown import (
     ki_href, render_ki_drilldown, TAB_CYCLE, TAB_WEEK,
 )
 from app.components.design_system import (
+    CALENDAR_FUTURE, CALENDAR_PRETRACKING,
+    compliance_legend_bands, compliance_tint,
     render_page_header,
     render_section_label, render_kpi_row, render_table,
 )
@@ -30,7 +32,7 @@ from app.i18n.formats import (
     fmt_month_abbr,
 )
 from app.components.charts import GOAL_LINE, MAGNITUDE
-from app.config.theme import SERIES_COLORS, STATUS
+from app.config.theme import DIM, INK, MUTED, SERIES_COLORS, STATUS
 from app.db.queries import (
     get_mission_baptisms_by_month,
     get_mission_totals,
@@ -1613,7 +1615,7 @@ if _inf_view == _INF_EFFORT:
             x=_eff_day_labels,
             y=[d.missing_share or 0 for d in _eff_cur.days],
             name=t("Not reported"),
-            marker_color="#4b5563",
+            marker_color=DIM,
             customdata=[[d.missing, d.possible] for d in _eff_cur.days],
             hovertemplate="%{fullData.name}: %{customdata[0]}/%{customdata[1]} "
                           "(%{y:.0f}%)<extra></extra>",
@@ -1886,7 +1888,7 @@ else:
             st.markdown(_rank_rows_html(_ranked[:_FOLD_HEAD]), unsafe_allow_html=True)
             st.markdown(
                 f'<div style="display:flex;align-items:center;gap:0.75rem;'
-                f'margin:0.55rem 0 0.9rem 0;color:#4b5563;font-size:0.75rem;">'
+                f'margin:0.55rem 0 0.9rem 0;color:{DIM};font-size:0.75rem;">'
                 f'<div style="flex:1;height:1px;background:rgba(255,255,255,0.07);"></div>'
                 f'{_html_escape(t("{n} more", n=fmt_int(_hidden)))}'
                 f'<div style="flex:1;height:1px;background:rgba(255,255,255,0.07);"></div>'
@@ -1961,19 +1963,12 @@ else:
 
             _mb_cal = build_calendar_data(set(), _mb_win_end, n_weeks=5, anchor_date=_mb_anchor)
 
-            def _mb_pct_color(p: int):
-                if p >= 85:
-                    return "rgba(34,197,94,0.25)", "#22c55e"
-                if p >= 70:
-                    return "rgba(245,158,11,0.22)", "#f59e0b"
-                return "rgba(239,68,68,0.20)", "#ef4444"
-
             # Through t() rather than strftime: strftime follows the SERVER's locale,
             # which on Streamlit Cloud is English regardless of the mission's language.
             _mb_day_labels = [t("Mon"), t("Tue"), t("Wed"), t("Thu"),
                               t("Fri"), t("Sat"), t("Sun")]
             _mb_hdr = "".join(
-                f'<th style="text-align:center;padding:4px 8px;color:#9ca3af;font-size:0.72rem;font-weight:600;">{d}</th>'
+                f'<th style="text-align:center;padding:4px 8px;color:{MUTED};font-size:0.72rem;font-weight:600;">{d}</th>'
                 for d in _mb_day_labels
             )
 
@@ -1992,17 +1987,17 @@ else:
                     day_num = d[8:]
                     if cell["future"]:
                         _mb_has_future = True
-                        bg, fg, pct_txt = "rgba(255,255,255,0.02)", "#374151", ""
+                        bg, fg, pct_txt = (*CALENDAR_FUTURE, "")
                         title = t("{date} — upcoming", date=d)
                     elif d < _mb_win_start:
                         _mb_has_pretracking = True
-                        bg, fg, pct_txt = "rgba(255,255,255,0.03)", "#4b5563", ""
+                        bg, fg, pct_txt = (*CALENDAR_PRETRACKING, "")
                         title = t("{date} — before tracking started", date=d)
                     else:
                         n = _per_day_counts.get(d, 0)
                         pct = round(n / _total_areas * 100) if _total_areas else 0
                         _counted_pcts.append(pct)
-                        bg, fg = _mb_pct_color(pct)
+                        bg, fg = compliance_tint(pct)
                         pct_txt = f"{fmt_int(pct)}%"
                         title = t("{date} — {n}/{total} areas submitted ({pct}%)",
                                   date=d, n=fmt_int(n), total=fmt_int(_total_areas),
@@ -2014,7 +2009,7 @@ else:
                     cells += (
                         f'<td title="{title}" style="text-align:center;padding:5px 4px;background:{bg};'
                         f'border-radius:4px;vertical-align:middle;">'
-                        f'<div style="font-size:0.6rem;color:#9ca3af;line-height:1;">{day_num}</div>'
+                        f'<div style="font-size:0.6rem;color:{MUTED};line-height:1;">{day_num}</div>'
                         f'{pct_html}</td>'
                     )
                 _mb_body += f"<tr>{cells}</tr>"
@@ -2025,21 +2020,18 @@ else:
                     f'border-radius:2px;margin-right:4px;"></span>{label}&nbsp;&nbsp;&nbsp;'
                 )
 
-            _mb_legend = (
-                _mb_legend_item("rgba(34,197,94,0.25)", "&ge;85%")
-                + _mb_legend_item("rgba(245,158,11,0.22)", "70–84%")
-                + _mb_legend_item("rgba(239,68,68,0.20)", "&lt;70%")
-            )
+            _mb_legend = "".join(_mb_legend_item(c, lbl)
+                                 for c, lbl in compliance_legend_bands())
             if _mb_has_future:
-                _mb_legend += _mb_legend_item("rgba(255,255,255,0.02)", t("Upcoming"))
+                _mb_legend += _mb_legend_item(CALENDAR_FUTURE[0], t("Upcoming"))
             if _mb_has_pretracking:
-                _mb_legend += _mb_legend_item("rgba(255,255,255,0.03)",
+                _mb_legend += _mb_legend_item(CALENDAR_PRETRACKING[0],
                                               t("Before tracking started"))
 
             st.markdown(
                 f'<table style="width:100%;border-collapse:separate;border-spacing:3px;margin-bottom:0.5rem;">'
                 f'<thead><tr>{_mb_hdr}</tr></thead><tbody>{_mb_body}</tbody></table>'
-                f'<div style="font-size:0.72rem;color:#9ca3af;margin-bottom:0.5rem;">'
+                f'<div style="font-size:0.72rem;color:{MUTED};margin-bottom:0.5rem;">'
                 + _mb_legend
                 + "</div>",
                 unsafe_allow_html=True,
@@ -2048,12 +2040,12 @@ else:
             if _counted_pcts:
                 _avg = round(sum(_counted_pcts) / len(_counted_pcts))
                 st.markdown(
-                    '<p style="color:#9ca3af;font-size:0.82rem;">'
+                    f'<p style="color:{MUTED};font-size:0.82rem;">'
                     + t("Each box is the share of the mission's {total} submitting "
                         "areas that turned in the nightly form that day. Window "
                         "average: {avg}%.",
-                        total=f'<strong style="color:#f4f4f8;">{fmt_int(_total_areas)}</strong>',
-                        avg=f'<strong style="color:#f4f4f8;">{fmt_int(_avg)}</strong>')
+                        total=f'<strong style="color:{INK};">{fmt_int(_total_areas)}</strong>',
+                        avg=f'<strong style="color:{INK};">{fmt_int(_avg)}</strong>')
                     + '</p>',
                     unsafe_allow_html=True,
                 )
@@ -2094,20 +2086,13 @@ else:
             else:
                 _per_week_counts = {}
 
-            def _wk_pct_color(p):
-                if p >= 85:
-                    return "rgba(34,197,94,0.25)", "#22c55e"
-                if p >= 70:
-                    return "rgba(245,158,11,0.22)", "#f59e0b"
-                return "rgba(239,68,68,0.20)", "#ef4444"
-
             _wk_pcts, _wk_cells = [], ""
             for w in _wk_due_weeks:
                 _wd = date.fromisoformat(w)
                 n   = _per_week_counts.get(w, 0)
                 pct = round(n / _total_areas * 100) if _total_areas else 0
                 _wk_pcts.append(pct)
-                bg, fg = _wk_pct_color(pct)
+                bg, fg = compliance_tint(pct)
                 _wk_title = t("Week ending {date} — {n}/{total} areas submitted ({pct}%)",
                               date=w, n=fmt_int(n), total=fmt_int(_total_areas),
                               pct=fmt_int(pct))
@@ -2115,16 +2100,14 @@ else:
                     f'<td title="{_wk_title}" '
                     f'style="text-align:center;padding:6px 8px;background:{bg};border-radius:4px;'
                     f'vertical-align:middle;min-width:52px;">'
-                    f'<div style="font-size:0.6rem;color:#9ca3af;line-height:1.2;">{_wd.month}/{_wd.day}</div>'
+                    f'<div style="font-size:0.6rem;color:{MUTED};line-height:1.2;">{_wd.month}/{_wd.day}</div>'
                     f'<div style="font-size:0.8rem;font-weight:700;color:{fg};">{fmt_int(pct)}%</div></td>'
                 )
             st.markdown(
                 '<table style="border-collapse:separate;border-spacing:3px;margin-bottom:0.5rem;">'
                 f'<tbody><tr>{_wk_cells}</tr></tbody></table>'
-                '<div style="font-size:0.72rem;color:#9ca3af;margin-bottom:0.5rem;">'
-                + _wk_leg("rgba(34,197,94,0.25)", "&ge;85%")
-                + _wk_leg("rgba(245,158,11,0.22)", "70–84%")
-                + _wk_leg("rgba(239,68,68,0.20)", "&lt;70%")
+                f'<div style="font-size:0.72rem;color:{MUTED};margin-bottom:0.5rem;">'
+                + "".join(_wk_leg(c, lbl) for c, lbl in compliance_legend_bands())
                 + '</div>',
                 unsafe_allow_html=True,
             )
@@ -2132,12 +2115,12 @@ else:
             _weekly_avg = sum(_wk_pcts) / len(_wk_pcts) if _wk_pcts else None
             if _weekly_avg is not None:
                 st.markdown(
-                    '<p style="color:#9ca3af;font-size:0.82rem;">'
+                    f'<p style="color:{MUTED};font-size:0.82rem;">'
                     + t("Each box is the share of the mission's {total} areas that "
                         "submitted the weekly form for that Mon–Sun week (credited by "
                         "the day it arrived). Window average: {avg}%.",
-                        total=f'<strong style="color:#f4f4f8;">{fmt_int(_total_areas)}</strong>',
-                        avg=f'<strong style="color:#f4f4f8;">{fmt_int(round(_weekly_avg))}</strong>')
+                        total=f'<strong style="color:{INK};">{fmt_int(_total_areas)}</strong>',
+                        avg=f'<strong style="color:{INK};">{fmt_int(round(_weekly_avg))}</strong>')
                     + '</p>',
                     unsafe_allow_html=True,
                 )

@@ -40,6 +40,7 @@ from app.breakdowns_engine import (
     render_lineage_badge,
     render_lineage_marker,
 )
+from app.config.theme import INK
 from app.components.design_system import (
     # Still needed even though the router owns the page's chrome now: the
     # fragment below re-injects the stylesheet on its own reruns (see
@@ -131,7 +132,7 @@ def _render_area_notes(
             st.markdown(
                 f'<div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.10);'
                 f'border-radius:12px;padding:14px 18px;margin-bottom:10px;">'
-                f'<div style="color:#e8e8ed;font-size:0.95rem;margin-bottom:6px;">{_html.escape(_content)}</div>'
+                f'<div style="color:{INK};font-size:0.95rem;margin-bottom:6px;">{_html.escape(_content)}</div>'
                 f'<div style="color:rgba(255,255,255,0.45);font-size:0.78rem;">{_html.escape(_meta_line)}</div>'
                 f'</div>',
                 unsafe_allow_html=True,

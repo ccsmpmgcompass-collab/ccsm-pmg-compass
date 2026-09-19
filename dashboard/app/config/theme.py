@@ -86,3 +86,39 @@ TEXT_DARK     = "#1A1A1A"
 # isn't available there — see app/export/chart_png.py). Never cycle back
 # through SERIES_COLORS for a 9th+ series.
 CHART_OTHER_COLOR = "#9AA5B1"
+
+
+# ── Ink on the dark surface ───────────────────────────────────────────────────
+# Five steps, brightest to quietest, and the surface they sit on. Named here
+# because a hex literal written into a page is a colour nobody can re-theme,
+# and because the same grey kept being typed at four slightly different
+# values. Phase F pins this: tests/test_charts.py greps the three data pages
+# and fails on any hex literal, so a new colour has to be named here first.
+INK     = "#f4f4f8"   # a number, a name — whatever is meant to be read first
+MUTED   = "#9ca3af"   # captions, axis labels, legends, the day in a calendar
+FAINT   = "#6b7280"   # a rank number beside the thing it ranks
+DIM     = "#4b5563"   # present but deliberately receding ("not reported")
+DIMMEST = "#374151"   # a day that has not happened yet
+SURFACE = "#08080e"   # the page and the chart plot area
+SURFACE_RAISED = "#0e0e15"   # a hover label, lifted just off the page
+
+#: The leadership transfer goal's mark: neither a grade nor the pace, and the
+#: same violet wherever it appears — the KPI card's second tick and the
+#: drill-down's dotted line are the same statement about the same number.
+MARK = SERIES_COLORS[6]
+
+
+def rgba(hex_color: str, alpha: float) -> str:
+    """One of the colours above as a translucent ``rgba()`` fill.
+
+    A tint is the same hue at a low alpha, never a second hex. Writing the
+    tint as its own literal is how a palette drifts: the calendar cells on the
+    Panel spent months tinted #22c55e / #f59e0b / #ef4444 while every graded
+    thing beside them was drawing STATUS, so two greens meant "good" on one
+    screen.
+    """
+    h = hex_color.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r},{g},{b},{alpha})"

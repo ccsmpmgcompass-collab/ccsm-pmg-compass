@@ -7,6 +7,7 @@ data pages stop carrying their own layouts: whatever is asserted here is what
 every chart on them looks like.
 """
 
+import pathlib
 import re
 
 import plotly.graph_objects as go
@@ -73,8 +74,14 @@ def test_one_series_gets_no_legend_and_two_get_one_below_the_plot():
     apply_layout(two)
     assert two.layout.showlegend is True
     assert two.layout.legend.orientation == "h"
-    assert two.layout.legend.y < 0
     assert two.layout.margin.b > one.layout.margin.b
+    # Against the CONTAINER's bottom edge, not a fraction of the plot's height.
+    # A paper offset is a fixed distance that knows nothing about how deep the
+    # tick labels run: at 375px the drill-down's week labels rotate upright
+    # and the legend was drawn straight through them (Phase F, measured live).
+    assert two.layout.legend.yref == "container"
+    assert two.layout.legend.yanchor == "bottom"
+    assert two.layout.legend.y == 0
 
 
 def test_a_pie_keeps_its_legend_even_as_one_trace():
@@ -461,3 +468,71 @@ def test_a_rise_from_zero_shows_the_count_not_a_percentage():
 
 def test_a_change_with_neither_a_percentage_nor_a_count_is_silent():
     assert charts.change_text({"direction": 1, "pct": None, "show": "percent"}) == ("", charts.MUTED)
+
+
+# ── The two greps Phase F pins (PLAN-2026-09-18-data-pages.md §7) ────────────
+# Both were acceptance criteria that only a human eye enforced while phases
+# A–E ran. A criterion nothing checks is a criterion that lapses on the next
+# edit, so they live here now.
+
+_REPO = pathlib.Path(__file__).resolve().parent.parent
+
+#: The three pages the redesign covers. Every other view is out of its scope
+#: and still draws its own charts and colours — deliberately, and not by this
+#: file's leave.
+DATA_PAGES = ("views/01_Panel.py",
+              "views/04_Desgloses.py",
+              "views/07_Embudo_de_Búsqueda.py")
+
+#: The design system these pages are allowed to get colour from.
+_DESIGN_SYSTEM = ("app/components/charts.py",
+                  "app/components/ki_drilldown.py")
+
+#: A CSS colour: # followed by exactly 3, 4, 6 or 8 hex digits. The lookbehind
+#: keeps HTML numeric entities out — the Embudo's freshness strip writes
+#: &#9888; for its warning triangle, which is a character, not a colour.
+_HEX = re.compile(r"(?<![&\w])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}"
+                  r"|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})(?![0-9a-fA-F])")
+
+
+def _source(rel: str) -> str:
+    return (_REPO / rel).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("page", DATA_PAGES + ("app/components/ki_drilldown.py",))
+def test_chart_is_the_only_plotly_call_site_on_the_data_pages(page):
+    """Every figure on these pages goes through charts.chart().
+
+    Not a style rule: chart() is where the modebar is hidden, the Streamlit
+    theme is switched off and apply_layout() runs. A page that calls
+    st.plotly_chart itself gets none of those, and the chart it draws is a
+    different chart from the ones beside it.
+    """
+    src = _source(page)
+    hits = [ln for ln in src.splitlines()
+            if "st.plotly_chart" in ln and not ln.lstrip().startswith("#")]
+    assert hits == [], f"{page} calls st.plotly_chart directly: {hits}"
+
+
+def test_the_one_call_site_is_in_charts_itself():
+    """The other half of the rule above: it must exist somewhere, or the
+    pages are passing because nothing draws a chart at all."""
+    calls = [ln for ln in _source("app/components/charts.py").splitlines()
+             if "st.plotly_chart(" in ln]
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("page", DATA_PAGES + _DESIGN_SYSTEM)
+def test_no_hex_colour_literal_outside_the_theme(page):
+    """Colour is named in theme.py (or, for the CSS block, design_system.py).
+
+    A hex typed into a page is a colour that cannot be re-themed and, worse,
+    one that drifts: the Panel's two compliance calendars graded themselves
+    #22c55e / #f59e0b / #ef4444 for months while every other graded thing on
+    the same screen drew theme.STATUS, so the page carried two greens that
+    both meant "good".
+    """
+    found = sorted({m.group(0) for m in _HEX.finditer(_source(page))})
+    assert found == [], (
+        f"{page} carries hex colour literals {found} — name them in "
+        f"app/config/theme.py and import the name instead.")

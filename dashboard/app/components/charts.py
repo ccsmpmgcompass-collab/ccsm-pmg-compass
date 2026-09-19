@@ -35,7 +35,8 @@ from plotly.subplots import make_subplots
 from app.analytics.period_delta import SEVERE_DROP_PCT
 from app.components.design_system import _register_plotly_template
 from app.components.design_system import sparkline_svg as _spark
-from app.config.theme import SERIES_COLORS, STATUS
+from app.config.theme import (DIM, FAINT, INK, MARK, MUTED, SERIES_COLORS,
+                              STATUS, SURFACE, SURFACE_RAISED, rgba)
 from app.i18n import t
 from app.i18n.formats import fmt_int
 
@@ -47,12 +48,9 @@ GHOST = "rgba(255,255,255,0.35)"
 GOAL_LINE = STATUS["warn"]
 #: The pace tick: white, like the KPI card's.
 PACE_TICK = "rgba(244,244,248,0.9)"
-#: The leadership mark — the same violet as the KPI card's second tick
-#: (design_system._MARK_COLOR): neither a grade nor the pace, on both.
-MARK_LINE = "#9085e9"
-#: Text on the dark surface.
-INK = "#f4f4f8"
-MUTED = "#9ca3af"
+#: The leadership mark — the same violet as the KPI card's second tick:
+#: neither a grade nor the pace, on both. theme.MARK is the one home.
+MARK_LINE = MARK
 
 MIN_HEIGHT = 220
 _FONT = dict(family="system-ui, -apple-system, 'Segoe UI', sans-serif",
@@ -106,12 +104,19 @@ def apply_layout(fig: go.Figure, *, height: int | None = None) -> go.Figure:
         margin=margin,
         height=h,
         showlegend=legend,
-        hoverlabel=dict(bgcolor="#0e0e15", font=dict(color=INK, size=12)),
+        hoverlabel=dict(bgcolor=SURFACE_RAISED, font=dict(color=INK, size=12)),
     )
     if legend:
+        # Anchored to the FIGURE's bottom edge, not to a fraction of the plot.
+        # y=-0.16 paper put the legend 16% of the plot's height below the axis,
+        # which is a fixed distance that knows nothing about how tall the tick
+        # labels are. At 375px the drill-down's week labels rotate upright and
+        # run ~70px deep, and the legend was drawn straight through them —
+        # "Cambio 2026-5" crossing "7 de sep". Against the container the legend
+        # sits below whatever automargin reserved for the labels instead.
         fig.update_layout(legend=dict(
-            orientation="h", yanchor="top", y=-0.16, xanchor="left", x=0,
-            font=dict(size=11), bgcolor="rgba(0,0,0,0)",
+            orientation="h", yref="container", yanchor="bottom", y=0,
+            xanchor="left", x=0, font=dict(size=11), bgcolor="rgba(0,0,0,0)",
         ))
     fig.update_xaxes(automargin=True)
     fig.update_yaxes(automargin=True)
@@ -496,7 +501,7 @@ def share_bar(parts: Sequence[tuple[str, float]], *,
             f'<span title="{_html.escape(lbl)}: {_html.escape(str(value_fmt(v)))} '
             f'({fmt_int(round(share))}%)" '
             f'style="flex:0 0 {share:.3f}%;display:flex;align-items:center;'
-            f'justify-content:center;background:{hue};color:#08080e;'
+            f'justify-content:center;background:{hue};color:{SURFACE};'
             f'font-size:0.72rem;font-weight:700;overflow:hidden;">{inner}</span>'
         )
         legend.append(
@@ -528,10 +533,10 @@ def share_bar(parts: Sequence[tuple[str, float]], *,
 _STATUS_ALIAS = {"green": "good", "amber": "warn", "red": "bad",
                  "good": "good", "warn": "warn", "bad": "bad"}
 _ROW_TINT = {
-    "good": ("rgba(62,207,111,0.10)", STATUS["good"]),
-    "warn": ("rgba(242,177,52,0.10)", STATUS["warn"]),
-    "bad":  ("rgba(240,100,90,0.10)", STATUS["bad"]),
-    "none": ("rgba(255,255,255,0.03)", "#4b5563"),
+    "good": (rgba(STATUS["good"], 0.10), STATUS["good"]),
+    "warn": (rgba(STATUS["warn"], 0.10), STATUS["warn"]),
+    "bad":  (rgba(STATUS["bad"], 0.10), STATUS["bad"]),
+    "none": ("rgba(255,255,255,0.03)", DIM),
 }
 
 
@@ -708,7 +713,7 @@ def ranked_list(rows: Sequence[dict], *, value_fmt: Callable = fmt_int,
                 f'<span style="display:grid;'
                 f'grid-template-columns:{left_cols};'
                 f'align-items:center;gap:0.7rem;min-width:0;">'
-                f'<span style="text-align:right;color:#6b7280;font-size:0.8rem;">{_html.escape(str(rank))}</span>'
+                f'<span style="text-align:right;color:{FAINT};font-size:0.8rem;">{_html.escape(str(rank))}</span>'
                 f'<span style="width:0.6rem;height:0.6rem;border-radius:50%;background:{dot};"></span>'
                 f'<span style="min-width:0;">'
                 f'<span title="{_html.escape(str(r.get("name", "")))}" '
@@ -744,7 +749,7 @@ def ranked_list(rows: Sequence[dict], *, value_fmt: Callable = fmt_int,
             f'align-items:center;gap:0.7rem;background:{bg};border-radius:8px;'
             f'padding:0.55rem 0.9rem;margin-bottom:0.35rem;color:inherit;'
             f'text-decoration:none;{"cursor:pointer;" if link else ""}">'
-            f'<span style="text-align:right;color:#6b7280;font-size:0.8rem;">{_html.escape(str(rank))}</span>'
+            f'<span style="text-align:right;color:{FAINT};font-size:0.8rem;">{_html.escape(str(rank))}</span>'
             f'<span style="width:0.6rem;height:0.6rem;border-radius:50%;background:{dot};"></span>'
             f'<span style="min-width:0;">'
             f'<span class="pmg-rank-name" title="{_html.escape(hover)}" '

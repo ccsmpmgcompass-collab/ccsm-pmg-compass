@@ -12,7 +12,7 @@ from app.components.design_system import (
     render_page_header, render_section_label,
     render_table, render_kpi_row,
 )
-from app.config.theme import STATUS
+from app.config.theme import MUTED, STATUS
 from app.db.drive_blob import save_dataframe_blob
 from app.db.queries import (
     get_baptisms_actual_for_range, get_tableau_detail, get_tableau_detail_file_id,
@@ -358,7 +358,7 @@ st.markdown(
     f'border:1px solid {"rgba(242,177,52,0.40)" if _stale else "rgba(255,255,255,0.10)"};'
     f'border-radius:8px;padding:0.5rem 0.8rem;margin:0 0 0.75rem 0;'
     f'font-size:0.8rem;line-height:1.45;'
-    f'color:{STATUS["warn"] if _stale else "#9ca3af"};">'
+    f'color:{STATUS["warn"] if _stale else MUTED};">'
     f'<span style="flex:none;">{"&#9888;" if _stale else "&#128197;"}</span>'
     f'<span>{_fresh}</span></div>',
     unsafe_allow_html=True,
