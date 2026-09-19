@@ -991,3 +991,28 @@ landed in the same push).
   **Worth not re-deriving:** a screenshot taken within a second of the trend's
   iframe appearing catches plotly mid-resize and the chart looks a third of its
   width. Measure `_fullLayout.width` before believing it.
+- 2026-09-19 — **D5 landed.** The Teaching Pipeline is the five weekly Key
+  Indicators — Nuevas personas → Lecciones c/ miembro → Amigos en sacramental →
+  Con fecha bautismal → Bautizados — through `charts.stage_bars`, with the
+  largest ABSOLUTE drop named on the chart (live at mission scope: 225 → 145 →
+  52 → 50 → 1, and "· mayor caída" on the 145 → 52 step, which loses 93 people
+  where the step above it loses 80). **The Tableau "Enseñadas" stage is gone
+  from this page**, and with it the three warnings that explained why one bar
+  of four depended on when a scraper last ran while the other three did not —
+  the Embudo de Búsqueda owns that export since Phase E. `breakdowns_engine`
+  no longer reads TABLEAU_DETAIL at all: `_load_tableau_detail`,
+  `_load_tableau_range`, `_detail_col` and the `GOAL_TO_ACTUAL` import went
+  with it. The two captions under the old funnel — "counts what happened in
+  this period, the bars are not subsets" and the At Sacrament headcount caveat
+  — are the section's ⓘ. Decisions: (a) `stage_bars` gained `twin` /
+  `twin_label`, a thin dim bar under each stage **on the same scale**, because
+  a twin scaled to its own maximum would draw a collapsed period as a healthy
+  one; the twin's value rides on the row's hover ("Nuevas personas · vs. la
+  semana anterior: 170", live on "Semana pasada"), and a stage the twin has no
+  reading for simply has no second bar; (b) a stage with no column reads None
+  rather than 0 — a question the mission never asks has no answer, which is a
+  different fact from an answer of nought; (c) the four call sites that carried
+  nine identical arguments each became one `_pipeline()` closure, since D4 left
+  the trend with three early returns and every one of them has to render this
+  section. The "This Week" suppression stays. Suite **11 failed / 1176 passed**
+  (the same 11).

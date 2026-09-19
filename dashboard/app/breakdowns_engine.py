@@ -32,7 +32,7 @@ from app.analytics.period_delta import (
     reporting_dates,
 )
 from app.components.charts import (
-    apply_layout, chart, change_text, ranked_list,
+    apply_layout, chart, change_text, ranked_list, stage_bars,
 )
 from app.components.design_system import (
     goal_bar_state, goal_bar_status, projection_caption, render_kpi_row,
@@ -54,8 +54,6 @@ from app.db.queries import (
     get_lineage_for_retired_parent,
     get_lineage_for_successor,
     get_nightly_submission_timing,
-    get_tableau_daterange,
-    get_tableau_detail,
     get_weekly_form_data,
     get_weekly_ki,
     get_weekly_submission_data,
@@ -92,7 +90,6 @@ from app.i18n import t
 # These are FUNCTIONS, not module-level dicts, deliberately: a dict would be
 # built at import time, when there is no session and no sheet to read.
 
-from app.config.flavor_loader import GOAL_TO_ACTUAL
 from app.config.metric_catalog import (
     goal_metric_key,
     is_rate_metric,
@@ -658,107 +655,6 @@ def _load_zones() -> list:
 
 
 @st.cache_data(ttl=300)
-def _load_tableau_detail() -> pd.DataFrame:
-    """One row per person found, carrying the milestone dates that make the
-    funnel's "Taught" bar period-sliceable.
-
-    TABLEAU_RANKING — the funnel's source until 2026-07-16 — is a pre-aggregated
-    area x metric grid with no date column anywhere in it, so it could never
-    follow the Period picker. This tab is the only source in the system that
-    counts PEOPLE being taught (rather than lessons) against a date.
-    """
-    df, _, _ = get_tableau_detail()
-    return df
-
-
-@st.cache_data(ttl=300)
-def _load_tableau_range() -> tuple:
-    """The (start, end) window the Tableau scraper was last run for.
-
-    The export tab is CLEARED and rewritten on every run
-    (finding_funnel_export._write_to_sheets), so it holds only the LAST run's
-    window — a period reaching outside it undercounts "Taught" silently unless
-    we check. Returns ('', '') for pre-scraper manual uploads, which carry no
-    _range: marker; the funnel falls back to the dates it can observe.
-    """
-    return get_tableau_daterange()
-
-
-def _detail_col(df: pd.DataFrame, name: str):
-    """Resolve a column in the Tableau detail export. Exact match (case-
-    insensitive) wins; else the SHORTEST column whose lowercased name contains
-    `name`.
-
-    Shortest-match matters: Tableau emits a giant '..._and_5_more_(combined)'
-    mashup column that contains the same substrings as the real, short columns,
-    so a naive `in` check finds the mashup instead of the data. Same rule as
-    _col() in 07_Embudo_de_Búsqueda.py — duplicated rather than shared because
-    Streamlit's page model has no way to import across pages/. Worth promoting
-    both copies into app/utils/ when something else needs them.
-    """
-    lowered = {str(c).lower(): c for c in df.columns}
-    if name in lowered:
-        return lowered[name]
-    matches = [c for c in df.columns
-               if name in str(c).lower() and "(combined)" not in str(c).lower()]
-    return min(matches, key=lambda c: len(str(c))) if matches else None
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# CHART HELPERS (group views)
-# ══════════════════════════════════════════════════════════════════════════════
-
-# ── Trend chart with an isolating legend ──────────────────────────────────────
-# Plotly's own legend can't do what we want here. Its isolate branch switches on
-# the CLICKED trace's current visibility (plotly.js legend/handle_click.js):
-#
-#     switch (fullTrace.visible) {
-#         case 'legendonly': setVisibility(_item, true);          // ALL back on
-#         case true:         otherState = isIsolated ? true : 'legendonly';
-#
-# Once one area is isolated every other legend item is 'legendonly', so clicking
-# a second area hits the first case and unhides everything — you have to click it
-# again to isolate it. No itemclick/itemdoubleclick value avoids that, and
-# st.plotly_chart gives no hook to override it, so the trend renders through its
-# own Plotly instance with a plotly_legendclick handler instead (returning false
-# blocks Plotly's default). Cost of that: no Streamlit chart theming inside the
-# iframe, hence the explicit dark colours in _isolating_trend_chart().
-#
-# Everything else on the page draws through charts.chart().
-
-_LEGEND_ISOLATE_JS = """
-var gd = document.getElementById('%(div_id)s');
-gd.on('plotly_legendclick', function(ev) {
-    // An area is several traces sharing a legendgroup: its line plus its
-    // hidden missed-report bridge (meta === 'bridge'), so isolation works on
-    // groups, not single curves. Bridges only exist while their own area is
-    // isolated — on the all-areas view they stay hidden so the chart isn't
-    // jumbled with every area's misses at once.
-    var grp = function(t) { return t.legendgroup || t.name; };
-    var isBridge = function(t) { return t.meta === 'bridge'; };
-    var clicked = grp(gd.data[ev.curveNumber]);
-    var shown = {};
-    gd.data.forEach(function(t) {
-        // Bridges don't define the chart's state — with one area isolated its
-        // bridge is `true` too, and counting it would double the group.
-        if (!isBridge(t) && (t.visible === true || t.visible === undefined))
-            shown[grp(t)] = true;
-    });
-    var shownGroups = Object.keys(shown);
-    // Clicking the already-isolated area restores everyone; any other click
-    // switches straight to it, however the chart got into its current state.
-    var restoreAll = (shownGroups.length === 1 && shownGroups[0] === clicked);
-    var vis = gd.data.map(function(t) {
-        if (isBridge(t))
-            return (!restoreAll && grp(t) === clicked) ? true : 'legendonly';
-        return restoreAll ? true : (grp(t) === clicked ? true : 'legendonly');
-    });
-    Plotly.restyle(gd, {visible: vis});
-    return false;
-});
-"""
-
-
 def _nice_count_dtick(y_max: float, target_ticks: int = 6) -> int:
     """Smallest 1/2/5×10ⁿ tick step, floored at 1, giving ~`target_ticks`
     gridlines over [0, y_max]. Every trend metric is a whole-number count
@@ -836,6 +732,21 @@ def _isolating_trend_chart(fig: go.Figure, height: int = 520, enable_isolate: bo
 # TEACHING PIPELINE (group views)
 # ══════════════════════════════════════════════════════════════════════════════
 
+#: The teaching pipeline's five stages, in order (plan step D5). All five are
+#: Key Indicators from the weekly form, which is the point: the funnel used to
+#: take its "Enseñadas" stage from the Tableau export, so one bar of four
+#: depended on when a scraper last ran and the other three did not. The Embudo
+#: de Búsqueda page owns Tableau now, and this one is the mission's own report
+#: end to end.
+_PIPELINE_STAGES = (
+    "ki_new_people_real",
+    "ki_member_lessons_real",
+    "ki_friends_sacrament_real",
+    "ki_baptismal_date_real",
+    "ki_baptized_confirmed_real",
+)
+
+
 def _render_teaching_pipeline(
     scope_value: str,
     kpi_period: str,
@@ -846,223 +757,68 @@ def _render_teaching_pipeline(
     rows,
     weekly_wk,
     group_areas: set,
+    weekly_prior=None,
+    twin_label: str = "",
 ) -> None:
-    """The group view's Teaching Pipeline funnel, for one scope over one period.
+    """The five Key Indicators as a pipeline, for one scope over one period.
 
-    A module-level function rather than inline in render_group_breakdown for one
-    reason: the bar/trend section returns early when a weekly-form metric has no
-    submission for the period yet (e.g. "gate" on "This Week" before Sunday),
-    and that return would otherwise take this section down with it. The funnel
-    doesn't depend on the Metric picker at all, so it renders on both paths.
+    A module-level function rather than inline in render_group_breakdown
+    because the trend above it returns early in three different states — no
+    metrics, too many areas for a line chart, no weekly form yet — and any of
+    those returns would otherwise take this section down with it.
+
+    Every stage counts what HAPPENED inside the selected period, exactly like
+    the Key Indicator cards — NOT a cohort ("people found this month who later
+    got baptized"). The five are not subsets of each other either: a lesson
+    with a member present is not one of the new people above it. The shape says
+    "this is the order the work goes in", and the section's ⓘ says the rest.
     """
-    # "This Week" is suppressed on purpose (Carson, 2026-07-17): its last two
-    # bars — At Sacrament and Baptized — come from the weekly Sunday form, which
-    # keys on the week's ending Sunday and so reads 0 every day Mon–Sat. A funnel
-    # that always bottoms out at 0/0 mid-week is misleading, so the whole section
-    # (label included) is skipped rather than shown collapsed.
+    # "This Week" is suppressed on purpose (Carson, 2026-07-17): every stage
+    # comes from the weekly Sunday form, which keys on the week's ending
+    # Sunday and so reads 0 every day Mon–Sat. A pipeline that bottoms out at
+    # 0 mid-week is misleading, so the whole section is skipped rather than
+    # shown empty.
     if kpi_period == "This Week":
         return
 
-    # Every bar counts what HAPPENED inside the selected period, exactly like the
-    # Key Indicators cards — NOT a cohort ("people found this month who later got
-    # baptized"). The bars were never nested anyway: this section used to sum four
-    # independent TABLEAU_RANKING columns and draw them funnel-shaped, so the
-    # shape has always implied a nesting the numbers don't have.
-    #
-    # Sources are deliberately mixed, because no single one carries all four
-    # stages against a date:
-    #   Found        <- `rows`       (DAILY_LOG new_found; already scoped + cut)
-    #   Taught       <- TABLEAU_DETAIL  (see below)
-    #   At Sacrament <- `weekly_wk` (Sunday form pew; already scoped + cut)
-    #   Baptized     <- `weekly_wk` (Sunday form gate; already scoped + cut)
-    # "Taught" is the odd one out: no nightly or weekly field counts PEOPLE being
-    # taught, only lessons, so it has to come from Tableau — and it's therefore
-    # the only bar whose coverage depends on when the export was last scraped.
-    # That's what the guard below exists to make visible. TABLEAU_RANKING, the old
-    # source, has no date column at all and could never follow the picker.
+    def _total(frame, col: str):
+        """Total for one already-scoped, already-period-cut column, or None
+        when the frame does not carry it. None, not 0: a stage this mission
+        never collects has no reading, and an honest zero is a different fact
+        from an absent one."""
+        if frame is None or frame.empty or col not in frame.columns:
+            return None
+        return float(pd.to_numeric(frame[col], errors="coerce").fillna(0).sum())
 
-    def _period_total(frame: pd.DataFrame, col: str) -> int:
-        """Total for one already-scoped, already-period-cut metric column.
-        Absent column -> 0: a metric this mission never collects should read as
-        an honest zero, not drop its bar out of the funnel."""
-        if frame.empty or col not in frame.columns:
-            return 0
-        return int(pd.to_numeric(frame[col], errors="coerce").fillna(0).sum())
+    stages = [(ki_short_label(k), _total(weekly_wk, k)) for k in _PIPELINE_STAGES]
+    if not any(v for _, v in stages):
+        render_section_label(
+            t('Teaching Pipeline — {scope_value}', scope_value=scope_value))
+        st.info(t('No pipeline activity recorded for {scope_value} in {kpi_period}.',
+                  scope_value=scope_value, kpi_period=t(kpi_period).lower()))
+        return
 
-    # Which metric backs each stage comes from GOAL_TO_ACTUAL — the mission's
-    # own map from an outcome ("people found", "at sacrament", "baptized") to
-    # the Key Indicator that carries its real value. The three keys used to be
-    # spelled out as new_found / pew / gate: Utah Provo's. _period_total returns
-    # 0 for a column that isn't there, so all three bars read 0 for CCSM and the
-    # funnel showed a mission that found nobody, and baptized nobody, every
-    # period since launch.
-    #
-    # All three now come from `weekly_wk`. Found was previously taken from the
-    # nightly log, but CCSM states its finding outcome as a weekly Key
-    # Indicator, and a funnel whose first bar is counted over a different
-    # reporting cadence than the rest is not comparable stage to stage.
-    _found = _period_total(weekly_wk, GOAL_TO_ACTUAL.get("new_people_to_teach", ""))
-    _pew   = _period_total(weekly_wk, GOAL_TO_ACTUAL.get("at_sacrament", ""))
-    _gate  = _period_total(weekly_wk, GOAL_TO_ACTUAL.get("baptisms", ""))
+    twin = [_total(weekly_prior, k) for k in _PIPELINE_STAGES]
+    has_twin = any(v is not None for v in twin)
 
-    # ── Taught, from the Tableau detail export ────────────────────────────────
-    _det = _load_tableau_detail()
-    _det_area_col = _detail_col(_det, "latest_teaching_area") if not _det.empty else None
-    _taught_col = _detail_col(_det, "first_new_person_being_taught_date") if not _det.empty else None
-    _taught = 0
-    _taught_warning = None
-
-    if _det.empty:
-        _taught_warning = (
-            "⚠ The Taught bar reads 0 because no Tableau finding export is "
-            "loaded. The other three bars come from the mission's own reports "
-            "and are unaffected. Upload the Finding Detail export on the "
-            "Finding Funnel page, or let the morning sync run."
-        )
-    elif _det_area_col is None:
-        # Scoping is not optional: an unscoped count would quietly attribute the
-        # whole mission's teaching to this one zone.
-        _taught_warning = (
-            f"⚠ The Taught bar reads 0 — the Tableau export has no "
-            f"latest_teaching_area column, so its rows can't be matched against "
-            f"MISSION_ORG's roster for {scope_value}. Showing mission-wide "
-            f"numbers here would misattribute other zones' teaching."
-        )
-    elif _taught_col is None:
-        _taught_warning = (
-            "⚠ The Taught bar reads 0 — the Tableau export has no "
-            "first_new_person_being_taught_date column to count against."
-        )
-    else:
-        # Scope on the AREA NAME against MISSION_ORG's current roster. The export
-        # also carries latest_zone, which is deliberately NOT used: a frame's own
-        # zone column records where an area sat when the row was written, so it
-        # resurrects departed areas forever (see _scope_to_areas' docstring).
-        _det_scoped = _scope_to_areas(_det, _det_area_col, group_areas)
-        if not _det_scoped.empty:
-            _t = pd.to_datetime(_det_scoped[_taught_col], errors="coerce", format="mixed")
-            _in_period = _t.notna()
-            if p_start is not None:
-                # `< p_end + 1 day`, not `<= p_end`: this column can carry a time
-                # component, and comparing against midnight would silently drop
-                # everyone taught after 00:00 on the period's final day.
-                _in_period &= (
-                    (_t >= pd.Timestamp(p_start))
-                    & (_t < pd.Timestamp(p_end + timedelta(days=1)))
-                )
-            _taught = int(_in_period.sum())
-
-    # ── Does the export actually cover the period the user picked? ────────────
-    # The export tab is cleared and rewritten on every scrape, so it holds only
-    # the last run's window. Without this check, picking a period outside that
-    # window makes Taught collapse while its neighbours stay healthy — which
-    # reads as "teaching stopped" rather than "the export is short".
-    _cov_start = _cov_end = None
-    _rs, _re = _load_tableau_range()
-    if _rs and _re:
-        _cov_start, _cov_end = pd.to_datetime(_rs, errors="coerce"), pd.to_datetime(_re, errors="coerce")
-    elif not _det.empty and _taught_col is not None:
-        # No _range: marker — a pre-scraper manual upload. Fall back to the dates
-        # we can observe, measured across the WHOLE export rather than this
-        # group's slice: coverage is a property of the export, and a zone that
-        # simply taught nobody would otherwise look like a broken upload.
-        _all_t = pd.to_datetime(_det[_taught_col], errors="coerce", format="mixed").dropna()
-        if not _all_t.empty:
-            _cov_start, _cov_end = _all_t.min(), _all_t.max()
-    if _cov_start is None or _cov_end is None or pd.isna(_cov_start) or pd.isna(_cov_end):
-        _cov_start = _cov_end = None  # unknown window — degrade, never block
-
-    _coverage_warning = None
-    _coverage_note = None
-    if _cov_start is not None and _taught_warning is None:
-        _cs, _ce = _cov_start.date(), _cov_end.date()
-        if p_start is None:
-            # All Time means "as far back as each source goes" — and Taught's
-            # source starts later than the other three, so say so rather than
-            # let it read as a teaching drought in the mission's early months.
-            _coverage_note = t(
-                "All Time: Found, At Sacrament and Baptized run as far back as "
-                "the mission's own reports go; Taught only to {start} (the "
-                "Tableau export's start).", start=_cs)
-        elif _cs > p_start:
-            _coverage_warning = t(
-                "⚠ The Taught bar is undercounted — the current Tableau export "
-                "only covers {start} → {end}, but {period} starts {p_start}. "
-                "The other three bars come from the mission's own reports and "
-                "are complete. Re-run the export with `--preset since_launch` "
-                "to restore the full window.",
-                start=_cs, end=_ce, period=t(kpi_period).lower(), p_start=p_start)
-        elif _ce < p_end:
-            _gap_days = (p_end - _ce).days
-            if in_progress and _gap_days <= 1:
-                # The morning scrape simply hasn't run yet. A warning here would
-                # fire every day until people learned to ignore it.
-                _coverage_note = t(
-                    "Taught is current through {end}; today's records aren't "
-                    "in the Tableau export yet.", end=_ce)
-            else:
-                _coverage_warning = t(
-                    "⚠ The Taught bar is undercounted — the current Tableau "
-                    "export only reaches {end}, but {period} runs to {p_end}. "
-                    "The other three bars come from the mission's own reports "
-                    "and are complete. Re-run the export with `--preset "
-                    "since_launch` to restore the full window.",
-                    end=_ce, period=t(kpi_period).lower(), p_end=p_end)
-
-    if _taught_warning:
-        st.warning(_taught_warning)
-    elif _coverage_warning:
-        st.warning(_coverage_warning)
-
-    render_section_label(t('Teaching Pipeline — {scope_value}', scope_value=scope_value))
-
-    # All four stages always, in this fixed order — a stage is never dropped for
-    # being 0. On a short period (and on "This Week" until Sunday's form lands)
-    # a real zero is the honest answer, and it has to stay visible as an empty
-    # slot reading 0% rather than silently vanishing and making the funnel look
-    # like it has fewer steps than it does.
-    _funnel_vals = [
-        (t("Found"),        _found),
-        (t("Taught"),       _taught),
-        (t("At Sacrament"), _pew),
-        (t("Baptized"),     _gate),
-    ]
-
-    if any(v for _, v in _funnel_vals):
-        _f_labels, _f_vals = zip(*_funnel_vals)
-        fig_funnel = go.Figure(go.Funnel(
-            y=list(_f_labels), x=list(_f_vals),
-            # "auto", not "inside": a zero-width bar has no inside to draw a
-            # label in, so a 0 stage would render as a silent blank. "auto"
-            # leaves normal bars labelled inside exactly as before and pushes
-            # only the empty ones' "0 0%" out where it can be read.
-            textposition="auto", textinfo="value+percent initial",
-            textfont=dict(color="#f4f4f8"),
-            outsidetextfont=dict(color="#f4f4f8"),
-            marker=dict(color=["#2563eb", "#15803d", "#b45309", "#b91c1c"]),
-        ))
-        chart(fig_funnel, height=300)
-        st.caption(
-            t("{span}  |  {kpi_period} — counts what happened in this period. Found, At Sacrament and Baptized from the weekly Key Indicators, Taught from the Tableau export; the bars come from different reports and aren't subsets of each other.", span=span, kpi_period=t(kpi_period))
-        )
-        # At Sacrament (pew) is a raw weekly headcount the missionaries type into
-        # the Sunday form, not a roster of named people — over a period spanning
-        # several Sundays, the same repeat attender gets added again every week.
-        # Taught, by contrast, counts each person once (their first-ever lesson
-        # date), so it's normal for At Sacrament to run higher than Taught on
-        # anything longer than a single week (Carson noticed this in Provo South,
-        # 2026-07-17 — confirmed expected, not a bug).
-        st.caption(
-            t("At Sacrament is a weekly headcount, not unique people — someone who "
-            "attends several Sundays in this period is added again each week, so "
-            "it can run higher than Taught (which counts each person once).")
-        )
-        if _coverage_note:
-            st.caption(_coverage_note)
-    else:
-        st.info(
-            t('No pipeline activity recorded for {scope_value} in {kpi_period}.', scope_value=scope_value, kpi_period=t(kpi_period).lower())
-        )
+    render_section_label(
+        t('Teaching Pipeline — {scope_value}', scope_value=scope_value),
+        right=span,
+        info=t("The five Key Indicators in the order the work goes in, counting "
+               "what happened inside this period — not a cohort: the people "
+               "baptized here are not necessarily the ones found here. They are "
+               "not subsets of each other either, so a percentage between two "
+               "stages is a ratio of two counts and not a survival rate. Amigos "
+               "en sacramental is a weekly headcount rather than a roster of "
+               "names, so someone who attends several Sundays in this period is "
+               "counted each week.")
+        + (" " + t("The thin bar under each stage is {twin}.", twin=twin_label)
+           if has_twin and twin_label else ""),
+    )
+    st.markdown(
+        stage_bars(stages, highlight_worst=True,
+                   twin=twin if has_twin else None, twin_label=twin_label),
+        unsafe_allow_html=True)
 
 
 # ── Form submission compliance calendars ──────────────────────────────────────
@@ -2350,6 +2106,19 @@ def render_group_breakdown(
     _weekly_wk_prior = (_weekly_slice(pr_start, pr_end)
                         if pr_start is not None else pd.DataFrame())
 
+    def _pipeline() -> None:
+        """The teaching pipeline, called from every path out of the section
+        below. The trend returns early in three states — no metrics, too many
+        areas to draw a line each, no weekly form yet this period — and each
+        of those returns used to carry its own copy of this call's nine
+        arguments, which is three places for them to drift apart.
+        """
+        _render_teaching_pipeline(
+            scope_value=scope_value, kpi_period=kpi_period,
+            p_start=p_start, p_end=p_end, in_progress=in_progress, span=span,
+            rows=rows, weekly_wk=_weekly_wk, group_areas=group_areas,
+            weekly_prior=_weekly_wk_prior, twin_label=_vs)
+
     _catalog = metric_options()
 
     # ── Which metric the trend draws ─────────────────────────────────────────
@@ -2369,11 +2138,7 @@ def render_group_breakdown(
     if not _trend_pool:
         if has_rows or any(_weekly_has.values()):
             st.info(t("No daily-log metrics available for this group yet."))
-        _render_teaching_pipeline(
-            scope_value=scope_value, kpi_period=kpi_period,
-            p_start=p_start, p_end=p_end, in_progress=in_progress, span=span,
-            rows=rows, weekly_wk=_weekly_wk, group_areas=group_areas,
-        )
+        _pipeline()
         return
 
     _open_ki = selected_ki()
@@ -2387,11 +2152,7 @@ def render_group_breakdown(
     # own count at mission scope. Districts hold two to four areas and the area
     # view holds one, which is what this chart was always for.
     if len(group_areas) > _TREND_MAX_AREAS:
-        _render_teaching_pipeline(
-            scope_value=scope_value, kpi_period=kpi_period,
-            p_start=p_start, p_end=p_end, in_progress=in_progress, span=span,
-            rows=rows, weekly_wk=_weekly_wk, group_areas=group_areas,
-        )
+        _pipeline()
         return
 
     if _is_weekly and _weekly_wk.empty:
@@ -2404,11 +2165,7 @@ def render_group_breakdown(
               "once a week, on Sunday.",
               period=t(kpi_period).lower(), metric=m_label)
         )
-        _render_teaching_pipeline(
-            scope_value=scope_value, kpi_period=kpi_period,
-            p_start=p_start, p_end=p_end, in_progress=in_progress, span=span,
-            rows=rows, weekly_wk=_weekly_wk, group_areas=group_areas,
-        )
+        _pipeline()
         return
 
     # One style per area. Keyed by NAME off the group's sorted roster, never by
@@ -2902,11 +2659,7 @@ def render_group_breakdown(
             st.caption(t("A gap in a line is a {unit} with no nightly report "
                          "from that area.", unit=_unit) + " " + _click_caption)
 
-    _render_teaching_pipeline(
-        scope_value=scope_value, kpi_period=kpi_period,
-        p_start=p_start, p_end=p_end, in_progress=in_progress, span=span,
-        rows=rows, weekly_wk=_weekly_wk, group_areas=group_areas,
-    )
+    _pipeline()
 
     # Daily Activity (date x metric grid) and the Tableau Ranking Snapshot
     # (area x metric grid) used to render here as raw tables. Removed

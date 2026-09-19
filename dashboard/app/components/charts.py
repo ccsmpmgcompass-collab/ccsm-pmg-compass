@@ -385,7 +385,9 @@ def _widest_drop(values: Sequence[float]) -> int | None:
 
 def stage_bars(stages: Iterable[tuple[str, float]], *,
                value_fmt: Callable = fmt_int,
-               highlight_worst: bool = False) -> str:
+               highlight_worst: bool = False,
+               twin: Sequence[float | None] | None = None,
+               twin_label: str | None = None) -> str:
     """Horizontal single-hue bars, one per stage, with the step conversion
     written between rows (mockup 3.3). Pure HTML — a funnel chart's shrinking
     trapezoids encode nothing a bar and a percentage do not, and its labels
@@ -395,11 +397,23 @@ def stage_bars(stages: Iterable[tuple[str, float]], *,
     conversion line turns amber and says so. A funnel always narrows, so this
     is a "look here", not a grade — which is why it is amber and named rather
     than red and silent.
+
+    ``twin`` draws the same stages from the period before, as a thin dim bar
+    under each one and on the same scale, so "better or worse than last time"
+    is a comparison of two lengths rather than of two screens. Its value rides
+    on the row's hover, named by ``twin_label``. A stage the twin has no
+    reading for simply has no second bar — the previous cambio's first weeks
+    are legitimately empty on a mission four cycles old (plan step D5).
     """
     rows = [(str(lbl), (0.0 if v is None else float(v))) for lbl, v in stages]
     if not rows:
         return ""
-    full = max([v for _, v in rows] + [0]) or 1.0
+    twins = list(twin or [])
+    twins += [None] * (len(rows) - len(twins))
+    # ONE scale for both series: a twin scaled to its own maximum would draw a
+    # collapsed period as a healthy one.
+    full = max([v for _, v in rows]
+               + [t for t in twins if t is not None] + [0]) or 1.0
     worst = _widest_drop([v for _, v in rows]) if highlight_worst else None
     out = ['<div class="pmg-stages" style="margin:4px 0 12px 0;">']
     prev = None
@@ -416,17 +430,32 @@ def stage_bars(stages: Iterable[tuple[str, float]], *,
                 f'<span style="opacity:.7;">↓</span><span>{conv}</span>{note}</div>'
             )
         width = max(0.0, min(100.0, v / full * 100))
+        tv = twins[i]
+        hover = lbl
+        twin_html = ""
+        if tv is not None:
+            hover = (f"{lbl} · {twin_label or t('Previous period')}: "
+                     f"{value_fmt(tv)}")
+            twin_html = (
+                f'<span style="display:block;height:5px;margin-top:3px;'
+                f'border-radius:2px;background:rgba(255,255,255,0.05);'
+                f'overflow:hidden;">'
+                f'<span style="display:block;height:100%;'
+                f'width:{max(0.0, min(100.0, tv / full * 100)):.1f}%;'
+                f'background:rgba(203,203,210,0.45);border-radius:2px;">'
+                f'</span></span>')
         out.append(
             f'<div class="pmg-stage" style="display:grid;'
             f'grid-template-columns:minmax(0,34%) minmax(0,1fr) auto;'
-            f'align-items:center;gap:10px;">'
+            f'align-items:center;gap:10px;" title="{_html.escape(hover)}">'
             f'<span style="font-size:0.8rem;color:{INK};min-width:0;'
-            f'overflow-wrap:anywhere;" title="{_html.escape(lbl)}">'
-            f'{_html.escape(lbl)}</span>'
+            f'overflow-wrap:anywhere;">{_html.escape(lbl)}</span>'
+            f'<span style="min-width:0;">'
             f'<span style="display:block;height:14px;border-radius:3px;'
             f'background:rgba(255,255,255,0.06);overflow:hidden;">'
             f'<span style="display:block;height:100%;width:{width:.1f}%;'
             f'background:{MAGNITUDE};border-radius:3px;"></span></span>'
+            f'{twin_html}</span>'
             f'<span style="font-size:0.85rem;font-weight:700;color:{INK};'
             f'font-variant-numeric:tabular-nums;min-width:3rem;text-align:right;">'
             f'{_html.escape(str(value_fmt(v)))}</span>'

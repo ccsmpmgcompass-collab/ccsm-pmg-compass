@@ -2999,6 +2999,29 @@ ES: dict[str, str] = {
         "y cuándo, y cuarenta y cinco no le responden a nadie. Toque "
         "cualquier tarjeta o fila de esta página para cambiar el indicador.",
 
+
+    # ── Desgloses §4: the teaching pipeline, rebuilt (plan step D5) ──────────
+    # Five Key Indicators from the mission's own weekly form; the Tableau
+    # "Enseñadas" stage and its three warnings moved to Embudo de Búsqueda.
+    "Previous period": "Período anterior",
+    "The thin bar under each stage is {twin}.":
+        "La barra delgada bajo cada etapa es {twin}.",
+    "The five Key Indicators in the order the work goes in, counting what "
+    "happened inside this period — not a cohort: the people baptized here are "
+    "not necessarily the ones found here. They are not subsets of each other "
+    "either, so a percentage between two stages is a ratio of two counts and "
+    "not a survival rate. Amigos en sacramental is a weekly headcount rather "
+    "than a roster of names, so someone who attends several Sundays in this "
+    "period is counted each week.":
+        "Los cinco Indicadores Clave en el orden en que va la obra, contando "
+        "lo que ocurrió dentro de este período — no una cohorte: las personas "
+        "bautizadas aquí no son necesariamente las que se encontraron aquí. "
+        "Tampoco son subconjuntos entre sí, así que un porcentaje entre dos "
+        "etapas es la razón entre dos conteos y no una tasa de permanencia. "
+        "Amigos en sacramental es un conteo semanal de asistentes y no una "
+        "lista de nombres, así que quien asiste varios domingos en este "
+        "período se cuenta cada semana.",
+
     # ── Panel §2: the year against the baptismal goal ────────────────────────
     "{year} Baptisms": "Bautismos {year}",
     "certified through {month}": "certificado hasta {month}",
