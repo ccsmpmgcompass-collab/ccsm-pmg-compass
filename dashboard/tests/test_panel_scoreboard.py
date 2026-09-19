@@ -444,3 +444,52 @@ def test_the_rate_cards_carry_the_two_figures_the_ratio_came_from():
     P6). The cards show it where the ratio is."""
     html = _html(_run())
     assert re.search(r"\d+ de \d+", html), "no rate card shows its two figures"
+
+
+# ── Step C5: Informes — compliance and effort behind one tab ─────────────────
+
+def test_compliance_and_effort_are_one_section_with_two_readings():
+    """Audit rule 7: they are how well the mission REPORTS, not how it is
+    doing, and they were five of thirteen sections and about 45% of the
+    scroll."""
+    html = _html(_run()).upper()
+    assert "INFORMES" in html
+    assert html.index("INDICADORES CLAVE") < html.index("INFORMES")
+    # Only the chosen reading runs, so the effort cards are absent by default.
+    assert "PUNTAJE DE ESFUERZO" not in html
+    effort = _html(_run(panel_informes_val="effort")).upper()
+    assert "PUNTAJE DE ESFUERZO" in effort
+    assert "CUMPLIMIENTO HISTÓRICO" not in effort
+
+
+def test_the_combined_compliance_box_is_gone():
+    """An average of two averages, sitting under the headline that already
+    answered the question. Two differently-computed answers to one question."""
+    html = _html(_run())
+    assert "Cumplimiento combinado" not in html
+    assert "nocturno + semanal" not in html
+
+
+def test_the_calendars_are_behind_one_click():
+    """They are the most scrolled part of the page and answer a question a
+    reader asks occasionally."""
+    at = _run()
+    assert any("Calendarios" in str(e.label) for e in at.expander), \
+        [str(e.label) for e in at.expander]
+
+
+def test_the_rankings_keep_their_arithmetic_and_their_fold():
+    html = _html(_run())
+    assert "pmg-ranked" in html
+    assert "1.217 de 1.576" in html or "días-área desde que" in html, \
+        "the all-time compliance headline did not render"
+
+
+def test_the_panel_is_five_sections():
+    """Thirteen sections over twelve screens was audit P3. The count is
+    emphasis-tier labels: the page's own groupings, not the sub-labels inside
+    them."""
+    html = _html(_run())
+    headings = re.findall(r'font-size:1\.05rem;font-weight:800;[^"]*">([^<]*)</span>',
+                          html)
+    assert len(headings) == 5, headings

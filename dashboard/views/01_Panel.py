@@ -18,7 +18,7 @@ from app.components.ki_drilldown import (
 )
 from app.components.design_system import (
     render_page_header,
-    render_section_label, render_section_tabs, render_kpi_row, render_table,
+    render_section_label, render_kpi_row, render_table,
 )
 from app.config.flavor_loader import flavor, METRIC_LABELS
 from app.config.metric_catalog import (
@@ -75,7 +75,6 @@ from app.db.goals_queries import areas_with_goals, group_goal_totals
 from app.analytics import annual_baptisms as ab
 from app.analytics import effort_breakdown as eb
 from app.analytics import compliance_rankings as cr
-from app.components.scope_selector import render_scope_selectors, ANY as scope_ANY
 from app.utils.area_helpers import (
     compliance_anchor_date, build_calendar_data, mission_today,
     latest_due_sunday, weekly_due_weeks,
@@ -1441,687 +1440,704 @@ _night_days = [_night_start + timedelta(days=i)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 5a. EFFORT LEVEL — last 7 days, over every active area
+# 5. INFORMES — reporting hygiene, one tab down
 # ═══════════════════════════════════════════════════════════════════════════════
-# M3. This section used to sum DASHBOARD_SUMMARY's EFFORT rows and report "146
-# Todo · 83 La mayor parte · 13 Algo" — 242 answers presented as the mission,
-# when 43 areas over 7 days had 301 chances to answer and 59 of them went
-# unfiled. Every share on screen was silently a share of the submitters.
+# Data-pages plan §4 step C5, and audit rule 7: compliance and effort are how
+# well the mission REPORTS, not how the mission is doing. They were five of the
+# thirteen sections and about 45% of the scroll, above the fold on a page whose
+# first question is "where are we".
 #
-# The arithmetic now lives in app/analytics/effort_breakdown.py, which builds
-# the denominator from the active areas and places the answers into it. Two
-# consequences worth keeping: the cards are percentages of all possible
-# area-days, and the effort SCORE is computed over the areas that answered and
-# only them (a missing form is a compliance failure — section 7 grades it by
-# name — not evidence that a companionship worked badly).
+# They are one section with two readings now. Only the chosen reading's body
+# runs, so the tab that is closed costs no sheet read — DAILY_LOG at 400 days
+# and the effort log at 60 are the two most expensive reads on this page.
+_INF_COMPLIANCE, _INF_EFFORT = "compliance", "effort"
+_inf_view = st.session_state.get("panel_informes_val", _INF_COMPLIANCE)
+if _inf_view not in (_INF_COMPLIANCE, _INF_EFFORT):
+    _inf_view = _INF_COMPLIANCE
 
-#: How far the effort score must move before the card calls it a change. The
-#: rates' 2,0 is percentage POINTS on a 0-100 scale; this score lives on 1-3,
-#: where 0,10 is about one area in ten moving up a whole answer. Provisional in
-#: the same way period_delta.NEUTRAL_BAND_POINTS is — revisit once there are
-#: 6-8 weeks of history to see the real week-to-week wobble.
-_EFFORT_NEUTRAL_POINTS = 0.10
-
-_eff_areas = get_submitting_areas()
-_eff_log = get_daily_effort_log(60)
-_eff_sys_start = get_config_value("SYSTEM_START_DATE", "2026-06-08")[:10]
-_eff_transfer_start = get_config_value("TRANSFER_START_DATE", _eff_sys_start)[:10]
-_eff_floor = date.fromisoformat(_eff_sys_start)
-_eff_transfer = date.fromisoformat(_eff_transfer_start)
-
-_eff_cur = eb.build_window(
-    _eff_log, _eff_areas, start=_night_start, end=_night_end,
-    system_start=_eff_floor, transfer_start=_eff_transfer,
-)
-
-# Drawn after the window is built, so the denominator can be stated in the
-# heading rather than in a caption under the cards (step C2). It is the whole
-# point of this section: the shares are of every answer that COULD have been
-# filed, not of the ones that were.
 render_section_label(
-    t("Effort Level — Last 7 Days"),
-    right=_night_span,
-    info=t("{areas} active areas × {days} days = {possible} possible answers. "
-           "{missing} were never filed ({pct}). The three shares are of all of "
-           "them, so a missing form counts against the mission; the Effort "
-           "Score is averaged over the area-days that DID answer, because an "
-           "unfiled form is a compliance failure rather than evidence that a "
-           "companionship worked badly.",
-           areas=fmt_int(_eff_cur.area_count),
-           days=fmt_int(len(_eff_cur.days)),
-           possible=fmt_int(_eff_cur.possible),
-           missing=fmt_int(_eff_cur.missing),
-           pct=fmt_percent(_eff_cur.missing_share)) if _eff_cur.possible > 0 else None,
+    t("Reports"), emphasis=True,
+    info=t("Whether the forms arrived, and what the companionships said about "
+           "their own effort while filing them. Compliance is computed live "
+           "rather than from the nightly summary. An area owes one nightly "
+           "form a day from the day it started reporting, and one weekly form "
+           "each Sunday; a night whose 9:30 PM deadline has not passed is not "
+           "counted as missed."),
 )
 
-if _eff_cur.possible <= 0:
-    st.info(t("No effort answers have been logged yet. The nightly form asks "
-              "for one every night, so this fills in as areas report."))
-else:
-    # The prior window, for the score's arrow only. Same pair section 1 uses, so
-    # "prior 7 days" means one thing on this page.
-    _, _, _eff_prior_start, _eff_prior_end = window_pair(_due_anchor)
-    _eff_prior = eb.build_window(
-        _eff_log, _eff_areas, start=_eff_prior_start, end=_eff_prior_end,
+_inf_picked = st.pills(
+    t("Report"), [_INF_COMPLIANCE, _INF_EFFORT],
+    format_func=lambda k: (t("Compliance") if k == _INF_COMPLIANCE
+                           else t("Effort")),
+    default=_inf_view, label_visibility="collapsed",
+    key=f"panel_informes_{_inf_view}",
+)
+if _inf_picked is not None and _inf_picked != _inf_view:
+    st.session_state["panel_informes_val"] = _inf_picked
+    st.rerun()
+
+if _inf_view == _INF_EFFORT:
+    # ── Effort level — last 7 days, over every active area ────────────────────
+    # M3. This section used to sum DASHBOARD_SUMMARY's EFFORT rows and report "146
+    # Todo · 83 La mayor parte · 13 Algo" — 242 answers presented as the mission,
+    # when 43 areas over 7 days had 301 chances to answer and 59 of them went
+    # unfiled. Every share on screen was silently a share of the submitters.
+    #
+    # The arithmetic now lives in app/analytics/effort_breakdown.py, which builds
+    # the denominator from the active areas and places the answers into it. Two
+    # consequences worth keeping: the cards are percentages of all possible
+    # area-days, and the effort SCORE is computed over the areas that answered and
+    # only them (a missing form is a compliance failure — section 7 grades it by
+    # name — not evidence that a companionship worked badly).
+
+    #: How far the effort score must move before the card calls it a change. The
+    #: rates' 2,0 is percentage POINTS on a 0-100 scale; this score lives on 1-3,
+    #: where 0,10 is about one area in ten moving up a whole answer. Provisional in
+    #: the same way period_delta.NEUTRAL_BAND_POINTS is — revisit once there are
+    #: 6-8 weeks of history to see the real week-to-week wobble.
+    _EFFORT_NEUTRAL_POINTS = 0.10
+
+    _eff_areas = get_submitting_areas()
+    _eff_log = get_daily_effort_log(60)
+    _eff_sys_start = get_config_value("SYSTEM_START_DATE", "2026-06-08")[:10]
+    _eff_transfer_start = get_config_value("TRANSFER_START_DATE", _eff_sys_start)[:10]
+    _eff_floor = date.fromisoformat(_eff_sys_start)
+    _eff_transfer = date.fromisoformat(_eff_transfer_start)
+
+    _eff_cur = eb.build_window(
+        _eff_log, _eff_areas, start=_night_start, end=_night_end,
         system_start=_eff_floor, transfer_start=_eff_transfer,
     )
-    _eff_report_dates = reporting_dates(_eff_log, len(_eff_areas))
-    _eff_change = point_delta(
-        _eff_cur.score, _eff_prior.score,
-        current_basis=days_in_window(_eff_report_dates, _night_start, _night_end),
-        prior_basis=days_in_window(_eff_report_dates, _eff_prior_start, _eff_prior_end),
-        neutral_band=_EFFORT_NEUTRAL_POINTS,
+
+    # Drawn after the window is built, so the denominator can be stated in the
+    # heading rather than in a caption under the cards (step C2). It is the whole
+    # point of this section: the shares are of every answer that COULD have been
+    # filed, not of the ones that were.
+    render_section_label(
+        t("Effort Level — Last 7 Days"),
+        right=_night_span,
+        info=t("{areas} active areas × {days} days = {possible} possible answers. "
+               "{missing} were never filed ({pct}). The three shares are of all of "
+               "them, so a missing form counts against the mission; the Effort "
+               "Score is averaged over the area-days that DID answer, because an "
+               "unfiled form is a compliance failure rather than evidence that a "
+               "companionship worked badly.",
+               areas=fmt_int(_eff_cur.area_count),
+               days=fmt_int(len(_eff_cur.days)),
+               possible=fmt_int(_eff_cur.possible),
+               missing=fmt_int(_eff_cur.missing),
+               pct=fmt_percent(_eff_cur.missing_share)) if _eff_cur.possible > 0 else None,
     )
 
-    _eff_labels = {
-        eb.ALL:  t("Effort · All"),
-        eb.MOST: t("Effort · Most"),
-        eb.SOME: t("Effort · Some"),
-    }
+    if _eff_cur.possible <= 0:
+        st.info(t("No effort answers have been logged yet. The nightly form asks "
+                  "for one every night, so this fills in as areas report."))
+    else:
+        # The prior window, for the score's arrow only. Same pair section 1 uses, so
+        # "prior 7 days" means one thing on this page.
+        _, _, _eff_prior_start, _eff_prior_end = window_pair(_due_anchor)
+        _eff_prior = eb.build_window(
+            _eff_log, _eff_areas, start=_eff_prior_start, end=_eff_prior_end,
+            system_start=_eff_floor, transfer_start=_eff_transfer,
+        )
+        _eff_report_dates = reporting_dates(_eff_log, len(_eff_areas))
+        _eff_change = point_delta(
+            _eff_cur.score, _eff_prior.score,
+            current_basis=days_in_window(_eff_report_dates, _night_start, _night_end),
+            prior_basis=days_in_window(_eff_report_dates, _eff_prior_start, _eff_prior_end),
+            neutral_band=_EFFORT_NEUTRAL_POINTS,
+        )
 
-    def _eff_card(level: str) -> dict:
-        """One answer as a share of every area-day that could have carried it."""
-        return {
-            "label": _eff_labels[level],
-            "value": _eff_cur.share(level),
-            "unit": "%", "decimals": 1,
-            "note": t("{n} of {total} area-days",
-                      n=fmt_int(_eff_cur.counts.get(level, 0)),
-                      total=fmt_int(_eff_cur.possible)),
+        _eff_labels = {
+            eb.ALL:  t("Effort · All"),
+            eb.MOST: t("Effort · Most"),
+            eb.SOME: t("Effort · Some"),
         }
 
-    _eff_target = eb.score_target(get_agent_config())
-    render_kpi_row([
-        _eff_card(eb.ALL),
-        _eff_card(eb.MOST),
-        _eff_card(eb.SOME),
-        {
-            "label": t("Effort Score"),
-            "value": _eff_cur.score,
-            "decimals": 2,
-            "goal": _eff_target,
-            "change": _eff_change,
-            "points_unit": "",
-            "delta_label": t("vs prior 7 days"),
-            "note": t("Among the {n} area-days that answered",
-                      n=fmt_int(_eff_cur.answered)),
-        },
-    ])
+        def _eff_card(level: str) -> dict:
+            """One answer as a share of every area-day that could have carried it."""
+            return {
+                "label": _eff_labels[level],
+                "value": _eff_cur.share(level),
+                "unit": "%", "decimals": 1,
+                "note": t("{n} of {total} area-days",
+                          n=fmt_int(_eff_cur.counts.get(level, 0)),
+                          total=fmt_int(_eff_cur.possible)),
+            }
+
+        _eff_target = eb.score_target(get_agent_config())
+        render_kpi_row([
+            _eff_card(eb.ALL),
+            _eff_card(eb.MOST),
+            _eff_card(eb.SOME),
+            {
+                "label": t("Effort Score"),
+                "value": _eff_cur.score,
+                "decimals": 2,
+                "goal": _eff_target,
+                "change": _eff_change,
+                "points_unit": "",
+                "delta_label": t("vs prior 7 days"),
+                "note": t("Among the {n} area-days that answered",
+                          n=fmt_int(_eff_cur.answered)),
+            },
+        ])
 
 
-    # ── Per day, as a share of that day's areas ───────────────────────────────
-    # The old chart was three bars holding the same three numbers as the tiles
-    # beside it (M2). Per day it earns its place: it is the only thing on the
-    # page that shows whether a Sunday collapses or a transfer week sags, and
-    # the unfiled share is drawn rather than described.
-    _eff_day_labels = [fmt_day_month(d.day) for d in _eff_cur.days]
-    _eff_segments = [
-        (eb.ALL,  _eff_labels[eb.ALL],  STATUS["good"]),
-        (eb.MOST, _eff_labels[eb.MOST], STATUS["warn"]),
-        (eb.SOME, _eff_labels[eb.SOME], STATUS["bad"]),
-    ]
+        # ── Per day, as a share of that day's areas ───────────────────────────────
+        # The old chart was three bars holding the same three numbers as the tiles
+        # beside it (M2). Per day it earns its place: it is the only thing on the
+        # page that shows whether a Sunday collapses or a transfer week sags, and
+        # the unfiled share is drawn rather than described.
+        _eff_day_labels = [fmt_day_month(d.day) for d in _eff_cur.days]
+        _eff_segments = [
+            (eb.ALL,  _eff_labels[eb.ALL],  STATUS["good"]),
+            (eb.MOST, _eff_labels[eb.MOST], STATUS["warn"]),
+            (eb.SOME, _eff_labels[eb.SOME], STATUS["bad"]),
+        ]
 
-    render_section_label(t("Effort answers per day, share of all active areas"),
-                         numbered=False)
-    fig_effort = go.Figure()
-    for level, label, color in _eff_segments:
+        render_section_label(t("Effort answers per day, share of all active areas"),
+                             numbered=False)
+        fig_effort = go.Figure()
+        for level, label, color in _eff_segments:
+            fig_effort.add_trace(go.Bar(
+                x=_eff_day_labels,
+                y=[d.share(level) or 0 for d in _eff_cur.days],
+                name=label,
+                marker_color=color,
+                customdata=[[d.counts.get(level, 0), d.possible] for d in _eff_cur.days],
+                hovertemplate="%{fullData.name}: %{customdata[0]}/%{customdata[1]} "
+                              "(%{y:.0f}%)<extra></extra>",
+            ))
         fig_effort.add_trace(go.Bar(
             x=_eff_day_labels,
-            y=[d.share(level) or 0 for d in _eff_cur.days],
-            name=label,
-            marker_color=color,
-            customdata=[[d.counts.get(level, 0), d.possible] for d in _eff_cur.days],
+            y=[d.missing_share or 0 for d in _eff_cur.days],
+            name=t("Not reported"),
+            marker_color="#4b5563",
+            customdata=[[d.missing, d.possible] for d in _eff_cur.days],
             hovertemplate="%{fullData.name}: %{customdata[0]}/%{customdata[1]} "
                           "(%{y:.0f}%)<extra></extra>",
         ))
-    fig_effort.add_trace(go.Bar(
-        x=_eff_day_labels,
-        y=[d.missing_share or 0 for d in _eff_cur.days],
-        name=t("Not reported"),
-        marker_color="#4b5563",
-        customdata=[[d.missing, d.possible] for d in _eff_cur.days],
-        hovertemplate="%{fullData.name}: %{customdata[0]}/%{customdata[1]} "
-                      "(%{y:.0f}%)<extra></extra>",
-    ))
-    fig_effort.update_layout(
-        barmode="stack",
-        xaxis_title=t("Date"),
-        xaxis_type="category",
-        yaxis_title=t("Share of active areas"),
-        yaxis=dict(range=[0, 100], ticksuffix="%"),
-    )
-    chart(fig_effort, height=300)
-
-    # ── Per area ──────────────────────────────────────────────────────────────
-    with st.expander(t("Effort by area — who answered what ({span})", span=_night_span)):
-        # Ranked, not merely sorted: an area with two answers and a perfect
-        # score does not lead the mission. eb.MIN_RANKABLE_ANSWERS sinks those
-        # rows to the bottom with their numbers intact.
-        _eff_rows = eb.rank_areas(_eff_cur.areas)
-        _eff_table = pd.DataFrame([{
-            t("Area"):     a.area,
-            t("Zone"):     a.zone,
-            _eff_labels[eb.ALL]:  a.counts.get(eb.ALL, 0),
-            _eff_labels[eb.MOST]: a.counts.get(eb.MOST, 0),
-            _eff_labels[eb.SOME]: a.counts.get(eb.SOME, 0),
-            t("Answered"): f"{fmt_int(a.answered)}/{fmt_int(a.possible)}",
-            t("Not reported"): a.missing,
-            t("Effort Score"): fmt_number(a.score, 2) if a.score is not None else "—",
-        } for a in _eff_rows])
-        st.caption(
-            t("{n} active areas · Todo=3, La mayor parte=2, Algo=1, averaged "
-              "over the nights the area answered. An area that filed nothing "
-              "has no score, not a zero.", n=fmt_int(len(_eff_rows)))
+        fig_effort.update_layout(
+            barmode="stack",
+            xaxis_title=t("Date"),
+            xaxis_type="category",
+            yaxis_title=t("Share of active areas"),
+            yaxis=dict(range=[0, 100], ticksuffix="%"),
         )
-        render_table(_eff_table)
+        chart(fig_effort, height=300)
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 5b. SUBMISSION COMPLIANCE — all-time summary, calendars, per-area detail
-# ═══════════════════════════════════════════════════════════════════════════════
-render_section_label(t("Submission Compliance"))
-
-comp_df = get_alltime_compliance()
-
-if comp_df.empty:
-    mission_pct = days_tracked = areas_current = total_forms = None
-    total_possible = None
-else:
-    total_sub      = int(comp_df["days_submitted"].sum())
-    total_possible = int(comp_df["days_possible"].sum())
-    mission_pct    = round(total_sub / total_possible * 100) if total_possible else 0
-    days_tracked   = int(comp_df["days_possible"].max())
-    areas_current  = int((comp_df["pct"] >= 100).sum())
-    total_forms    = total_sub
-
-# ONE headline number, not four competing ones.
-#
-# This section used to open with a row of four tiles — Total Forms Submitted,
-# Compliance All-Time, Days Tracked, Areas at 100% — three of which are inputs
-# to the fourth. A reader had to work out which one was the answer
-# (AUDIT-IA-2026-08-22.md: "four competing percentages"). All-time compliance
-# is the answer; the arithmetic behind it moves into the expander, the same
-# pattern §1b already uses for its rates.
-render_kpi_row([{
-    "label": t("All-Time Compliance"),
-    "value": f"{fmt_int(mission_pct)}%" if mission_pct is not None else "—",
-    "note": (t("{submitted} of {possible} area-days since tracking began",
-               submitted=fmt_int(total_forms), possible=fmt_int(total_possible))
-             if total_possible else ""),
-}])
-
-with st.expander(t("How compliance is calculated")):
-    st.markdown(t(
-        "Every submitting area owes one nightly form per day from the day this "
-        "mission started tracking. All-time compliance is the mission's total "
-        "forms divided by its total owed — a ratio of totals, not the average "
-        "of each area's own percentage, so a large area counts for more than a "
-        "small one."
-    ))
-    render_kpi_row([
-        {"label": t("Total Forms Submitted"),
-         "value": fmt_int(total_forms) if total_forms is not None else "—"},
-        {"label": t("Days Tracked"),
-         "value": fmt_int(days_tracked) if days_tracked is not None else "—"},
-        {"label": t("Areas at 100%"),
-         "value": fmt_int(areas_current) if areas_current is not None else "—"},
-    ])
-
-# ── Nightly submission compliance — daily % calendar heatmap ──────────────────
-render_section_label(t("Nightly Submission Compliance — Daily %"))
-
-_subm_areas  = get_submitting_areas()
-_daily_all   = get_daily_log(days=45)
-_total_areas = (
-    _subm_areas["Area_Name"].astype(str).str.strip().nunique()
-    if not _subm_areas.empty and "Area_Name" in _subm_areas.columns else 0
-)
-
-if _total_areas == 0 or _daily_all.empty or "Date" not in _daily_all.columns:
-    st.info(t("No nightly compliance data yet."))
-else:
-    _submitting_set = set(_subm_areas["Area_Name"].dropna().astype(str).str.strip())
-    _dl = _daily_all.copy()
-    _dl["Area"] = _dl["Area"].astype(str).str.strip()
-    _dl = _dl[_dl["Area"].isin(_submitting_set)]
-    _per_day_counts = _dl.groupby("Date")["Area"].nunique().to_dict()
-
-    _mb_sys_start = get_config_value("SYSTEM_START_DATE", "")
-    _mb_anchor    = compliance_anchor_date()
-    _mb_win_end   = _mb_anchor.isoformat()
-    _mb_thirty    = (_mb_anchor - timedelta(days=29)).isoformat()
-    _mb_win_start = max(_mb_sys_start, _mb_thirty) if _mb_sys_start else _mb_thirty
-
-    _mb_cal = build_calendar_data(set(), _mb_win_end, n_weeks=5, anchor_date=_mb_anchor)
-
-    def _mb_pct_color(p: int):
-        if p >= 85:
-            return "rgba(34,197,94,0.25)", "#22c55e"
-        if p >= 70:
-            return "rgba(245,158,11,0.22)", "#f59e0b"
-        return "rgba(239,68,68,0.20)", "#ef4444"
-
-    # Through t() rather than strftime: strftime follows the SERVER's locale,
-    # which on Streamlit Cloud is English regardless of the mission's language.
-    _mb_day_labels = [t("Mon"), t("Tue"), t("Wed"), t("Thu"),
-                      t("Fri"), t("Sat"), t("Sun")]
-    _mb_hdr = "".join(
-        f'<th style="text-align:center;padding:4px 8px;color:#9ca3af;font-size:0.72rem;font-weight:600;">{d}</th>'
-        for d in _mb_day_labels
-    )
-
-    _counted_pcts = []
-    _mb_body = ""
-    # Whether either greyed state actually occurs in this window. The legend
-    # used to name both unconditionally, which meant the calendar explained a
-    # "pre-tracking" colour that was nowhere on it — the window has been past
-    # SYSTEM_START_DATE for months. A legend entry for a colour that isn't
-    # drawn is noise at best and a wrong reading at worst.
-    _mb_has_future = _mb_has_pretracking = False
-    for week in _mb_cal:
-        cells = ""
-        for cell in week:
-            d = cell["date"]
-            day_num = d[8:]
-            if cell["future"]:
-                _mb_has_future = True
-                bg, fg, pct_txt = "rgba(255,255,255,0.02)", "#374151", ""
-                title = t("{date} — upcoming", date=d)
-            elif d < _mb_win_start:
-                _mb_has_pretracking = True
-                bg, fg, pct_txt = "rgba(255,255,255,0.03)", "#4b5563", ""
-                title = t("{date} — before tracking started", date=d)
-            else:
-                n = _per_day_counts.get(d, 0)
-                pct = round(n / _total_areas * 100) if _total_areas else 0
-                _counted_pcts.append(pct)
-                bg, fg = _mb_pct_color(pct)
-                pct_txt = f"{fmt_int(pct)}%"
-                title = t("{date} — {n}/{total} areas submitted ({pct}%)",
-                          date=d, n=fmt_int(n), total=fmt_int(_total_areas),
-                          pct=fmt_int(pct))
-            pct_html = (
-                f'<div style="font-size:0.8rem;font-weight:700;color:{fg};">{pct_txt}</div>'
-                if pct_txt else '<div style="font-size:0.8rem;">&nbsp;</div>'
+        # ── Per area ──────────────────────────────────────────────────────────────
+        with st.expander(t("Effort by area — who answered what ({span})", span=_night_span)):
+            # Ranked, not merely sorted: an area with two answers and a perfect
+            # score does not lead the mission. eb.MIN_RANKABLE_ANSWERS sinks those
+            # rows to the bottom with their numbers intact.
+            _eff_rows = eb.rank_areas(_eff_cur.areas)
+            _eff_table = pd.DataFrame([{
+                t("Area"):     a.area,
+                t("Zone"):     a.zone,
+                _eff_labels[eb.ALL]:  a.counts.get(eb.ALL, 0),
+                _eff_labels[eb.MOST]: a.counts.get(eb.MOST, 0),
+                _eff_labels[eb.SOME]: a.counts.get(eb.SOME, 0),
+                t("Answered"): f"{fmt_int(a.answered)}/{fmt_int(a.possible)}",
+                t("Not reported"): a.missing,
+                t("Effort Score"): fmt_number(a.score, 2) if a.score is not None else "—",
+            } for a in _eff_rows])
+            st.caption(
+                t("{n} active areas · Todo=3, La mayor parte=2, Algo=1, averaged "
+                  "over the nights the area answered. An area that filed nothing "
+                  "has no score, not a zero.", n=fmt_int(len(_eff_rows)))
             )
-            cells += (
-                f'<td title="{title}" style="text-align:center;padding:5px 4px;background:{bg};'
-                f'border-radius:4px;vertical-align:middle;">'
-                f'<div style="font-size:0.6rem;color:#9ca3af;line-height:1;">{day_num}</div>'
-                f'{pct_html}</td>'
-            )
-        _mb_body += f"<tr>{cells}</tr>"
+            render_table(_eff_table)
 
-    def _mb_legend_item(color, label):
-        return (
-            f'<span style="display:inline-block;width:10px;height:10px;background:{color};'
-            f'border-radius:2px;margin-right:4px;"></span>{label}&nbsp;&nbsp;&nbsp;'
-        )
-
-    _mb_legend = (
-        _mb_legend_item("rgba(34,197,94,0.25)", "&ge;85%")
-        + _mb_legend_item("rgba(245,158,11,0.22)", "70–84%")
-        + _mb_legend_item("rgba(239,68,68,0.20)", "&lt;70%")
-    )
-    if _mb_has_future:
-        _mb_legend += _mb_legend_item("rgba(255,255,255,0.02)", t("Upcoming"))
-    if _mb_has_pretracking:
-        _mb_legend += _mb_legend_item("rgba(255,255,255,0.03)",
-                                      t("Before tracking started"))
-
-    st.markdown(
-        f'<table style="width:100%;border-collapse:separate;border-spacing:3px;margin-bottom:0.5rem;">'
-        f'<thead><tr>{_mb_hdr}</tr></thead><tbody>{_mb_body}</tbody></table>'
-        f'<div style="font-size:0.72rem;color:#9ca3af;margin-bottom:0.5rem;">'
-        + _mb_legend
-        + "</div>",
-        unsafe_allow_html=True,
-    )
-
-    if _counted_pcts:
-        _avg = round(sum(_counted_pcts) / len(_counted_pcts))
-        st.markdown(
-            '<p style="color:#9ca3af;font-size:0.82rem;">'
-            + t("Each box is the share of the mission's {total} submitting "
-                "areas that turned in the nightly form that day. Window "
-                "average: {avg}%.",
-                total=f'<strong style="color:#f4f4f8;">{fmt_int(_total_areas)}</strong>',
-                avg=f'<strong style="color:#f4f4f8;">{fmt_int(_avg)}</strong>')
-            + '</p>',
-            unsafe_allow_html=True,
-        )
-
-# ── Weekly report submission — % of areas submitting the weekly form, by week ─
-render_section_label(t("Weekly Report Submission — By Week"))
-
-_nightly_avg = (
-    sum(_counted_pcts) / len(_counted_pcts)
-    if "_counted_pcts" in locals() and _counted_pcts else None
-)
-
-_wk_all       = get_weekly_submission_data()
-_wk_sys_start = get_config_value("SYSTEM_START_DATE", "")
-_wk_anchor    = latest_due_sunday()
-_wk_due_weeks = weekly_due_weeks(_wk_sys_start, anchor_sunday=_wk_anchor, n_weeks=8)
-
-def _wk_leg(color, label):
-    return (
-        f'<span style="display:inline-block;width:10px;height:10px;background:{color};'
-        f'border-radius:2px;margin-right:4px;"></span>{label}&nbsp;&nbsp;&nbsp;'
-    )
-
-_weekly_avg = None
-if _total_areas == 0 or not _wk_due_weeks:
-    st.info(t("No weekly submission data yet."))
 else:
-    _wk_submitting = (
-        set(_subm_areas["Area_Name"].dropna().astype(str).str.strip())
-        if not _subm_areas.empty and "Area_Name" in _subm_areas.columns else set()
-    )
-    if not _wk_all.empty and "area" in _wk_all.columns:
-        _wk = _wk_all.copy()
-        _wk["area"] = _wk["area"].astype(str).str.strip()
-        if _wk_submitting:
-            _wk = _wk[_wk["area"].isin(_wk_submitting)]
-        _per_week_counts = _wk.groupby("week_end_date")["area"].nunique().to_dict()
+    # ── Submission compliance — the headline, the rankings, the
+    #    calendars ─────────────────────────────────────────────────
+    comp_df = get_alltime_compliance()
+
+    if comp_df.empty:
+        mission_pct = days_tracked = areas_current = total_forms = None
+        total_possible = None
     else:
-        _per_week_counts = {}
+        total_sub      = int(comp_df["days_submitted"].sum())
+        total_possible = int(comp_df["days_possible"].sum())
+        mission_pct    = round(total_sub / total_possible * 100) if total_possible else 0
+        days_tracked   = int(comp_df["days_possible"].max())
+        areas_current  = int((comp_df["pct"] >= 100).sum())
+        total_forms    = total_sub
 
-    def _wk_pct_color(p):
-        if p >= 85:
-            return "rgba(34,197,94,0.25)", "#22c55e"
-        if p >= 70:
-            return "rgba(245,158,11,0.22)", "#f59e0b"
-        return "rgba(239,68,68,0.20)", "#ef4444"
+    # ONE headline number, not four competing ones.
+    #
+    # This section used to open with a row of four tiles — Total Forms Submitted,
+    # Compliance All-Time, Days Tracked, Areas at 100% — three of which are inputs
+    # to the fourth. A reader had to work out which one was the answer
+    # (AUDIT-IA-2026-08-22.md: "four competing percentages"). All-time compliance
+    # is the answer; the arithmetic behind it moves into the expander, the same
+    # pattern §1b already uses for its rates.
+    render_kpi_row([{
+        "label": t("All-Time Compliance"),
+        "value": f"{fmt_int(mission_pct)}%" if mission_pct is not None else "—",
+        "note": (t("{submitted} of {possible} area-days since tracking began",
+                   submitted=fmt_int(total_forms), possible=fmt_int(total_possible))
+                 if total_possible else ""),
+    }])
 
-    _wk_pcts, _wk_cells = [], ""
-    for w in _wk_due_weeks:
-        _wd = date.fromisoformat(w)
-        n   = _per_week_counts.get(w, 0)
-        pct = round(n / _total_areas * 100) if _total_areas else 0
-        _wk_pcts.append(pct)
-        bg, fg = _wk_pct_color(pct)
-        _wk_title = t("Week ending {date} — {n}/{total} areas submitted ({pct}%)",
-                      date=w, n=fmt_int(n), total=fmt_int(_total_areas),
-                      pct=fmt_int(pct))
-        _wk_cells += (
-            f'<td title="{_wk_title}" '
-            f'style="text-align:center;padding:6px 8px;background:{bg};border-radius:4px;'
-            f'vertical-align:middle;min-width:52px;">'
-            f'<div style="font-size:0.6rem;color:#9ca3af;line-height:1.2;">{_wd.month}/{_wd.day}</div>'
-            f'<div style="font-size:0.8rem;font-weight:700;color:{fg};">{fmt_int(pct)}%</div></td>'
-        )
-    st.markdown(
-        '<table style="border-collapse:separate;border-spacing:3px;margin-bottom:0.5rem;">'
-        f'<tbody><tr>{_wk_cells}</tr></tbody></table>'
-        '<div style="font-size:0.72rem;color:#9ca3af;margin-bottom:0.5rem;">'
-        + _wk_leg("rgba(34,197,94,0.25)", "&ge;85%")
-        + _wk_leg("rgba(245,158,11,0.22)", "70–84%")
-        + _wk_leg("rgba(239,68,68,0.20)", "&lt;70%")
-        + '</div>',
-        unsafe_allow_html=True,
+    with st.expander(t("How compliance is calculated")):
+        st.markdown(t(
+            "Every submitting area owes one nightly form per day from the day this "
+            "mission started tracking. All-time compliance is the mission's total "
+            "forms divided by its total owed — a ratio of totals, not the average "
+            "of each area's own percentage, so a large area counts for more than a "
+            "small one."
+        ))
+        render_kpi_row([
+            {"label": t("Total Forms Submitted"),
+             "value": fmt_int(total_forms) if total_forms is not None else "—"},
+            {"label": t("Days Tracked"),
+             "value": fmt_int(days_tracked) if days_tracked is not None else "—"},
+            {"label": t("Areas at 100%"),
+             "value": fmt_int(areas_current) if areas_current is not None else "—"},
+        ])
+
+
+    # ── Compliance rankings (replaced the all-time per-area expander) ─────────────
+    # Was an expander holding a plain table of every area's all-time compliance,
+    # sorted worst-first with a "Behind only" filter. It answered one question over
+    # one window and hid the answer behind a click.
+    #
+    # This is a ranked leaderboard over any of five periods, for areas or zones,
+    # graded on the nightly form, the weekly form, or both. Built to a reference
+    # design from a sibling mission's dashboard; the arithmetic that reference
+    # implies -- and it is not the obvious arithmetic -- lives in
+    # app/analytics/compliance_rankings.py with the numbers from those screenshots
+    # pinned as tests. Two rules in particular are easy to "simplify" wrongly:
+    # an area averages its two rounded percentages instead of pooling its counts,
+    # and a zone averages its areas instead of pooling theirs.
+    #
+    # Naming every area, including the worst, is a deliberate exception to this
+    # page's positive-only rule for per-area callouts (the rule exists because the
+    # missionaries named can read the page). The user's reasoning: compliance is
+    # "did you turn the form in", a behaviour an area controls outright, not a
+    # judgement of how well they teach. The rule still stands for performance.
+
+    # The controls: nine widgets became four (step C5, audit P7). Two tab buttons,
+    # four scope selectors and three dropdowns stood between the heading and the
+    # list, which is the good part. What went:
+    #
+    #   * the zone/district/area/missionary filter. The zone view already answers
+    #     "how does my zone compare", the fold below already answers "this list is
+    #     too long", and a ranking filtered to one district was a leaderboard of
+    #     three rows. Desgloses is where one area's compliance is read.
+    #   * render_section_tabs, whose two full-width buttons are a page-level
+    #     idiom; inside a tab it read as a second level of navigation.
+    _SCOPE_AREA, _SCOPE_ZONE = "area", "zone"
+    _rank_scope = st.session_state.get("panel_rank_scope_val", _SCOPE_AREA)
+    if _rank_scope not in (_SCOPE_AREA, _SCOPE_ZONE):
+        _rank_scope = _SCOPE_AREA
+
+    _ct_labels = {
+        cr.OVERALL: t("Overall (Daily + Weekly)"),
+        cr.NIGHTLY: t("Daily only"),
+        cr.WEEKLY:  t("Weekly only"),
+    }
+    _view_labels = {
+        "best":  t("Best → Worst"),
+        "worst": t("Worst → Best"),
+        "name":  t("By name (A–Z)"),
+    }
+    # A transfer label the schedule cannot supply is dropped from the menu rather
+    # than offered and left to resolve to nothing. Same rule as the Desgloses picker.
+    _rk_transfers = transfer_period_bounds()
+    _rk_periods = [p for p in cr.PERIODS
+                   if p not in ("This Transfer So Far", "Last Transfer")
+                   or p in _rk_transfers]
+    _rk_default = ("This Transfer So Far" if "This Transfer So Far" in _rk_periods
+                   else "This Month So Far")
+    _period_labels = {p: t(p) for p in cr.PERIODS}
+
+    _rc0, _rc1, _rc2, _rc3 = st.columns([1.1, 1, 1, 1])
+    with _rc0:
+        _rank_picked = st.pills(
+            t("Rank"), [_SCOPE_AREA, _SCOPE_ZONE],
+            format_func=lambda k: (t("Areas") if k == _SCOPE_AREA else t("Zones")),
+            default=_rank_scope, label_visibility="collapsed",
+            key=f"panel_rank_scope_{_rank_scope}")
+        if _rank_picked is not None and _rank_picked != _rank_scope:
+            st.session_state["panel_rank_scope_val"] = _rank_picked
+            st.rerun()
+    with _rc1:
+        _rk_type = st.selectbox(
+            t("Compliance Type"), list(_ct_labels),
+            format_func=lambda k: _ct_labels[k], key="panel_rank_type")
+    with _rc2:
+        _rk_period = st.selectbox(
+            t("Period"), _rk_periods, format_func=lambda k: _period_labels[k],
+            index=_rk_periods.index(_rk_default), key="panel_rank_period")
+    with _rc3:
+        _rk_view = st.selectbox(
+            t("View"), list(_view_labels),
+            format_func=lambda k: _view_labels[k], key="panel_rank_view")
+
+    # ── The window, and the floors that keep it honest ────────────────────────────
+    # start/end come from the period; the floor is when this mission began logging
+    # and the anchor is the last night whose deadline has passed. Without the floor,
+    # "This Month So Far" charges every area for the nine days of August before
+    # tracking existed; without the anchor, tonight's not-yet-due form reads as a
+    # miss from the moment the page loads.
+    _rk_sys_start = get_config_value("SYSTEM_START_DATE", "2026-06-08")[:10]
+    _rk_transfer_start = get_config_value("TRANSFER_START_DATE", _rk_sys_start)[:10]
+    _rk_start, _rk_end = cr.period_bounds(_rk_period, date.today(),
+                                          transfers=_rk_transfers)
+    _rk_floor = date.fromisoformat(_rk_sys_start)
+    _rk_anchor = compliance_anchor_date()
+    _rk_lo, _rk_hi = cr.clip_window(_rk_start, _rk_end, _rk_floor, _rk_anchor)
+
+    _rank_rows = cr.build_area_windows(
+        get_submitting_areas(), get_daily_log(400), get_weekly_submission_data(),
+        start=_rk_start, end=_rk_end,
+        system_start=_rk_floor,
+        transfer_start=date.fromisoformat(_rk_transfer_start),
+        anchor=_rk_anchor,
     )
 
-    _weekly_avg = sum(_wk_pcts) / len(_wk_pcts) if _wk_pcts else None
-    if _weekly_avg is not None:
-        st.markdown(
-            '<p style="color:#9ca3af;font-size:0.82rem;">'
-            + t("Each box is the share of the mission's {total} areas that "
-                "submitted the weekly form for that Mon–Sun week (credited by "
-                "the day it arrived). Window average: {avg}%.",
-                total=f'<strong style="color:#f4f4f8;">{fmt_int(_total_areas)}</strong>',
-                avg=f'<strong style="color:#f4f4f8;">{fmt_int(round(_weekly_avg))}</strong>')
-            + '</p>',
-            unsafe_allow_html=True,
-        )
-
-if _nightly_avg is not None and _weekly_avg is not None:
-    _combined = round((_nightly_avg + _weekly_avg) / 2)
-    _cc = "#22c55e" if _combined >= 85 else ("#f59e0b" if _combined >= 70 else "#ef4444")
-    st.markdown(
-        f'<div style="margin-top:0.5rem;padding:10px 14px;border-radius:6px;'
-        f'background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);">'
-        f'<span style="color:#9ca3af;font-size:0.82rem;">'
-        f'{t("Combined submission compliance (nightly + weekly, averaged):")} </span>'
-        f'<strong style="color:{_cc};font-size:1.05rem;">{fmt_int(_combined)}%</strong>'
-        f'<span style="color:#6b7280;font-size:0.75rem;"> &nbsp;'
-        f'{t("— nightly {nightly}%, weekly {weekly}%", nightly=fmt_int(round(_nightly_avg)), weekly=fmt_int(round(_weekly_avg)))}'
-        f'</span></div>',
-        unsafe_allow_html=True,
-    )
-
-# ── Compliance rankings (replaced the all-time per-area expander) ─────────────
-# Was an expander holding a plain table of every area's all-time compliance,
-# sorted worst-first with a "Behind only" filter. It answered one question over
-# one window and hid the answer behind a click.
-#
-# This is a ranked leaderboard over any of five periods, for areas or zones,
-# graded on the nightly form, the weekly form, or both. Built to a reference
-# design from a sibling mission's dashboard; the arithmetic that reference
-# implies -- and it is not the obvious arithmetic -- lives in
-# app/analytics/compliance_rankings.py with the numbers from those screenshots
-# pinned as tests. Two rules in particular are easy to "simplify" wrongly:
-# an area averages its two rounded percentages instead of pooling its counts,
-# and a zone averages its areas instead of pooling theirs.
-#
-# Naming every area, including the worst, is a deliberate exception to this
-# page's positive-only rule for per-area callouts (the rule exists because the
-# missionaries named can read the page). The user's reasoning: compliance is
-# "did you turn the form in", a behaviour an area controls outright, not a
-# judgement of how well they teach. The rule still stands for performance.
-render_section_label(t("Compliance Rankings"))
-
-# The scope switch. This block WAS the app's button-pair recipe, written here
-# first and then generalised into design_system.render_section_tabs for audit
-# step 1.7 -- so it now calls the component it fathered rather than keeping a
-# second copy of it. The reasoning that produced the shape (st.segmented_control
-# refusing to fill the row; the design system's !important background flattening
-# Streamlit's own primary styling) moved into that docstring with it.
-_SCOPE_AREA, _SCOPE_ZONE = "area", "zone"
-_rank_scope = render_section_tabs(
-    {
-        _SCOPE_AREA: t("Area Rankings"),
-        _SCOPE_ZONE: t("Zone Rankings"),
-    },
-    key="panel_rank_scope_val",
-    per_row=2,
-)
-
-st.write("")
-
-# Zone / District / Area / missionary, for the area view only -- a zone ranking
-# filtered to one zone is a single row. This is the same component the
-# Breakdowns page uses, under its own prefix so the two pages' selections stay
-# independent.
-_rk_zone = _rk_district = _rk_area = scope_ANY
-if _rank_scope == _SCOPE_AREA:
-    _rk_zone, _rk_district, _rk_area, _ = render_scope_selectors(
-        get_submitting_areas(), prefix="panel_rank")
-
-_ct_labels = {
-    cr.OVERALL: t("Overall (Daily + Weekly)"),
-    cr.NIGHTLY: t("Daily only"),
-    cr.WEEKLY:  t("Weekly only"),
-}
-_view_labels = {
-    "best":  t("Best → Worst"),
-    "worst": t("Worst → Best"),
-    "name":  t("By name (A–Z)"),
-}
-# A transfer label the schedule cannot supply is dropped from the menu rather
-# than offered and left to resolve to nothing. Same rule as the Desgloses picker.
-_rk_transfers = transfer_period_bounds()
-_rk_periods = [p for p in cr.PERIODS
-               if p not in ("This Transfer So Far", "Last Transfer")
-               or p in _rk_transfers]
-_rk_default = ("This Transfer So Far" if "This Transfer So Far" in _rk_periods
-               else "This Month So Far")
-_period_labels = {p: t(p) for p in cr.PERIODS}
-
-_rc1, _rc2, _rc3 = st.columns(3)
-with _rc1:
-    _rk_type = st.selectbox(
-        t("Compliance Type"), list(_ct_labels),
-        format_func=lambda k: _ct_labels[k], key="panel_rank_type")
-with _rc2:
-    _rk_period = st.selectbox(
-        t("Period"), _rk_periods, format_func=lambda k: _period_labels[k],
-        index=_rk_periods.index(_rk_default), key="panel_rank_period")
-with _rc3:
-    _rk_view = st.selectbox(
-        t("View"), list(_view_labels),
-        format_func=lambda k: _view_labels[k], key="panel_rank_view")
-
-# ── The window, and the floors that keep it honest ────────────────────────────
-# start/end come from the period; the floor is when this mission began logging
-# and the anchor is the last night whose deadline has passed. Without the floor,
-# "This Month So Far" charges every area for the nine days of August before
-# tracking existed; without the anchor, tonight's not-yet-due form reads as a
-# miss from the moment the page loads.
-_rk_sys_start = get_config_value("SYSTEM_START_DATE", "2026-06-08")[:10]
-_rk_transfer_start = get_config_value("TRANSFER_START_DATE", _rk_sys_start)[:10]
-_rk_start, _rk_end = cr.period_bounds(_rk_period, date.today(),
-                                      transfers=_rk_transfers)
-_rk_floor = date.fromisoformat(_rk_sys_start)
-_rk_anchor = compliance_anchor_date()
-_rk_lo, _rk_hi = cr.clip_window(_rk_start, _rk_end, _rk_floor, _rk_anchor)
-
-_rank_rows = cr.build_area_windows(
-    get_submitting_areas(), get_daily_log(400), get_weekly_submission_data(),
-    start=_rk_start, end=_rk_end,
-    system_start=_rk_floor,
-    transfer_start=date.fromisoformat(_rk_transfer_start),
-    anchor=_rk_anchor,
-)
-
-# Filters apply to areas before any rollup, so a zone ranking always describes
-# the whole zone.
-if _rank_scope == _SCOPE_AREA:
-    if _rk_zone != scope_ANY:
-        _rank_rows = [r for r in _rank_rows if r.zone == _rk_zone]
-    if _rk_district != scope_ANY:
-        _rank_rows = [r for r in _rank_rows if r.district == _rk_district]
-    if _rk_area != scope_ANY:
-        _rank_rows = [r for r in _rank_rows if r.area == _rk_area]
-    _display_rows = _rank_rows
-else:
-    _display_rows = cr.build_zone_windows(_rank_rows, _rk_type)
-
-_display_rows = cr.rank(_display_rows, _rk_type,
-                        worst_first=(_rk_view == "worst"),
-                        by_name=(_rk_view == "name"))
-
-#: Row colours come from charts.ranked_list, keyed on the status
-#: compliance_rankings.status_of returns. The bands are its GREEN_MIN /
-#: AMBER_MIN, the same >=85 / 70-84 / <70 the two calendars above legend --
-#: one number must not be green on a calendar and amber in the ranking
-#: beneath it.
-
-
-def _rank_detail(row) -> str:
-    """"16/20 días · 3/3 semanas" — both halves, because the two together are
-    what the Overall figure averages.
-
-    The weekly half is dropped when no weekly report has come due in the window
-    (a Mon–Wed "This Week" contains no Sunday). Printing "0/0 semanas" there
-    reads as a failure at a glance, and it is the one case where the Overall
-    figure is the nightly figure alone — see AreaWindow.overall_pct."""
-    days = t("{ds}/{dp} days", ds=fmt_int(row.days_submitted),
-             dp=fmt_int(row.days_possible))
-    if not row.weeks_possible:
-        return days
-    return t("{days} · {ws}/{wp} weeks", days=days,
-             ws=fmt_int(row.weeks_submitted), wp=fmt_int(row.weeks_possible))
-
-
-if _rk_lo is None:
-    # The period is entirely before this mission started logging. Saying so
-    # beats a screen of areas at 0%, which reads as mass failure rather than as
-    # an absence of data (audit M7: an empty state must say why).
-    st.info(t(
-        "No data for this period — compliance tracking began on {start}.",
-        start=fmt_day_month(_rk_floor)))
-elif not _display_rows:
-    st.info(t("No areas match the current filter."))
-else:
-    def _rank_rows_html(rows) -> str:
-        """`rows` is (rank, row) pairs — the rank is passed rather than
-        enumerated, so a folded view still prints each area's TRUE position."""
-        return ranked_list([
-            {
-                "rank": i,
-                "name": getattr(r, "area", None) or getattr(r, "zone", ""),
-                "sub": _rank_detail(r),
-                "value": r.pct(_rk_type),
-                "status": cr.status_of(r.pct(_rk_type)),
-            }
-            for i, r in rows
-        ], value_fmt=lambda v: f"{fmt_int(v)}%", bar_max=100)
-
-    _ranked = list(enumerate(_display_rows, start=1))
-
-    # ── Top 5 + bottom 5, with the full list one click away ──────────────────
-    #
-    # This block was every area, unpaginated: 3.8 screens, 38% of the Panel, in
-    # a section already carrying 60% of the page between compliance and effort
-    # (AUDIT-IA-2026-08-22.md's headline measurement). What a president acts on
-    # is the two ends — who to praise and who to call — so those are what the
-    # page shows; the middle is still one click away with every filter intact,
-    # which is why this is a fold and not a cut.
-    #
-    # Two cases deliberately do NOT fold:
-    #   * "By name (A–Z)", where first and last are alphabetical accidents and
-    #     "top 5" would be a lie about performance;
-    #   * a list short enough that folding would hide fewer rows than the fold
-    #     itself costs — a zone ranking is ten rows, and every filtered area
-    #     view is shorter still.
-    _FOLD_HEAD = _FOLD_TAIL = 5
-    _fold = (_rk_view != "name"
-             and len(_ranked) > _FOLD_HEAD + _FOLD_TAIL + 2)
-
-    if not _fold:
-        st.markdown(_rank_rows_html(_ranked), unsafe_allow_html=True)
+    # Filters apply to areas before any rollup, so a zone ranking always describes
+    # the whole zone.
+    if _rank_scope == _SCOPE_AREA:
+        _display_rows = _rank_rows
     else:
-        _hidden = len(_ranked) - _FOLD_HEAD - _FOLD_TAIL
-        st.markdown(_rank_rows_html(_ranked[:_FOLD_HEAD]), unsafe_allow_html=True)
-        st.markdown(
-            f'<div style="display:flex;align-items:center;gap:0.75rem;'
-            f'margin:0.55rem 0 0.9rem 0;color:#4b5563;font-size:0.75rem;">'
-            f'<div style="flex:1;height:1px;background:rgba(255,255,255,0.07);"></div>'
-            f'{_html_escape(t("{n} more", n=fmt_int(_hidden)))}'
-            f'<div style="flex:1;height:1px;background:rgba(255,255,255,0.07);"></div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(_rank_rows_html(_ranked[-_FOLD_TAIL:]), unsafe_allow_html=True)
+        _display_rows = cr.build_zone_windows(_rank_rows, _rk_type)
 
-        _all_label = (t("See all {n} areas", n=fmt_int(len(_ranked)))
-                      if _rank_scope == _SCOPE_AREA
-                      else t("See all {n} zones", n=fmt_int(len(_ranked))))
-        with st.expander(_all_label):
+    _display_rows = cr.rank(_display_rows, _rk_type,
+                            worst_first=(_rk_view == "worst"),
+                            by_name=(_rk_view == "name"))
+
+    #: Row colours come from charts.ranked_list, keyed on the status
+    #: compliance_rankings.status_of returns. The bands are its GREEN_MIN /
+    #: AMBER_MIN, the same >=85 / 70-84 / <70 the two calendars above legend --
+    #: one number must not be green on a calendar and amber in the ranking
+    #: beneath it.
+
+
+    def _rank_detail(row) -> str:
+        """"16/20 días · 3/3 semanas" — both halves, because the two together are
+        what the Overall figure averages.
+
+        The weekly half is dropped when no weekly report has come due in the window
+        (a Mon–Wed "This Week" contains no Sunday). Printing "0/0 semanas" there
+        reads as a failure at a glance, and it is the one case where the Overall
+        figure is the nightly figure alone — see AreaWindow.overall_pct."""
+        days = t("{ds}/{dp} days", ds=fmt_int(row.days_submitted),
+                 dp=fmt_int(row.days_possible))
+        if not row.weeks_possible:
+            return days
+        return t("{days} · {ws}/{wp} weeks", days=days,
+                 ws=fmt_int(row.weeks_submitted), wp=fmt_int(row.weeks_possible))
+
+
+    if _rk_lo is None:
+        # The period is entirely before this mission started logging. Saying so
+        # beats a screen of areas at 0%, which reads as mass failure rather than as
+        # an absence of data (audit M7: an empty state must say why).
+        st.info(t(
+            "No data for this period — compliance tracking began on {start}.",
+            start=fmt_day_month(_rk_floor)))
+    elif not _display_rows:
+        st.info(t("No areas match the current filter."))
+    else:
+        def _rank_rows_html(rows) -> str:
+            """`rows` is (rank, row) pairs — the rank is passed rather than
+            enumerated, so a folded view still prints each area's TRUE position."""
+            return ranked_list([
+                {
+                    "rank": i,
+                    "name": getattr(r, "area", None) or getattr(r, "zone", ""),
+                    "sub": _rank_detail(r),
+                    "value": r.pct(_rk_type),
+                    "status": cr.status_of(r.pct(_rk_type)),
+                }
+                for i, r in rows
+            ], value_fmt=lambda v: f"{fmt_int(v)}%", bar_max=100)
+
+        _ranked = list(enumerate(_display_rows, start=1))
+
+        # ── Top 5 + bottom 5, with the full list one click away ──────────────────
+        #
+        # This block was every area, unpaginated: 3.8 screens, 38% of the Panel, in
+        # a section already carrying 60% of the page between compliance and effort
+        # (AUDIT-IA-2026-08-22.md's headline measurement). What a president acts on
+        # is the two ends — who to praise and who to call — so those are what the
+        # page shows; the middle is still one click away with every filter intact,
+        # which is why this is a fold and not a cut.
+        #
+        # Two cases deliberately do NOT fold:
+        #   * "By name (A–Z)", where first and last are alphabetical accidents and
+        #     "top 5" would be a lie about performance;
+        #   * a list short enough that folding would hide fewer rows than the fold
+        #     itself costs — a zone ranking is ten rows, and every filtered area
+        #     view is shorter still.
+        _FOLD_HEAD = _FOLD_TAIL = 5
+        _fold = (_rk_view != "name"
+                 and len(_ranked) > _FOLD_HEAD + _FOLD_TAIL + 2)
+
+        if not _fold:
             st.markdown(_rank_rows_html(_ranked), unsafe_allow_html=True)
+        else:
+            _hidden = len(_ranked) - _FOLD_HEAD - _FOLD_TAIL
+            st.markdown(_rank_rows_html(_ranked[:_FOLD_HEAD]), unsafe_allow_html=True)
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:0.75rem;'
+                f'margin:0.55rem 0 0.9rem 0;color:#4b5563;font-size:0.75rem;">'
+                f'<div style="flex:1;height:1px;background:rgba(255,255,255,0.07);"></div>'
+                f'{_html_escape(t("{n} more", n=fmt_int(_hidden)))}'
+                f'<div style="flex:1;height:1px;background:rgba(255,255,255,0.07);"></div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(_rank_rows_html(_ranked[-_FOLD_TAIL:]), unsafe_allow_html=True)
 
-    # The window actually graded, not the window asked for. On "This Month So
-    # Far" those differ by nine days right now, and the row counts would look
-    # arbitrary without it.
-    _rk_span = t("{start}–{end}", start=fmt_day_month(_rk_lo),
-                 end=fmt_day_month(_rk_hi))
-    if _fold:
-        # Say what is on screen, not what was computed — "43 areas shown" over
-        # a list of ten is exactly the kind of quiet mismatch this audit was
-        # called to find.
-        st.caption(
-            t("Best {head} and last {tail} of {n} areas · {span}",
-              head=fmt_int(_FOLD_HEAD), tail=fmt_int(_FOLD_TAIL),
-              n=fmt_int(len(_ranked)), span=_rk_span)
-            if _rk_view != "worst" else
-            t("Last {head} and best {tail} of {n} areas · {span}",
-              head=fmt_int(_FOLD_HEAD), tail=fmt_int(_FOLD_TAIL),
-              n=fmt_int(len(_ranked)), span=_rk_span)
+            _all_label = (t("See all {n} areas", n=fmt_int(len(_ranked)))
+                          if _rank_scope == _SCOPE_AREA
+                          else t("See all {n} zones", n=fmt_int(len(_ranked))))
+            with st.expander(_all_label):
+                st.markdown(_rank_rows_html(_ranked), unsafe_allow_html=True)
+
+        # The window actually graded, not the window asked for. On "This Month So
+        # Far" those differ by nine days right now, and the row counts would look
+        # arbitrary without it.
+        _rk_span = t("{start}–{end}", start=fmt_day_month(_rk_lo),
+                     end=fmt_day_month(_rk_hi))
+        if _fold:
+            # Say what is on screen, not what was computed — "43 areas shown" over
+            # a list of ten is exactly the kind of quiet mismatch this audit was
+            # called to find.
+            st.caption(
+                t("Best {head} and last {tail} of {n} areas · {span}",
+                  head=fmt_int(_FOLD_HEAD), tail=fmt_int(_FOLD_TAIL),
+                  n=fmt_int(len(_ranked)), span=_rk_span)
+                if _rk_view != "worst" else
+                t("Last {head} and best {tail} of {n} areas · {span}",
+                  head=fmt_int(_FOLD_HEAD), tail=fmt_int(_FOLD_TAIL),
+                  n=fmt_int(len(_ranked)), span=_rk_span)
+            )
+        elif _rank_scope == _SCOPE_AREA:
+            st.caption(t("{n} area(s) shown · {span}",
+                         n=fmt_int(len(_display_rows)), span=_rk_span))
+        else:
+            st.caption(t("{n} zone(s) shown · {span}",
+                         n=fmt_int(len(_display_rows)), span=_rk_span))
+
+
+    # ── The two calendars, behind one click ──────────────────────────────────────
+    # They are the most scrolled part of the page and answer a question a reader
+    # asks occasionally, not one they open the Panel for. The "combined submission
+    # compliance" box that used to sit under them — an average of two averages —
+    # is deleted: the headline above is the mission's compliance, and a second,
+    # differently-computed figure beside it was a second answer to one question.
+    with st.expander(t("Calendars")):
+        # ── Nightly submission compliance — daily % calendar heatmap ──────────────────
+        render_section_label(t("Nightly Submission Compliance — Daily %"))
+
+        _subm_areas  = get_submitting_areas()
+        _daily_all   = get_daily_log(days=45)
+        _total_areas = (
+            _subm_areas["Area_Name"].astype(str).str.strip().nunique()
+            if not _subm_areas.empty and "Area_Name" in _subm_areas.columns else 0
         )
-    elif _rank_scope == _SCOPE_AREA:
-        st.caption(t("{n} area(s) shown · {span}",
-                     n=fmt_int(len(_display_rows)), span=_rk_span))
-    else:
-        st.caption(t("{n} zone(s) shown · {span}",
-                     n=fmt_int(len(_display_rows)), span=_rk_span))
+
+        if _total_areas == 0 or _daily_all.empty or "Date" not in _daily_all.columns:
+            st.info(t("No nightly compliance data yet."))
+        else:
+            _submitting_set = set(_subm_areas["Area_Name"].dropna().astype(str).str.strip())
+            _dl = _daily_all.copy()
+            _dl["Area"] = _dl["Area"].astype(str).str.strip()
+            _dl = _dl[_dl["Area"].isin(_submitting_set)]
+            _per_day_counts = _dl.groupby("Date")["Area"].nunique().to_dict()
+
+            _mb_sys_start = get_config_value("SYSTEM_START_DATE", "")
+            _mb_anchor    = compliance_anchor_date()
+            _mb_win_end   = _mb_anchor.isoformat()
+            _mb_thirty    = (_mb_anchor - timedelta(days=29)).isoformat()
+            _mb_win_start = max(_mb_sys_start, _mb_thirty) if _mb_sys_start else _mb_thirty
+
+            _mb_cal = build_calendar_data(set(), _mb_win_end, n_weeks=5, anchor_date=_mb_anchor)
+
+            def _mb_pct_color(p: int):
+                if p >= 85:
+                    return "rgba(34,197,94,0.25)", "#22c55e"
+                if p >= 70:
+                    return "rgba(245,158,11,0.22)", "#f59e0b"
+                return "rgba(239,68,68,0.20)", "#ef4444"
+
+            # Through t() rather than strftime: strftime follows the SERVER's locale,
+            # which on Streamlit Cloud is English regardless of the mission's language.
+            _mb_day_labels = [t("Mon"), t("Tue"), t("Wed"), t("Thu"),
+                              t("Fri"), t("Sat"), t("Sun")]
+            _mb_hdr = "".join(
+                f'<th style="text-align:center;padding:4px 8px;color:#9ca3af;font-size:0.72rem;font-weight:600;">{d}</th>'
+                for d in _mb_day_labels
+            )
+
+            _counted_pcts = []
+            _mb_body = ""
+            # Whether either greyed state actually occurs in this window. The legend
+            # used to name both unconditionally, which meant the calendar explained a
+            # "pre-tracking" colour that was nowhere on it — the window has been past
+            # SYSTEM_START_DATE for months. A legend entry for a colour that isn't
+            # drawn is noise at best and a wrong reading at worst.
+            _mb_has_future = _mb_has_pretracking = False
+            for week in _mb_cal:
+                cells = ""
+                for cell in week:
+                    d = cell["date"]
+                    day_num = d[8:]
+                    if cell["future"]:
+                        _mb_has_future = True
+                        bg, fg, pct_txt = "rgba(255,255,255,0.02)", "#374151", ""
+                        title = t("{date} — upcoming", date=d)
+                    elif d < _mb_win_start:
+                        _mb_has_pretracking = True
+                        bg, fg, pct_txt = "rgba(255,255,255,0.03)", "#4b5563", ""
+                        title = t("{date} — before tracking started", date=d)
+                    else:
+                        n = _per_day_counts.get(d, 0)
+                        pct = round(n / _total_areas * 100) if _total_areas else 0
+                        _counted_pcts.append(pct)
+                        bg, fg = _mb_pct_color(pct)
+                        pct_txt = f"{fmt_int(pct)}%"
+                        title = t("{date} — {n}/{total} areas submitted ({pct}%)",
+                                  date=d, n=fmt_int(n), total=fmt_int(_total_areas),
+                                  pct=fmt_int(pct))
+                    pct_html = (
+                        f'<div style="font-size:0.8rem;font-weight:700;color:{fg};">{pct_txt}</div>'
+                        if pct_txt else '<div style="font-size:0.8rem;">&nbsp;</div>'
+                    )
+                    cells += (
+                        f'<td title="{title}" style="text-align:center;padding:5px 4px;background:{bg};'
+                        f'border-radius:4px;vertical-align:middle;">'
+                        f'<div style="font-size:0.6rem;color:#9ca3af;line-height:1;">{day_num}</div>'
+                        f'{pct_html}</td>'
+                    )
+                _mb_body += f"<tr>{cells}</tr>"
+
+            def _mb_legend_item(color, label):
+                return (
+                    f'<span style="display:inline-block;width:10px;height:10px;background:{color};'
+                    f'border-radius:2px;margin-right:4px;"></span>{label}&nbsp;&nbsp;&nbsp;'
+                )
+
+            _mb_legend = (
+                _mb_legend_item("rgba(34,197,94,0.25)", "&ge;85%")
+                + _mb_legend_item("rgba(245,158,11,0.22)", "70–84%")
+                + _mb_legend_item("rgba(239,68,68,0.20)", "&lt;70%")
+            )
+            if _mb_has_future:
+                _mb_legend += _mb_legend_item("rgba(255,255,255,0.02)", t("Upcoming"))
+            if _mb_has_pretracking:
+                _mb_legend += _mb_legend_item("rgba(255,255,255,0.03)",
+                                              t("Before tracking started"))
+
+            st.markdown(
+                f'<table style="width:100%;border-collapse:separate;border-spacing:3px;margin-bottom:0.5rem;">'
+                f'<thead><tr>{_mb_hdr}</tr></thead><tbody>{_mb_body}</tbody></table>'
+                f'<div style="font-size:0.72rem;color:#9ca3af;margin-bottom:0.5rem;">'
+                + _mb_legend
+                + "</div>",
+                unsafe_allow_html=True,
+            )
+
+            if _counted_pcts:
+                _avg = round(sum(_counted_pcts) / len(_counted_pcts))
+                st.markdown(
+                    '<p style="color:#9ca3af;font-size:0.82rem;">'
+                    + t("Each box is the share of the mission's {total} submitting "
+                        "areas that turned in the nightly form that day. Window "
+                        "average: {avg}%.",
+                        total=f'<strong style="color:#f4f4f8;">{fmt_int(_total_areas)}</strong>',
+                        avg=f'<strong style="color:#f4f4f8;">{fmt_int(_avg)}</strong>')
+                    + '</p>',
+                    unsafe_allow_html=True,
+                )
+
+        # ── Weekly report submission — % of areas submitting the weekly form, by week ─
+        render_section_label(t("Weekly Report Submission — By Week"))
+
+        _nightly_avg = (
+            sum(_counted_pcts) / len(_counted_pcts)
+            if "_counted_pcts" in locals() and _counted_pcts else None
+        )
+
+        _wk_all       = get_weekly_submission_data()
+        _wk_sys_start = get_config_value("SYSTEM_START_DATE", "")
+        _wk_anchor    = latest_due_sunday()
+        _wk_due_weeks = weekly_due_weeks(_wk_sys_start, anchor_sunday=_wk_anchor, n_weeks=8)
+
+        def _wk_leg(color, label):
+            return (
+                f'<span style="display:inline-block;width:10px;height:10px;background:{color};'
+                f'border-radius:2px;margin-right:4px;"></span>{label}&nbsp;&nbsp;&nbsp;'
+            )
+
+        _weekly_avg = None
+        if _total_areas == 0 or not _wk_due_weeks:
+            st.info(t("No weekly submission data yet."))
+        else:
+            _wk_submitting = (
+                set(_subm_areas["Area_Name"].dropna().astype(str).str.strip())
+                if not _subm_areas.empty and "Area_Name" in _subm_areas.columns else set()
+            )
+            if not _wk_all.empty and "area" in _wk_all.columns:
+                _wk = _wk_all.copy()
+                _wk["area"] = _wk["area"].astype(str).str.strip()
+                if _wk_submitting:
+                    _wk = _wk[_wk["area"].isin(_wk_submitting)]
+                _per_week_counts = _wk.groupby("week_end_date")["area"].nunique().to_dict()
+            else:
+                _per_week_counts = {}
+
+            def _wk_pct_color(p):
+                if p >= 85:
+                    return "rgba(34,197,94,0.25)", "#22c55e"
+                if p >= 70:
+                    return "rgba(245,158,11,0.22)", "#f59e0b"
+                return "rgba(239,68,68,0.20)", "#ef4444"
+
+            _wk_pcts, _wk_cells = [], ""
+            for w in _wk_due_weeks:
+                _wd = date.fromisoformat(w)
+                n   = _per_week_counts.get(w, 0)
+                pct = round(n / _total_areas * 100) if _total_areas else 0
+                _wk_pcts.append(pct)
+                bg, fg = _wk_pct_color(pct)
+                _wk_title = t("Week ending {date} — {n}/{total} areas submitted ({pct}%)",
+                              date=w, n=fmt_int(n), total=fmt_int(_total_areas),
+                              pct=fmt_int(pct))
+                _wk_cells += (
+                    f'<td title="{_wk_title}" '
+                    f'style="text-align:center;padding:6px 8px;background:{bg};border-radius:4px;'
+                    f'vertical-align:middle;min-width:52px;">'
+                    f'<div style="font-size:0.6rem;color:#9ca3af;line-height:1.2;">{_wd.month}/{_wd.day}</div>'
+                    f'<div style="font-size:0.8rem;font-weight:700;color:{fg};">{fmt_int(pct)}%</div></td>'
+                )
+            st.markdown(
+                '<table style="border-collapse:separate;border-spacing:3px;margin-bottom:0.5rem;">'
+                f'<tbody><tr>{_wk_cells}</tr></tbody></table>'
+                '<div style="font-size:0.72rem;color:#9ca3af;margin-bottom:0.5rem;">'
+                + _wk_leg("rgba(34,197,94,0.25)", "&ge;85%")
+                + _wk_leg("rgba(245,158,11,0.22)", "70–84%")
+                + _wk_leg("rgba(239,68,68,0.20)", "&lt;70%")
+                + '</div>',
+                unsafe_allow_html=True,
+            )
+
+            _weekly_avg = sum(_wk_pcts) / len(_wk_pcts) if _wk_pcts else None
+            if _weekly_avg is not None:
+                st.markdown(
+                    '<p style="color:#9ca3af;font-size:0.82rem;">'
+                    + t("Each box is the share of the mission's {total} areas that "
+                        "submitted the weekly form for that Mon–Sun week (credited by "
+                        "the day it arrived). Window average: {avg}%.",
+                        total=f'<strong style="color:#f4f4f8;">{fmt_int(_total_areas)}</strong>',
+                        avg=f'<strong style="color:#f4f4f8;">{fmt_int(round(_weekly_avg))}</strong>')
+                    + '</p>',
+                    unsafe_allow_html=True,
+                )

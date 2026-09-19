@@ -705,3 +705,32 @@ landed in the same push).
   asserts against KPI card labels and fails again for its original reason —
   that fixture's DAILY_LOG is two months stale, so no nightly card renders.
   `tests/test_charts.py` +4, `tests/test_panel_scoreboard.py` +2.
+- 2026-09-18 — **C5 landed. PHASE C IS COMPLETE.** Compliance and effort are
+  one "Informes" section with two readings behind `st.pills`, and only the
+  chosen one's body runs — the closed tab costs no sheet read, and DAILY_LOG at
+  400 days and the effort log at 60 are the page's two most expensive. Inside
+  Cumplimiento the order is now headline → rankings → **both calendars in one
+  "Calendarios" expander**, and the combined-compliance box is deleted (an
+  average of two averages sitting under the headline that already answered the
+  question). The rankings' nine widgets became four (audit P7): a pills pair
+  and three selectboxes on one row. **A feature was removed on purpose:** the
+  zone/district/area/missionary filter above the rankings. The zone reading
+  already answers "how does my zone compare", the top-5/bottom-5 fold already
+  answers "this list is too long", and a ranking filtered to one district was
+  a leaderboard of three rows; per-area compliance is read on Desgloses.
+  `render_section_tabs` and `render_scope_selectors` are no longer imported by
+  the Panel. Also fixed here, and it fixes a whole class of problem: `.pmg-tbl`
+  gained `min-width:0`. Streamlit's block containers are flex columns, and a
+  flex item's default `min-width:auto` refuses to shrink below its content, so
+  the wrapper's `overflow-x:auto` had never once fired — an 8-column table
+  widened its container and **the whole page scrolled sideways**. Every
+  `render_table` on every page is contained now.
+  **Acceptance met:** at 1400px the Panel is **4.8 screens** on Cumplimiento
+  and 4.3 on Esfuerzo (plan asked ≤5), **five emphasis-tier sections**
+  (Indicadores clave · Bautismos · Zonas · Actividad diaria · Informes) where
+  there were thirteen, **zero sideways scroll at 375px** for the first time,
+  no `st.plotly_chart` outside `charts.chart`, and no exceptions on any tab.
+  Suite **11 failed / 1133 passed**; `tests/test_panel_scoreboard.py` is 31
+  tests. Not done, and left where the plan left them: the rankings' two
+  "what is on screen" captions (they depend on the fold, which is only known
+  after the list is built) and the "Esfuerzo por área" expander's own note.

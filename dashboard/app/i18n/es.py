@@ -3032,4 +3032,18 @@ ES: dict[str, str] = {
         "invitaciones más por cada cien lecciones en «+31%». Las metas "
         "provienen de AGENT_CONFIG y son las mismas con que CCSM_Agent1A.gs "
         "entrega su asesoramiento.",
+    # ── Panel §5: Informes — compliance and effort as two tabs (step C5) ──────
+    "Compliance": "Cumplimiento",
+    "Report": "Informe",
+    "Calendars": "Calendarios",
+    "Whether the forms arrived, and what the companionships said about their "
+    "own effort while filing them. Compliance is computed live rather than "
+    "from the nightly summary. An area owes one nightly form a day from the "
+    "day it started reporting, and one weekly form each Sunday; a night whose "
+    "9:30 PM deadline has not passed is not counted as missed.":
+        "Si los formularios llegaron, y qué dijeron las compañerías sobre su "
+        "propio esfuerzo al enviarlos. El cumplimiento se calcula en vivo y no "
+        "desde el resumen nocturno. Un área debe un formulario nocturno por "
+        "día desde que empezó a informar, y uno semanal cada domingo; una "
+        "noche cuyo plazo de las 21:30 aún no vence no cuenta como perdida.",
 }

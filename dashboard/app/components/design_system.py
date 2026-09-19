@@ -314,8 +314,16 @@ button[data-testid="stNumberInputStepUp"]:not(:disabled):hover {
 }
 .row_heading { background: rgba(255,255,255,0.02) !important; color: #9ca3af !important; }
 /* Themed HTML tables (render_table) — replaces canvas st.dataframe which paints blank */
+/* min-width:0 is what makes the overflow-x below actually contain a wide
+   table. Streamlit's block containers are flex columns, and a flex item's
+   default min-width:auto refuses to shrink below its content — so an 8-column
+   table (the effort-by-area list, 751px) widened its container instead of
+   scrolling inside it, and the WHOLE PAGE scrolled sideways at 375px. Measured
+   live 2026-09-18. */
 .pmg-tbl {
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
     overflow-x: auto;
     border: 1px solid rgba(255,255,255,0.07) !important;
     border-radius: 10px !important;
