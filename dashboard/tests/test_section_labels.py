@@ -178,3 +178,30 @@ def test_right_renders_at_the_labels_right_edge():
 def test_right_and_info_work_on_the_emphasis_tier_too():
     html = _rendered("Piso", emphasis=True, info="i", right="r")
     assert "<details" in html and ">r<" in html
+
+
+def test_the_label_row_wraps_and_its_right_hand_line_wraps_with_it():
+    """Step C1 gives the Key Indicator heading a right-hand line naming the
+    cambio, the week within it and how many areas reported — wider than a
+    375px pane on its own. With nowrap on that span and no flex-wrap on the
+    row, the main pane scrolled sideways instead (PLAN STATUS, B3 note a)."""
+    for kwargs in ({}, {"emphasis": True}):
+        html = _rendered("Indicadores clave",
+                         right="cambio 2026-6 · semana 2 de 6 · 39 de 45 áreas "
+                               "informaron",
+                         **kwargs)
+        assert "flex-wrap:wrap" in html, f"the label row cannot wrap: {kwargs}"
+        # The right-hand span alone: from its own opening tag to its text.
+        cut = html.index("39 de 45")
+        right = html[html.rindex("<span", 0, cut):cut]
+        assert "white-space:nowrap" not in right,             "the right-hand line still refuses to wrap"
+        assert "margin-left:auto" in right,             "the right-hand line would not sit at the right edge on its own row"
+
+
+def test_the_label_itself_still_does_not_wrap_mid_phrase():
+    """The label is two or three words and reads as one unit; only the line
+    beside it is allowed to break."""
+    html = _rendered("Indicadores clave")
+    cut = html.index("Indicadores clave")
+    label_span = html[html.rindex("<span", 0, cut):cut]
+    assert "white-space:nowrap" in label_span, label_span

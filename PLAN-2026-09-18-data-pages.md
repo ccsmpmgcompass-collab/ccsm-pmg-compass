@@ -575,3 +575,44 @@ landed in the same push).
   not a code one; (d) reading a freshly restarted server too early (first
   ~10s) shows the page before its query params are applied — a cold-start
   artefact, not a bug, seen once and not reproducible warm.
+- 2026-09-18 — **C1 landed.** The Panel is reordered and the two Key Indicator
+  sections are one scoreboard. Order is now: Indicadores clave (the seven cards
+  + the drill-down) → Bautismos 2026 → Zonas → the old nightly/rates/trend/daily
+  sections, renumbered 4a–4d → effort and compliance, renumbered 5a–5b for C4
+  and C5 to fold in. **Decision 6 is applied and reverses the card's bar**: the
+  goal is the companionships' `ki_*_meta` and the leadership transfer goal is
+  the violet mark, so a card and the drill-down beneath it finally draw the
+  same quantity (live: "76% de 221" against the panel's own weekly meta).
+  The period is an `st.pills` toggle — *Esta semana* / *Semana pasada* / *Este
+  cambio* — keyed on the open period so a deselect cannot strand a stale value,
+  and it reruns on change so the heading's right-hand line and the cards always
+  describe one period. The heading carries `right=` (cambio, week n of m,
+  reporting coverage) and `info=` (the five captions those two rows used to
+  carry). Bautismos leads with a three-card row — 283 · 54% de 527 · 307
+  esperado a hoy, −24 vs. ritmo, ~485 proyección — above the chart instead of a
+  caption below it. Decisions made mid-build: (a) **the default period is
+  "Esta semana"**, matching the plan's own order and the page's standing
+  "the week leadership can still act on leads" rule, even though four of seven
+  cards read "—" early in the week — one line to change if Zackary wants
+  "Semana pasada" instead; (b) `_KI_NIGHTLY_RELABEL` is gone — ki_baptismal_date
+  no longer borrows `baptismal_calendars` as its VALUE under a relabelled tile,
+  because one row of seven cannot carry a name that is not a Key Indicator
+  (decision 11); the count survives as the card's note ("llega el domingo · 13
+  calendarios bautismales entregados"); (c) the cambio arrows compare on
+  AREA-WEEKS, not week counts — week counts alone set 225 against a twin week
+  that two areas filed and printed "+209", so cambio 2026-5 is now refused by
+  name with the half-the-mission gate; (d) `_today` is `mission_today()`, not
+  `date.today()` — the drill-down already used mission time and the two must
+  agree on what week it is; (e) the second `_night_anchor` (the compliance one)
+  is `_due_anchor`, so C4 can move the nightly section past it safely;
+  (f) `render_section_label`'s row wraps and its `right=` line wraps with it
+  (B3 note a), which is what lets the heading fit 375px. Verified live at
+  1400px (7 cards 4+3 at 216px, no sideways scroll, all three periods) and
+  375px (2 per row at 164px, the right-hand line on its own row, nothing of
+  the section overflowing — the zones table at 766px and the compliance
+  calendar at 418px are all that still scroll sideways, and they are C3's and
+  C5's). Suite **13 failed / 1102 passed** (same 13). One existing test
+  changed: `test_key_indicator_headings_carry_the_emphasis_treatment` expected
+  TWO headings and now expects one, renamed to the singular.
+  `tests/test_panel_scoreboard.py` (15) is new and supplies the weekly-form
+  frame the shared fixtures lack; `tests/test_section_labels.py` gained two.

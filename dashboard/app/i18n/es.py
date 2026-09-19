@@ -2803,4 +2803,81 @@ ES: dict[str, str] = {
     "The arrow compares the same weeks of cambio {prev}.":
         "La flecha compara las mismas semanas del cambio {prev}.",
     "Download CSV": "Descargar CSV",
+
+    # ── Panel §1: the Key Indicator scoreboard (data-pages plan, step C1) ─────
+    # The seven Key Indicators lead the page now, as one row with the period as
+    # a toggle. "Cambio" is the mission's own word for a transfer cycle and is
+    # left as it is — it is what the schedule, the goals page and the weekly
+    # form all call it.
+    "This week": "Esta semana",
+    "Last week": "Semana pasada",
+    "week of {span}": "semana del {span}",
+    "week of {span} (in progress)": "semana del {span} (en curso)",
+    "cambio {cycle}": "cambio {cycle}",
+    "week {n} of {m}": "semana {n} de {m}",
+    "{n} of {total} areas reported": "{n} de {total} áreas informaron",
+    "{n} of {total} areas filed this week":
+        "{n} de {total} áreas informaron esta semana",
+    # A Key Indicator the weekly form has not delivered yet. Never a zero — the
+    # week simply has not closed.
+    "arrives Sunday": "llega el domingo",
+    "{n} baptismal calendars handed out":
+        "{n} calendarios bautismales entregados",
+    "vs the same weeks of the previous cambio":
+        "vs. las mismas semanas del cambio anterior",
+    "No comparison yet: the schedule holds no cambio before this one.":
+        "Aún no hay comparación: el calendario no tiene un cambio anterior a "
+        "este.",
+    "The seven indicators the mission is judged on, for every area that "
+    "submits. The bar is the goal the companionships set themselves on the "
+    "weekly form — the same number the Church's app shows them — and the "
+    "violet mark is the goal leadership set for the cambio on the Metas "
+    "page. During the week in progress two indicators are counted live from "
+    "the nightly form and the rest arrive with the weekly form on Sunday; "
+    "the white tick is where the week's goal says today should be. Totals "
+    "are compared per area, because a week's total is a sum over whoever "
+    "reported. Tap any card for that indicator's history.":
+        "Los siete indicadores por los que se mide la misión, sobre todas las "
+        "áreas que informan. La barra es la meta que las compañerías se "
+        "fijaron en el informe semanal — el mismo número que les muestra la "
+        "aplicación de la Iglesia — y la marca violeta es la meta que el "
+        "liderazgo fijó para el cambio en la página Metas. Durante la semana "
+        "en curso dos indicadores se cuentan en vivo desde el informe "
+        "nocturno y el resto llega con el informe semanal el domingo; la "
+        "marca blanca es donde la meta de la semana dice que debería ir hoy. "
+        "Los totales se comparan por área, porque el total de una semana es "
+        "la suma de quienes informaron. Toque cualquier tarjeta para ver el "
+        "historial de ese indicador.",
+
+    # ── Panel §2: the year against the baptismal goal ────────────────────────
+    "{year} Baptisms": "Bautismos {year}",
+    "certified through {month}": "certificado hasta {month}",
+    "Baptisms through {month}": "Bautismos hasta {month}",
+    "vs goal pace": "vs. ritmo de la meta",
+    "ahead of the goal's pace": "por delante del ritmo de la meta",
+    "behind the goal's pace": "por debajo del ritmo de la meta",
+    "Projection": "Proyección",
+    "if the {n} months so far are representative":
+        "si los {n} meses hasta ahora son representativos",
+    "Certified monthly totals from the Tableau export, counted cumulatively "
+    "against the mission's annual goal. The dashed amber line is a twelfth of "
+    "the goal a month — flat on purpose, because this mission's own months "
+    "swing between 17 and 50 with no stable pattern to shape a curve to. The "
+    "two grey lines behind are the previous two years. The weekly form's own "
+    "baptism field is not used here: it undercounts by roughly half.":
+        "Totales mensuales certificados desde la exportación de Tableau, "
+        "acumulados contra la meta anual de la misión. La línea ámbar "
+        "punteada es un doceavo de la meta por mes — plana a propósito, "
+        "porque los meses de esta misión oscilan entre 17 y 50 sin un patrón "
+        "estable al que ajustar una curva. Las dos líneas grises detrás son "
+        "los dos años anteriores. El campo de bautismos del informe semanal "
+        "no se usa aquí: subcuenta cerca de la mitad.",
+    # Singular and plural as two keys, the same way the drill-down writes its
+    # week and night counts: Spanish agreement cannot be bolted on afterwards.
+    "1 weekly report": "1 informe semanal",
+    "{n} weekly reports": "{n} informes semanales",
+    "No comparison with cambio {prev}: its matching {n} weeks hold {reports} "
+    "between them, and at least {need} are needed.":
+        "Sin comparación con el cambio {prev}: sus mismas {n} semanas tienen "
+        "{reports} entre todas, y se necesitan al menos {need}.",
 }

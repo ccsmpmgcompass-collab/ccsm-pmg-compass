@@ -13,7 +13,9 @@ import plotly.graph_objects as go
 
 from app.auth.auth import require_auth
 from app.components.charts import chart, ranked_list
-from app.components.ki_drilldown import ki_href, render_ki_drilldown
+from app.components.ki_drilldown import (
+    ki_href, render_ki_drilldown, TAB_CYCLE, TAB_WEEK,
+)
 from app.components.design_system import (
     render_page_header,
     render_section_label, render_section_tabs, render_kpi_row, render_table,
@@ -37,6 +39,7 @@ from app.db.queries import (
     get_nightly_weekly_trends,
     get_weekly_ki_totals,
     get_weekly_ki_reporting,
+    get_weekly_form_data,
     select_reporting_week,
     exclude_current_week,
     get_daily_summary,
@@ -63,15 +66,18 @@ from app.analytics.period_delta import (
     period_delta, point_delta, MIN_COMPARABLE_DAYS, WINDOW_DAYS,
 )
 from app.analytics.rate_metrics import rate_rows
-from app.utils.transfer_helpers import transfer_cycles, transfer_period_bounds
+from app.utils.transfer_helpers import (
+    transfer_cycles, transfer_period_bounds, transfer_window,
+)
 from app.analytics import transfer_year as ty
+from app.analytics import ki_history as kh
 from app.db.goals_queries import areas_with_goals, group_goal_totals
 from app.analytics import annual_baptisms as ab
 from app.analytics import effort_breakdown as eb
 from app.analytics import compliance_rankings as cr
 from app.components.scope_selector import render_scope_selectors, ANY as scope_ANY
 from app.utils.area_helpers import (
-    compliance_anchor_date, build_calendar_data,
+    compliance_anchor_date, build_calendar_data, mission_today,
     latest_due_sunday, weekly_due_weeks,
 )
 from datetime import date, timedelta
@@ -184,7 +190,11 @@ def _mission_goal_note(metric_key: str) -> str:
 # one page showed two different "latest weeks". See select_reporting_week() for
 # the full case and the rule it applies.
 _ki_row, _ki_week_end, _ki_is_partial = select_reporting_week(ki_df)
-_today = date.today()
+# The mission's own date, not the server's: this app runs on Streamlit Cloud in
+# UTC, which rolls over to tomorrow in the evening mission-local — exactly when
+# the nightly reports are being filed. The drill-down under the scoreboard
+# already uses mission_today(), and the two must agree on what week it is.
+_today = mission_today()
 _this_monday = _today - timedelta(days=_today.weekday())
 _this_sunday = _this_monday + timedelta(days=6)
 
@@ -225,24 +235,27 @@ _past_goals, _past_goal_set_by, _past_goal_src, _past_goal_areas = \
 
 # ── What the current week can be measured by before its weekly form arrives ────
 # The weekly form is submitted once, at the end of the week, so for a week in
-# progress there is no ki_*_real to show. Three of the seven Key Indicators are
-# also collected nightly and can be totalled Monday-to-today; the other four
-# have no nightly equivalent and show their goal with no value rather than a
-# zero (see render_kpi_row -- a zero would report a failure, an em dash reports
-# an absence).
-#
-# ki_baptismal_date counts friends who currently HAVE a date -- a standing
-# count. Its nightly stand-in, baptismal_calendars, counts calendars handed out
-# -- a flow. They are close but not the same question, so the in-progress tile
-# is RELABELLED to what it actually measures instead of borrowing the KI's name.
+# progress there is no ki_*_real to show. Two of the seven Key Indicators are
+# asked nightly in the same words and can be totalled Monday-to-today; the rest
+# show their goal with no value rather than a zero (see render_kpi_row -- a zero
+# would report a failure, an em dash reports an absence).
 _KI_NIGHTLY_SOURCE = {
     "ki_new_people_real":     "new_people_found",
     "ki_member_lessons_real": "lessons_member_present",
+}
+
+#: A nightly metric that is CLOSE to a Key Indicator but is not it, shown as the
+#: card's small print rather than as its value. ki_baptismal_date counts friends
+#: who currently HOLD a date — a standing count; baptismal_calendars counts
+#: calendars handed out — a flow. Borrowing the flow as the indicator's
+#: mid-week value meant relabelling the tile, and with one scoreboard row that
+#: would put a name which is not a Key Indicator among six that are (decision
+#: 11: these seven labels are constant app-wide). The figure is worth seeing and
+#: is kept; the claim that it IS the indicator is not.
+_KI_NIGHTLY_NOTE = {
     "ki_baptismal_date_real": "baptismal_calendars",
 }
-_KI_NIGHTLY_RELABEL = {
-    "ki_baptismal_date_real": t("Baptismal Calendars Handed Out"),
-}
+
 _wtd_totals = get_week_to_date_totals(_this_monday, _today)
 _wtd_areas = get_week_to_date_areas(_this_monday, _today)
 _wtd_days = (_today - _this_monday).days + 1
@@ -305,191 +318,70 @@ _rate_rows = rate_rows(_cur_totals, _prev_totals, get_agent_config(),
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 1. NIGHTLY ACTIVITY — mission totals, last 7 days
+# 1. KEY INDICATORS — the scoreboard the page opens on
 # ═══════════════════════════════════════════════════════════════════════════════
-render_section_label(t("Nightly Activity — Last 7 Days"))
-
-#: The three tiles the page opens with. Fixed here, not read from
-#: flavor.nightly_highlights: that property derives from SCORE_CONFIG's *effort*
-#: weights, which exist to weight the effort score, not to choose what a
-#: president sees first. It yielded contacts_attempted, roleplays and
-#: member_contacts — two of the three are inputs rather than outcomes, and
-#: contacts_attempted then appeared three times on one page (audit H1).
-#:
-#: These three are the end of the finding funnel: what was actually placed,
-#: invited and offered. Order is the mission's own, chosen by the user.
-_PANEL_HIGHLIGHT_KEYS = [
-    "bom_shared",
-    "church_invites",
-    "baptismal_invitations",
-]
-
-_nightly_keys = _PANEL_HIGHLIGHT_KEYS
-if not _nightly_keys:
-    st.info(_EMPTY_MSG)
-elif _night_anchor is None:
-    st.info(t("No nightly reports yet — DAILY_LOG has no day on which at least "
-              "half the mission's areas filed."))
-else:
-    # The value comes from the same window as the arrow beneath it. It used to
-    # be DASHBOARD_SUMMARY's val_7d, whose window is one day wider, which would
-    # have put a number and a change describing different spans on one card.
-    render_kpi_row([
-        {
-            "label": METRIC_LABELS.get(k, k),
-            "value": int(_cur_totals.get(k, 0)),
-            "goal":  _mission_goal(k),
-            "goal_note": _mission_goal_note(k),
-            "change": period_delta(
-                _cur_totals.get(k, 0), _prev_totals.get(k, 0),
-                current_basis=_cur_days, prior_basis=_prev_days),
-            "delta_label": _VS_PRIOR_WEEK,
-        }
-        for k in _nightly_keys
-    ])
-
-    # The window is stated, and so is the reason there is no comparison yet.
-    # A silently missing arrow is the audit's own M7 finding (empty states that
-    # never say why) reintroduced one section higher up.
-    _win_note = t("{start}–{end} · {n} reporting days",
-                  start=fmt_day_month(_cur_start), end=fmt_day_month(_cur_end),
-                  n=fmt_int(_cur_days))
-    if _prev_days < MIN_COMPARABLE_DAYS:
-        st.caption(t(
-            "{window}. No comparison yet: the previous 7 days hold {n} days on "
-            "which at least half the areas reported, and {need} are needed.",
-            window=_win_note, n=fmt_int(_prev_days),
-            need=fmt_int(MIN_COMPARABLE_DAYS)))
-    elif _prev_days < WINDOW_DAYS:
-        st.caption(t(
-            "{window}. Compared against {n} reporting days in the previous 7, "
-            "scaled per day.", window=_win_note, n=fmt_int(_prev_days)))
-    else:
-        st.caption(t("{window}, against the 7 days before.", window=_win_note))
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 1b. CONVERSION RATES — how well, against §1's how much (audit H2)
-# ═══════════════════════════════════════════════════════════════════════════════
-# Numbered 1b rather than 2 on purpose: the audit report and the build queue
-# refer to this page's sections by number, and renumbering six of them to insert
-# one would silently invalidate every one of those references.
+# PLAN-2026-09-18-data-pages.md §4, step C1. Three findings close here:
 #
-# CCSM_Agent1A.gs computes four conversion rates every Monday, each with a target
-# in AGENT_CONFIG, a Preach My Gospel page and a scripture — and until now not
-# one of them appeared anywhere in the dashboard (audit H2). They are the
-# sharpest thing in the dataset: live on 2026-08-21, 4.104 attempts became 673
-# lessons and 65 baptismal invitations. The mission teaches well and does not
-# invite, and no other section on this page can say so.
+#   P1  the page opened on three nightly outputs and four conversion rates. The
+#       seven Key Indicators the mission is actually judged on started at
+#       section ③, and baptisms against the annual goal at ⑥, six screens down.
+#   P2  fourteen cards for seven metrics: "Semana en curso" and "Semana del 7 al
+#       13" were two full rows of the same seven, four of the first row reading
+#       "—". One row now, and the period is a toggle above it.
+#   X4  those two rows carried five explanatory captions between them. They are
+#       the section's ⓘ and its right-hand line instead.
 #
-# The agent keeps the rates in Script Properties for the coaching emails and
-# never writes them to a tab, so they are derived here from the same DAILY_LOG
-# window §1 uses. That shared window is why this sits directly under §1: the
-# tiles above say how much was done, these say how well, and the reader does not
-# have to re-learn the timeframe between them.
-#
-# The audit's plan also called for a link to 07_Embudo_de_Búsqueda.py, on the
-# grounds that it already carries "Finding Pipeline" and "Contact Performance"
-# and must not be duplicated. That premise did not survive checking: the Embudo
-# page runs entirely on uploaded Tableau exports, its TABLEAU_RANKING and
-# TABLEAU_DETAIL tabs are empty so the page stops on "No finding data yet", and
-# its "contact rate" is attempted ÷ found — a different ratio that happens to
-# share a name. There is nothing to duplicate and nowhere to send anyone, so the
-# arithmetic is shown here instead, in an expander. Revisit once Tableau syncs.
-render_section_label(t("Conversion Rates — Last 7 Days"))
-
-if _night_anchor is None:
-    st.info(t("No nightly reports yet — DAILY_LOG has no day on which at least "
-              "half the mission's areas filed."))
-else:
-    # _rate_rows is computed once, in §0 above — the verdict banner names the
-    # weakest of these four, so both sections must be reading the same figures.
-    # unit/decimals: one decimal, matching the zone table's fmt_number(v, 1).
-    # A whole number would print close_rate's 9,7% and 10,4% identically, which
-    # on the mission's weakest conversion is exactly where resolution matters.
-    #
-    # The goal bar's percentage is value ÷ target, so a rate at 39% of its target
-    # draws red under the four-tier grading — see render_kpi_row. No value_basis
-    # or goal_basis here: a ratio is already size-neutral, so there is no
-    # mismatched denominator for the per-area rescue to fix.
-    render_kpi_row([
-        {
-            "label": t(_RATE_SHORT_LABELS.get(r["key"], r["key"])),
-            # None, not 0, when the denominator is empty. render_kpi_row treats
-            # a non-numeric value as "no reading yet" and shows the target on
-            # its own, rather than reporting a 0% the mission never had the
-            # chance to avoid.
-            "value": r["value"] if r["value"] is not None else "—",
-            "goal": r["target"],
-            "unit": "%",
-            "decimals": 1,
-            "change": r["change"],
-            "delta_label": _VS_PRIOR_WEEK,
-        }
-        for r in _rate_rows
-    ])
-
-    _rate_win = t("{start}–{end} · {n} reporting days",
-                  start=fmt_day_month(_cur_start), end=fmt_day_month(_cur_end),
-                  n=fmt_int(_cur_days))
-    if _prev_days < MIN_COMPARABLE_DAYS:
-        # Same honesty rule as §1: a missing arrow says why it is missing.
-        # Unlike §1 there is no scaled middle case — a rate does not grow with
-        # the days behind it, so a short prior window cannot be corrected for,
-        # only refused. See period_delta.point_delta.
-        st.caption(t(
-            "{window}. Change is shown in percentage points once the previous 7 "
-            "days hold {need} reporting days; they hold {n}.",
-            window=_rate_win, n=fmt_int(_prev_days),
-            need=fmt_int(MIN_COMPARABLE_DAYS)))
-    else:
-        st.caption(t("{window}, against the 7 days before, in percentage points.",
-                     window=_rate_win))
-
-    # The arithmetic, in full. This is what the Embudo link was meant to be for.
-    # Printing both the words and the numbers matters more than it looks: three
-    # of the four rates divide by something other than the stage immediately
-    # above them — lesson_rate is lessons ÷ ATTEMPTS, not lessons ÷ contacts —
-    # and a reader who assumes a single chain will misread every one of them.
-    with st.expander(t("How each rate is calculated")):
-        render_table(pd.DataFrame([
-            {
-                t("Rate"): METRIC_LABELS.get(r["key"], r["key"]),
-                t("Calculation"): "{} ÷ {}".format(
-                    METRIC_LABELS.get(r["metric"].numerator, r["metric"].numerator),
-                    METRIC_LABELS.get(r["metric"].denominator, r["metric"].denominator)),
-                t("Figures"): "{} ÷ {}".format(fmt_int(r["numerator"]),
-                                               fmt_int(r["denominator"])),
-                t("Actual"): fmt_percent(r["value"], 1) if r["value"] is not None else "—",
-                t("Target"): fmt_percent(r["target"], 0),
-            }
-            for r in _rate_rows
-        ]))
-        st.caption(t(
-            "Each rate is the ratio of the mission's totals, not the average of "
-            "the areas' own rates — averaging lets a few low-volume areas with "
-            "favourable ratios carry the mission figure. Targets come from "
-            "AGENT_CONFIG and are the same ones CCSM_Agent1A.gs coaches against."))
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 2. KEY INDICATORS — the week in progress, then the last complete week
-# ═══════════════════════════════════════════════════════════════════════════════
-# Was a fixed Pew / Date / Gate / Renew row: Utah Provo's four Key Indicators,
-# none of which is a column in CCSM's WEEKLY_KI. _ki_val returns 0.0 for a
-# missing column, so this row showed four zeroes under four English labels for
-# every week the mission ever reported — a plausible screen, not an error.
-#
-# CCSM's KIs are the seven `ki_*_real` values the weekly form collects. `_real`
-# only: the matching `_meta` keys are a GOAL, and belong beside a value as a
-# target, never in a row of achieved results.
-#
-# The current week leads because it is the week leadership can still act on; the
-# completed week sits below it as the confirmed record. That ordering is only
-# honest because the in-progress row states its own window and pace — see below.
+# Decision 6 is applied here and it REVERSES what the bar has meant on this
+# page. The goal bar is now the COMPANIONSHIPS' own meta — the ki_*_meta each
+# area wrote on the previous week's form — because that is the number the
+# Church's own app shows the Assistants, and the two must agree. The leadership
+# transfer goal from Metas is a labelled MARK on the same bar: the violet tick,
+# the same quantity the drill-down draws as a dotted violet line. Until this
+# step the card drew the leadership goal while the drill-down directly beneath
+# it drew the meta, and the two disagreed by design (PLAN STATUS, B3 note b).
 _ki_metrics = key_indicator_metrics()
 
+#: The scope every figure in this section is summed over: every submitting area.
+#: The drill-down at the foot of the section is handed the same set, so a card
+#: and the panel it opens can never describe two different rosters.
+_ki_scope_roster = get_submitting_areas()
+_ki_scope_areas = (
+    set(_ki_scope_roster["Area_Name"].astype(str).str.strip())
+    if "Area_Name" in _ki_scope_roster.columns else set()
+)
 
-# The seven Key Indicators' tile labels are metric_catalog.ki_short_label —
-# the one vocabulary (decision 11), shared with Desgloses.
+#: The three readings of the same seven metrics. Stored as stable ids rather
+#: than as their translated labels: a language switch mid-session would leave a
+#: Spanish string in a widget whose options had turned English — the same rule
+#: the zone mode switch and the drill-down's tabs already follow.
+_KI_PERIOD_WEEK  = "week"
+_KI_PERIOD_LAST  = "last"
+_KI_PERIOD_CYCLE = "cycle"
+_KI_PERIODS = [_KI_PERIOD_WEEK, _KI_PERIOD_LAST, _KI_PERIOD_CYCLE]
+
+
+def _ki_period_label(period: str) -> str:
+    return {
+        _KI_PERIOD_WEEK:  t("This week"),
+        _KI_PERIOD_LAST:  t("Last week"),
+        _KI_PERIOD_CYCLE: t("This cambio"),
+    }.get(period, period)
+
+
+# The week in progress leads, because it is the week leadership can still act
+# on — the ordering the page has always had, now a default rather than a second
+# row. It is only honest because the row states its own window and pace, and
+# because a metric the weekly form has not delivered yet shows "—" and says
+# when it arrives rather than a zero.
+_ki_period = st.session_state.get("panel_ki_period_val", _KI_PERIOD_WEEK)
+if _ki_period not in _KI_PERIODS:
+    _ki_period = _KI_PERIOD_WEEK
+
+
+def _cycle_label(cycle: dict | None) -> str:
+    if not cycle:
+        return ""
+    return str(cycle.get("number") or "").strip() or fmt_day_month(cycle["start"])
 
 
 def _leadership_week_goal(week_end) -> tuple[dict, int, str]:
@@ -498,12 +390,11 @@ def _leadership_week_goal(week_end) -> tuple[dict, int, str]:
     Returns ``({metric: weekly figure}, areas_that_set_one, cycle_label)``. The
     stored goal is a TRANSFER TOTAL, so a week's share of it is that total
     divided by the cycle's real weeks — the same conversion the Desgloses cards
-    make, so one goal cannot mean two things on two pages (PLAN §7.5).
+    and the drill-down's violet mark make, so one goal cannot mean two things in
+    three places (PLAN §7.5).
 
-    Empty until leadership actually enters goals, which is what keeps this
-    page's bars exactly as they are in the meantime (§7.6): the companionships'
-    own ki_*_meta stays the bar, labelled as theirs, and a leadership goal only
-    displaces it where one exists.
+    Empty until leadership actually enters goals, in which case the card simply
+    carries no mark and the companionships' meta stands alone.
     """
     if week_end is None:
         return {}, 0, ""
@@ -514,49 +405,29 @@ def _leadership_week_goal(week_end) -> tuple[dict, int, str]:
         totals = group_goal_totals(cycle["start"])
         if not any(totals.values()):
             return {}, 0, ""
-        label = str(cycle.get("number") or "").strip() or fmt_day_month(cycle["start"])
         return ({k: v / weeks for k, v in totals.items() if v},
-                areas_with_goals(cycle["start"]), label)
+                areas_with_goals(cycle["start"]), _cycle_label(cycle))
     return {}, 0, ""
 
 
-# The leadership goal for whichever cambio each of the two weeks above falls in,
-# as a weekly figure. Empty until someone enters one on the Metas page — which is
-# exactly when these bars keep showing the companionships' own goal instead.
+# The leadership goal for whichever cambio each of the two weeks falls in, as a
+# weekly figure. Empty until someone enters one on the Metas page.
 _cur_lead_goals, _cur_lead_areas, _cur_lead_label = _leadership_week_goal(_this_sunday)
 _past_lead_goals, _past_lead_areas, _past_lead_label = _leadership_week_goal(_ki_week_end)
 
 
-def _leadership_goal_note(cycle_label: str, own_goal: float) -> str:
-    """Small print under a bar that shows the LEADERSHIP goal.
-
-    Both facts survive and neither is mistaken for the other (§7.6): the bar is
-    what leadership set for the cambio, and beside it, in words, is what the
-    companionships set for themselves. They are never added together — a goal a
-    companionship wrote down is not a second target, and
-    key_indicator_metrics()'s own docstring warns against confusing the two.
-    """
-    note = t("goal for cambio {cycle}", cycle=cycle_label)
-    if own_goal > 0:
-        note = t("{note} · the companionships set themselves {n}",
-                 note=note, n=fmt_int(own_goal))
-    return note
-
-
 def _ki_goal_note(key: str, set_by: dict, areas: int) -> str:
-    """Small print under a KI goal bar when not every area set one.
+    """Small print behind a goal bar when not every area wrote a meta.
 
     A blank meta counts as zero — an area that wrote down no goal committed to
-    nothing — so a mission goal can rest on a handful of areas and look exactly
+    nothing — so a mission meta can rest on a handful of areas and look exactly
     like one every area signed up to. ki_baptized_confirmed is the live case: 6
     of 33 areas set a goal there while all 33 reported results.
 
     ``areas`` MUST be the number of areas behind the VALUE being shown, not the
-    number behind the goal. Comparing the goal's setters against their own week
+    number behind the meta. Comparing the meta's setters against their own week
     is always n of n and can never fire — which on 2026-08-21 left the last
-    complete week reading "204, 2040% of goal 10" with nothing to explain it:
-    33 areas reported results for the week ending 08-16, but its goals were
-    written on the 08-09 form, which exactly one area submitted.
+    complete week reading "204, 2040% of goal 10" with nothing to explain it.
     """
     n = int(set_by.get(key, 0) or 0)
     if not n or not areas or n >= areas:
@@ -564,135 +435,98 @@ def _ki_goal_note(key: str, set_by: dict, areas: int) -> str:
     return t("{n} of {total} areas set a goal", n=fmt_int(n), total=fmt_int(areas))
 
 
-# ── 2a. The week in progress ───────────────────────────────────────────────────
-# emphasis=True on both Key Indicator headings: these are the page's primary
-# grouping. The seven KIs are what the mission is judged on, and without the
-# stronger tier they sat at exactly the same weight as "Daily Effort Breakdown".
-render_section_label(
-    t("Key Indicators — Current Week ({span})",
-      span=fmt_week_span(_this_monday, _this_sunday)),
-    emphasis=True,
-)
+# ── The sparkline: the last six complete weeks, mission-wide ──────────────────
+# A weekly total is a sum over whoever submitted, so a week 2 areas reported and
+# a week 39 did are not two points on one line — drawn together they make a
+# launch out of a reporting gap. Only weeks at least half the mission reported
+# reach the sparkline, the same gate every comparison on this page passes.
+_KI_SPARK_WEEKS = 6
+_ki_min_areas = max(1, round(_active_areas * 0.5)) if _active_areas else 1
+_ki_spark_df = exclude_current_week(ki_df)
+if not _ki_spark_df.empty and "week_end_date" in _ki_spark_df.columns:
+    _ki_spark_df = _ki_spark_df[
+        _ki_spark_df["week_end_date"].astype(str).map(
+            lambda w: _ki_reporting.get(str(w)[:10], 0) >= _ki_min_areas)
+    ].tail(_KI_SPARK_WEEKS)
 
-if not _ki_metrics:
-    st.info(_EMPTY_MSG)
-else:
-    # Monday-to-today, not the rolling val_7d the rest of the page uses: a
-    # rolling seven days straddles two reporting weeks and cannot be compared
-    # against a Monday–Sunday goal. It does mean an early-week total looks small
-    # against a full week's goal, which is what the pace line below is for.
-    _pace_pct = round(_wtd_days / 7 * 100)
-    st.caption(
-        t("Day {n} of 7 · nightly reports through {day} · goals set by "
-          "{areas} areas on last week's form.",
-          n=fmt_int(_wtd_days),
-          day=fmt_day_month(_today),
-          areas=fmt_int(_cur_goal_areas))
-    )
 
-    # Same days of last week, never last week's full total: on a Wednesday that
-    # would set four days against seven and print a collapse the mission has not
-    # had, then a recovery on Sunday. The basis is reporting AREAS rather than
-    # days here -- the two spans are the same length by construction, so what
-    # differs between them is who filed.
-    _lw_start, _lw_end = _this_monday - timedelta(days=7), _today - timedelta(days=7)
-    _lw_totals = window_totals(_daily_log, _lw_start, _lw_end)
-    _lw_areas = window_areas(_daily_log, _lw_start, _lw_end)
-    _wtd_min_areas = max(1, round(_active_areas * 0.5)) if _active_areas else 1
+def _ki_spark(metric: str) -> list | None:
+    """The metric's last six complete weeks, or None for too little history."""
+    if _ki_spark_df.empty or metric not in _ki_spark_df.columns:
+        return None
+    values = pd.to_numeric(_ki_spark_df[metric], errors="coerce").dropna().tolist()
+    return values if len(values) >= 2 else None
 
-    _cur_cards = []
-    for k, label in _ki_metrics.items():
-        source = _KI_NIGHTLY_SOURCE.get(k)
-        measured = source is not None and source in _wtd_totals
-        # A relabelled tile shows no goal bar. The relabel is not cosmetic —
-        # baptismal_calendars counts calendars handed out this week, a flow,
-        # while ki_baptismal_date's goal counts friends who hold a date, a
-        # standing total. Charting one against the other put a permanent ~20%
-        # on screen that measured nothing. A tile that is honest about being a
-        # different quantity does not inherit the other quantity's target.
-        borrowed = k in _KI_NIGHTLY_RELABEL
-        _cur_cards.append({
-            "label": _KI_NIGHTLY_RELABEL.get(k, ki_short_label(k)),
-            # The whole card opens the drill-down on this metric (§3 B3).
-            "href": ki_href(k),
-            "value": int(_wtd_totals.get(source, 0)) if measured else "—",
-            # The leadership goal for the cambio is the bar where one exists;
-            # the companionships' own goal falls back into it where none does,
-            # and is named beside it either way (§7.6).
-            "goal":  0 if borrowed
-                     else (_cur_lead_goals.get(k) or _cur_goals.get(k, 0)),
-            "goal_note": "" if borrowed
-                         else (_leadership_goal_note(_cur_lead_label,
-                                                     _cur_goals.get(k, 0))
-                               if _cur_lead_goals.get(k)
-                               else _ki_goal_note(k, _cur_goal_set_by,
-                                                  _cur_goal_areas)),
-            # Nightly totals come from however many areas filed a report this
-            # week; the goal from however many wrote one down last week. Those
-            # are different sets, so the percentage is computed per area.
-            "value_basis": _wtd_areas,
-            "goal_basis":  (_cur_lead_areas if _cur_lead_goals.get(k)
-                            else _cur_goal_set_by.get(k, 0)),
-            "change": period_delta(
-                _wtd_totals.get(source, 0), _lw_totals.get(source, 0),
-                current_basis=_wtd_areas, prior_basis=_lw_areas,
-                min_basis=_wtd_min_areas) if measured else None,
-            "delta_label": t("vs same days last week"),
-        })
-    render_kpi_row(_cur_cards)
 
-    st.caption(
-        t("Three indicators are counted live from the nightly form; the other "
-          "four arrive with the weekly form. Pace: {pct}% of the week elapsed.",
-          pct=fmt_int(_pace_pct))
-    )
+# ── The week now in progress ──────────────────────────────────────────────────
+# Monday-to-today from the NIGHTLY form, never the rolling 7 days the sections
+# below use: a rolling week straddles two reporting weeks and cannot be set
+# against a Monday–Sunday meta. Two of the seven are collected nightly and can
+# be counted live; the rest arrive with the weekly form on Sunday.
+#
+# ki_baptismal_date used to borrow baptismal_calendars as its mid-week VALUE,
+# under a relabelled tile. With one scoreboard row that relabel would put a
+# name that is not a Key Indicator among six that are, against decision 11's
+# rule that these seven labels are constant app-wide — and the two quantities
+# are genuinely different (calendars handed out is a flow; friends holding a
+# date is a standing count). The calendars figure survives as the card's note,
+# which claims nothing about the indicator itself.
+_lw_start, _lw_end = _this_monday - timedelta(days=7), _today - timedelta(days=7)
+_lw_totals = window_totals(_daily_log, _lw_start, _lw_end)
+_lw_areas = window_areas(_daily_log, _lw_start, _lw_end)
+_wtd_min_areas = max(1, round(_active_areas * 0.5)) if _active_areas else 1
 
-    if _lw_areas < _wtd_min_areas:
-        st.caption(t(
-            "No comparison with last week: only {n} areas filed a nightly "
-            "report over the same days a week ago.", n=fmt_int(_lw_areas)))
 
-# ── 2b. The last complete week ─────────────────────────────────────────────────
-_ki_span = (
-    fmt_week_span(_ki_week_end - timedelta(days=6), _ki_week_end)
-    if _ki_week_end is not None else ""
-)
-if not _ki_span:
-    render_section_label(t("Key Indicators — Last Complete Week"), emphasis=True)
-elif _ki_is_partial:
-    render_section_label(
-        t("Key Indicators — Week of {span} (in progress)", span=_ki_span),
-        emphasis=True)
-else:
-    render_section_label(t("Key Indicators — Week of {span}", span=_ki_span),
-                         emphasis=True)
+def _ki_week_card(metric: str) -> dict:
+    source = _KI_NIGHTLY_SOURCE.get(metric)
+    measured = source is not None and source in _wtd_totals
+    goal = float(_cur_goals.get(metric, 0) or 0)
+    notes = []
+    if not measured:
+        notes.append(t("arrives Sunday"))
+    stand_in = _KI_NIGHTLY_NOTE.get(metric)
+    if stand_in is not None and stand_in in _wtd_totals:
+        notes.append(t("{n} baptismal calendars handed out",
+                       n=fmt_int(_wtd_totals.get(stand_in, 0))))
+    return {
+        "label": ki_short_label(metric),
+        "href": ki_href(metric),
+        "value": int(_wtd_totals.get(source, 0)) if measured else "—",
+        "spark": _ki_spark(metric),
+        # The bar is the companionships' meta; the leadership goal is the mark.
+        "goal": goal,
+        "mark": _cur_lead_goals.get(metric),
+        "mark_label": t("Leadership goal, per week"),
+        # An in-progress week is graded on where it should be TODAY, not on the
+        # whole week's meta — five days in, a companionship exactly on pace has
+        # produced five sevenths of it.
+        "pace": goal * _wtd_days / 7 if goal > 0 and measured else None,
+        "day": _wtd_days, "days": 7,
+        "goal_note": _ki_goal_note(metric, _cur_goal_set_by, _cur_goal_areas),
+        # Nightly totals come from however many areas filed this week; the meta
+        # from however many wrote one down last week. Different sets, so the
+        # percentage is computed per area.
+        "value_basis": _wtd_areas,
+        "goal_basis": _cur_goal_set_by.get(metric, 0),
+        "change": period_delta(
+            _wtd_totals.get(source, 0), _lw_totals.get(source, 0),
+            current_basis=_wtd_areas, prior_basis=_lw_areas,
+            min_basis=_wtd_min_areas) if measured else None,
+        "delta_label": t("vs same days last week"),
+        "note": " · ".join(notes),
+    }
 
-# The reporting denominator, stated on the page rather than left to be assumed.
-# A weekly total is a sum over whoever submitted; printing "31 de 43 áreas
-# informaron" is what stops a low week from being read as a bad week.
-_ki_reported = _ki_reporting.get(str(_ki_week_end), 0) if _ki_week_end else 0
-if _active_areas:
-    _ki_pct = round(_ki_reported / _active_areas * 100)
-    if _ki_is_partial:
-        st.caption(t("{n} of {total} areas have reported so far.",
-                     n=fmt_int(_ki_reported), total=fmt_int(_active_areas)))
-    else:
-        st.caption(t("{n} of {total} areas reported · {pct}%",
-                     n=fmt_int(_ki_reported), total=fmt_int(_active_areas),
-                     pct=fmt_int(_ki_pct)))
 
-# ── The week before it, for the arrows ────────────────────────────────────────
+# ── The last complete week ────────────────────────────────────────────────────
 # A weekly total is a sum over whoever submitted, so two weeks can only be
-# compared once both are reduced to a per-area rate — the same rule the goal
-# bars follow. Live on 2026-08-21 that is 31 areas (08-16) against 1 (08-09),
-# which is why the ≥ half-the-mission gate below matters: without it the row
-# would compare the mission to a single companionship and call it a trend.
+# compared once both are reduced to a per-area rate. Live on 2026-08-21 that was
+# 31 areas against 1, which is why the half-the-mission gate below matters.
 _prev_week_end = (_ki_week_end - timedelta(days=7)
                   if _ki_week_end is not None else None)
 _prev_ki_row = _ki_row_for_week(_prev_week_end)
 _prev_ki_reported = (_ki_reporting.get(str(_prev_week_end), 0)
                      if _prev_week_end is not None else 0)
-_ki_min_areas = max(1, round(_active_areas * 0.5)) if _active_areas else 1
+_ki_reported = _ki_reporting.get(str(_ki_week_end), 0) if _ki_week_end else 0
 
 
 def _prev_ki_val(metric_key: str) -> float:
@@ -701,35 +535,189 @@ def _prev_ki_val(metric_key: str) -> float:
     return float(_prev_ki_row[metric_key] or 0)
 
 
+def _ki_last_card(metric: str) -> dict:
+    return {
+        "label": ki_short_label(metric),
+        "href": ki_href(metric),
+        "value": int(_ki_val(metric)),
+        "spark": _ki_spark(metric),
+        "goal": float(_past_goals.get(metric, 0) or 0),
+        "mark": _past_lead_goals.get(metric),
+        "mark_label": t("Leadership goal, per week"),
+        "goal_note": _ki_goal_note(metric, _past_goal_set_by, _ki_reported),
+        "value_basis": _ki_reported,
+        "goal_basis": _past_goal_set_by.get(metric, 0),
+        "change": period_delta(
+            _ki_val(metric), _prev_ki_val(metric),
+            current_basis=_ki_reported, prior_basis=_prev_ki_reported,
+            min_basis=_ki_min_areas),
+        "delta_label": t("vs prior week"),
+    }
+
+
+# ── The cambio so far ─────────────────────────────────────────────────────────
+# PLAN §1.1, the cambio grain: companionship metas only exist for the weeks
+# already planned, so the bar compares what has been ACHIEVED so far against the
+# metas SET so far, and the full-cycle leadership goal is the mark. The arrows
+# compare the same weeks of the previous cambio — the twin the whole app uses,
+# and the reason an in-progress cycle never reads as a collapse.
+_ki_cycle = transfer_window(0, _today)
+_ki_prev_cycle = transfer_window(1, _today)
+_ki_cycle_points: dict = {}
+_ki_cycle_twin_points: dict = {}
+_ki_cycle_totals: dict = {}
+#: Area-weeks behind each side of the cambio comparison — how many areas filed
+#: a weekly form, summed over the weeks that have elapsed. The count is the same
+#: for all seven metrics (it counts rows, not values), so it is taken once.
+_ki_cycle_basis = _ki_twin_basis = 0
+_ki_cycle_elapsed = 0
+
+if _ki_period == _KI_PERIOD_CYCLE and _ki_cycle is not None and _ki_metrics:
+    # One read of the weekly form for all seven metrics, rather than seven.
+    _ki_weekly_df = get_weekly_form_data()
+    _ki_cycle_totals = group_goal_totals(_ki_cycle["start"], set(_ki_scope_areas))
+    for _k in _ki_metrics:
+        _ki_cycle_points[_k] = kh.weekly_series(
+            _ki_scope_areas, _k, _ki_cycle, weekly=_ki_weekly_df, today=_today)
+        # The twin's own weekly points rather than twin_weekly()'s bare values:
+        # the comparison needs to know how many areas stand behind each side,
+        # not only what they added up to.
+        _ki_cycle_twin_points[_k] = (
+            kh.weekly_series(_ki_scope_areas, _k, _ki_prev_cycle,
+                             weekly=_ki_weekly_df, today=_today)
+            if _ki_prev_cycle else [])
+    _ref = next(iter(_ki_cycle_points.values()), [])
+    _ki_cycle_elapsed = len([p for p in _ref if not p.is_future])
+    _ki_cycle_basis = sum(p.reporting for p in _ref if not p.is_future)
+    _ki_twin_basis = sum(
+        p.reporting
+        for p in next(iter(_ki_cycle_twin_points.values()), [])[:_ki_cycle_elapsed])
+
+
+def _ki_cycle_card(metric: str) -> dict:
+    points = _ki_cycle_points.get(metric) or []
+    elapsed = [p for p in points if not p.is_future]
+    covered = [p for p in elapsed if p.reporting]
+    metas = [p.meta for p in elapsed if p.meta is not None]
+    actual = sum(p.actual or 0.0 for p in covered) if covered else None
+
+    # The twin, truncated to the weeks that have elapsed here, compared on the
+    # AREA-WEEKS behind each side rather than on the weeks alone. The previous
+    # cambio is only a PARTIAL twin on this mission — 2026-5 holds data from
+    # 9 Aug, and its first week carries two areas — so week counts alone would
+    # set 225 areas-worth against 16 and print a fourteen-fold rise. Reduced to
+    # a per-area rate the mismatch cancels, and the half-the-mission gate
+    # refuses the comparison outright while the twin is that thin, exactly as
+    # the weekly reading does.
+    twin = _ki_cycle_twin_points.get(metric) or []
+    twin_total = sum(p.actual or 0.0 for p in twin[:len(elapsed)] if p.reporting)
+    change = None
+    if covered and _ki_twin_basis:
+        change = period_delta(actual, twin_total,
+                              current_basis=_ki_cycle_basis,
+                              prior_basis=_ki_twin_basis,
+                              min_basis=_ki_min_areas)
+    return {
+        "label": ki_short_label(metric),
+        "href": ki_href(metric),
+        "value": int(actual) if actual is not None else "—",
+        "spark": _ki_spark(metric),
+        "goal": sum(metas) if metas else 0,
+        "mark": kh.leadership_total(_ki_scope_areas, _ki_cycle, metric,
+                                    totals=_ki_cycle_totals),
+        "mark_label": t("Cambio goal"),
+        # Both sides are weekly sums, so the basis is the WEEKS behind each:
+        # two weeks of results against three weeks of metas is a real mismatch
+        # and the per-week rates cancel it.
+        "value_basis": len(covered),
+        "goal_basis": len([p for p in elapsed if p.meta is not None]),
+        "change": change,
+        "delta_label": t("vs the same weeks of the previous cambio"),
+        "note": "" if covered else t("arrives Sunday"),
+    }
+
+
+# ── The heading, its right-hand line, and the toggle ──────────────────────────
+# The right-hand line is where the window and the coverage live now: which
+# cambio, how far into it, and how much of the mission is behind the numbers.
+# Those were three captions under two headings (audit X4).
+_ki_right_parts = []
+if _ki_period == _KI_PERIOD_LAST:
+    _ki_span = (fmt_week_span(_ki_week_end - timedelta(days=6), _ki_week_end)
+                if _ki_week_end is not None else "")
+    if _ki_span:
+        _ki_right_parts.append(
+            t("week of {span} (in progress)", span=_ki_span) if _ki_is_partial
+            else t("week of {span}", span=_ki_span))
+    if _active_areas:
+        _ki_right_parts.append(t("{n} of {total} areas reported",
+                                 n=fmt_int(_ki_reported),
+                                 total=fmt_int(_active_areas)))
+else:
+    if _ki_cycle is not None:
+        _ki_right_parts.append(t("cambio {cycle}", cycle=_cycle_label(_ki_cycle)))
+        _n, _m = kh.cycle_position(_ki_cycle, _today)
+        _ki_right_parts.append(t("week {n} of {m}", n=fmt_int(_n), m=fmt_int(_m)))
+    if _ki_period == _KI_PERIOD_CYCLE:
+        _cyc_pts = next(iter(_ki_cycle_points.values()), [])
+        _cyc_elapsed = [p for p in _cyc_pts if not p.is_future]
+        _ki_right_parts.append(
+            t("{n} of {m} weeks reported",
+              n=fmt_int(sum(1 for p in _cyc_elapsed if p.reporting)),
+              m=fmt_int(len(_cyc_elapsed))))
+    elif _active_areas:
+        _ki_right_parts.append(
+            t("{n} of {total} areas filed this week",
+              n=fmt_int(_wtd_areas), total=fmt_int(_active_areas)))
+
+render_section_label(
+    t("Key Indicators"), emphasis=True,
+    right=" · ".join(p for p in _ki_right_parts if p),
+    info=t(
+        "The seven indicators the mission is judged on, for every area that "
+        "submits. The bar is the goal the companionships set themselves on the "
+        "weekly form — the same number the Church's app shows them — and the "
+        "violet mark is the goal leadership set for the cambio on the Metas "
+        "page. During the week in progress two indicators are counted live from "
+        "the nightly form and the rest arrive with the weekly form on Sunday; "
+        "the white tick is where the week's goal says today should be. Totals "
+        "are compared per area, because a week's total is a sum over whoever "
+        "reported. Tap any card for that indicator's history."),
+)
+
+_ki_picked = st.pills(
+    t("Period"), _KI_PERIODS, format_func=_ki_period_label,
+    default=_ki_period, label_visibility="collapsed",
+    # The key carries the active period, so a run in which the pill is
+    # deselected does not leave a stale widget value behind the heading.
+    key=f"panel_ki_period_{_ki_period}",
+)
+if _ki_picked is not None and _ki_picked != _ki_period:
+    st.session_state["panel_ki_period_val"] = _ki_picked
+    st.rerun()
+
 if not _ki_metrics:
     st.info(_EMPTY_MSG)
+elif _ki_period == _KI_PERIOD_CYCLE and _ki_cycle is None:
+    st.info(t("No transfer schedule yet — TRANSFER_SCHEDULE is empty, so there "
+              "is no cambio to show by week."))
 else:
-    render_kpi_row([
-        {
-            "label": ki_short_label(k),
-            "href": ki_href(k),
-            "value": int(_ki_val(k)),
-            "goal":  _past_lead_goals.get(k) or _past_goals.get(k, 0),
-            "change": period_delta(
-                _ki_val(k), _prev_ki_val(k),
-                current_basis=_ki_reported, prior_basis=_prev_ki_reported,
-                min_basis=_ki_min_areas),
-            "delta_label": t("vs prior week"),
-            # Denominator is who reported RESULTS this week, not who set the
-            # goals — see _ki_goal_note. Without that, the 1-of-33 case is
-            # silent and the bar reads 2040% unexplained.
-            "goal_note": (_leadership_goal_note(_past_lead_label,
-                                                _past_goals.get(k, 0))
-                          if _past_lead_goals.get(k)
-                          else _ki_goal_note(k, _past_goal_set_by, _ki_reported)),
-            "value_basis": _ki_reported,
-            "goal_basis":  (_past_lead_areas if _past_lead_goals.get(k)
-                            else _past_goal_set_by.get(k, 0)),
-        }
-        for k, label in _ki_metrics.items()
-    ])
+    if _ki_period == _KI_PERIOD_CYCLE:
+        _ki_builder = _ki_cycle_card
+    elif _ki_period == _KI_PERIOD_LAST:
+        _ki_builder = _ki_last_card
+    else:
+        _ki_builder = _ki_week_card
+    render_kpi_row([_ki_builder(k) for k in _ki_metrics])
 
-    if _prev_ki_reported < _ki_min_areas:
+    # The one case the row cannot state on its own: a comparison this page
+    # refuses to make. A missing arrow that says why is audit finding M7's rule;
+    # everything else that used to sit here is in the ⓘ above.
+    if _ki_period == _KI_PERIOD_WEEK and _lw_areas < _wtd_min_areas:
+        st.caption(t(
+            "No comparison with last week: only {n} areas filed a nightly "
+            "report over the same days a week ago.", n=fmt_int(_lw_areas)))
+    elif _ki_period == _KI_PERIOD_LAST and _prev_ki_reported < _ki_min_areas:
         _prev_span = (fmt_week_span(_prev_week_end - timedelta(days=6),
                                     _prev_week_end)
                       if _prev_week_end is not None else "")
@@ -739,23 +727,151 @@ else:
             "needed for a mission-level comparison.",
             n=fmt_int(_prev_ki_reported), total=fmt_int(_active_areas),
             span=_prev_span, need=fmt_int(_ki_min_areas)))
-    elif _prev_ki_reported != _ki_reported:
+    elif _ki_period == _KI_PERIOD_CYCLE and _ki_prev_cycle is None:
+        st.caption(t("No comparison yet: the schedule holds no cambio before "
+                     "this one."))
+    elif _ki_period == _KI_PERIOD_CYCLE and _ki_twin_basis < _ki_min_areas:
+        # The twin exists but is too thinly reported to compare against — cambio
+        # 2026-5 began mid-cycle for this mission and its first weeks carry a
+        # handful of areas. Saying so beats an arrow that measures the reporting
+        # gap rather than the work.
         st.caption(t(
-            "Compared against the previous week per area — {prev} areas "
-            "reported then, {now} now.",
-            prev=fmt_int(_prev_ki_reported), now=fmt_int(_ki_reported)))
+            "No comparison with cambio {prev}: its matching {n} weeks hold "
+            "{reports} between them, and at least {need} are needed.",
+            prev=_cycle_label(_ki_prev_cycle), n=fmt_int(_ki_cycle_elapsed),
+            reports=(t("1 weekly report") if _ki_twin_basis == 1
+                     else t("{n} weekly reports", n=fmt_int(_ki_twin_basis))),
+            need=fmt_int(_ki_min_areas)))
 
-# ── 2c. The drill-down — a tapped Key Indicator, by week / cambio / area ───────
+# ── The drill-down — a tapped Key Indicator, by week / cambio / area ──────────
 # Opened by ?ki=<metric>, which every card above links to; the pills strip is
-# the visible affordance. Mission scope: every submitting area. The panel owns
-# the metric, this page owns the scope (PLAN-2026-09-18-data-pages.md §3).
+# the visible affordance. The panel owns the metric, this page owns the scope
+# (PLAN-2026-09-18-data-pages.md §3). Its first tab follows the period the
+# scoreboard is showing.
 if _ki_metrics:
-    _ki_scope_roster = get_submitting_areas()
-    _ki_scope_areas = (
-        set(_ki_scope_roster["Area_Name"].astype(str).str.strip())
-        if "Area_Name" in _ki_scope_roster.columns else set()
-    )
-    render_ki_drilldown("Mission", _mission_name, _ki_scope_areas, key="panel_ki")
+    render_ki_drilldown(
+        "Mission", _mission_name, _ki_scope_areas, key="panel_ki",
+        default_tab=(TAB_CYCLE if _ki_period == _KI_PERIOD_CYCLE else TAB_WEEK))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 2. THE YEAR AGAINST THE BAPTISMAL GOAL
+# ═══════════════════════════════════════════════════════════════════════════════
+# Was section ⑥ of thirteen, six screens down (audit P1). Every other number on
+# this page describes a week; this is the year the mission is actually judged
+# on, so it sits directly under the Key Indicators.
+#
+# The three figures that used to be a caption UNDER the chart are a card row
+# ABOVE it (step C1.2): where the year stands, how that compares with the goal's
+# pace, and where it lands if the months so far are representative. A reader who
+# stops at the first line has the answer; the chart is the evidence.
+#
+# The goal lives in AGENT_CONFIG (GOAL_ANNUAL_baptisms) rather than in this file
+# so next year's number is a sheet edit, not a deploy — with no row, the chart
+# still draws the year and simply has no line to aim at.
+_ab_monthly = get_mission_baptisms_by_month()
+if _ab_monthly:
+    _ab_year = _today.year
+    try:
+        _ab_goal = float((get_config_value("GOAL_ANNUAL_baptisms", "") or "").strip())
+    except (TypeError, ValueError):
+        _ab_goal = 0.0
+
+    _ab_series = ab.cumulative(_ab_monthly, _ab_year)
+    _ab_n = ab.months_covered(_ab_series)
+
+    if _ab_n:
+        _ab_pace = ab.goal_pace(_ab_goal)
+        _ab_landing = ab.landing_estimate(_ab_series, _ab_goal)
+        _ab_gap = ab.pace_gap(_ab_series, _ab_goal)
+        _ab_x = [fmt_month_abbr(m) for m in range(1, ab.MONTHS_IN_YEAR + 1)]
+        # The line stops where the capture stops. Said in the heading, because a
+        # cumulative line that simply ends is easy to read as a mission that
+        # stopped rather than an export that has not run.
+        _ab_last = fmt_month_abbr(_ab_n)
+
+        render_section_label(
+            t("{year} Baptisms", year=_ab_year), emphasis=True,
+            right=t("certified through {month}", month=_ab_last),
+            info=t(
+                "Certified monthly totals from the Tableau export, counted "
+                "cumulatively against the mission's annual goal. The dashed "
+                "amber line is a twelfth of the goal a month — flat on purpose, "
+                "because this mission's own months swing between 17 and 50 with "
+                "no stable pattern to shape a curve to. The two grey lines "
+                "behind are the previous two years. The weekly form's own "
+                "baptism field is not used here: it undercounts by roughly "
+                "half."),
+        )
+
+        # ── Where the year stands, in three figures ──────────────────────────
+        _ab_cards = [{
+            "label": t("Baptisms through {month}", month=_ab_last),
+            "value": int(_ab_series[_ab_n - 1]),
+            "goal": _ab_goal if _ab_goal > 0 else None,
+            # Graded on the pace, not on the whole year: in July a mission
+            # exactly on pace has 58% of an annual goal, and grading that
+            # against 100% would paint a mission on track in red.
+            "pace": _ab_pace[_ab_n - 1] if _ab_pace else None,
+        }]
+        if _ab_gap is not None:
+            _ab_cards.append({
+                "label": t("vs goal pace"),
+                "value": "{}{}".format("+" if _ab_gap >= 0 else "−",
+                                       fmt_int(abs(round(_ab_gap)))),
+                "note": (t("ahead of the goal's pace") if _ab_gap >= 0
+                         else t("behind the goal's pace")),
+            })
+        if _ab_landing:
+            _ab_cards.append({
+                "label": t("Projection"),
+                # A tilde, because this is the only figure on the page that
+                # describes something that has not happened yet.
+                "value": "~" + fmt_int(round(_ab_landing["value"])),
+                "note": t("if the {n} months so far are representative",
+                          n=fmt_int(_ab_landing["months"])),
+            })
+        render_kpi_row(_ab_cards)
+
+        fig_ab = go.Figure()
+        # Prior years first, so they sit behind. Two of them, because one is an
+        # anecdote: 2024 and 2025 finished 385 and 403, close enough that the
+        # pair reads as the mission's normal range rather than as a target.
+        for _off, _dim in ((2, "rgba(203,203,210,0.22)"), (1, "rgba(203,203,210,0.40)")):
+            _prev = ab.cumulative(_ab_monthly, _ab_year - _off)
+            if ab.months_covered(_prev) < 1:
+                continue
+            fig_ab.add_trace(go.Scatter(
+                x=_ab_x, y=_prev, mode="lines",
+                name=str(_ab_year - _off),
+                line=dict(color=_dim, width=1.5),
+                hovertemplate="%{y:.0f}<extra>" + str(_ab_year - _off) + "</extra>",
+            ))
+        if _ab_pace:
+            fig_ab.add_trace(go.Scatter(
+                x=_ab_x, y=_ab_pace, mode="lines",
+                name=t("Goal pace ({goal})", goal=fmt_int(_ab_goal)),
+                line=dict(color=GOAL_LINE, width=2, dash="dash"),
+                hovertemplate="%{y:.0f}<extra>" + t("goal pace") + "</extra>",
+            ))
+        # The current year last, so it draws on top of everything it is being
+        # compared against.
+        fig_ab.add_trace(go.Scatter(
+            x=_ab_x[:_ab_n], y=_ab_series[:_ab_n],
+            mode="lines+markers",
+            name=str(_ab_year),
+            line=dict(color=MAGNITUDE, width=3),
+            marker=dict(size=7),
+            hovertemplate="%{y:.0f}<extra>" + str(_ab_year) + "</extra>",
+            cliponaxis=False,
+        ))
+        fig_ab.update_layout(
+            xaxis=dict(type="category"),
+            yaxis=dict(title=t("Baptisms, cumulative"), rangemode="tozero"),
+            hovermode="x unified",
+        )
+        chart(fig_ab, height=340)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 3. ZONES — PER-AREA AVERAGE ACROSS THE FINDING FUNNEL (last 7 days)
@@ -925,100 +1041,176 @@ else:
             n=fmt_int(ki_scored_area_count(_zone_scores)),
             total=fmt_int(_active_areas)))
 
+
 # ═══════════════════════════════════════════════════════════════════════════════
-# 3b. THE YEAR AGAINST THE BAPTISMAL GOAL
+# 4a. NIGHTLY ACTIVITY — mission totals, last 7 days
 # ═══════════════════════════════════════════════════════════════════════════════
-# Numbered 3b for the same reason 1b is: the audit and the build queue refer to
-# this page's sections by number, and renumbering five of them to insert one
-# would silently invalidate every reference.
-#
-# Every other number on this page describes a week. This is the year the mission
-# is actually judged on, and until now nothing on the dashboard showed it. The
-# goal lives in AGENT_CONFIG (GOAL_ANNUAL_baptisms) rather than in this file so
-# next year's number is a sheet edit, not a deploy — with no row, the chart
-# still draws the year and simply has no line to aim at.
-_ab_monthly = get_mission_baptisms_by_month()
-if _ab_monthly:
-    _ab_year = _today.year
-    try:
-        _ab_goal = float((get_config_value("GOAL_ANNUAL_baptisms", "") or "").strip())
-    except (TypeError, ValueError):
-        _ab_goal = 0.0
+render_section_label(t("Nightly Activity — Last 7 Days"))
 
-    _ab_series = ab.cumulative(_ab_monthly, _ab_year)
-    _ab_n = ab.months_covered(_ab_series)
+#: The three tiles the page opens with. Fixed here, not read from
+#: flavor.nightly_highlights: that property derives from SCORE_CONFIG's *effort*
+#: weights, which exist to weight the effort score, not to choose what a
+#: president sees first. It yielded contacts_attempted, roleplays and
+#: member_contacts — two of the three are inputs rather than outcomes, and
+#: contacts_attempted then appeared three times on one page (audit H1).
+#:
+#: These three are the end of the finding funnel: what was actually placed,
+#: invited and offered. Order is the mission's own, chosen by the user.
+_PANEL_HIGHLIGHT_KEYS = [
+    "bom_shared",
+    "church_invites",
+    "baptismal_invitations",
+]
 
-    if _ab_n:
-        render_section_label(
-            t("{year} Baptisms — Year to Date", year=_ab_year))
+_nightly_keys = _PANEL_HIGHLIGHT_KEYS
+if not _nightly_keys:
+    st.info(_EMPTY_MSG)
+elif _night_anchor is None:
+    st.info(t("No nightly reports yet — DAILY_LOG has no day on which at least "
+              "half the mission's areas filed."))
+else:
+    # The value comes from the same window as the arrow beneath it. It used to
+    # be DASHBOARD_SUMMARY's val_7d, whose window is one day wider, which would
+    # have put a number and a change describing different spans on one card.
+    render_kpi_row([
+        {
+            "label": METRIC_LABELS.get(k, k),
+            "value": int(_cur_totals.get(k, 0)),
+            "goal":  _mission_goal(k),
+            "goal_note": _mission_goal_note(k),
+            "change": period_delta(
+                _cur_totals.get(k, 0), _prev_totals.get(k, 0),
+                current_basis=_cur_days, prior_basis=_prev_days),
+            "delta_label": _VS_PRIOR_WEEK,
+        }
+        for k in _nightly_keys
+    ])
 
-        _ab_pace = ab.goal_pace(_ab_goal)
-        _ab_landing = ab.landing_estimate(_ab_series, _ab_goal)
-        _ab_gap = ab.pace_gap(_ab_series, _ab_goal)
-        _ab_x = [fmt_month_abbr(m) for m in range(1, ab.MONTHS_IN_YEAR + 1)]
-
-        fig_ab = go.Figure()
-        # Prior years first, so they sit behind. Two of them, because one is an
-        # anecdote: 2024 and 2025 finished 385 and 403, close enough that the
-        # pair reads as the mission's normal range rather than as a target.
-        for _off, _dim in ((2, "rgba(203,203,210,0.22)"), (1, "rgba(203,203,210,0.40)")):
-            _prev = ab.cumulative(_ab_monthly, _ab_year - _off)
-            if ab.months_covered(_prev) < 1:
-                continue
-            fig_ab.add_trace(go.Scatter(
-                x=_ab_x, y=_prev, mode="lines",
-                name=str(_ab_year - _off),
-                line=dict(color=_dim, width=1.5),
-                hovertemplate="%{y:.0f}<extra>" + str(_ab_year - _off) + "</extra>",
-            ))
-        if _ab_pace:
-            fig_ab.add_trace(go.Scatter(
-                x=_ab_x, y=_ab_pace, mode="lines",
-                name=t("Goal pace ({goal})", goal=fmt_int(_ab_goal)),
-                line=dict(color=GOAL_LINE, width=2, dash="dash"),
-                hovertemplate="%{y:.0f}<extra>" + t("goal pace") + "</extra>",
-            ))
-        # The current year last, so it draws on top of everything it is being
-        # compared against.
-        fig_ab.add_trace(go.Scatter(
-            x=_ab_x[:_ab_n], y=_ab_series[:_ab_n],
-            mode="lines+markers",
-            name=str(_ab_year),
-            line=dict(color=MAGNITUDE, width=3),
-            marker=dict(size=7),
-            hovertemplate="%{y:.0f}<extra>" + str(_ab_year) + "</extra>",
-            cliponaxis=False,
-        ))
-        fig_ab.update_layout(
-            xaxis=dict(type="category"),
-            yaxis=dict(title=t("Baptisms, cumulative"), rangemode="tozero"),
-            hovermode="x unified",
-        )
-        chart(fig_ab, height=340)
-
-        # The line stops where the capture stops. Said plainly, because a
-        # cumulative line that simply ends is easy to read as a mission that
-        # stopped rather than an export that has not run.
-        _ab_last = fmt_month_abbr(_ab_n)
-        _ab_bits = [t("{n} baptisms through {month}",
-                      n=fmt_int(_ab_series[_ab_n - 1]), month=_ab_last)]
-        if _ab_gap is not None:
-            _ab_bits.append(
-                t("{n} ahead of goal pace", n=fmt_int(abs(round(_ab_gap))))
-                if _ab_gap >= 0 else
-                t("{n} behind goal pace", n=fmt_int(abs(round(_ab_gap)))))
-        if _ab_landing:
-            _ab_bits.append(
-                t("on pace for ~{n} by year end", n=fmt_int(_ab_landing["value"])))
-        st.caption(" · ".join(_ab_bits))
+    # The window is stated, and so is the reason there is no comparison yet.
+    # A silently missing arrow is the audit's own M7 finding (empty states that
+    # never say why) reintroduced one section higher up.
+    _win_note = t("{start}–{end} · {n} reporting days",
+                  start=fmt_day_month(_cur_start), end=fmt_day_month(_cur_end),
+                  n=fmt_int(_cur_days))
+    if _prev_days < MIN_COMPARABLE_DAYS:
         st.caption(t(
-            "Certified monthly totals from the Tableau export, which reaches "
-            "{month}. The weekly form's own baptism field is not used here — it "
-            "undercounts by roughly half.", month=_ab_last))
+            "{window}. No comparison yet: the previous 7 days hold {n} days on "
+            "which at least half the areas reported, and {need} are needed.",
+            window=_win_note, n=fmt_int(_prev_days),
+            need=fmt_int(MIN_COMPARABLE_DAYS)))
+    elif _prev_days < WINDOW_DAYS:
+        st.caption(t(
+            "{window}. Compared against {n} reporting days in the previous 7, "
+            "scaled per day.", window=_win_note, n=fmt_int(_prev_days)))
+    else:
+        st.caption(t("{window}, against the 7 days before.", window=_win_note))
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 4b. CONVERSION RATES — how well, against §4a's how much (audit H2)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Numbered 1b rather than 2 on purpose: the audit report and the build queue
+# refer to this page's sections by number, and renumbering six of them to insert
+# one would silently invalidate every one of those references.
+#
+# CCSM_Agent1A.gs computes four conversion rates every Monday, each with a target
+# in AGENT_CONFIG, a Preach My Gospel page and a scripture — and until now not
+# one of them appeared anywhere in the dashboard (audit H2). They are the
+# sharpest thing in the dataset: live on 2026-08-21, 4.104 attempts became 673
+# lessons and 65 baptismal invitations. The mission teaches well and does not
+# invite, and no other section on this page can say so.
+#
+# The agent keeps the rates in Script Properties for the coaching emails and
+# never writes them to a tab, so they are derived here from the same DAILY_LOG
+# window §1 uses. That shared window is why this sits directly under §1: the
+# tiles above say how much was done, these say how well, and the reader does not
+# have to re-learn the timeframe between them.
+#
+# The audit's plan also called for a link to 07_Embudo_de_Búsqueda.py, on the
+# grounds that it already carries "Finding Pipeline" and "Contact Performance"
+# and must not be duplicated. That premise did not survive checking: the Embudo
+# page runs entirely on uploaded Tableau exports, its TABLEAU_RANKING and
+# TABLEAU_DETAIL tabs are empty so the page stops on "No finding data yet", and
+# its "contact rate" is attempted ÷ found — a different ratio that happens to
+# share a name. There is nothing to duplicate and nowhere to send anyone, so the
+# arithmetic is shown here instead, in an expander. Revisit once Tableau syncs.
+render_section_label(t("Conversion Rates — Last 7 Days"))
+
+if _night_anchor is None:
+    st.info(t("No nightly reports yet — DAILY_LOG has no day on which at least "
+              "half the mission's areas filed."))
+else:
+    # _rate_rows is computed once, in §0 above — the verdict banner names the
+    # weakest of these four, so both sections must be reading the same figures.
+    # unit/decimals: one decimal, matching the zone table's fmt_number(v, 1).
+    # A whole number would print close_rate's 9,7% and 10,4% identically, which
+    # on the mission's weakest conversion is exactly where resolution matters.
+    #
+    # The goal bar's percentage is value ÷ target, so a rate at 39% of its target
+    # draws red under the four-tier grading — see render_kpi_row. No value_basis
+    # or goal_basis here: a ratio is already size-neutral, so there is no
+    # mismatched denominator for the per-area rescue to fix.
+    render_kpi_row([
+        {
+            "label": t(_RATE_SHORT_LABELS.get(r["key"], r["key"])),
+            # None, not 0, when the denominator is empty. render_kpi_row treats
+            # a non-numeric value as "no reading yet" and shows the target on
+            # its own, rather than reporting a 0% the mission never had the
+            # chance to avoid.
+            "value": r["value"] if r["value"] is not None else "—",
+            "goal": r["target"],
+            "unit": "%",
+            "decimals": 1,
+            "change": r["change"],
+            "delta_label": _VS_PRIOR_WEEK,
+        }
+        for r in _rate_rows
+    ])
+
+    _rate_win = t("{start}–{end} · {n} reporting days",
+                  start=fmt_day_month(_cur_start), end=fmt_day_month(_cur_end),
+                  n=fmt_int(_cur_days))
+    if _prev_days < MIN_COMPARABLE_DAYS:
+        # Same honesty rule as §1: a missing arrow says why it is missing.
+        # Unlike §1 there is no scaled middle case — a rate does not grow with
+        # the days behind it, so a short prior window cannot be corrected for,
+        # only refused. See period_delta.point_delta.
+        st.caption(t(
+            "{window}. Change is shown in percentage points once the previous 7 "
+            "days hold {need} reporting days; they hold {n}.",
+            window=_rate_win, n=fmt_int(_prev_days),
+            need=fmt_int(MIN_COMPARABLE_DAYS)))
+    else:
+        st.caption(t("{window}, against the 7 days before, in percentage points.",
+                     window=_rate_win))
+
+    # The arithmetic, in full. This is what the Embudo link was meant to be for.
+    # Printing both the words and the numbers matters more than it looks: three
+    # of the four rates divide by something other than the stage immediately
+    # above them — lesson_rate is lessons ÷ ATTEMPTS, not lessons ÷ contacts —
+    # and a reader who assumes a single chain will misread every one of them.
+    with st.expander(t("How each rate is calculated")):
+        render_table(pd.DataFrame([
+            {
+                t("Rate"): METRIC_LABELS.get(r["key"], r["key"]),
+                t("Calculation"): "{} ÷ {}".format(
+                    METRIC_LABELS.get(r["metric"].numerator, r["metric"].numerator),
+                    METRIC_LABELS.get(r["metric"].denominator, r["metric"].denominator)),
+                t("Figures"): "{} ÷ {}".format(fmt_int(r["numerator"]),
+                                               fmt_int(r["denominator"])),
+                t("Actual"): fmt_percent(r["value"], 1) if r["value"] is not None else "—",
+                t("Target"): fmt_percent(r["target"], 0),
+            }
+            for r in _rate_rows
+        ]))
+        st.caption(t(
+            "Each rate is the ratio of the mission's totals, not the average of "
+            "the areas' own rates — averaging lets a few low-volume areas with "
+            "favourable ratios carry the mission figure. Targets come from "
+            "AGENT_CONFIG and are the same ones CCSM_Agent1A.gs coaches against."))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 4. EIGHT-WEEK TRENDS (mission totals)
+# 4c. EIGHT-WEEK TRENDS (mission totals)
 # ═══════════════════════════════════════════════════════════════════════════════
 # B2 (AUDIT-IA-2026-08-22.md): this section used to plot flavor.nightly_highlights
 # (e.g. contacts_attempted) against get_weekly_ki_trends(), which only ever
@@ -1101,7 +1293,7 @@ else:
             n=fmt_int(_weeks_plotted), total=fmt_int(_TREND_WEEKS)))
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# THE NIGHTLY WINDOW — shared by sections 5 and 6
+# THE NIGHTLY WINDOW — shared by sections 4d and 5a
 # ═══════════════════════════════════════════════════════════════════════════════
 # Both sections said "last 7 days" and meant different things. Section 5 read
 # get_daily_summary(7), whose cutoff is `today - 7` and therefore spans eight
@@ -1110,15 +1302,15 @@ else:
 # window is computed once, here, on the anchor section 7 already grades
 # compliance against: the last night whose 9:30 PM deadline has passed. An area
 # with hours left to file has not missed anything yet.
-_night_anchor = compliance_anchor_date()
-_night_start, _night_end = eb.window_bounds(_night_anchor)
+_due_anchor = compliance_anchor_date()
+_night_start, _night_end = eb.window_bounds(_due_anchor)
 _night_span = t("{start}–{end}", start=fmt_day_month(_night_start),
                  end=fmt_day_month(_night_end))
 _night_days = [_night_start + timedelta(days=i)
                for i in range((_night_end - _night_start).days + 1)]
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 5. DAILY TREND — one nightly metric, last 7 days
+# 4d. DAILY TREND — one nightly metric, last 7 days
 # ═══════════════════════════════════════════════════════════════════════════════
 # Was hardcoded to nm_lessons ("Non-Member Lessons per Day"), which CCSM's
 # nightly form does not ask, so this section drew nothing for months; it was
@@ -1184,7 +1376,7 @@ else:
     st.caption(t("{span} · mission total per day.", span=_night_span))
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 6. EFFORT LEVEL — last 7 days, over every active area
+# 5a. EFFORT LEVEL — last 7 days, over every active area
 # ═══════════════════════════════════════════════════════════════════════════════
 # M3. This section used to sum DASHBOARD_SUMMARY's EFFORT rows and report "146
 # Todo · 83 La mayor parte · 13 Algo" — 242 answers presented as the mission,
@@ -1224,7 +1416,7 @@ if _eff_cur.possible <= 0:
 else:
     # The prior window, for the score's arrow only. Same pair section 1 uses, so
     # "prior 7 days" means one thing on this page.
-    _, _, _eff_prior_start, _eff_prior_end = window_pair(_night_anchor)
+    _, _, _eff_prior_start, _eff_prior_end = window_pair(_due_anchor)
     _eff_prior = eb.build_window(
         _eff_log, _eff_areas, start=_eff_prior_start, end=_eff_prior_end,
         system_start=_eff_floor, transfer_start=_eff_transfer,
@@ -1351,7 +1543,7 @@ else:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 7. SUBMISSION COMPLIANCE — all-time summary, calendars, per-area detail
+# 5b. SUBMISSION COMPLIANCE — all-time summary, calendars, per-area detail
 # ═══════════════════════════════════════════════════════════════════════════════
 render_section_label(t("Submission Compliance"))
 

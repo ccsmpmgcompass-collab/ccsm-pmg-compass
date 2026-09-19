@@ -1098,8 +1098,9 @@ def render_section_label(text: str, *, emphasis: bool = False,
     ``info`` renders an ⓘ beside the label; clicking the label line toggles a
     muted paragraph beneath it (a pure-CSS <details>, so no rerun). This is
     where a section's explanation lives — the one place, instead of a caption
-    under every card (data-pages plan A4, audit X4). ``right`` renders a short
-    muted string at the label's right edge: the period, the coverage.
+    under every card (data-pages plan A4, audit X4). ``right`` renders a muted
+    string at the label's right edge: the period, the coverage. It wraps, and
+    drops to its own row under the label when the two cannot share one.
 
     ``numbered=True`` prefixes the circled number the page hands out in render
     order (①②③…). Numbers were the DEFAULT until 2026-09-18: the Panel was
@@ -1109,9 +1110,16 @@ def render_section_label(text: str, *, emphasis: bool = False,
     """
     marker = _section_marker(text) if numbered else ""
     label = _html.escape(text)
+    # The right-hand line wraps, and takes its own row under the label when the
+    # two cannot share one. It carries a window and a coverage count ("cambio
+    # 2026-6 · semana 2 de 6 · 39 de 45 areas informaron"), which at 375px is
+    # wider than the pane on its own; nowrap made the main pane scroll sideways
+    # (PLAN STATUS, B3 note a). margin-left:auto keeps it at the right edge on
+    # whichever row it lands on.
     right_html = (
-        f'<span style="flex:none;color:#6b7280;font-size:0.75rem;font-weight:500;'
-        f'letter-spacing:0;text-transform:none;white-space:nowrap;">'
+        f'<span style="flex:0 1 auto;margin-left:auto;text-align:right;'
+        f'color:#6b7280;font-size:0.75rem;font-weight:500;'
+        f'letter-spacing:0;text-transform:none;white-space:normal;">'
         f'{_html.escape(right)}</span>' if right else ""
     )
     info_glyph = (
@@ -1132,7 +1140,8 @@ def render_section_label(text: str, *, emphasis: bool = False,
             f'<div style="flex:1;height:1px;background:rgba(99,102,241,0.35);"></div>'
             f'{right_html}'
         )
-        row_style = "display:flex;align-items:center;gap:0.75rem;margin:2rem 0 0.9rem 0;"
+        row_style = ("display:flex;flex-wrap:wrap;align-items:center;gap:0.75rem;"
+                     "margin:2rem 0 0.9rem 0;")
     else:
         row = (
             f'{marker}'
@@ -1142,7 +1151,8 @@ def render_section_label(text: str, *, emphasis: bool = False,
             f'<div style="flex:1;height:1px;background:rgba(255,255,255,0.07);"></div>'
             f'{right_html}'
         )
-        row_style = "display:flex;align-items:center;gap:0.6rem;margin:1.5rem 0 0.75rem 0;"
+        row_style = ("display:flex;flex-wrap:wrap;align-items:center;gap:0.6rem;"
+                     "margin:1.5rem 0 0.75rem 0;")
 
     if info:
         # The whole label line is the <summary>, so the ⓘ needs no script; the

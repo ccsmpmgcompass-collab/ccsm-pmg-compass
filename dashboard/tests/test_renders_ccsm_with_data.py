@@ -590,21 +590,28 @@ def test_empty_catalogue_renders_nothing_rather_than_a_default():
     assert flavor.nightly_highlights == []
 
 
-def test_key_indicator_headings_carry_the_emphasis_treatment():
+def test_the_key_indicator_heading_carries_the_emphasis_treatment():
     """The seven KIs are what the mission is judged on. Without
     render_section_label(emphasis=True) they sat at exactly the same visual
     weight as "Desglose Diario de Esfuerzo" — audit H1's second half. The
     emphasis tier is identifiable by its indigo accent bar, which the plain
-    tier does not draw."""
+    tier does not draw.
+
+    ONE heading, not two: step C1 of the data-pages plan collapsed "Semana en
+    curso" and "Semana del 7 al 13" — two rows of the same seven metrics, audit
+    P2 — into a single scoreboard whose period is a toggle. That the scoreboard
+    is one row, and what each reading of it contains, is pinned in
+    tests/test_panel_scoreboard.py, which supplies the weekly-form data these
+    fixtures do not carry."""
     at = _run("views/01_Panel.py")
     accent = "linear-gradient(180deg,#6366f1,#8b5cf6)"
     emphasized = [
         m.value for m in at.markdown
         if accent in str(m.value) and "INDICADORES CLAVE" in str(m.value).upper()
     ]
-    assert len(emphasized) == 2, (
-        "Both Key Indicator headings (current week, last complete week) must "
-        f"use the emphasis tier; found {len(emphasized)}"
+    assert len(emphasized) == 1, (
+        "The Key Indicator heading must use the emphasis tier, and there must "
+        f"be exactly one of it; found {len(emphasized)}"
     )
 
 
