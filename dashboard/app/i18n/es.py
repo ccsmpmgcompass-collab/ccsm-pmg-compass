@@ -2986,6 +2986,19 @@ ES: dict[str, str] = {
         "Ordenado por % de la meta semanal de cada área, cambio {cycle} hasta "
         "el {day}. Toque un área para abrirla en Desgloses.",
 
+
+    # ── Desgloses §3: the trend (data-pages plan, step D4) ───────────────────
+    "{n} areas · {span}": "{n} áreas · {span}",
+    "The metric the drill-down above is open on, day by day for each area in "
+    "this scope. It draws at district and area scope only: a line per area is "
+    "a way of asking which area moved and when, and forty-five of them answer "
+    "nobody. Tap any card or row on this page to change the metric.":
+        "El indicador que tiene abierto el panel de arriba, día a día para "
+        "cada área de este nivel. Solo se dibuja a nivel de distrito y de "
+        "área: una línea por área es una forma de preguntar qué área se movió "
+        "y cuándo, y cuarenta y cinco no le responden a nadie. Toque "
+        "cualquier tarjeta o fila de esta página para cambiar el indicador.",
+
     # ── Panel §2: the year against the baptismal goal ────────────────────────
     "{year} Baptisms": "Bautismos {year}",
     "certified through {month}": "certificado hasta {month}",

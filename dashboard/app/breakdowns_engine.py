@@ -31,12 +31,16 @@ from app.analytics.period_delta import (
     period_delta,
     reporting_dates,
 )
-from app.components.charts import chart, change_text, ranked_list
+from app.components.charts import (
+    apply_layout, chart, change_text, ranked_list,
+)
 from app.components.design_system import (
     goal_bar_state, goal_bar_status, projection_caption, render_kpi_row,
     render_section_label,
 )
-from app.components.ki_drilldown import ki_href, render_ki_drilldown
+from app.components.ki_drilldown import (
+    ki_href, render_ki_drilldown, selected_ki,
+)
 from app.config.theme import series_style, STATUS
 from app.i18n.formats import fmt_day_month, fmt_int, fmt_number
 from app.db.queries import (
@@ -98,23 +102,6 @@ from app.config.metric_catalog import (
     non_numeric_metrics,
     weekly_metric_keys,
 )
-
-
-def _primary_metrics() -> tuple[str, ...]:
-    """The mission's headline Key Indicators, pinned to the top of the Metric
-    picker and marked with a ★ prefix there.
-
-    For CCSM these are the seven `ki_*_real` values the weekly form collects —
-    the same set SCORE_CONFIG scores as the KI component — rather than a
-    hand-listed six. The matching `_meta` keys are that companionship's GOAL for
-    the week and are deliberately NOT pinned: a goal is not an achievement, and
-    showing them side by side in one picker invites reading one as the other.
-
-    The ★ prefix stays plain ASCII on purpose. st.selectbox's type-to-search
-    matches the DISPLAYED text, so a Mathematical-Bold label (𝗣𝗼𝘁…) could never
-    be found by typing "po".
-    """
-    return tuple(key_indicator_metrics())
 
 
 def _weekly_metrics() -> frozenset[str]:
@@ -810,19 +797,13 @@ def _isolating_trend_chart(fig: go.Figure, height: int = 520, enable_isolate: bo
     never restyle them back (Carson: "the X's disappear and then it glitches
     and you can't reset it").
     """
-    # Streamlit's plotly theming doesn't reach inside the iframe, so restate the
-    # bits of it this chart relies on. The app is pinned to the dark theme
-    # (.streamlit/config.toml), so these are constants rather than a lookup.
-    fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="sans-serif", color="#f4f4f8", size=12),
-        hoverlabel=dict(bgcolor="#0e0e15", font=dict(color="#f4f4f8")),
-        xaxis=dict(gridcolor="#2a2a35", linecolor="#2a2a35", zerolinecolor="#2a2a35"),
-        yaxis=dict(gridcolor="#2a2a35", linecolor="#2a2a35", zerolinecolor="#2a2a35"),
-        autosize=True,
-        height=height - 20,
-    )
+    # The shared layout, the same one charts.chart() applies — the template,
+    # the margins, the legend below the plot (plan step D4). Streamlit's own
+    # plotly theming does not reach inside a component iframe, but a template
+    # APPLIED to the figure is serialised with it by to_html, so the chart
+    # arrives dressed. Only the iframe's own two needs are set after it.
+    apply_layout(fig, height=height)
+    fig.update_layout(autosize=True, height=height - 20)
     div_id = "trend-" + uuid.uuid4().hex
     chart = fig.to_html(
         # This iframe gets a fresh div_id (and so a fresh <script src=cdn>
@@ -1488,6 +1469,14 @@ def _metas_for_weeks(weekly: pd.DataFrame, week_ends: list,
     return totals, basis
 
 
+#: The most areas the per-area trend will draw a line for (plan step D4).
+#: CCSM's districts hold two to four areas and the area view holds one; a zone
+#: holds nine and the mission forty-five, and the audit measured what that looks
+#: like — forty-five lines is forty-five answers to "which area", which is not
+#: the question a zone leader brings to a trend. Above this the section stands
+#: down and the drill-down's "Por área" tab is the per-area view.
+_TREND_MAX_AREAS = 8
+
 #: How many complete weeks the nightly rows' sparkline shows (plan step D3).
 _NIGHT_SPARK_WEEKS = 8
 
@@ -1615,39 +1604,6 @@ def _bucketed_totals(frame, metric: str, is_weekly: bool, granularity: str):
     f[metric] = pd.to_numeric(f[metric], errors="coerce")
     totals = f.groupby("_b")[metric].sum(min_count=1).sort_index()
     return [None if pd.isna(v) else float(v) for v in totals.values]
-
-
-def _bar_delta_chip(current: float, prior: float | None) -> str:
-    """One area's movement, short enough to sit under its bar.
-
-    Returns "" when there is nothing to say — no twin value at all, or a twin
-    of zero, where a percentage has no denominator and "+4" beside a bar
-    already labelled 4 is a second copy of the same number.
-
-    Plain text, not HTML: this goes into a Plotly text label, which does not
-    render markup. That also rules out colour, so direction is carried by the
-    arrow alone — which is the right call anyway at this size, where fifteen
-    coloured chips across one axis would fight the bars for attention.
-
-    Percentages on small counts are noise dressed as a trend, so the same
-    SMALL_COUNT_MAX rule the KPI cards use applies here: below it, the absolute
-    change is both truer and shorter.
-    """
-    if prior is None:
-        return ""
-    try:
-        current, prior = float(current), float(prior)
-    except (TypeError, ValueError):
-        return ""
-    change = current - prior
-    if round(change) == 0:
-        return "→ 0"
-    if prior <= 0 or prior < SMALL_COUNT_MAX:
-        return f"{'↑' if change > 0 else '↓'} {'+' if change > 0 else '−'}{fmt_int(abs(round(change)))}"
-    pct = change / prior * 100.0
-    if abs(pct) < NEUTRAL_BAND_PCT:
-        return "→"
-    return f"{'↑' if pct > 0 else '↓'} {fmt_int(abs(pct))}%"
 
 
 def render_group_breakdown(
@@ -2341,31 +2297,34 @@ def render_group_breakdown(
 
 
     # ══════════════════════════════════════════════════════════════════════════
-    # 3. METRIC PICKER + PER-AREA BAR — the selected indicator, this period
+    # 3. THE TREND — one metric over the period, one line per area
     # ══════════════════════════════════════════════════════════════════════════
-    # The pickable metrics are mostly the Key Indicators: DAILY_LOG-backed
-    # counts. Rates and rc_total are weekly-grained and can't be cut to an
-    # arbitrary period without spilling over its edges, so they aren't offered
-    # here.
+    # PLAN-2026-09-18-data-pages.md §5, step D4. Three things went here:
     #
-    # The seven Key Indicators are the exception — they live only in the weekly
-    # form, so each gets its own source instead of `rows`: WEEKLY_FORM_RAW via
-    # get_weekly_form_data(), scoped to this group's areas. Whether EACH is
-    # offered in the picker depends on the group having reported that field at
-    # least once ever — not on the currently-selected period — because the
-    # weekly form lands once a week: on "This Week" (the page's default) every
-    # week_end_date is still in the future, so a period-scoped check would make
-    # the options flicker in and out of the dropdown as Period changes, or hide
-    # the mission's top metrics entirely most days of the week. The VALUES
-    # plotted below are still cut to the period, so a period with no submitted
-    # week yet correctly renders an empty chart rather than stale numbers.
+    #   * **The Metric picker.** It drove a forty-five-bar chart and this
+    #     trend. The drill-down's "Por área" tab is the per-area view now, for
+    #     any metric, and every card and row on this page is a link into it —
+    #     so the page has one metric selector instead of two, and it is the one
+    #     the reader already taps.
+    #   * **The forty-five-bar chart.** Forty-five bars sorted by value, each
+    #     with a ghost bar and a change chip, is a ranking drawn as a picture;
+    #     the drill-down's ranked rows say the same thing in a column that also
+    #     reads on a phone, and they are links.
+    #   * **"All Metrics", the area view's own bar of every question.** Step D3
+    #     made it redundant: at area scope the nightly rows already list all
+    #     twenty with goals, sparklines and links, and the seven Key Indicators
+    #     sit above them. It was also a thirty-category Plotly bar chart with
+    #     -45° labels, which no phone has ever rendered legibly.
+    #
+    # What is left is the one thing the drill-down does NOT show: several areas'
+    # lines over the same days, where the question is which area moved and
+    # when. That only reads with a handful of lines — at mission scope it was
+    # forty-five, which is forty-five answers to a question nobody asked — so
+    # it draws at district and area scope and stands down above that.
     _weekly_keys = _weekly_metrics()
     _weekly_wk_all = get_weekly_form_data()
     if not _weekly_wk_all.empty:
         _weekly_wk_all = _scope_to_areas(_weekly_wk_all, "area", group_areas).rename(columns={"area": "Area"})
-    # Provo merged a third source in here (mmm_sent from WEEKLY_KI). CCSM has no
-    # equivalent: its WEEKLY_KI holds the same ki_* keys the weekly form already
-    # supplies, so merging it would duplicate columns rather than add any.
     # Per-metric, not one shared flag: a group can have baptisms but never
     # logged a friend with a baptismal date, or vice versa.
     _weekly_has = {
@@ -2386,173 +2345,63 @@ def render_group_breakdown(
     _weekly_wk = _weekly_wk_all
     if any(_weekly_has.values()) and p_start is not None:
         _weekly_wk = _weekly_slice(p_start, p_end)
-    # The twin, on the same source, so a weekly metric's ghost bar comes from
-    # the weekly form and a nightly one's from DAILY_LOG — never a mix.
+    # The twin, on the same source, so a weekly metric's overlay comes from the
+    # weekly form and a nightly one's from DAILY_LOG — never a mix.
     _weekly_wk_prior = (_weekly_slice(pr_start, pr_end)
                         if pr_start is not None else pd.DataFrame())
 
     _catalog = metric_options()
-    _primary = _primary_metrics()
 
-    # Same guard as the Key Indicators grid above, on the other consumer:
-    # without it `effort` and `exchanges` are pickable metrics whose every chart,
-    # total and twin comparison would be built from coerced zeros.
-    metric_keys = [
-        k for k in _catalog
-        if not is_rate_metric(k) and k not in _non_numeric and (
-            (has_rows and k in rows.columns)
-            or (k in _weekly_keys and _weekly_has.get(k, False))
-        )
-    ]
-
-    if not metric_keys:
+    # ── Which metric the trend draws ─────────────────────────────────────────
+    # The one the drill-down is open on, so a tapped card or row changes both
+    # at once and the page never shows two different metrics as its subject.
+    # With nothing open it falls to the mission's first Key Indicator, which is
+    # also the first card on the page.
+    #
+    # `effort` and `exchanges` can never be it: they hold the form's own
+    # Spanish words in DAILY_LOG ('Todo', 'TRUE') and get_daily_log() coerces
+    # every metric column to a number, so a chart of either would be built from
+    # zeros that look exactly like measured ones.
+    _trend_pool = [k for k in _catalog
+                   if not is_rate_metric(k) and k not in _non_numeric and (
+                       (has_rows and k in rows.columns)
+                       or (k in _weekly_keys and _weekly_has.get(k, False)))]
+    if not _trend_pool:
         if has_rows or any(_weekly_has.values()):
             st.info(t("No daily-log metrics available for this group yet."))
+        _render_teaching_pipeline(
+            scope_value=scope_value, kpi_period=kpi_period,
+            p_start=p_start, p_end=p_end, in_progress=in_progress, span=span,
+            rows=rows, weekly_wk=_weekly_wk, group_areas=group_areas,
+        )
         return
 
-    # The headline KIs float to the top, ahead of the rest of the catalogue —
-    # not a second copy, just a reorder of the same filtered list (a metric this
-    # group has never reported is simply absent from both).
-    metric_keys = (
-        [k for k in _primary if k in metric_keys]
-        + [k for k in metric_keys if k not in _primary]
-    )
-
-    # Default selection: the first pinned KI this group actually has data for,
-    # else the first option. Provo defaulted to "nm_lessons" by name — a metric
-    # CCSM does not collect, so that index lookup always missed and the picker
-    # silently opened on whatever happened to sort first.
-    _default_idx = next(
-        (metric_keys.index(k) for k in _primary if k in metric_keys), 0)
-
-    _m_col, _, _ = st.columns(3)
-    with _m_col:
-        metric = st.selectbox(
-            t("Metric"),
-            metric_keys,
-            index=_default_idx,
-            # The KIs get a ★ prefix so they stand out at the top — but the
-            # label stays PLAIN ASCII. st.selectbox's type-to-search matches the
-            # DISPLAYED text, so a Mathematical-Bold label (𝗣𝗼𝘁…) could never be
-            # found by typing "po".
-            format_func=lambda m: (
-                f"★ {_catalog.get(m, m)}" if m in _primary
-                else _catalog.get(m, m)
-            ),
-            key="bd_metric",
-        )
+    _open_ki = selected_ki()
+    metric = (_open_ki if _open_ki in _trend_pool
+              else next((k for k in _ki_keys_weekly if k in _trend_pool),
+                        _trend_pool[0]))
     m_label = _catalog.get(metric, metric)
     _is_weekly = metric in _weekly_keys
 
-    if _is_area:
-        # Replaces the old per-area bar (Carson, 2026-07-17: "add a bar chart
-        # that shows all the questions on the form and how many they did in
-        # the selected time period") — every metric this area is offered in
-        # the picker above (metric_keys: daily + weekly-form, rates excluded),
-        # not just whichever ONE is currently selected. Rendered here, ahead of
-        # the weekly-empty early-return below, so a stale-Sunday gap on the
-        # PICKED metric can't hide this — it doesn't read the picker at all.
-        render_section_label(t('All Metrics — {scope_value}', scope_value=scope_value))
-        st.caption(t("{span}  |  {kpi_period}  |  every question this area has ever reported, totalled for this period (daily + weekly Sunday form; rates excluded — see the Metric picker below for a single metric's trend)", span=span, kpi_period=t(kpi_period)))
-
-        _area_color = series_style(0)[0]   # one area = the trend's own hue
-        _all_vals = []
-        for _mk in metric_keys:
-            if _mk in _weekly_keys:
-                _v = (
-                    float(pd.to_numeric(_weekly_wk[_mk], errors="coerce").fillna(0).sum())
-                    if (not _weekly_wk.empty and _mk in _weekly_wk.columns) else 0.0
-                )
-            else:
-                _v = (
-                    float(pd.to_numeric(rows[_mk], errors="coerce").fillna(0).sum())
-                    if (has_rows and _mk in rows.columns) else 0.0
-                )
-            _all_vals.append(_v)
-        _all_labels = [_catalog.get(k, k) for k in metric_keys]
-
-        fig_all = go.Figure(go.Bar(
-            x=_all_labels,
-            y=_all_vals,
-            marker=dict(color=_area_color),
-            text=[f"{v:g}" for v in _all_vals],
-            textposition="outside",
-            cliponaxis=False,
-        ))
-
-        # Expectation markers — each metric's bar is a different indicator, so
-        # a full-width hline can't work here; instead a grey dash floats at
-        # the area's scaled expectation over its own bar (weekly pace × period
-        # days / 7, same scaling as the group bar's lines; none on the
-        # unbounded "All Time"). Only metrics with an expectation defined in
-        # Goals > Area Expectation Settings get one — add an expectation
-        # there and the dash appears here (Carson, 2026-07-18).
-        _exp_factor = (p_days / 7) if p_days else None
-        _exp_x, _exp_y, _exp_txt = [], [], []
-        if _exp_factor and group_areas:
-            # group_areas is a set; the area view always has exactly one.
-            _area_name = next(iter(group_areas))
-            for _mk, _lbl in zip(metric_keys, _all_labels):
-                _e = get_area_expectation_entry(_area_name, _mk)
-                if not _e:
-                    continue
-                _h = _e["weekly"] * _exp_factor
-                _exp_x.append(_lbl)
-                _exp_y.append(_h)
-                _exp_txt.append(t(
-                    "{prefix} {rate} (≈{n} this period)",
-                    prefix=t("Expectation"), rate=_expectation_rate(_e),
-                    n=f"{round(_h, 1):g}"))
-        if _exp_x:
-            fig_all.add_trace(go.Scatter(
-                x=_exp_x, y=_exp_y,
-                mode="markers",
-                marker=dict(
-                    symbol="line-ew",
-                    size=18,
-                    line=dict(width=2, color=_EXP_LINE_STYLE["color"]),
-                ),
-                text=_exp_txt,
-                hovertemplate="%{text}<extra></extra>",
-                cliponaxis=False,
-                showlegend=False,
-            ))
-
-        _all_top = max(max(_all_vals) if _all_vals else 0,
-                       max(_exp_y) if _exp_y else 0)
-        fig_all.update_layout(
-            xaxis=dict(tickangle=-45),
-            yaxis=dict(
-                title="Count",
-                range=[0, max(_all_top * 1.15, 1)],
-            ),
+    # A trend of forty-five lines is not a trend, it is a thicket; the audit's
+    # own count at mission scope. Districts hold two to four areas and the area
+    # view holds one, which is what this chart was always for.
+    if len(group_areas) > _TREND_MAX_AREAS:
+        _render_teaching_pipeline(
+            scope_value=scope_value, kpi_period=kpi_period,
+            p_start=p_start, p_end=p_end, in_progress=in_progress, span=span,
+            rows=rows, weekly_wk=_weekly_wk, group_areas=group_areas,
         )
-        chart(fig_all, height=380)
-    else:
-        render_section_label(t('{m_label} by Area — {scope_value}', m_label=m_label, scope_value=scope_value))
-        st.caption(f"{span}  |  {t(kpi_period)}"
-                   + ("  |  " + t("from the weekly Sunday form — one point per week, not per day")
-                      if metric in _weekly_keys
-                      else "  |  " + t("weekly totals — one point per week, not per day")
-                      if _is_weekly else ""))
+        return
 
     if _is_weekly and _weekly_wk.empty:
         # A real gap, not a bug: no Sunday form has landed yet for this period
-        # (e.g. "This Week" before Sunday). Skip straight past the bar/trend
-        # rather than rendering charts with nothing in them.
-        #
-        # The Teaching Pipeline still renders: it doesn't read the Metric picker,
-        # and 2 of its 4 bars come from the nightly log, which has plenty of data
-        # for this period. Bailing out of the whole function here used to take the
-        # funnel down with it — invisible on "This Week" + the default "gate"
-        # metric, i.e. the page's own default view.
+        # (e.g. "This Week" before Sunday). Skip the trend rather than drawing
+        # a chart with nothing in it — the Teaching Pipeline still renders,
+        # because two of its stages come from the nightly log.
         st.info(
             t("No weekly form submitted yet for {period} — {metric} reports "
               "once a week, on Sunday.",
-              period=t(kpi_period).lower(), metric=m_label)
-            if metric in _weekly_keys else
-            t("No weekly totals recorded yet for {period} — {metric} is "
-              "tallied once a week.",
               period=t(kpi_period).lower(), metric=m_label)
         )
         _render_teaching_pipeline(
@@ -2562,143 +2411,22 @@ def render_group_breakdown(
         )
         return
 
-    # One style per area, shared by this bar chart and the trend below so an
-    # area wears the same colour in both. Keyed by NAME off the group's sorted
-    # roster, never by position in a chart: this bar is sorted by value and the
-    # trend by name, so an index-based colour would disagree between the two and
-    # would repaint every bar whenever the ranking moved.
+    # One style per area. Keyed by NAME off the group's sorted roster, never by
+    # position in a chart, so an area wears the same colour however the lines
+    # are ordered.
     _ordered_areas = sorted(group_areas)
     _style_of = {str(a): series_style(_i) for _i, a in enumerate(_ordered_areas)}
     _fallback = series_style(0)
 
-    # The per-area bar is a group thing — for one area it would be a single bar
-    # saying nothing the Key Indicators card above doesn't. Skip it; the trend
-    # below still carries the area's own line.
-    if not _is_area:
-        by_area = (
-            (_weekly_wk if _is_weekly else rows).groupby("Area")[metric].sum().reset_index()
-            .sort_values(metric, ascending=False)
-        )
-        _bar_styles = [_style_of.get(str(a), _fallback) for a in by_area["Area"]]
-
-        # ── Movement, per area (audit C3) ────────────────────────────────────
-        # A ghost bar at each area's twin-period value, and the change written
-        # into its label. The SORT does not change: the chart still ranks by
-        # this period's value, so an area does not move on the x-axis because
-        # its past moved. This adds direction to the ranking; it does not
-        # re-rank it.
-        _prior_src = _weekly_wk_prior if _is_weekly else rows_prior
-        _prior_by_area = {}
-        if (_prior_src is not None and not _prior_src.empty
-                and metric in _prior_src.columns):
-            _pa_col = "Area" if "Area" in _prior_src.columns else "area"
-            if _pa_col in _prior_src.columns:
-                _prior_by_area = {
-                    str(k): float(v) for k, v in
-                    _prior_src.groupby(_pa_col)[metric].sum().items()
-                }
-        _prior_vals = [_prior_by_area.get(str(a)) for a in by_area["Area"]]
-        _has_ghosts = any(v is not None for v in _prior_vals)
-
-        _bar_text = []
-        for _area_name, _cur_v in zip(by_area["Area"], by_area[metric]):
-            _pv = _prior_by_area.get(str(_area_name))
-            _chip = _bar_delta_chip(float(_cur_v), _pv)
-            _bar_text.append(f"{fmt_int(_cur_v)}<br>{_chip}" if _chip
-                             else fmt_int(_cur_v))
-
-        fig_bar = go.Figure()
-        if _has_ghosts:
-            # Drawn FIRST and wider, so the current bar sits inside it and the
-            # outline reads as "where this area was" rather than as a second
-            # measurement competing for the same space.
-            fig_bar.add_trace(go.Bar(
-                x=by_area["Area"],
-                y=[0 if v is None else v for v in _prior_vals],
-                name=_twin_label(kpi_period),
-                width=0.82,
-                marker=dict(color="rgba(0,0,0,0)",
-                            line=dict(color="rgba(203,203,210,0.5)", width=1)),
-                hovertemplate="%{x}<br>%{y:.0f}<extra>" +
-                              html.escape(_twin_label(kpi_period)) + "</extra>",
-            ))
-        fig_bar.add_trace(go.Bar(
-            x=by_area["Area"],
-            y=by_area[metric],
-            name=t("This period"),
-            width=0.5 if _has_ghosts else 0.8,
-            marker=dict(
-                color=[s[0] for s in _bar_styles],
-                # Only ever non-empty past the 8th area, where hues start reusing —
-                # the pattern is what keeps those bars from reading as duplicates.
-                pattern=dict(shape=[s[2] for s in _bar_styles], fgcolor="#08080e", size=4),
-            ),
-            text=_bar_text,
-            textposition="outside",
-            # Without this an outside label on the tallest bar gets clipped by
-            # the plot area's top edge instead of drawing over it.
-            cliponaxis=False,
-        ))
-        fig_bar.update_layout(barmode="overlay")
-        fig_bar.update_layout(
-            # No in-chart title: the section label and caption above already say the
-            # metric, scope and period.
-            xaxis_title=t("Area"),
-            # A legend only once there are two series to tell apart (the ghost
-            # bars) -- charts.chart() decides that from the trace count.
-            hovermode="x unified",
-            yaxis=dict(
-                title=m_label,
-                # Headroom for the outside text label above the tallest bar —
-                # with autorange the axis fits the bar VALUES only, not the
-                # label text floating above them, so the top number still gets
-                # cut off without this (same fix as the trend chart's fixed
-                # range, and the funnel bars' *1.18/1.2 padding).
-                # 1.15 fitted a one-line label. The delta chip added a second
-                # line, and the tallest bar's number went back to being clipped.
-                range=[0, max(
-                    float(max(list(by_area[metric]) +
-                              [v for v in _prior_vals if v is not None] or [0]))
-                    * (1.24 if _has_ghosts else 1.15), 1)
-                    if not by_area.empty else 1],
-            ),
-        )
-
-        # Expectation line(s) — the same light-grey references the trend chart
-        # below draws, but scaled to the selected PERIOD since these bars are
-        # period totals: expected = weekly pace × (period days / 7). "All
-        # Time" is unbounded, so there's no period total to expect — no line
-        # (same rule as the KPI cards' "no goal for unbounded history").
-        _exp_factor = (p_days / 7) if p_days else None
-        if _exp_factor:
-            _paces = _expectation_paces(group_areas, metric)
-            _multi = len(_paces) > 1
-            _bar_top = float(by_area[metric].max()) if not by_area.empty else 0.0
-            for _p in sorted(_paces):
-                _entry, _cats = _paces[_p]
-                _h = _p * _exp_factor
-                _bar_top = max(_bar_top, _h)
-                fig_bar.add_hline(
-                    y=_h,
-                    line=_EXP_LINE_STYLE,
-                    annotation_text=t(
-                        "{prefix} {rate} (≈{n} this period)",
-                        prefix=_expectation_prefix(_cats, _multi),
-                        rate=_expectation_rate(_entry), n=f"{round(_h, 1):g}"),
-                    annotation_position="top left",
-                    annotation=dict(_EXP_ANNOTATION),
-                )
-            if _paces:
-                # The fixed range above only fit the bars — lift it when the
-                # tallest expectation line would clip off the top.
-                fig_bar.update_layout(yaxis=dict(range=[0, max(_bar_top * 1.15, 1)]))
-
-        chart(fig_bar, height=360)
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # 4. TREND — the same metric over the same period, one line per area
-    # ══════════════════════════════════════════════════════════════════════════
-    render_section_label(t('{m_label} Trend — {scope_value}', m_label=m_label, scope_value=scope_value))
+    render_section_label(
+        t('{m_label} Trend — {scope_value}', m_label=m_label,
+          scope_value=scope_value),
+        right=t('{n} areas · {span}', n=fmt_int(len(group_areas)), span=span),
+        info=t("The metric the drill-down above is open on, day by day for "
+               "each area in this scope. It draws at district and area "
+               "scope only: a line per area is a way of asking which area "
+               "moved and when, and forty-five of them answer nobody. Tap "
+               "any card or row on this page to change the metric."))
 
     # A plain Streamlit button, not a chart control: a click just reruns the
     # script, and the trend below is rebuilt fresh every rerun anyway (fixed

@@ -1,14 +1,16 @@
-"""Movement on the two charts — audit items C2 and C3.
+"""Movement on the trend — audit item C2.
 
-Both charts showed state and no direction. The per-area bar ranked areas by
-this period's value; the trend drew one line per area. Neither could answer "is
-this zone climbing", and the trend could not answer "how is the zone doing" at
-all — fifteen area lines are fifteen answers to "which area", which is a
-different question.
+The trend drew one line per area and could not answer "how is the zone doing"
+at all: fifteen area lines are fifteen answers to "which area", which is a
+different question. C2 adds two traces: the group's own bold total, and the
+twin behind it, dimmed.
 
-C3 adds a ghost bar at each area's twin value plus the change in its label. C2
-adds two traces to the trend: the group's own bold total, and the twin behind
-it, dimmed.
+The per-area BAR this file also covered — forty-five bars, each with a ghost at
+its twin value and a change chip in its label (audit C3) — was deleted at plan
+step D4, along with `_bar_delta_chip` that wrote those chips. The drill-down's
+"Por área" tab is the per-area view now, its rows carry the change through
+`charts.change_text`, and the eight chip tests moved to `tests/test_charts.py`
+with it. What stays here is `_bucketed_totals`, which is the trend's own.
 
 The one thing worth stating twice, because it is the design and not an
 implementation detail: the twin overlay is aligned by BUCKET INDEX, not by
@@ -24,50 +26,7 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from app.breakdowns_engine import _bar_delta_chip, _bucketed_totals
-
-
-# ── _bar_delta_chip: one area's movement, under its bar ──────────────────────
-
-def test_a_rise_on_a_large_base_reads_as_a_percentage():
-    assert _bar_delta_chip(150, 100) == "↑ 50%"
-
-
-def test_a_fall_on_a_large_base_reads_as_a_percentage():
-    assert _bar_delta_chip(60, 100) == "↓ 40%"
-
-
-def test_a_small_base_reads_as_an_absolute_change():
-    """Baptismal dates going 3 to 5 is "+2", not "+67%". Same SMALL_COUNT_MAX
-    rule the KPI cards use, and for the same reason: a percentage on a small
-    count is noise dressed as a trend."""
-    assert _bar_delta_chip(5, 3) == "↑ +2"
-
-
-def test_a_move_inside_the_neutral_band_is_flat():
-    """Week-to-week noise across 43 areas is comfortably 3-4%. Drawing an arrow
-    on a 2% wobble teaches the reader to ignore the arrows."""
-    assert _bar_delta_chip(102, 100) == "→"
-
-
-def test_an_identical_value_is_flat_and_says_zero():
-    assert _bar_delta_chip(100, 100) == "→ 0"
-
-
-def test_an_area_with_no_twin_value_gets_no_chip():
-    """A missing twin is not a twin of zero. An area that did not exist last
-    transfer must not be shown as having grown from nothing."""
-    assert _bar_delta_chip(40, None) == ""
-
-
-def test_a_rise_from_zero_shows_the_count_not_a_percentage():
-    """There is no denominator to take a percentage of, and "+4" is the whole
-    of what can honestly be said."""
-    assert _bar_delta_chip(4, 0) == "↑ +4"
-
-
-def test_a_chip_never_raises_on_junk():
-    assert _bar_delta_chip("—", 10) == ""
+from app.breakdowns_engine import _bucketed_totals
 
 
 # ── _bucketed_totals: the twin line behind the group's own ───────────────────

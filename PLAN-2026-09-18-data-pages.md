@@ -950,3 +950,44 @@ landed in the same push).
   **Worth not re-deriving:** two `navigate` calls to the same URL in quick
   succession leave the previous render in the DOM, and every count on the page
   reads double. It is the reader, not the page.
+- 2026-09-19 — **D4 landed.** Three things went, and the page is FIVE sections
+  at mission scope. (1) **The Metric picker** — it drove the bar wall and the
+  trend, and the drill-down's "Por área" tab is the per-area view now for any
+  metric, KI or nightly; the page has one metric selector instead of two, and
+  it is the one every card and row already links to. (2) **The forty-five-bar
+  chart and its ghost logic** — a ranking drawn as a picture, where the
+  drill-down's ranked rows say the same thing in a column that reads on a
+  phone and links out. (3) **"All Metrics", the area view's bar of every
+  question** — the plan does not name it, and step D3 made it redundant: at
+  area scope the nightly rows already list all twenty with goals, sparklines
+  and links, and the seven Key Indicators sit above them. It was also a
+  thirty-category Plotly bar with -45° labels, which no phone has rendered
+  legibly. Mid-build decisions: (a) **the trend follows `?ki=`** rather than
+  keeping a picker of its own — a tapped card or row changes the drill-down
+  and the trend together, so the page never shows two metrics as its subject;
+  with nothing open it draws the first Key Indicator, which is also the first
+  card on the page, and its ⓘ says how to change it; (b) `_TREND_MAX_AREAS = 8`
+  is a module constant with the reasoning beside it, and above it the section
+  does not render at all — no empty heading, no "too many areas" notice, the
+  drill-down IS the per-area view; (c) `_isolating_trend_chart` KEEPS its
+  component iframe (the legend-click isolate is Carson's and the plan says to
+  retain it) but now calls `charts.apply_layout` instead of restating the dark
+  theme by hand — a template applied to a figure is serialised by `to_html`,
+  so the chart arrives dressed, and the legend sits below the plot like every
+  other chart in the app. `_bar_delta_chip` and `_primary_metrics` are deleted
+  as dead. `tests/test_breakdowns_chart_movement.py` keeps its `_bucketed_totals`
+  half and its eight chip tests moved to `tests/test_charts.py` against
+  `charts.change_text`, which is what draws a row's change now — same rules,
+  exercised through the `period_delta` result that decides them, plus one new
+  one for the amber-not-red tier. Verified live at 1400px: mission scope is
+  Indicadores clave · Actividad diaria · Proceso de enseñanza · the two
+  compliance calendars, with no picker and no trend; district scope (Purén y
+  Los Sauces, 3 areas) draws the trend with three area lines, the group total
+  on its own axis, the expectation line and the legend below; `?ki=friend_lessons`
+  retitles it "Tendencia de Lecciones con Amigos"; area scope (Huequen) keeps
+  the trend and has lost "Todas las métricas". 375px: zero sideways scroll.
+  Suite **11 failed / 1176 passed** (the same 11; the count moved because
+  eight chip tests changed file and gained one).
+  **Worth not re-deriving:** a screenshot taken within a second of the trend's
+  iframe appearing catches plotly mid-resize and the chart looks a third of its
+  width. Measure `_fullLayout.width` before believing it.

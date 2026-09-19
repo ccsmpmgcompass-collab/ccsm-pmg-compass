@@ -399,3 +399,65 @@ def test_spark_multiples_escapes_its_labels():
 
     html = spark_multiples({"<img src=x onerror=alert(1)>": [1, 2]})
     assert "<img" not in html
+
+
+# ── change_text: one area's movement, in the shape a ranked row takes ────────
+# These eight came from tests/test_breakdowns_chart_movement.py, where they
+# covered `_bar_delta_chip` — the plain-text chip under a bar in the
+# forty-five-bar wall that plan step D4 deleted. The rules did not change, only
+# where they are applied: a ranked row's change column, on the Panel, on
+# Desgloses and inside the drill-down. change_text takes a period_delta result
+# rather than two bare numbers, so the rules about small counts and the neutral
+# band are exercised through the function that decides them.
+
+def _delta(current, prior, basis=1):
+    from app.analytics.period_delta import period_delta
+    return period_delta(current, prior, current_basis=basis, prior_basis=basis,
+                        min_basis=1)
+
+
+def test_a_rise_on_a_large_base_reads_as_a_percentage():
+    text, color = charts.change_text(_delta(150, 100))
+    assert text == "↑ 50%" and color == STATUS["good"]
+
+
+def test_a_fall_on_a_large_base_reads_as_a_percentage():
+    text, color = charts.change_text(_delta(60, 100))
+    assert text == "↓ 40%"
+    assert color == STATUS["bad"]          # -40% is severe, not a wobble
+
+
+def test_a_mild_fall_is_amber_not_red():
+    """Spending red on an 8% dip teaches the reader to ignore red."""
+    _text, color = charts.change_text(_delta(92, 100))
+    assert color == STATUS["warn"]
+
+
+def test_a_small_base_reads_as_an_absolute_change():
+    """Baptismal dates going 3 to 5 is "+2", not "+67%" — a percentage on a
+    small count is noise dressed as a trend."""
+    assert charts.change_text(_delta(5, 3))[0] == "↑ +2"
+
+
+def test_a_move_inside_the_neutral_band_is_flat_and_grey():
+    """Week-to-week noise across 43 areas is comfortably 3-4%. An arrow on a
+    2% wobble teaches the reader to ignore the arrows."""
+    text, color = charts.change_text(_delta(102, 100))
+    assert text.startswith("→") and color == charts.MUTED
+
+
+def test_no_change_at_all_means_no_chip():
+    """A missing twin is not a twin of zero: an area that did not exist last
+    transfer must not be shown as having grown from nothing."""
+    assert charts.change_text(None) == ("", charts.MUTED)
+    assert charts.change_text({}) == ("", charts.MUTED)
+
+
+def test_a_rise_from_zero_shows_the_count_not_a_percentage():
+    """There is no denominator to take a percentage of, and "+4" is the whole
+    of what can honestly be said."""
+    assert charts.change_text(_delta(4, 0))[0] == "↑ +4"
+
+
+def test_a_change_with_neither_a_percentage_nor_a_count_is_silent():
+    assert charts.change_text({"direction": 1, "pct": None, "show": "percent"}) == ("", charts.MUTED)
