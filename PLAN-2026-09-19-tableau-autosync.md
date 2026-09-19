@@ -193,15 +193,47 @@ at https://github.com/ccsmpmgcompass-collab/ccsm-pmg-compass/settings/secrets/ac
 plus `GITHUB_ACTIONS_TOKEN` present in the **deployed** Streamlit secrets
 (it is in local `dashboard/.streamlit/secrets.toml`), unexpired, `workflow` scope.
 
-### 2.2 — Selectors are the known failure mode
+### 2.2 — The live page, inspected 2026-09-19
 
-`imos_portal.py:8` states its own selectors "have not yet been verified against
-the live portal", and that runner has never completed a live login. **Writing a
-second scraper the same way would repeat the same failure.** Before the runner is
-written, the live page's structure is to be read through Zackary's authenticated
-browser — login fields, the date-filter control, the Download menu — so the
-selectors are written against what is actually there. Read-only; nothing
-submitted, downloaded or changed. **Zackary confirms this explicitly first.**
+Read through Zackary's authenticated Chrome with his explicit consent;
+read-only, nothing clicked, submitted or downloaded. `imos_portal.py:8` admits
+its own selectors were never verified and that runner has never completed a
+live login — this pass exists so Track B does not repeat it. What it found
+makes the runner *simpler* than planned, not harder.
+
+**The date window is a URL parameter.** Verified live: loading the view with
+`?Start%20Date=2026-09-01&End%20Date=2026-09-19` applied the filter — the page
+rendered `Start Date 9/1/2026`, `End Date 9/19/2026`,
+`Total People Baptized 19`. ISO dates are accepted though the control displays
+`M/D/YYYY`.
+
+**This removes canvas interaction from the runner entirely**, which turns out
+to have been essential rather than merely convenient: the viz renders inside a
+same-origin iframe as `canvas.tabCanvas` elements, and **the filter cards are
+not in the DOM at all**. Only the toolbar is. A runner driving the date filter
+by selector could never have worked, and driving it by pixel coordinate would
+have been worse than the drift this plan set out to avoid.
+
+So the runner is: navigate with parameters → click one stable toolbar button →
+take the file. The selectors are Tableau's own `data-tb-test-id` hooks —
+`viz-viewer-toolbar-button-download`, with `-subscribe`,
+`-manage-customviews`, `-refresh` and `-share` alongside it.
+
+**The workbook.** Site `churchofjesuschrist`, id **2388991**. Five sheets; the
+view URL name is the title with spaces stripped — `MissionFindingSummary`,
+`MissionFindingRankingList`, `MissionFindingComparison`,
+`MissionFindingDetail`, `Definitions`.
+
+Filters on the Summary: **Start Date** and **End Date** (typed parameters),
+Finding Category, Finding Source, Area (`South America South Area`),
+**Mission** (`Chile Concepción South`), Zone, District, Teaching Area. The
+Mission filter is already scoped right, but the runner **sets it explicitly
+rather than trusting a saved default** — a default that silently changes is
+how a mission-wide export quietly becomes an area-wide one.
+
+**The source refreshes daily**, stamping `Data Last Updated: 9/18/2026
+12:55 PM` when read on 2026-09-19. Reporting lag is about a day, and that is
+what justifies §2.4's nightly cadence over anything slower.
 
 ### 2.3 — Two hard constraints on the runner
 
@@ -222,12 +254,23 @@ two cannot drift. Each run re-pulls the **current and previous month** so that
 late-entered records land — the single biggest accuracy gain over the manual
 process, which captures a month once and never revisits it.
 
-### 2.5 — The open unknown
+### 2.5 — The open unknown, resolved
 
-Tableau documents `/data` as returning **summary-level data only**. Whether the
-person-level Detail export (89,824 × 14) comes through depends on how that sheet
-is built. Moot while Track B is a browser scraper driving the real Download
-menu; it decides the shape of the REST runner if PATs are ever enabled.
+Tableau documents `/data` as returning **summary-level data only**, which left
+it unclear whether the person-level Detail export (89,824 × 14) could come
+through. **It can.** Mission Finding Detail is a person-level sheet — "All
+person records are tied to the first instance of the selected event or cohort
+per person" — so its summary data *is* the person rows. Moot while Track B
+drives the real Download menu, but it means the REST runner is viable the day
+PATs are enabled.
+
+### 2.6 — Noted for backlog Step 4
+
+The view carries a **'By Cohort' vs 'By Event Date'** toggle at source. That is
+the feature `PLAN-2026-09-05-backlog.md` Step 4 calls the largest remaining
+piece of value, and it does not have to be computed from Detail after all —
+Tableau already offers it, and a runner setting that parameter could capture
+both framings.
 
 ---
 
