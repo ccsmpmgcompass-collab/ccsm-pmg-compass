@@ -734,3 +734,79 @@ landed in the same push).
   tests. Not done, and left where the plan left them: the rankings' two
   "what is on screen" captions (they depend on the fold, which is only known
   after the list is built) and the "Esfuerzo por área" expander's own note.
+
+- 2026-09-19 — **E1 + E2 landed** (`5d012a3`), the first of Phase E, run
+  ahead of Phase D on Zackary's word (E depends only on A). A freshness strip
+  leads the page: the export's span, who loaded it and its age, muted inside a
+  week and amber past one — live it reads *"datos del 1 de ene de 2024 al 3 de
+  ago de 2026 · Cargado por backfill:tableau-detail · 2026-08-23 00:13 UTC ·
+  47 días de antigüedad"*. Every preset counts back from the export's last
+  date and never from today, so the labels say so ("Últimos 30 días de la
+  exportación"); the row is full width, because at those longer labels the old
+  3:2 split wrapped five presets onto **three lines at 1400px**, and the custom
+  date boxes moved to their own row. The indigo "📅 … · 30 days" chip is gone —
+  it restated the chosen preset and its day count was the one string on this
+  page that never went through `t()`; the window is the scoreboard heading's
+  `right=` now. E2: the six KPIs get "Resumen de búsqueda" with the
+  whole-calendar-months rule as its ⓘ, and the card's note stops being an
+  instruction. Decisions: (a) `PRESET_LABELS`, `EXPORT_FRESH_DAYS`,
+  `export_age_days` and `export_is_stale` went into
+  `app/analytics/finding_funnel.py`, not the page — the vocabulary and the
+  staleness rule are facts about the export and are now unit-tested; (b) the
+  freshness threshold is **more than** seven days, so a Monday pull still
+  reads fresh on Friday. `tests/test_finding_funnel.py` +7.
+- 2026-09-19 — **E3 + E4 landed** (`9a74a2f`). The Plotly funnel is
+  `charts.stage_bars` (seven rows, one hue, the step conversion between them)
+  and **the step that loses the most people is named on the chart** — live,
+  2.545 recibiendo lecciones → 167 que asistieron a la Iglesia, "↓ 7% · mayor
+  caída". That highlight is the largest ABSOLUTE fall, not the lowest rate:
+  the lowest rate on this export is the 4% from 68 fechas fijadas to 3
+  bautizados, which costs 65 people against 2.378, and pointing at it would be
+  wrong. The two captions under the funnel — the inheritance rule and the
+  six-line tracked-vs-certified one — are the section's ⓘ. The donut is
+  `charts.share_bar`, one 100% stacked bar with the four categories in
+  `SERIES_COLORS` identity hues and a legend carrying count and share; 430px +
+  400px of chart became **284px + 59px**. E4: both horizontal bar charts
+  (audit E2 — a 10px left margin clipped every category name to about two
+  letters, in charts whose entire content is names) are `charts.ranked_list`,
+  with the share on each source and "Zona piloto" under the four
+  `AGENT_CONFIG.PILOT_ZONES`. Decisions: (a) the plan's "pilot zone dot" is a
+  `sub` line instead — the row's dot is the grading colour, and tinting four
+  zones green would read as "on pace"; (b) a stage label **wraps** rather than
+  ellipsising, because at 375px the label column is 115px and "Fecha de
+  Bautismo Fijada" needs 137; (c) `ranked_list` gained a `title` on the name,
+  so a name too wide for a narrow column is still readable on hover — that is
+  what E4 means by "full labels". `tests/test_charts.py` +11 (44).
+- 2026-09-19 — **E5 + E6 landed** (`fc002ee`). **PHASE E IS COMPLETE.**
+  The trend is seven-day blocks with the previous equal-length window behind
+  them as ghosts, through the same `bars_vs_goal` the drill-down uses (no
+  goal, so no goal line): live 206 · 1.213 · 1.025 · 1.088 · 879 for 5 Jul –
+  3 Aug against 5 Jun – 4 Jul. The blocks come from the WINDOW and are counted
+  BACK FROM ITS END, and both halves are load-bearing — back from the end so
+  the newest block is always a whole week and any short one is the oldest
+  (counted forward, a 30-day window ends on a 2-day stub that reads as a
+  collapse); from the window rather than the calendar so the previous window
+  buckets identically and the ghosts compare bar for bar. Ghosts are drawn
+  only when the export reaches back that far, and the ⓘ says when it does not.
+  `window_buckets` / `bucket_counts` / `previous_window` are new;
+  `trend_series` takes an optional window and is unchanged without one.
+  E6: five expanders under "DATOS DETALLADOS" are one "Datos y carga"
+  expander with the four readings behind `st.pills`, nothing selected by
+  default. **The uploaders are deliberately NOT behind a pill** — Streamlit
+  drops a widget's session state the moment the widget stops rendering, and
+  this page reads `st.session_state["detail"]/["ranking"]/["summary"] ` at the
+  top of the script, so a pill that un-rendered them would throw away a
+  just-uploaded file; they sit under the pills' output, always drawn.
+  `st.expander` cannot nest, which is why this is pills and not five
+  expanders inside one. `plotly.graph_objects` is no longer imported by the
+  page: every figure on it goes through `charts.py`.
+  **Acceptance met:** at 1400px the page is **2.9 screens** (it was six),
+  **zero sideways scroll at 375px**, no `st.plotly_chart` outside
+  `charts.chart`, no exceptions on any pill. Suite **11 failed / 1161
+  passed** — the same 11 as after Phase C. `tests/test_finding_funnel.py` +10
+  (43).
+  **Noted, not fixed** (pre-existing, and outside E1–E6): the area-rankings
+  table's column headers go through `t()` but have no `es.py` entries, so
+  they render REFERRED / CONTACT % / CONTACTED % / TEACHING / CHURCH / BAP
+  DATE in English on the Spanish interface. Six dictionary entries whenever
+  someone wants them.
