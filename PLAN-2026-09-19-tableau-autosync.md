@@ -425,3 +425,14 @@ control that changes the answer. `tests/test_embudo_cloud_sync_button.py` now
 presses the button with dispatch and polling faked, and was confirmed to fail
 with exactly the live exception before the fix.
 
+**Run 4, after the fix (17:33 UTC).** Pressed again on the deployed app, which
+had picked the push up on its own with no reboot. The status box now renders,
+polls, and lands on
+
+> **Failed** — `CCSM_TABLEAU_USERNAME/CCSM_TABLEAU_PASSWORD not set — aborting.`
+> (1:20 transcurrido) · *El trabajo en la nube falló: Exit code 1: …*
+
+So the whole reporting chain is now proven end to end in Spanish: button →
+dispatch → Actions → the runner's own refusal → `CLOUD_JOB_STATUS` → polled →
+shown. **The only thing still missing is the two secrets.** Once they are on the
+repo, the next run is the first that reaches Tableau at all.
