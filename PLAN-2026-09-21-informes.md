@@ -409,3 +409,65 @@ short audit of their own before anything is changed.
   basis still changes the answer, though — `contacts_attempted`'s 09-06→09-13
   step reads **+19.3% per active area and +2.6% per reporting area** — so R4
   must choose the change basis deliberately and say which it used.
+- **2026-09-21** — **R3 landed.** `app/reports/model.py`: `ReportModel`,
+  `MetricRow`, `NightlyCoverage`, `load_data`, `build_report`, `build_all`. The
+  whole §2 contract is declared; R4's fields default empty so the shape never
+  changes under the renderers. Tests: `test_report_model_ki.py` (26). Suite
+  **11 failed / 1373 passed** — the same 11. Verified live: the four levels
+  against CCSM, 63 models in 3.3s from one load, nightly coverage **456 de 630
+  (72%)** matching §1.2 exactly. Decisions made mid-build:
+  (a) **Loading is split from building.** `load_data()` reads every source
+  once; `build_report` is pure over the `ReportData` it returns. The packet's
+  63 scopes cannot each re-read the sheet inside what §2 calls a pure layer.
+  Two dependencies are injected rather than imported — `ki_goals_fn` (queries'
+  W-7 lookup, which keeps its one home) and `transfer_goals`, the whole
+  AREA_TRANSFER_GOALS tab via a new `goals_queries.all_area_transfer_goals()`.
+  That is what makes the model testable with no sheet at all.
+  (b) **Three bases, each named and each carried beside the count it was
+  divided by.** `actual` is the headline (decision 12) and is never compared;
+  `per_active_area_week` is decision 12's cross-UNIT basis, where a zone whose
+  areas go silent ranks lower on purpose (`zone_comparison`'s standing rule);
+  `per_reporting_area_week` is what attainment and CHANGE are computed on.
+  **This settles R2's open question (f)**: the change basis is per reporting
+  area, because it is the only one where a swing in how many areas filed
+  cannot masquerade as work.
+  (c) **The companionship goal's divisor is every area-week that FILED the
+  source form — not `meta_set_by`.** Found by running it live: 2 areas of 39
+  wrote a baptism goal of 2 each, and dividing by those 2 read the mission as
+  aiming at 2 baptisms per area per week, which flagged the goal unusable at
+  0.8%. Dividing by the 68 area-weeks that filed gives 26.2% and no flag. A
+  blank meta is a commitment to nothing and belongs in the denominator;
+  `meta_set_by` is a caption and never arithmetic.
+  (d) **Nightly coverage stops at `compliance_anchor_date`**, not at the
+  period's end. Without it a packet built on a Monday morning counted 45
+  unfiled reports for a day that had barely started — 456 of 675 instead of
+  456 of 630.
+  (e) **The compliance headline is the area-WEEK rate over a multi-week
+  period** ("63 de 90 informes semanales (70%)"), not the count of areas that
+  filed at least once. 39 of 45 areas touched this transfer's two weeks; only
+  27 filed the second of them, and "39 de 45" would hide that. A single-week
+  period keeps the plain count, which is the sentence a person would say.
+  (f) A goal nobody wrote a number in, on a form areas DID file, reads **0 and
+  ungraded** — a real commitment to nothing, distinct from a missing goal.
+  (g) **The scope's areas are passed to `get_ki_goals_for_week` at every level,
+  the mission included.** The old page passed them only when scoped, so five
+  off-roster names in WEEKLY_FORM_RAW (Collipulli, Galvarino, Los Sauces,
+  Villa Obispo, Huepil & Tucapel & Villa Obispo) fed the mission's goal totals.
+  (h) `metric_catalog.strip_form_suffix` made public: the report needs the
+  mission's own Spanish names without the form's "(Real)" tail and cannot call
+  `ki_short_label`, which translates through Streamlit session state.
+  **For R5/P, measured and not to be re-derived:**
+  - The two KI sources differ **by design**. `get_weekly_ki` is roster-filtered
+    by `CCSM_Agent5A.gs` and lags the raw form by a few areas in the newest
+    week (36 vs 39 for 2026-09-13); the form parse carries the five off-roster
+    names above. Actuals come from the first, goals from the second, and they
+    are only ever compared as rates.
+  - At mission scope the DEFAULT comparison pill prints **−63.9%** on new
+    people, computed off the single area-week 2026-5's first two weeks hold.
+    `comparison_coverage.thin` is True there. Decision 6 says show it with its
+    coverage stated, so R5 renders the thin marker — it does not suppress the
+    number, and it must not present it bare either.
+  - **A real finding for the council**: `ki_friends_first_week_real` is flagged
+    `meta no utilizable: demasiado alta` at mission scope — 12 achieved against
+    a stated goal of 81 across the transfer's two weeks, 15.5%. It is the only
+    one of the seven that flags.

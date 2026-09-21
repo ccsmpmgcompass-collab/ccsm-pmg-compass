@@ -347,7 +347,18 @@ def ki_short_label(key: str) -> str:
     short = KI_SHORT_LABELS.get(str(key))
     if short:
         return t(short)
-    label = format_metric_label(str(key))
+    return strip_form_suffix(format_metric_label(str(key)))
+
+
+def strip_form_suffix(label: str) -> str:
+    """A catalogue label without the form's "(Real)" / "(Meta)" tail.
+
+    That suffix tells the Real column from the Meta column ON THE FORM, where
+    both are asked. Beside a single number it means nothing. Public because the
+    Informes report needs the mission's own Spanish names without it and cannot
+    call `ki_short_label`, which translates through Streamlit session state.
+    """
+    label = str(label)
     for suffix in _FORM_SUFFIXES:
         if label.endswith(suffix):
             return label[: -len(suffix)]

@@ -153,6 +153,26 @@ def get_area_transfer_goals(transfer_start) -> pd.DataFrame:
     return df
 
 
+def all_area_transfer_goals() -> pd.DataFrame:
+    """Every saved row, every cycle — metric columns coerced to numbers.
+
+    `get_area_transfer_goals` is this, cut to one cycle. Added for the Informes
+    packet, which builds 63 scopes over one or two cycles and must read the tab
+    ONCE: a per-scope call would filter the same frame sixty-three times inside
+    what is otherwise a pure model layer.
+    """
+    df = _read()
+    if df.empty:
+        return pd.DataFrame(columns=_cols())
+    df = df.copy()
+    for c in _metric_cols():
+        df[c] = (pd.to_numeric(df[c], errors="coerce").fillna(0)
+                 if c in df.columns else 0)
+    df["area"] = df["area"].astype(str).str.strip()
+    df["transfer_start"] = df["transfer_start"].astype(str).str.strip().str[:10]
+    return df
+
+
 def get_area_transfer_goal(area: str, transfer_start) -> dict | None:
     """One area's goals for one cycle, or None if it has not set any."""
     key = _norm_start(transfer_start)
