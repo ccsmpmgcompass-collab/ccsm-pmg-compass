@@ -269,7 +269,7 @@ def test_the_compliance_headline_does_not_flatter(data, period):
     m = _report(data, period)
     assert len(m.areas_reporting) == 4
     assert m.compliance_label == "5 de 10 informes semanales (50%)"
-    assert m.subtitle == ("2026-6 · semana 2 de 6 · "
+    assert m.subtitle == ("2026-6 · 2 de 6 semanas completas · "
                           "5 de 10 informes semanales (50%)")
 
 

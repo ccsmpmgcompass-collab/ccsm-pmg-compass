@@ -30,9 +30,10 @@ import streamlit as st
 from app.auth.auth import require_auth
 from app.components.charts import ranked_list, spark_multiples
 from app.components.design_system import (
-    render_kpi_row, render_page_header, render_section_label,
-    render_section_tabs,
+    render_companionship_card, render_kpi_row, render_page_header,
+    render_section_label, render_section_tabs,
 )
+from app.components.ki_drilldown import ki_href, render_ki_drilldown
 from app.components.scope_selector import ANY, render_scope_selectors
 from app.i18n.formats import NA, fmt_int, fmt_number, fmt_percent
 from app.reports import model as M
@@ -120,7 +121,25 @@ _model = M.build_report(_scope, _period, _comparison, _data)
 # rather than present-and-dead: a disabled control in a council is a promise
 # nobody made.
 
+#: What a drill-down link has to carry to come back to this unit.
+_SCOPE_PARAMS = {
+    "rep_zone": _scope.zone or "",
+    "rep_district": _scope.district or "",
+    "rep_area": _scope.name if _scope.level == S.AREA else "",
+}
+
 st.caption(f"{_model.scope.name} · {_model.subtitle}")
+
+# ── The companionship, when the unit IS one (decisión 27) ────────────────────
+#
+# One companionship per area, so the area view is the companionship view and
+# has their names on it. Per-missionary history is explicitly out of scope.
+if _scope.level == S.AREA:
+    _row = _data.roster[
+        _data.roster["Area_Name"].astype(str).str.strip() == _scope.name]
+    if not _row.empty:
+        render_companionship_card(_row.iloc[0], zone=_scope.zone or "",
+                                  district=_scope.district or "")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -164,7 +183,9 @@ def _ki_cards() -> list[dict]:
         card = {
             "label": row.label,
             "value": row.actual if row.actual is not None else 0,
-            "href": f"?ki={row.key}",
+            # The link carries this page's scope so the full reload it causes
+            # lands back on the same unit (`scope_selector.SCOPE_PARAMS`).
+            "href": ki_href(row.key, _SCOPE_PARAMS),
         }
         if row.meta:
             card["goal"] = row.meta
@@ -201,6 +222,32 @@ def _change_cell(row) -> str:
         return NA
     arrow = {"good": "↑", "bad": "↓"}.get(row.grade.status, "→")
     return f"{arrow} {fmt_percent(abs(row.grade.change_pct))}"
+
+
+def _ranked_units(units) -> str:
+    """Child units or areas as ranked rows, weakest first.
+
+    One function for both tables so a zone's districts and a zone's areas read
+    identically. Every cell is attainment per ACTIVE area — the same basis as
+    the headline beside it, so a row's cells average to its own value.
+    """
+    return ranked_list([{
+        "name": c.name,
+        "rank": c.rank,
+        "sub": (f"{c.coverage.label} · "
+                f"{fmt_percent((c.coverage.reporting_rate or 0) * 100)} de "
+                f"los informes"
+                + (f" · {fmt_int(len(c.areas_silent))} sin informar"
+                   if c.areas_silent else "")),
+        "value": c.mean_attainment,
+        "bar": c.mean_attainment,
+        "cells": [_pct(next((m.attainment_per_active_area
+                             for m in c.metrics if m.key == r.key), None))
+                  for r in _model.key_indicators],
+    } for c in units],
+        value_fmt=lambda v: NA if v is None else fmt_percent(v),
+        columns=[(r.label[:14], r.label) for r in _model.key_indicators],
+    )
 
 
 def _nightly_rows(rows) -> str:
@@ -268,6 +315,11 @@ else:
     render_kpi_row(_ki_cards())
     st.caption(_comparison_note())
 
+# The same drill-down Panel and Desgloses open (decisión 28), on this page's
+# own scope. It owns the metric; this page owns which areas.
+render_ki_drilldown("scope", _model.scope.name, _model.scope.areas,
+                    key="rep_ki")
+
 
 # ── 2 · Semana a semana ───────────────────────────────────────────────────────
 
@@ -311,29 +363,37 @@ if _model.children and _child_label:
               "nada medido queda al final, no al principio: no es la más "
               "débil, es la que no sabemos."),
     )
-    _cols = [(r.label[:14], r.label) for r in _model.key_indicators]
-    st.markdown(
-        ranked_list([{
-            "name": c.name,
-            "rank": c.rank,
-            "sub": (f"{c.coverage.label} · "
-                    f"{fmt_percent((c.coverage.reporting_rate or 0) * 100)} de "
-                    f"los informes"
-                    + (f" · {fmt_int(len(c.areas_silent))} sin informar"
-                       if c.areas_silent else "")),
-            "value": c.mean_attainment,
-            "bar": c.mean_attainment,
-            # Per ACTIVE area, like the headline beside them — `grade.pct` is
-            # the unit's own reading on whoever filed, and a row whose cells
-            # do not average to its own value is a table nobody can read.
-            "cells": [_pct(next((m.attainment_per_active_area
-                                 for m in c.metrics if m.key == r.key), None))
-                      for r in _model.key_indicators],
-        } for c in _model.children],
-            value_fmt=lambda v: NA if v is None else fmt_percent(v),
-            columns=_cols),
-        unsafe_allow_html=True,
+    st.markdown(_ranked_units(_model.children), unsafe_allow_html=True)
+
+
+# ── 3b · Su fortaleza · Para crecer ──────────────────────────────────────────
+
+if _model.strengths or _model.growth:
+    render_section_label(
+        "Su fortaleza · Para crecer", right=_model.period.label,
+        info=("Lo eligen los agentes de Apps Script y queda escrito en "
+              "WEEKLY_BREAKDOWNS semana a semana; esta página lo LEE, no lo "
+              "vuelve a calcular. Si se recalculara aquí, la compañía leería "
+              "una cosa en su correo y otra en esta pantalla."),
     )
+    render_kpi_row(
+        [{"label": "Su fortaleza", "value": _s} for _s in _model.strengths]
+        + ([{"label": "Para crecer", "value": _model.growth}]
+           if _model.growth else [])
+    )
+
+
+# ── 3c · Todas las áreas ─────────────────────────────────────────────────────
+
+if _model.areas_ranked:
+    render_section_label(
+        "Todas las áreas", right=f"{fmt_int(len(_model.areas_ranked))} áreas",
+        info=("Cada área de la unidad, de la más débil a la más fuerte. Sin "
+              "cortes: aparecen todas, aunque en la misión sean cuarenta y "
+              "cinco — por eso van detrás de un cajón y no en la página."),
+    )
+    with st.expander(f"Ver las {fmt_int(len(_model.areas_ranked))} áreas"):
+        st.markdown(_ranked_units(_model.areas_ranked), unsafe_allow_html=True)
 
 
 # ── 4 · Trabajo nocturno ──────────────────────────────────────────────────────

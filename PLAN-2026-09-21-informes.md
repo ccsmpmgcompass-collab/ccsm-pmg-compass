@@ -578,3 +578,40 @@ short audit of their own before anything is changed.
   week behind WEEKLY_KI's 09-20, so on "Semana pasada" the effort score and the
   strength/growth lines read "—" for the whole mission. That is the tab
   lagging, not a bug here, but P5 should expect it.
+- **2026-09-21** — **R6 landed. PHASE R IS COMPLETE.** The `?ki=` drill-down
+  sits under the Key Indicator cards (decision 28, `ki_drilldown` unchanged),
+  `render_companionship_card` heads the area page (decision 27), "Su fortaleza
+  · Para crecer" reads WEEKLY_BREAKDOWNS' own choice, and every area of a
+  mission or a zone is ranked behind a drawer. Tests: +3, 31 in
+  `test_report_model_rest.py`. Suite **11 failed / 1407 passed** — the same 11.
+  **Verified at 1400px and 375px at all four levels with the drill-down open**:
+  the main pane's `scrollWidth` equals its `clientWidth` at both, and the only
+  elements reporting overflow are SVG `<text>` nodes inside the drill-down's
+  own Plotly chart, which are bounded by its viewBox. Decisions made mid-build:
+  (a) **R6 is the level-specific EXTRAS, not three more bodies.** R5 already
+  rendered every level from the model, so the three remaining mockups needed
+  the companionship card, the strengths block and the area drawer — not three
+  parallel page bodies that would have had to be kept in step.
+  (b) **`Period.progress_label` now reads "2 de 6 semanas completas".** The
+  drill-down prints "cambio 2026-6 · semana 3 de 6" — the week today falls in —
+  on the same screen, and "semana 2 de 6" beside it reads like one of them is
+  wrong. Both are true; mine now says which it means. Changed here rather than
+  in the shared component, which decision 28 keeps unchanged.
+  (c) Card links go through `ki_href` carrying `rep_zone` / `rep_district` /
+  `rep_area`, so the full reload a drill-down link causes lands back on the
+  same unit instead of the whole mission.
+  (d) `areas_ranked` is filled at mission and zone only — at district level the
+  areas already ARE `children`, and the same list under two headings is noise.
+  (e) **The district's three-way line (district / zone / mission) is not on
+  screen; it moves to P4**, where §3.2 actually places it — the packet's
+  district page. `build_all` already returns all 63 models, so P4 looks up the
+  parent and the mission by `Scope.key` rather than the model growing a
+  peer-series field that only one page would read.
+
+### Phase R is done. What Phase P starts from
+
+`app/reports/` is `scope.py`, `periods.py`, `grading.py`, `model.py` — all
+pure, all tested (**156 tests across five files**), and `build_all()` returns
+the 63 `ReportModel`s the packet prints in **1.6 seconds from one sheet read**.
+`views/11_Informes.py` renders one of them and does no arithmetic. P1–P6 render
+the same objects to ReportLab; nothing in Phase P should need a new query.

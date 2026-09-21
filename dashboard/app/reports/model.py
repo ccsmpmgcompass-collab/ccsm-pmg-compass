@@ -343,6 +343,10 @@ class ReportModel:
     #: The units one level down, weakest first (decisions 14, 15).
     children: tuple = ()
 
+    #: Every AREA inside the unit, weakest first. Mission and zone only — at
+    #: district level the areas are already `children`.
+    areas_ranked: tuple = ()
+
     #: `{metric key: Series}` for the seven, week by week (decision 26).
     series: dict = field(default_factory=dict)
 
@@ -1005,9 +1009,9 @@ def _mean_attainment(rows) -> float | None:
     return sum(pcts) / len(pcts) if pcts else None
 
 
-def _children(data: ReportData, scope: S.Scope, period: P.Period,
-              comparison: P.Comparison | None, flags: dict) -> tuple:
-    """Every unit one level down, weakest first — no top-N (decision 15).
+def _rank_scopes(data: ReportData, scopes: list, period: P.Period,
+                 comparison: P.Comparison | None, flags: dict) -> tuple:
+    """Units ranked weakest first — no top-N (decision 15).
 
     Ranked on mean Key Indicator attainment (decision 14). A unit with no
     attainment at all sorts to the END rather than to the top: it is not the
@@ -1015,7 +1019,7 @@ def _children(data: ReportData, scope: S.Scope, period: P.Period,
     a council looks for its biggest problem.
     """
     out = []
-    for child in S.children(data.roster, scope):
+    for child in scopes:
         rows = _ki_rows(data, child, period, comparison=comparison, flags=flags)
         child_rows = _weekly_rows(data, child, period)
         reported = set(child_rows["_area"]) if not child_rows.empty else set()
@@ -1031,6 +1035,21 @@ def _children(data: ReportData, scope: S.Scope, period: P.Period,
                             c.scope.name))
     from dataclasses import replace
     return tuple(replace(c, rank=i + 1) for i, c in enumerate(out))
+
+
+def _areas_ranked(data: ReportData, scope: S.Scope, period: P.Period,
+                  comparison: P.Comparison | None, flags: dict) -> tuple:
+    """Every AREA inside the unit, weakest first — §3.2's Z3, and the drawer
+    the mission page keeps 45 of them behind (decision 15).
+
+    Empty at district level, where the areas ARE the children and the same
+    list twice is noise, and at area level, which has no areas below it.
+    """
+    if scope.child_level != S.DISTRICT and scope.level != S.MISSION:
+        return ()
+    scopes = S.area_scopes(data.roster,
+                           zone=scope.zone if scope.level == S.ZONE else None)
+    return _rank_scopes(data, scopes, period, comparison, flags)
 
 
 # ── The week-by-week strip (decisions 9, 26) ─────────────────────────────────
@@ -1134,7 +1153,9 @@ def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
             flags=data.nightly_goal_flags(period))),
         scores=_scores(data, scope, period),
         rates=_rates(data, scope, period, comparison),
-        children=_children(data, scope, period, comparison, ki_flags),
+        children=_rank_scopes(data, S.children(data.roster, scope), period,
+                              comparison, ki_flags),
+        areas_ranked=_areas_ranked(data, scope, period, comparison, ki_flags),
         series=_series(data, scope, period),
         strengths=strengths,
         growth=growth,

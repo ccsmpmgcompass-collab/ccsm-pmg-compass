@@ -105,7 +105,7 @@ def test_this_transfer_runs_to_today_not_to_its_own_end():
     assert p.in_progress
     assert p.weeks == (date(2026, 9, 13), date(2026, 9, 20))
     assert (p.weeks_elapsed, p.full_weeks) == (2, 6)
-    assert p.progress_label == "semana 2 de 6"
+    assert p.progress_label == "2 de 6 semanas completas"
 
 
 def test_this_transfer_is_labelled_with_its_cycle_number():
@@ -371,7 +371,7 @@ def test_coverage_is_not_the_same_question_as_elapsed_time():
     a third of a transfer gets reported as the whole of it."""
     p = _resolve(P.THIS_TRANSFER)
     assert P.week_coverage(p, REPORTED, AREAS).label == "2 de 2 semanas"
-    assert p.progress_label == "semana 2 de 6"
+    assert p.progress_label == "2 de 6 semanas completas"
 
 
 def test_a_one_week_period_says_semana_not_semanas():

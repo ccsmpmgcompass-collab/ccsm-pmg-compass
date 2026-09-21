@@ -306,6 +306,35 @@ def test_each_child_names_its_own_silent_areas(data, period):
     assert sur.coverage.area_weeks_reported == 1
 
 
+def test_every_area_is_ranked_under_the_mission_and_under_a_zone(data, period):
+    """§3.2's Z3 and the drawer the mission page keeps 45 areas behind. Same
+    ranking rule as the children — weakest first, unmeasured last.
+
+    Per active area-week against a goal of 20: A3 8/2 = 20%, A2 20/2 = 50%,
+    A1 22/2 = 55%, B1 30/2 = 75%. B1 filed once and did the most that week, and
+    it still ranks above A1, which filed twice — one area IS its own active
+    count, so the two bases coincide and nothing is being flattered here.
+    """
+    mission = _report(data, period)
+    assert [c.name for c in mission.areas_ranked] == ["A3", "A2", "A1", "B1", "B2"]
+    assert mission.areas_ranked[-1].mean_attainment is None    # B2 filed nothing
+
+    norte = _report(data, period, S.ZONE, zone="Norte")
+    assert [c.name for c in norte.areas_ranked] == ["A3", "A2", "A1"]
+
+
+def test_a_district_does_not_list_its_areas_twice(data, period):
+    """At district level the areas ARE the children, and the same list under
+    two headings is noise."""
+    d = _report(data, period, S.DISTRICT, zone="Norte", district="D1")
+    assert [c.name for c in d.children] == ["A2", "A1"]      # 50% then 55%
+    assert d.areas_ranked == ()
+
+
+def test_an_area_has_nothing_below_it(data, period):
+    assert _report(data, period, S.AREA, area="A1").areas_ranked == ()
+
+
 # ── Decisions 9, 26: the week-by-week strip ──────────────────────────────────
 
 def test_every_key_indicator_carries_its_own_weeks(data, period):

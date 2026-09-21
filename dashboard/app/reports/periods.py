@@ -274,16 +274,22 @@ class Period:
 
     @property
     def progress_label(self) -> str:
-        """"semana 2 de 6" — how far through the period we are.
+        """"2 de 6 semanas completas" — how far through the period we are.
 
-        This is NOT the same question as `Coverage.label`, which is how many of
-        those elapsed weeks anyone actually reported. A period can be two weeks
-        into six with both of them fully reported; conflating the two is how a
-        report ends up claiming a third of a transfer is the whole of it.
+        Says COMPLETAS out loud because the same screen carries a second,
+        equally true count: `ki_drilldown` reads "semana 3 de 6", meaning the
+        week today falls in, while this counts the weeks that have finished.
+        Two weeks into a transfer both are right and "semana 2 de 6" beside
+        "semana 3 de 6" reads like one of them is wrong.
+
+        This is also NOT the same question as `Coverage.label`, which is how
+        many of those elapsed weeks anyone actually reported. A period can be
+        two weeks into six with both of them fully reported; conflating the two
+        is how a report ends up claiming a third of a transfer is the whole
+        of it.
         """
-        if self.full_weeks <= 1:
-            return f"{self.weeks_elapsed} de {self.full_weeks} semana"
-        return f"semana {self.weeks_elapsed} de {self.full_weeks}"
+        noun = "semana completa" if self.full_weeks == 1 else "semanas completas"
+        return f"{self.weeks_elapsed} de {self.full_weeks} {noun}"
 
 
 @dataclass(frozen=True)
