@@ -83,6 +83,20 @@ MISSION = "Chile Concepción South"
 _TOOLBAR_DOWNLOAD = "[data-tb-test-id='viz-viewer-toolbar-button-download']"
 _CANVAS = "canvas.tabCanvas"
 
+#: The host the signed-in app lives on. Reaching it means sign-in is OVER, and
+#: nothing on it is a login step — run #12 signed in successfully and then typed
+#: the Tableau email into a field belonging to the app itself, because the login
+#: loop was still looking for boxes to fill.
+_VIZ_HOST = VIEW_BASE.split("//")[1].split("/")[0]
+
+#: Tableau Cloud's post-login announcement, which lands on top of the view the
+#: first time an account signs in on a new browser — and a container is a new
+#: browser every single time. It is a floating dialog with a glass backdrop
+#: (``tabcld-postlogin-id-Dialog-Glass``), so the viz never renders behind it
+#: and the toolbar never appears: exactly the symptom run #12 died of, five
+#: minutes after a sign-in that had worked perfectly.
+_POST_LOGIN_DIALOG = "[data-tb-test-id*='postlogin' i], [data-tb-test-id*='Dialog-Glass' i]"
+
 # Inside the flyout and its dialogs nothing was verified live, so each step
 # lists a test-id pattern first and visible labels after it. A miss raises with
 # the step named and the ids actually present logged — see _click_first.
@@ -454,6 +468,14 @@ def _login(page, tableau: tuple, church: tuple) -> None:
 
     while time.monotonic() < deadline:
         step = page.url.split("?")[0]
+        if _VIZ_HOST in page.url:
+            # Signed in: this host is the application, not the IdP. Nothing here
+            # is a login step, and run #12 proved the cost of pretending
+            # otherwise — it typed the Tableau email into a field belonging to
+            # the app. What IS here is Tableau's post-login dialog, sitting over
+            # the view with a glass backdrop so the viz never draws behind it.
+            dismiss_post_login_dialog(page)
+            break
         pw_box = _first_visible(page, list(_PASS_FIELDS), timeout_ms=1200)
         user_box = _first_visible(page, list(_USER_FIELDS), timeout_ms=1200)
         toolbar = bool(page.locator(_TOOLBAR_DOWNLOAD).count())
@@ -580,11 +602,50 @@ def tableau_session(username: str, password: str, headless: bool = True,
             browser.close()
 
 
+def dismiss_post_login_dialog(page, tries: int = 3) -> bool:
+    """Close Tableau's post-login announcement, if one is covering the view.
+
+    Returns True when something was dismissed. Escape first, because that is the
+    one action whose meaning is unambiguous: the dialog's buttons are unlabelled
+    ``tab-shared-widget-…`` submits, one of which may well be "Learn more" and
+    navigate away from the view entirely. Only if Escape fails do we click, and
+    then the LAST button, Tableau's slot for the confirming action.
+
+    The "don't show this again" checkbox is deliberately left alone. It would
+    save a few seconds a night by changing a preference on the mission's own
+    account, which is not this job's to change.
+    """
+    dismissed = False
+    for _ in range(tries):
+        try:
+            if not page.locator(_POST_LOGIN_DIALOG).count():
+                return dismissed
+        except Exception:
+            return dismissed
+        _logger.info("Post-login dialog is covering the view — dismissing it")
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(1500)
+        dismissed = True
+        try:
+            if not page.locator(_POST_LOGIN_DIALOG).count():
+                return dismissed
+            buttons = page.locator(
+                "[data-tb-test-id*='Dialog-Body'] button, "
+                "[data-tb-test-id*='Dialog-Content'] button")
+            if buttons.count():
+                buttons.last.click(timeout=10_000)
+                page.wait_for_timeout(1500)
+        except Exception:
+            pass
+    return dismissed
+
+
 def _load_window(page, sheet: str, start: date | None, end: date | None) -> None:
     """Navigate to one sheet with one window applied, and wait for it to draw."""
     _logger.info(f"Loading {sheet} for {start} to {end}")
     page.goto(view_url(sheet, start, end), wait_until="domcontentloaded",
               timeout=90_000)
+    dismiss_post_login_dialog(page, tries=1)
     page.wait_for_selector(_TOOLBAR_DOWNLOAD, state="visible", timeout=_VIZ_LOAD_MS)
     try:
         page.wait_for_selector(_CANVAS, state="attached", timeout=_VIZ_LOAD_MS)
