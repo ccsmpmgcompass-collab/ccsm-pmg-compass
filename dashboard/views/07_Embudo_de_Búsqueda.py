@@ -157,6 +157,14 @@ def _cloud_sync_control() -> None:
     tonight, not as a second way of doing it. Dispatch, poll and error display
     are `cloud_job_ui`'s, shared with the Traslados roster pull.
 
+    **Rendered at page level, never inside an expander.** `run_cloud_job` shows
+    its progress in an `st.status` box, and a status box IS an expander —
+    Streamlit forbids nesting one inside another. This first lived beside the
+    uploaders in "Datos y carga", which dispatched the job perfectly well and
+    then crashed the page on `StreamlitAPIException` before anything could be
+    shown; live run #3, 2026-09-21. The freshness strip is the right home for
+    it anyway: that is where the page says how old the data is.
+
     The caches are cleared and the page rerun on success: read_tab and the
     Drive blob both hold five minutes, so without this the page would sit there
     showing the very numbers the job just replaced.
@@ -182,11 +190,9 @@ def _cloud_sync_control() -> None:
 
 
 def _upload_controls() -> None:
-    """The cloud sync, then the three uploaders and the note above them, with no
-    container of their own — Streamlit forbids an expander inside an expander,
-    and on the normal path these sit inside "Datos y carga" (E6)."""
-    _cloud_sync_control()
-    st.divider()
+    """The three uploaders and the note above them, with no container of their
+    own — Streamlit forbids an expander inside an expander, and on the normal
+    path these sit inside "Datos y carga" (E6)."""
     st.caption(t("Export the Mission Finding Summary view from Tableau and drop the "
                  "files here. The Detail export REPLACES the stored data, so export "
                  "the full view, not a recent slice. Summary PDFs merge by month — "
@@ -380,8 +386,10 @@ if summary_file:
 if rank_df.empty and det_df.empty:
     st.info(t("No finding data yet. Export the Mission Finding Summary view from "
               "Tableau and upload it in **Manual upload** below."))
-    # Render the uploaders BEFORE stopping, or "below" is a lie and the page
-    # can never be bootstrapped from empty.
+    # Render the sync and the uploaders BEFORE stopping, or "below" is a lie and
+    # the page can never be bootstrapped from empty. The sync sits outside the
+    # expander here too — see _cloud_sync_control on why it cannot go inside one.
+    _cloud_sync_control()
     _render_uploaders(expanded=True)
     st.stop()
 
@@ -417,6 +425,10 @@ st.markdown(
     f'<span>{_fresh}</span></div>',
     unsafe_allow_html=True,
 )
+
+# The sync belongs with the freshness strip: the line above says how old the
+# data is, and this is the one control that changes that answer.
+_cloud_sync_control()
 
 # ── The window — every preset counts back from the export's last date ─────────
 # Translated label -> English preset key. The key is what preset_range() looks

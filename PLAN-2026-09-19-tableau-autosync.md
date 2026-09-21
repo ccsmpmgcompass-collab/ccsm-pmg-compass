@@ -378,3 +378,50 @@ request and the answer and nothing promises a query string survives them, so
 every windowed navigation happens afterwards, on a session already
 authenticated — which is the state the parameters were verified in.
 
+---
+
+## §5 — The first three live runs *(2026-09-21)*
+
+Two nightlies (09-20, 09-21) and one from the button. **All three failed, and
+between them they proved most of the chain works.**
+
+| # | Trigger | Outcome |
+|---|---|---|
+| 1 | schedule | failed — `CCSM_TABLEAU_USERNAME/CCSM_TABLEAU_PASSWORD not set` |
+| 2 | schedule | same |
+| 3 | `workflow_dispatch` from the Embudo button | same |
+
+**What worked, and is now verified rather than assumed:** the container builds,
+`requirements_cloud.txt` installs, the scheduled run seeds its own
+`CLOUD_JOB_STATUS` row (so the Sheets service account reaches the sheet from
+Actions), the button on the deployed app dispatches the workflow, and Streamlit
+Cloud had already picked up the push — the button was there without a reboot.
+
+**Finding 1: the secrets are not on the repository.** Zackary said on 09-19
+that he had added them; the runner reports them empty in the container, on all
+three runs. They are either unsaved, named differently, or were added as
+Dependabot/Codespaces secrets rather than **Actions** secrets. (The API cannot
+confirm which — `GET /actions/secrets` needs an admin token and this one is not.)
+**Nothing downstream of sign-in has been exercised yet**, so the download
+flyout's selectors remain unproven.
+
+**Finding 2, ours: the button crashed the page it was pressed from.** The
+dispatch succeeded and then the script died on
+
+```
+StreamlitAPIException: Expanders may not be nested inside other expanders.
+```
+
+`run_cloud_job` reports progress in an `st.status` box, **a status box IS an
+expander**, and the control had been placed beside the uploaders inside "Datos
+y carga". The job ran; the person who pressed the button saw a crash and no
+result. Worth noticing *how* this hid: the local render test passed, because
+with no data the page takes the bootstrap branch and never calls `st.status` —
+only a CLICK reaches it.
+
+Fixed by moving the control to page level, beside the freshness strip, which is
+where it belonged anyway: that line says how old the data is and this is the one
+control that changes the answer. `tests/test_embudo_cloud_sync_button.py` now
+presses the button with dispatch and polling faked, and was confirmed to fail
+with exactly the live exception before the fix.
+
