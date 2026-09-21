@@ -521,15 +521,43 @@ def _login(page, tableau: tuple, church: tuple) -> None:
             _stuck(page, pw_box is not None)
         page.wait_for_timeout(2000)
 
-    # Out of budget with no toolbar: usually the viz is simply still drawing,
-    # so give it the load timeout it would get on any other navigation before
-    # calling the sign-in failed.
-    try:
-        page.wait_for_selector(_TOOLBAR_DOWNLOAD, state="visible",
-                               timeout=_VIZ_LOAD_MS)
-    except Exception:
+    if not wait_for_toolbar(page, _VIZ_LOAD_MS):
         _stuck(page, False)
     _logger.info("Tableau sign-in confirmed (viz toolbar present).")
+
+
+def wait_for_toolbar(page, timeout_ms: int) -> bool:
+    """Wait for the viz toolbar, clearing whatever Tableau puts in front of it.
+
+    **Not a single wait_for_selector**, which is what runs #12 and #14 did: they
+    dismissed the post-login dialog once, a second before Tableau actually
+    rendered it, and then blocked for three minutes behind the dialog they had
+    already "handled". The dialog arrives on its own schedule after the SAML
+    redirect, so it has to be watched for, not checked for.
+
+    One reload is spent halfway through. A dialog that survives Escape and its
+    own close button usually does not survive a fresh page load, and by then the
+    session cookie exists so the reload costs nothing but a few seconds.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000
+    reloaded = False
+    while time.monotonic() < deadline:
+        try:
+            if page.locator(_TOOLBAR_DOWNLOAD).count():
+                return True
+        except Exception:
+            pass
+        dismiss_post_login_dialog(page, tries=1)
+        remaining = deadline - time.monotonic()
+        if not reloaded and remaining < timeout_ms / 2000:
+            reloaded = True
+            _logger.info("Toolbar still absent — reloading the view once")
+            try:
+                page.reload(wait_until="domcontentloaded", timeout=90_000)
+            except Exception:
+                pass
+        page.wait_for_timeout(2000)
+    return False
 
 
 def _stuck(page, on_password: bool) -> None:
@@ -628,15 +656,29 @@ def dismiss_post_login_dialog(page, tries: int = 3) -> bool:
         dismissed = True
         try:
             if not page.locator(_POST_LOGIN_DIALOG).count():
+                _logger.info("Dialog closed on Escape")
                 return dismissed
-            buttons = page.locator(
-                "[data-tb-test-id*='Dialog-Body'] button, "
-                "[data-tb-test-id*='Dialog-Content'] button")
-            if buttons.count():
-                buttons.last.click(timeout=10_000)
-                page.wait_for_timeout(1500)
         except Exception:
-            pass
+            return dismissed
+        # Escape did not take. Try the close control, then the dialog's own last
+        # button. ``-Button`` is a real test-id on this page — Tableau's floater
+        # gives its close control an empty prefix — and it appears in the
+        # inventory of every run that has reached this screen.
+        for selector in ("[data-tb-test-id='-Button']",
+                         "[data-tb-test-id*='Dialog'] button",
+                         "[data-tb-test-id*='Dialog-Body'] button, "
+                         "[data-tb-test-id*='Dialog-Content'] button"):
+            try:
+                candidates = page.locator(selector)
+                if not candidates.count():
+                    continue
+                candidates.last.click(timeout=8000)
+                _logger.info(f"Clicked dialog control: {selector}")
+                page.wait_for_timeout(1500)
+                if not page.locator(_POST_LOGIN_DIALOG).count():
+                    return dismissed
+            except Exception:
+                continue
     return dismissed
 
 
@@ -645,8 +687,11 @@ def _load_window(page, sheet: str, start: date | None, end: date | None) -> None
     _logger.info(f"Loading {sheet} for {start} to {end}")
     page.goto(view_url(sheet, start, end), wait_until="domcontentloaded",
               timeout=90_000)
-    dismiss_post_login_dialog(page, tries=1)
-    page.wait_for_selector(_TOOLBAR_DOWNLOAD, state="visible", timeout=_VIZ_LOAD_MS)
+    if not wait_for_toolbar(page, _VIZ_LOAD_MS):
+        _inventory(page, f"{sheet}_never_drew")
+        raise RuntimeError(
+            f"{sheet} never showed its toolbar for {start}..{end} — the view did "
+            f"not finish loading. The diagnostic above lists what was on screen.")
     try:
         page.wait_for_selector(_CANVAS, state="attached", timeout=_VIZ_LOAD_MS)
     except Exception:
