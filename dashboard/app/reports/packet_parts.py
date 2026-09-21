@@ -513,6 +513,8 @@ def styles() -> dict[str, ParagraphStyle]:
         "cell_bold": make("cell_bold", Type(CELL.size, CELL.leading, FONT_BOLD),
                           INK),
         "cell_right": make("cell_right", CELL, INK_2, alignment=2),
+        "area_title": make("area_title", Type(13, 15, FONT_BOLD), INK,
+                           spaceAfter=1),
         "note": make("note", NOTE, INK_3, spaceAfter=3),
         "note_lead": make("note_lead", NOTE, INK_2, spaceAfter=3),
     }
@@ -1137,13 +1139,18 @@ class MetricLine:
     31 puts a nightly row's colour on its MOVEMENT, not on its distance from a
     goal set at roughly twice what the mission does.
 
-    ``verdict`` is the words beside the bar ("al ritmo \u00b7 93%"), or the flag when
+    ``verdict`` is the words beside the bar ("al ritmo · 93%"), or the flag when
     the goal is not a yardstick. ``change`` is `(direction, text)`.
     """
 
     label: str
     value: str
     goal: str
+    #: The area page's last column: this metric's own weeks, drawn. It takes
+    #: the change chip's place, because a companionship's question is what
+    #: their six weeks look like rather than how they moved against a window
+    #: somebody else chose.
+    spark: object = None
     pct: float | None = None
     mark_pct: float | None = None
     status: str | None = None
@@ -1215,7 +1222,8 @@ def metric_table(lines, *, widths=METRIC_COLUMNS, headers=None) -> Table:
                         mark_pct=line.mark_pct, track_color=RULE_SOFT,
                         fill=SERIES[0] if line.magnitude else None),
             Paragraph(text(line.verdict), st["cell"]),
-            change_chip(widths[5] - 8, line.change),
+            line.spark if line.spark is not None
+            else change_chip(widths[5] - 8, line.change),
         ])
     return table(rows, widths, headers=headers, pad=3.5,
                  align=["l", "r", "r", "l", "l", "l"])
@@ -1226,6 +1234,40 @@ def metric_table(lines, *, widths=METRIC_COLUMNS, headers=None) -> Table:
 #: eight, and thirty-eight columns of 13pt is not a table anybody can read.
 WEEK_COLUMN_LIMIT = 6
 WEEK_ROW_HEIGHT = 15.0
+
+
+#: The area's own six columns. Narrower than METRIC_COLUMNS in every place a
+#: half page can spare: at area level the figures are single and double digits,
+#: and the room goes to the weeks instead.
+AREA_COLUMNS = (140.0, 34.0, 34.0, 104.0, 100.0, 108.0)
+
+
+def area_metric_table(lines, *, widths=AREA_COLUMNS) -> Table:
+    """The area's seven, with each one's weeks drawn where the change would be.
+
+    On a half page there is no room for a week table of its own, and a
+    companionship's question is not "how did this move against a comparison
+    period" but "what have our six weeks looked like". `MetricLine.spark`
+    carries the drawing; the change chip takes the column when there is none.
+    """
+    return metric_table(lines, widths=widths,
+                        headers=("Métrica", "Real", "Meta", "",
+                                 "Contra la meta", "Semana a semana"))
+
+
+def companionship_line(names, *, width: float = CONTENT_WIDTH) -> Drawing:
+    """The missionaries serving the area, in roster order.
+
+    Decision 27: the companionship IS the area, and their names at the top are
+    the one thing the old page never had. Three and four are read as well as
+    one and two, so a trio or a quad does not silently lose a missionary.
+    """
+    d = Drawing(width, 11)
+    if not names:
+        d.add(_string(0, 2, "sin companería en MISSION_ORG", NOTE, INK_3))
+        return d
+    d.add(_string(0, 2, fit(" · ".join(names), CELL, width), CELL, INK_2))
+    return d
 
 
 def week_table(width: float, weeks, rows, *, boundaries=(), footer=None,
@@ -1363,7 +1405,8 @@ __all__ = [
     "SectionHead", "HairRule", "TrackedLabel", "styles", "table",
     "cover_page", "print_guide", "COVER_TITLE", "COVER_LEAD",
     "Tile", "stat_tiles", "MetricLine", "METRIC_COLUMNS", "change_chip",
-    "metric_table", "week_table", "WEEK_COLUMN_LIMIT", "legend",
+    "metric_table", "area_metric_table", "AREA_COLUMNS", "week_table",
+    "WEEK_COLUMN_LIMIT", "legend", "companionship_line",
     "bar_vs_goal", "sparkline", "stage_bars", "share_bar", "ranked_row",
     "RankedSpec",
 ]

@@ -30,8 +30,9 @@ import io
 import math
 from dataclasses import dataclass, field, replace
 
-from reportlab.platypus import (BaseDocTemplate, Flowable, Frame, PageBreak,
-                                PageTemplate, Paragraph, Spacer)
+from reportlab.platypus import (BaseDocTemplate, Flowable, Frame,
+                                KeepTogether, PageBreak, PageTemplate,
+                                Paragraph, Spacer)
 
 from app.config import es_display
 from app.reports import packet_parts as PP
@@ -1228,6 +1229,97 @@ def furthest_behind(model, limit: int = 3) -> list:
               if r.grade.pct is not None and not r.grade.flag]
     return sorted(graded, key=lambda r: r.grade.pct)[:limit]
 
+# ── An area, which is a companionship ───────────────────────────
+
+#: How tall one area's block is allowed to be, so two fit on a page with a
+#: rule between them. Measured against the frame rather than guessed: 688pt of
+#: content, less 12pt for the divider, halved.
+AREA_BLOCK_HEIGHT = (PP.CONTENT_HEIGHT - 12) / 2
+
+
+def _area_spark(model, row) -> object:
+    """One Key Indicator's complete weeks, as a drawing for its own row."""
+    series = model.series.get(row.key)
+    if series is None or len(series.points) < 2:
+        return None
+    first = series.points[0].week
+    span = max(1, (series.points[-1].week - first).days)
+    boundaries = [max(0.0, min(1.0, (day - first).days / span))
+                  for day, _ in series.boundaries]
+    return PP.sparkline(AREA_COLUMNS_SPARK, 9.0,
+                        [p.actual for p in series.points],
+                        boundaries=boundaries)
+
+
+#: The width the spark gets inside the area table's last column.
+AREA_COLUMNS_SPARK = PP.AREA_COLUMNS[5] - 10
+
+
+def area_lines(model) -> list:
+    """The area's seven, each carrying its own weeks."""
+    lines = ki_lines(model, comparable=False)
+    return [replace(line, spark=_area_spark(model, row))
+            for line, row in zip(lines, model.key_indicators)]
+
+
+def area_block(model) -> list:
+    """One area's half page: who they are, their seven, what they are good at.
+
+    §3.2's list, in the order a companionship reads it. Their names first
+    (decision 27 — this is the one thing the old page never had), then the
+    seven against the goal they set themselves, then the two lines the agents
+    already chose for them, then their scores and where they sit in their
+    district.
+
+    "Su fortaleza / Para crecer" is READ, never recomputed: WEEKLY_BREAKDOWNS
+    stores `strength1_metric`, `strength2_metric` and `growth_metric` per area
+    per week, picked by the Apps Script agents, and a second opinion printed
+    beside the agents' own would be two answers to one question.
+    """
+    st = PP.styles()
+    W = PP.CONTENT_WIDTH
+    trail = " · ".join(model.scope.trail)
+    flow = [
+        Paragraph(PP.text(model.scope.name), st["area_title"]),
+        PP.companionship_line(model.scope.companions),
+        Paragraph(PP.text(" · ".join(x for x in (trail, model.compliance_label)
+                                     if x)), st["note"]),
+        Spacer(0, 4),
+        PP.area_metric_table(area_lines(model)),
+    ]
+    strong = ", ".join(model.strengths)
+    grow = model.growth or ""
+    if strong or grow:
+        bits = []
+        if strong:
+            bits.append(f"Su fortaleza: {strong}")
+        if grow:
+            bits.append(f"Para crecer: {grow}")
+        flow.append(Spacer(0, 3))
+        flow.append(Paragraph(PP.text(" · ".join(bits)), st["note_lead"]))
+    else:
+        flow.append(Spacer(0, 3))
+        flow.append(Paragraph(PP.text(
+            "Sin fortaleza ni meta de crecimiento esta semana — "
+            "WEEKLY_BREAKDOWNS va una semana atrás de los Indicadores Clave."),
+            st["note"]))
+    scores = model.scores
+    if scores is not None and scores.measured:
+        parts = [f"{name} {es_display.number(value, 1)}"
+                 for name, value in (("Esfuerzo", scores.effort),
+                                     ("Habilidad", scores.skill),
+                                     ("Indicadores Clave", scores.ki),
+                                     ("Efectividad", scores.effectiveness))
+                 if value is not None]
+        line = "Puntajes: " + " · ".join(parts)
+        if scores.rank:
+            line += (f" — {es_display.integer(scores.rank)}º de "
+                     f"{es_display.integer(scores.of)} en su distrito, por "
+                     f"efectividad")
+        flow.append(Paragraph(PP.text(line), st["note"]))
+    return flow
+
+
 # ── The body ──────────────────────────────────────────────
 
 #: What the running head calls a unit, per level.
@@ -1242,6 +1334,15 @@ def furniture_for(model) -> PP.Furniture:
     before it says which one.
     """
     level = model.scope.level
+    if level == S.AREA:
+        # Two areas share a page and the pairs run alphabetically across the
+        # whole mission, so they need not share a district — the first draft
+        # headed a page "Distrito · La Marina 1" above an area from San Pedro
+        # 1. The head names the SECTION instead, which is true of both, and
+        # each block states its own district under its own name.
+        return PP.Furniture(eyebrow="Áreas",
+                            period=model.period.window_label,
+                            mission=model.mission_name)
     eyebrow = (model.mission_name if level == S.MISSION
                else f"{EYEBROW[level]} · {model.scope.name}")
     return PP.Furniture(eyebrow=eyebrow, period=model.period.window_label,
@@ -1280,6 +1381,10 @@ def _body(models, goals, pagination: Pagination) -> list:
     first of its level, and one for the unit itself. The run sheet needs the
     second — it names a zone leader's own pages — and the contents needs the
     first.
+
+    The areas are handed to `area_pages` as a block rather than one at a time,
+    because two of them share a page (§3.2) and the page break belongs between
+    the pairs rather than before every unit.
     """
     section_of = {S.MISSION: MISSION, S.ZONE: ZONES, S.DISTRICT: DISTRICTS,
                   S.AREA: AREAS}
@@ -1288,8 +1393,11 @@ def _body(models, goals, pagination: Pagination) -> list:
     # all 63, and a peer-series field only one page would read does not belong
     # on the model).
     peers = {m.scope.key: m for m in models}
+    areas = [m for m in models if m.scope.level == S.AREA]
     flow, opened = [], set()
     for model in models:
+        if model.scope.level == S.AREA:
+            continue
         key = section_of[model.scope.level]
         flow.append(PageBreak())
         if key not in opened:
@@ -1297,6 +1405,20 @@ def _body(models, goals, pagination: Pagination) -> list:
             flow.append(SectionStart(key, pagination))
         flow.append(SectionStart(model.scope.key, pagination))
         flow.extend(unit_pages(model, goals, peers))
+    if areas:
+        flow.append(PageBreak())
+        flow.append(SectionStart(AREAS, pagination))
+        for i, model in enumerate(areas):
+            if i and i % 2 == 0:
+                flow.append(PageBreak())
+            elif i:
+                flow.append(Spacer(0, 6))
+                flow.append(PP.HairRule(color=PP.RULE, space_before=0,
+                                        space_after=6))
+            if i % 2 == 0:
+                flow.append(PP.SetFurniture(furniture_for(model)))
+            flow.append(SectionStart(model.scope.key, pagination))
+            flow.append(KeepTogether(area_block(model)))
     flow.append(PageBreak())
     flow.append(SectionStart(DATA_NOTE, pagination))
     flow.extend(data_note(models))

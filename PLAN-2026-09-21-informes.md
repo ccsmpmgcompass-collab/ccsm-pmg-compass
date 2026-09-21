@@ -788,6 +788,38 @@ short audit of their own before anything is changed.
   on a page of its own behind every unit in the packet. `metric_table`'s row
   padding is 3.5pt now and a test pins the height budget.
 
+- **2026-09-21** — **P5 landed.** The area pages, two to a page. `area_block`
+  in `packet.py`, `area_metric_table` / `AREA_COLUMNS` / `companionship_line`
+  in `packet_parts.py`, and `_body` now groups the areas into spreads instead
+  of one unit per page. Tests: `test_packet_areas.py` (16). Suite **11 failed /
+  1526 passed** — the same 11. Live: **108 pages** (the 45 areas print on 23
+  sheets instead of 45). Decisions made mid-build:
+  (a) **Each Key Indicator carries its own weeks in the column where the change
+  would be.** §3.2 asks the area page for a week-by-week and there is no room
+  for a table of its own on a half page — and a companionship's question is
+  not "how did this move against a window somebody else chose" but "what have
+  our six weeks looked like". `MetricLine.spark` takes the change chip's
+  column when it is present.
+  (b) **All seven Key Indicators at area level too.** The half page is exactly
+  where it would have been tempting to drop to four; decision 10 is a standing
+  rule, not a filter, and `AREA_COLUMNS` buys the room by narrowing the figure
+  columns, which at area level hold single and double digits.
+  (c) **The running head on an area spread says "Áreas", not a district.** The
+  pairs run alphabetically across the whole mission, so the two areas on a page
+  need not share one — the first draft headed a page "Distrito · La Marina 1"
+  above an area from San Pedro 1. Each block states its own district under its
+  own name.
+  (d) **`scope.companion_names` printed "nan".** An empty companion cell
+  arrives from pandas as `float("nan")` and `str(nan)` is the four-letter word,
+  which the old one-liner put on the page as a missionary's name. Found by a
+  fixture whose area had no companions at all; the live roster fills blanks
+  with empty strings, so nothing had shown it. Both the float and the string
+  are dropped now.
+  (e) "Su fortaleza / Para crecer" is **read**, and an area the agents have not
+  written up says which tab is lagging rather than going blank.
+  **Measured:** an area's block is 142–280pt against a half page of 338pt, and
+  a test asserts every one of them fits.
+
 ### Phase R is done. What Phase P starts from
 
 `app/reports/` is `scope.py`, `periods.py`, `grading.py`, `model.py` — all

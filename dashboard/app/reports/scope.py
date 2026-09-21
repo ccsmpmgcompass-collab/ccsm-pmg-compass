@@ -130,9 +130,23 @@ def _clean(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def companion_names(row) -> tuple[str, ...]:
-    """The missionaries serving an area, in roster order, blanks skipped."""
-    names = [str(row.get(c, "") or "").strip() for c in COMPANION_COLS]
-    return tuple(n for n in names if n)
+    """The missionaries serving an area, in roster order, blanks skipped.
+
+    An empty cell arrives from pandas as `float("nan")`, and `str(nan)` is the
+    four-letter word "nan" — which the old one-liner printed as a
+    missionary's name on the area page. Both the float and the string it
+    stringifies to are dropped here; a companionship really surnamed Nan is a
+    risk worth taking against printing three of them on every solo area.
+    """
+    names = []
+    for col in COMPANION_COLS:
+        value = row.get(col, "")
+        if value is None or (isinstance(value, float) and value != value):
+            continue
+        name = str(value).strip()
+        if name and name.lower() != "nan":
+            names.append(name)
+    return tuple(names)
 
 
 # ── Building scopes ───────────────────────────────────────────────────────────
