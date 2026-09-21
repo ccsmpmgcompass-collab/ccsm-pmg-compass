@@ -202,3 +202,83 @@ def test_importing_the_gate_does_not_pull_in_streamlit():
     code = ("import app.reports.tableau, sys; "
             "sys.exit(1 if 'streamlit' in sys.modules else 0)")
     assert subprocess.run([sys.executable, "-c", code]).returncode == 0
+
+
+# ── T2 · Reconciliation ───────────────────────────────────────────────────────
+
+def roster(rows) -> pd.DataFrame:
+    """A MISSION_ORG-shaped frame: (area, zone) pairs."""
+    return pd.DataFrame([{"Area_Name": a, "Zone": z, "District": "D"}
+                         for a, z in rows])
+
+
+def detail_rows(rows) -> pd.DataFrame:
+    """(found date, zone, area) per person."""
+    return pd.DataFrame([{"event_date_selected": d,
+                          "latest_zone_name": z,
+                          "latest_teaching_area_name": a} for d, z, a in rows])
+
+
+def test_rows_are_claimed_by_area_name_never_by_the_exports_own_zone():
+    """`scope.py`'s standing rule: an area that transferred still carries its
+    old zone on every row written before the move."""
+    det = detail_rows([("2026-09-10", "Angol", "El Mirador"),
+                       ("2026-09-10", "San Pedro", "El Mirador"),
+                       ("2026-09-10", "Angol", "Los Huertos")])
+    assert len(T.for_areas(det, ["El Mirador"])) == 2
+
+
+def test_an_export_name_the_roster_does_not_carry_is_dropped_from_a_unit():
+    det = detail_rows([("2026-09-10", "Angol", "El Mirador"),
+                       ("2026-09-10", "Angol", "Caupolican")])
+    assert len(T.for_areas(det, ["El Mirador", "Los Huertos"])) == 1
+
+
+def test_reconcile_counts_the_dropped_rows_rather_than_letting_them_vanish():
+    """The live shape on 2026-09-21: three export names inside the pilot zones
+    that MISSION_ORG does not carry, worth 23 people of 42.616."""
+    det = detail_rows([("2026-09-10", "Angol", "El Mirador")] * 97
+                      + [("2026-09-10", "Angol", "Caupolican")] * 2
+                      + [("2026-09-10", "Angol", "Lautaro")])
+    rec = T.reconcile(det, roster([("El Mirador", "Angol")]))
+    assert rec.unknown == (("Caupolican", 2), ("Lautaro", 1))
+    assert rec.unknown_rows == 3 and rec.scoped_rows == 100
+    assert rec.unknown_share == 0.03
+    assert "Caupolican · Lautaro" in rec.note
+    assert "3 personas" in rec.note
+
+
+def test_zones_outside_the_pilot_are_not_counted_as_unmatched_names():
+    """Six of the mission's ten zones run no Compass forms. Counting them as
+    misses would report 57% of the mission as a data error."""
+    det = detail_rows([("2026-09-10", "Angol", "El Mirador"),
+                       ("2026-09-10", "Villarrica", "Pucón")])
+    rec = T.reconcile(det, roster([("El Mirador", "Angol")]))
+    assert rec.clean and rec.note == ""
+    assert rec.scoped_rows == 1 and rec.total_rows == 2
+
+
+def test_a_roster_area_the_export_never_names_is_reported_as_a_silence():
+    det = detail_rows([("2026-09-10", "Angol", "El Mirador")])
+    rec = T.reconcile(det, roster([("El Mirador", "Angol"),
+                                   ("Los Huertos", "Angol")]))
+    assert rec.missing == ("Los Huertos",)
+    assert "no aparecen en la exportación" in rec.note
+
+
+def test_a_refused_window_selects_nothing_rather_than_everything():
+    """A gate that fell through to the whole 2.7-year export would be worse
+    than no gate: the refusal would print as a very large number."""
+    det = detail_rows([("2026-09-10", "Angol", "El Mirador")])
+    refused = T.clip(period("2026-09-07", "2026-09-21"),
+                     T.read_export(pd.DataFrame()))
+    assert T.in_window(det, refused).empty
+
+
+def test_in_window_keeps_only_the_days_the_gate_allowed():
+    det = detail_rows([("2026-09-06", "Angol", "El Mirador"),
+                       ("2026-09-10", "Angol", "El Mirador"),
+                       ("2026-09-20", "Angol", "El Mirador")])
+    window = T.clip(period("2026-09-07", "2026-09-21"),
+                    T.read_export(span("2024-01-01", "2026-09-17")))
+    assert len(T.in_window(det, window)) == 1

@@ -898,6 +898,37 @@ short audit of their own before anything is changed.
   pilot four zones are **42.9%** of its volume (42.616 rows), close to §1.1's
   44%; it carries **10 zones, 4 finding categories and 21 finding sources**.
 
+- **2026-09-21** — **T2 landed.** `Reconciliation` / `reconcile` /
+  `for_areas` / `in_window` in `tableau.py`. Tests: +7, **27** in
+  `test_report_tableau_gate.py`. Decisions made mid-build:
+  (a) **A row is claimed by AREA NAME and by nothing else.** The export
+  carries its own zone, district and area columns; only the area one decides
+  membership, and the zone and district a figure is filed under are
+  MISSION_ORG's — `scope.py`'s standing rule, because those columns record
+  where an area was when the row was written. **The export's district column
+  disagrees with the roster about four district names today** (Alemania 2,
+  Boca Sur 1, Cabrero, Caopolicán 1 1 against 13 roster districts) and it
+  changes no figure in this packet, because nothing reads it. Reporting that
+  mismatch would be reporting a discrepancy with no consequence; the data
+  note says instead that zone and district come from MISSION_ORG.
+  (b) **Reconciliation is scoped to the pilot zones.** The other six zones are
+  not unmatched names, they are zones this pilot does not cover, and counting
+  them as misses would report **57% of the mission** as a data error.
+  (c) **The miss is reported both directions.** `unknown` is export names the
+  roster does not carry — dropped from every roster-scoped figure, which is
+  decision 35's exclusion. `missing` is roster areas the export never names,
+  which is not an exclusion but a silence a zone leader should know about.
+  Zero of those today.
+  (d) The unmatched names print separated by middots, not commas: one of the
+  three live names is "Huequen, Renaico & Tijeral 2" and a comma-separated
+  list reads it as two areas.
+  **Measured live, and much better than §1.1 assumed:** all **45** roster
+  areas now appear in the export, and the unmatched names are **3**, worth
+  **23 people — 0,05%** of the pilot zones' 42.616. Decision 35 was written
+  against 11 districts and 42 areas; the fresh export carries every roster
+  area. The four zones in the current transfer's window hold 130 · 181 · 188 ·
+  187 rows.
+
 ### Phase R is done. What Phase P starts from
 
 `app/reports/` is `scope.py`, `periods.py`, `grading.py`, `model.py` — all

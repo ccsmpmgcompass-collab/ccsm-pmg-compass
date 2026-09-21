@@ -289,3 +289,141 @@ def clamp(window: Window, export: Export) -> Window:
     return Window(period_days=window.period_days,
                   reason=("la exportación de Tableau no cubre la ventana de "
                           "comparación completa"))
+
+
+# ── Whose rows they are ───────────────────────────────────────────────────────
+#
+# The export carries its own zone, district and area columns. Only the AREA one
+# is ever used to decide whether a row belongs to a unit of this report, and
+# the zone and district a figure is filed under are MISSION_ORG's — `scope.py`'s
+# standing rule, which exists because those columns record where an area was
+# when the row was written. The export's own district column disagrees with the
+# roster about four district names today and it changes no figure in this
+# packet, because nothing reads it.
+#
+# The one exception is the mission's all-ten-zone block (decision 24), where six
+# of the zones have no roster to be reconciled against at all. There the
+# export's zone column is the only authority there is, and the block says so.
+
+AREA_COL = "latest_teaching_area_name"
+ZONE_COL = "latest_zone_name"
+
+
+def _names(det: pd.DataFrame, column: str) -> pd.Series:
+    """A Detail column as stripped strings, or an empty Series if it is absent."""
+    resolved = FF.resolve_col(det, column) if det is not None else None
+    if resolved is None:
+        return pd.Series(dtype=str)
+    return det[resolved].astype(str).str.strip()
+
+
+def in_window(det: pd.DataFrame, window: Window) -> pd.DataFrame:
+    """The export's rows whose found-date falls inside `window`.
+
+    An unusable window yields nothing rather than everything: a refused gate
+    must not fall through to the whole 2.7-year export.
+    """
+    if det is None or det.empty or not window.usable:
+        return pd.DataFrame(columns=getattr(det, "columns", None))
+    return FF.filter_by_range(det, window.start, window.end)
+
+
+def for_areas(det: pd.DataFrame, areas) -> pd.DataFrame:
+    """The rows belonging to a roster unit — matched on AREA NAME, never on the
+    export's own zone or district column.
+
+    An export area name that is not on the roster is dropped here, which is
+    the exclusion decision 35 describes; `reconcile` is what counts what was
+    dropped so it can be printed instead of disappearing.
+    """
+    if det is None or det.empty:
+        return det if det is not None else pd.DataFrame()
+    wanted = {str(a).strip() for a in areas}
+    return det[_names(det, AREA_COL).isin(wanted)]
+
+
+@dataclass(frozen=True)
+class Reconciliation:
+    """Export area names against MISSION_ORG, and what the mismatch costs.
+
+    Decision 35. Provo's own packet prints this ("12 area names … accounting
+    for 52 attempts — about 0.6% of activity") and it is the sentence that
+    makes the rest of the section safe to argue with: a reader who wonders
+    whether a zone's total is short can find out exactly how short.
+
+    `unknown` is export names inside the pilot zones that the roster does not
+    carry, each with its row count — these are excluded from every
+    roster-scoped figure. `missing` is the other direction: roster areas the
+    export never names at all, which are not an exclusion but a silence, and a
+    zone leader should know which of their areas produced no finding rows.
+    """
+
+    unknown: tuple[tuple[str, int], ...] = ()
+    missing: tuple[str, ...] = ()
+    scoped_rows: int = 0
+    total_rows: int = 0
+
+    @property
+    def unknown_rows(self) -> int:
+        return sum(n for _, n in self.unknown)
+
+    @property
+    def unknown_share(self) -> float | None:
+        """Excluded rows as a fraction of the rows inside the pilot zones —
+        the population they would have joined, not the whole export."""
+        if not self.scoped_rows:
+            return None
+        return self.unknown_rows / self.scoped_rows
+
+    @property
+    def clean(self) -> bool:
+        return not self.unknown and not self.missing
+
+    @property
+    def note(self) -> str:
+        """The data-note sentence, or "" when there is nothing to report."""
+        if self.clean:
+            return ""
+        bits = []
+        if self.unknown:
+            # Middots, not commas: "Huequen, Renaico & Tijeral 2" is one of
+            # the three live names and a comma-separated list reads it as two.
+            names = " · ".join(name for name, _ in self.unknown)
+            share = self.unknown_share
+            tail = (f" — {es_display.percent(share * 100, 2)} de la actividad "
+                    f"de las zonas piloto" if share is not None else "")
+            bits.append(
+                f"{es_display.integer(len(self.unknown))} nombres de área de "
+                f"Tableau no están en MISSION_ORG y quedan fuera de toda cifra "
+                f"por unidad: {names}, con "
+                f"{es_display.integer(self.unknown_rows)} personas{tail}.")
+        if self.missing:
+            bits.append(
+                f"{es_display.integer(len(self.missing))} áreas del roster no "
+                f"aparecen en la exportación: {', '.join(self.missing)}.")
+        return " ".join(bits)
+
+
+def reconcile(det: pd.DataFrame, roster: pd.DataFrame) -> Reconciliation:
+    """Match the export's area names against the roster's, inside the pilot zones.
+
+    Scoped to the zones MISSION_ORG actually knows about: the other six zones
+    are not unmatched names, they are zones this pilot does not cover, and
+    counting them as misses would report 57% of the mission as a data error.
+    """
+    if det is None or det.empty or roster is None or roster.empty:
+        return Reconciliation(total_rows=0 if det is None else int(len(det)))
+
+    areas = set(roster["Area_Name"].astype(str).str.strip())
+    zones = set(roster["Zone"].astype(str).str.strip())
+    in_pilot = det[_names(det, ZONE_COL).isin(zones)]
+    found = _names(in_pilot, AREA_COL)
+
+    counts = found[~found.isin(areas)].value_counts()
+    unknown = tuple((str(name), int(n)) for name, n in counts.items() if name)
+    return Reconciliation(
+        unknown=unknown,
+        missing=tuple(sorted(areas - set(found))),
+        scoped_rows=int(len(in_pilot)),
+        total_rows=int(len(det)),
+    )
