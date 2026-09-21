@@ -51,6 +51,21 @@ def test_view_url_always_names_the_mission():
     assert "Chile" in portal.view_url(portal.SHEET_DETAIL)
 
 
+def test_the_export_url_is_the_view_url_with_a_suffix_before_the_query():
+    """`.pdf` goes on the PATH, not after the parameters — the whole point is
+    that the window still rides along. Tableau serves this file to an
+    authenticated session without rendering anything, which is what makes the
+    job independent of a canvas that will not draw in a container."""
+    url = portal.export_url(portal.SHEET_SUMMARY, "pdf", date(2026, 9, 1), date(2026, 9, 21))
+    assert "/MissionFindingSummary.pdf?" in url
+    assert "Start%20Date=2026-09-01" in url and "End%20Date=2026-09-21" in url
+
+
+def test_an_export_url_with_no_window_carries_no_stray_question_mark():
+    url = portal.export_url(portal.SHEET_DETAIL, "csv", mission="")
+    assert url.endswith("/MissionFindingDetail.csv")
+
+
 def test_view_url_omits_dates_it_was_not_given():
     url = portal.view_url(portal.SHEET_DETAIL)
     assert "Start%20Date" not in url and "End%20Date" not in url

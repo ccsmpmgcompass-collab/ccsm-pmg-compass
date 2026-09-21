@@ -97,6 +97,12 @@ _VIZ_HOST = VIEW_BASE.split("//")[1].split("/")[0]
 #: minutes after a sign-in that had worked perfectly.
 _POST_LOGIN_DIALOG = "[data-tb-test-id*='postlogin' i], [data-tb-test-id*='Dialog-Glass' i]"
 
+#: Proof of an authenticated session that does not depend on the viz rendering.
+#: Both of these appeared in the inventory of every run that reached the view,
+#: including the ones whose viz iframe stayed empty.
+_APP_SHELL = ("[data-tb-test-id*='breadcrumb-workbook' i], "
+              "[data-tb-test-id='notification-center']")
+
 # Inside the flyout and its dialogs nothing was verified live, so each step
 # lists a test-id pattern first and visible labels after it. A miss raises with
 # the step named and the ids actually present logged — see _click_first.
@@ -550,9 +556,32 @@ def _login(page, tableau: tuple, church: tuple) -> None:
             _stuck(page, pw_box is not None)
         page.wait_for_timeout(2000)
 
-    if not wait_for_toolbar(page, _VIZ_LOAD_MS):
+    if not confirm_signed_in(page):
         _stuck(page, False)
-    _logger.info("Tableau sign-in confirmed (viz toolbar present).")
+    _logger.info("Tableau sign-in confirmed.")
+
+
+def confirm_signed_in(page, timeout_ms: int = 60_000) -> bool:
+    """Are we signed in? Answered WITHOUT waiting for the viz to render.
+
+    The toolbar used to be the success test, on the reasoning that it is the
+    only proof that survives every redirect. It is also proof of something we do
+    not actually need: runs #15 and #16 signed in perfectly, reached the view,
+    and sat three minutes in front of an EMPTY viz iframe, because a headless
+    container is not where a Tableau canvas wants to be drawn.
+
+    The export endpoints do not care about any of that — see
+    ``download_via_export_url`` — so sign-in is confirmed by the application
+    shell instead: the breadcrumb and header that only exist for an
+    authenticated session, or the toolbar if the viz does happen to draw.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000
+    while time.monotonic() < deadline:
+        if _present(page, _TOOLBAR_DOWNLOAD) or _present(page, _APP_SHELL):
+            return True
+        dismiss_post_login_dialog(page, tries=1)
+        page.wait_for_timeout(2000)
+    return False
 
 
 def wait_for_toolbar(page, timeout_ms: int) -> bool:
@@ -740,6 +769,57 @@ def _take_download(page, output_dir: Path, stem: str, confirm) -> Path:
     return out_path
 
 
+def export_url(sheet: str, suffix: str, start: date | None = None,
+               end: date | None = None, mission: str = MISSION) -> str:
+    """The view URL with an export suffix: ``…/MissionFindingSummary.pdf?…``.
+
+    Tableau serves a view's own PDF, CSV or PNG straight off the view path for
+    an authenticated session — it is what the Download menu asks for underneath.
+    The filter parameters ride along exactly as they do on the page, which is
+    the whole reason the window mechanism survives this shortcut intact.
+    """
+    base = view_url(sheet, start, end, mission)
+    path, _, query = base.partition("?")
+    return f"{path}.{suffix}" + (f"?{query}" if query else "")
+
+
+def download_via_export_url(page, sheet: str, suffix: str, start, end,
+                            output_dir: Path, stem: str):
+    """Fetch an export straight from its URL, using the browser's own session.
+
+    **No viz, no toolbar, no flyout.** Runs #15 and #16 proved the canvas does
+    not render in a headless container — the viz iframe arrives and stays
+    empty — which killed a design that clicked a Download button drawn on top of
+    it. This asks the server for the same file the button would have asked for.
+
+    Returns the saved path, or None when the endpoint refuses, so the caller can
+    fall back to driving the menu on a day when the viz does render. A refusal
+    is logged with its status: 403 is a permissions answer about the account,
+    not a selector problem, and the two deserve different responses.
+    """
+    url = export_url(sheet, suffix, start, end)
+    try:
+        response = page.request.get(url, timeout=_DOWNLOAD_MS)
+    except Exception as exc:
+        _logger.warning(f"{sheet}.{suffix}: export request failed: {exc}")
+        return None
+    ctype = (response.headers or {}).get("content-type", "")
+    if not response.ok:
+        _logger.warning(f"{sheet}.{suffix}: HTTP {response.status} ({ctype})")
+        return None
+    body = response.body()
+    # Tableau answers an unauthenticated or unsupported export with an HTML
+    # page and a cheerful 200, so the content type is the real check.
+    if "html" in ctype.lower() or len(body) < 1024:
+        _logger.warning(f"{sheet}.{suffix}: got {ctype}, {len(body)} bytes — "
+                        f"not a file, treating as a refusal")
+        return None
+    out_path = Path(output_dir) / f"{stem}_{int(time.time())}.{suffix}"
+    out_path.write_bytes(body)
+    _logger.info(f"Exported {out_path.name} ({len(body)} bytes) via {suffix} URL")
+    return out_path
+
+
 def download_summary_pdf(page, start: date, end: date, output_dir: Path) -> Path:
     """The Mission Finding Summary as a PDF, for one window.
 
@@ -750,6 +830,12 @@ def download_summary_pdf(page, start: date, end: date, output_dir: Path) -> Path
     That is what lets the runner verify the URL parameter actually took effect
     without ever reading the canvas.
     """
+    direct = download_via_export_url(page, SHEET_SUMMARY, "pdf", start, end,
+                                     output_dir, f"summary_{start}_{end}")
+    if direct is not None:
+        return direct
+
+    _logger.info("Export URL refused — falling back to the Download menu")
     _load_window(page, SHEET_SUMMARY, start, end)
     _click_first(page, [_TOOLBAR_DOWNLOAD], "the toolbar's Download button")
     page.wait_for_timeout(1000)
@@ -772,6 +858,12 @@ def download_crosstab(page, sheet: str, start: date | None, end: date | None,
     dialog's own default is accepted rather than failing a run over a file
     format that works either way.
     """
+    direct = download_via_export_url(page, sheet, "csv", start, end,
+                                     output_dir, sheet.lower())
+    if direct is not None:
+        return direct
+
+    _logger.info("Export URL refused — falling back to the Download menu")
     _load_window(page, sheet, start, end)
     _click_first(page, [_TOOLBAR_DOWNLOAD], "the toolbar's Download button")
     page.wait_for_timeout(1000)
