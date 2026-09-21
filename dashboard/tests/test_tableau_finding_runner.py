@@ -91,6 +91,57 @@ def test_a_read_message_cannot_run_away_with_the_log():
     assert len(portal.redact_identifiers("x" * 5000)) <= 240
 
 
+# ── the sign-in is a loop, because the flow is three steps ────────────────────
+
+def _step(**kw):
+    base = dict(toolbar=False, password=False, username=False,
+                answered=set(), step="https://idp/", settled=False)
+    base.update(kw)
+    return portal.next_login_step(**base)
+
+
+def test_the_toolbar_ends_the_sign_in_whatever_else_is_on_screen():
+    """It is the only proof of being signed in; everything else is a guess."""
+    assert _step(toolbar=True, password=True, username=True, settled=True) == "done"
+
+
+def test_tableaus_email_page_is_a_username_step():
+    assert _step(username=True) == "username"
+
+
+def test_oktas_username_screen_is_answered_before_its_password_screen():
+    """Run #7 died here. Tableau takes an email, hands off to Church SSO, and
+    Okta then asks for a username and a password on SEPARATE screens — so a
+    login written as "username box, then password box" arrives at Okta's
+    username screen, finds no password, and waits out the viz timeout."""
+    okta_user = _step(username=True, step="https://id.churchofjesuschrist.org/a")
+    assert okta_user == "username"
+    answered = {("username", "https://id.churchofjesuschrist.org/a")}
+    assert _step(password=True, username=True, answered=answered,
+                 step="https://id.churchofjesuschrist.org/a") == "password"
+
+
+def test_a_page_showing_both_treats_the_password_as_the_live_step():
+    assert _step(password=True, username=True) == "password"
+
+
+def test_an_unanswered_step_that_is_still_loading_is_waited_for():
+    assert _step() == "wait"
+
+
+def test_a_box_we_already_answered_is_a_rejection_not_a_second_try():
+    """Re-submitting the same value into the same box is how a login loop turns
+    into a lockout."""
+    answered = {("password", "https://idp/")}
+    assert _step(password=True, answered=answered, settled=True) == "stuck"
+
+
+def test_a_just_answered_box_gets_a_moment_before_being_called_stuck():
+    """Okta leaves the password field up while it verifies."""
+    answered = {("password", "https://idp/")}
+    assert _step(password=True, answered=answered, settled=False) == "wait"
+
+
 # ── which windows a run captures ──────────────────────────────────────────────
 
 def test_default_run_takes_the_previous_month_whole_and_this_one_to_date():

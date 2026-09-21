@@ -160,6 +160,23 @@ def _inventory(page, label: str) -> None:
                       f"menuitems={page.locator('[role=menuitem]').count()}")
     except Exception:
         pass
+    # The form's SHAPE, across every frame. On a Tableau page the test-ids above
+    # are the whole story; on the Church IdP there are none at all, and without
+    # this a stuck sign-in reports an empty list and teaches nothing (run #7).
+    # Attributes only — type, name, autocomplete, id — never values or labels.
+    for i, fr in enumerate(page.frames):
+        try:
+            fields = fr.eval_on_selector_all(
+                "input, button[type=submit], button[id]",
+                """els => els.slice(0, 12).map(e => e.tagName.toLowerCase() + '['
+                     + (e.type || '') + '|' + (e.name || '') + '|'
+                     + (e.getAttribute('autocomplete') || '') + '|'
+                     + (e.id || '') + ']')""",
+            )
+        except Exception:
+            continue
+        if fields:
+            _logger.error(f"  frame[{i}] {fr.url.split('?')[0][:80]}: {fields}")
     _logger.error("---- END DIAGNOSTIC ----")
 
 
@@ -225,93 +242,169 @@ def signin_page_message(url: str, text: str) -> str:
     return redact_identifiers(text)
 
 
-def _await_handoff(page, seconds: int = 20) -> None:
-    """Wait for the email step to hand off, and say so plainly when it doesn't.
+#: What a sign-in step can look like. Order matters in ``next_login_step``.
+_USER_FIELDS = (
+    "input#email[name='email']",            # Tableau's own page, seen live
+    "input[name='identifier']",             # Okta, id.churchofjesuschrist.org
+    "input[name='username']:visible",
+    "input[autocomplete='username']:visible",
+    "input[type='email']:visible",
+)
+_PASS_FIELDS = (
+    "input[name='credentials.passcode']",   # Okta (also its OTP field — see below)
+    "input[type='password']:visible",
+)
+_SUBMIT_BUTTONS = (
+    "button#login-submit",                  # Tableau's page, seen live
+    "input[type='submit']:visible",
+    "button[type='submit']:visible",
+)
 
-    Submitting the email should do one of two things: bring up a password box,
-    or leave Tableau's sign-in host for the IdP. When neither happens the email
-    was rejected and **the page is still sitting there saying why** — so read it
-    rather than waiting three minutes for a viz toolbar that was never coming.
+#: How long a box we already answered may stay on screen before we call it a
+#: rejection rather than a page still thinking about it. Okta leaves the
+#: password field up while it verifies, so this cannot be instant.
+_STEP_SETTLE_S = 15
 
-    This is what run #5 (2026-09-21) spent 180 seconds not learning. The field
-    is labelled *Username* but validates as an email: a Church username in
-    CCSM_TABLEAU_USERNAME produces "Enter a valid email." and a page that never
-    moves, which is indistinguishable from a hang unless somebody reads it.
+#: The whole sign-in, end to end. Three steps and two redirects fit easily;
+#: anything longer is a prompt we do not understand and should be reported.
+_LOGIN_BUDGET_S = 150
+
+
+def next_login_step(*, toolbar: bool, password: bool, username: bool,
+                    answered: set, step: str, settled: bool) -> str:
+    """What to do about the page in front of us: the sign-in flow's whole logic,
+    lifted out of the browser so it can be tested.
+
+    Returns ``"done"``, ``"password"``, ``"username"``, ``"stuck"`` or
+    ``"wait"``. ``answered`` holds ``(kind, step)`` pairs already submitted,
+    ``step`` is the current URL without its query, and ``settled`` says whether
+    the field has been sitting there long enough to have been a rejection.
+
+    Three rules, each learned the hard way:
+
+    * **The toolbar wins.** It is the only proof of being signed in.
+    * **Password before username.** A page showing both is showing a form we
+      have already half-answered; the password is the live step.
+    * **A box we already answered, still there and settled, is a rejection** —
+      not a page to answer again. Re-submitting the same value into the same
+      box is how a login loop turns into a lockout.
     """
-    for _ in range(seconds):
-        if page.locator("input[type='password']:visible").count():
-            return
-        if _SIGNIN_HOST not in page.url:
-            return
-        page.wait_for_timeout(1000)
+    if toolbar:
+        return "done"
+    if password and ("password", step) not in answered:
+        return "password"
+    if username and ("username", step) not in answered:
+        return "username"
+    if settled and (password or username):
+        return "stuck"
+    return "wait"
 
-    try:
-        message = signin_page_message(page.url, page.inner_text("body"))
-    except Exception:
-        message = ""
-    _inventory(page, "email_step_stuck")
-    raise RuntimeError(
-        f"Tableau did not accept CCSM_TABLEAU_USERNAME — the sign-in page never "
-        f"handed off to Church SSO. It says: \"{message or 'nothing readable'}\". "
-        f"That box is labelled Username but is validated as an EMAIL ADDRESS, so "
-        f"a Church username or member id will always stop here."
-    )
+
+def _submit(page, box, value: str, kind: str) -> None:
+    box.fill(value)
+    button = _first_visible(page, list(_SUBMIT_BUTTONS), timeout_ms=2000)
+    if button:
+        button.click(timeout=15_000)
+    else:
+        box.press("Enter")
+    _logger.info(f"{kind.capitalize()} submitted at {_host(page.url)}")
+    page.wait_for_timeout(3000)
+
+
+def _host(url: str) -> str:
+    return str(url or "").split("//")[-1].split("/")[0]
 
 
 def _login(page, username: str, password: str) -> None:
-    """Two hops: Tableau's email-first page, then Church SSO.
+    """Sign in, however many steps it takes.
 
-    The sign-in page was read on 2026-09-19 through a browser with no session
-    of its own (no credentials entered, nothing submitted): an unauthenticated
-    view URL lands on ``sso.online.tableau.com/public/idp/SSO``, titled "Login |
-    Tableau Cloud", carrying exactly ``input#email[name=email]``, a "remember"
-    checkbox and ``button#login-submit``. **There is no password field there** —
-    the email identifies the org and Tableau hands off to its IdP, which for
-    this site is Church SSO, the same Okta shape ``imos_portal`` meets. So the
-    password selectors below belong to the SECOND page, not this one, and the
-    "remember" checkbox is deliberately left alone.
+    **It is three, not two** — the thing run #7 (2026-09-21) cost us. Tableau's
+    page takes an email and hands off to Church SSO at
+    ``id.churchofjesuschrist.org/app/tableauonline/…/sso/saml``, and Okta then
+    asks for a username and a password on SEPARATE screens. A login written as
+    "fill the username box, then fill the password box" fills Tableau's email,
+    arrives at Okta's username screen, finds no password on it, and waits three
+    minutes for a viz that was never coming.
 
-    The viz toolbar is the success test. Nothing else leaves it missing for
-    three minutes, so a timeout here means the credentials were refused or a
-    second factor appeared.
+    So this is a loop over whatever step is on screen rather than a fixed
+    script, which also covers the two-step case and any reordering. Every value
+    is submitted at most once per page: ``next_login_step`` holds the rules and
+    the reasons.
+
+    The viz toolbar is the success test — the only proof that gets past every
+    redirect. When the loop ends without it, the page's own field inventory is
+    logged (attributes, never values or text) and the failure names the step.
     """
-    user_box = _first_visible(page, [
-        "input#email[name='email']",          # Tableau's own page, seen live
-        "input[name='identifier']",           # Okta
-        "input[autocomplete='username']:visible",
-        "input[type='email']:visible",
-    ], timeout_ms=8000)
-    if user_box:
-        user_box.fill(username)
-        submit = _first_visible(page, ["button#login-submit"], timeout_ms=3000)
-        if submit:
-            submit.click(timeout=15_000)
-        else:
-            user_box.press("Enter")
-        _logger.info("Username submitted")
-        _await_handoff(page)
+    answered: set = set()
+    first_seen: dict = {}
+    deadline = time.monotonic() + _LOGIN_BUDGET_S
 
-    pw_box = _first_visible(page, [
-        "input[name='credentials.passcode']",
-        "input[type='password']:visible",
-    ], timeout_ms=15_000)
-    if pw_box:
-        pw_box.fill(password)
-        pw_box.press("Enter")
-        _logger.info("Password submitted")
-        page.wait_for_timeout(4000)
+    while time.monotonic() < deadline:
+        step = page.url.split("?")[0]
+        pw_box = _first_visible(page, list(_PASS_FIELDS), timeout_ms=1200)
+        user_box = _first_visible(page, list(_USER_FIELDS), timeout_ms=1200)
+        toolbar = bool(page.locator(_TOOLBAR_DOWNLOAD).count())
 
+        marker = (step, bool(pw_box), bool(user_box))
+        first_seen.setdefault(marker, time.monotonic())
+        settled = time.monotonic() - first_seen[marker] >= _STEP_SETTLE_S
+
+        action = next_login_step(toolbar=toolbar, password=bool(pw_box),
+                                 username=bool(user_box), answered=answered,
+                                 step=step, settled=settled)
+
+        if action == "done":
+            _logger.info("Tableau sign-in confirmed (viz toolbar present).")
+            return
+        if action == "password":
+            _submit(page, pw_box, password, "password")
+            answered.add(("password", step))
+            continue
+        if action == "username":
+            _submit(page, user_box, username, "username")
+            answered.add(("username", step))
+            continue
+        if action == "stuck":
+            _stuck(page, pw_box is not None)
+        page.wait_for_timeout(2000)
+
+    # Out of budget with no toolbar: usually the viz is simply still drawing,
+    # so give it the load timeout it would get on any other navigation before
+    # calling the sign-in failed.
     try:
         page.wait_for_selector(_TOOLBAR_DOWNLOAD, state="visible",
                                timeout=_VIZ_LOAD_MS)
     except Exception:
-        _inventory(page, "login_stuck")
-        raise RuntimeError(
-            "Tableau sign-in could not be confirmed — the viz toolbar never "
-            "appeared. Check CCSM_TABLEAU_USERNAME / CCSM_TABLEAU_PASSWORD, "
-            "and whether the account has started asking for a second factor."
-        )
+        _stuck(page, False)
     _logger.info("Tableau sign-in confirmed (viz toolbar present).")
+
+
+def _stuck(page, on_password: bool) -> None:
+    """Report a sign-in that stopped moving, and say where.
+
+    ``signin_page_message`` supplies Tableau's own wording when we are still on
+    its page (that host, redacted, is the one place text may be read); on the
+    Church IdP the field inventory in ``_inventory`` is what there is to go on,
+    and an OTP box showing up where a password should be is what a second
+    factor looks like from here.
+    """
+    try:
+        message = signin_page_message(page.url, page.inner_text("body"))
+    except Exception:
+        message = ""
+    _inventory(page, "login_stuck")
+    where = _host(page.url)
+    raise RuntimeError(
+        f"Tableau sign-in stopped at {where}: the "
+        f"{'password' if on_password else 'username'} step was answered and the "
+        f"page did not move on."
+        + (f' It says: "{message}".' if message else
+           " Check CCSM_TABLEAU_USERNAME / CCSM_TABLEAU_PASSWORD, and whether "
+           "the account has started asking for a second factor — an Okta OTP "
+           "box has the same name as its password box, so a code prompt looks "
+           "like a refused password from here. The field inventory above is "
+           "attributes only.")
+    )
 
 
 @contextmanager
