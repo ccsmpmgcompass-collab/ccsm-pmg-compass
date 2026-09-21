@@ -436,3 +436,22 @@ So the whole reporting chain is now proven end to end in Spanish: button →
 dispatch → Actions → the runner's own refusal → `CLOUD_JOB_STATUS` → polled →
 shown. **The only thing still missing is the two secrets.** Once they are on the
 repo, the next run is the first that reaches Tableau at all.
+
+**Runs 5 and 6 (17:42 and 17:48 UTC): the secrets are in, and the username is
+the wrong KIND of thing.** Run 5 reached Tableau, submitted the username, and
+then sat on the sign-in page for 180 seconds before failing with "the viz
+toolbar never appeared" — true and useless. The page had been showing the reason
+the whole time; the no-page-text rule forbade reading it.
+
+That rule now has a host boundary (`signin_page_message`): Tableau's sign-in
+page is Salesforce's, pre-authentication and holds nothing about the mission, so
+its text may be logged redacted. Everything past it stays text-free. Run 6, with
+that in place, failed in **30 seconds** with the answer:
+
+> Tableau did not accept CCSM_TABLEAU_USERNAME — the sign-in page never handed
+> off to Church SSO. It says: "… Username **Enter a valid email.** …"
+
+**The box is labelled "Username" and validated as an EMAIL ADDRESS.** Reproduced
+in a browser with no session: any non-email value leaves the page exactly where
+runs 5 and 6 stopped. `CCSM_TABLEAU_USERNAME` must be the full email address
+used to sign in to Tableau.
