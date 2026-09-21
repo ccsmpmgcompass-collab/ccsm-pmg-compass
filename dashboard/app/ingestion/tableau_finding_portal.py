@@ -36,10 +36,18 @@ diagnostic prints element ids and counts only — never page text, which on the
 Detail view is investigator names. That is a deliberate divergence from
 ``imos_portal.py``, whose failure screenshots of a logged-in session are a
 standing flag in the plan (§2.3).
+
+**One exception, drawn at a host boundary:** Tableau's own sign-in page
+(``sso.online.tableau.com``) may have its text read and logged, redacted. That
+page is Salesforce's, it exists before any authentication, and it holds nothing
+about the mission — while its message is the only thing that distinguishes a
+rejected username from a hang. See ``signin_page_message``. Everything past it
+is the Church IdP and then mission data, where the text-free rule stands.
 """
 
 from __future__ import annotations
 
+import re
 import time
 from contextlib import contextmanager
 from datetime import date
@@ -186,6 +194,70 @@ def _click_first(page, selectors: list, what: str, timeout_ms: int = 5000):
     return loc
 
 
+#: Tableau's own sign-in host. The one page in this flow whose text is safe to
+#: log: it is Salesforce's, it exists before any authentication, and it holds
+#: nothing about the mission. Everything after it is the Church IdP and then the
+#: mission's own data, where the text-free rule stands.
+_SIGNIN_HOST = "sso.online.tableau.com"
+
+_EMAILISH = re.compile(r"[\w.+-]+@[\w.-]+|\b\d{5,}\b")
+
+
+def redact_identifiers(text: str, limit: int = 240) -> str:
+    """Anything that could identify a person, masked, and the rest truncated.
+
+    Email addresses and long digit runs are the two shapes a sign-in page can
+    echo back — usually the value that was just typed into it. The message
+    around them ("Enter a valid email", "We couldn't find an account") is what
+    is actually diagnostic, and it is generic.
+    """
+    return _EMAILISH.sub("<redacted>", " ".join(str(text or "").split()))[:limit]
+
+
+def signin_page_message(url: str, text: str) -> str:
+    """The sign-in page's own message, or '' when we are no longer on it.
+
+    Pure, so the host rule that decides whether text may be read at all is
+    testable without a browser.
+    """
+    if _SIGNIN_HOST not in str(url or ""):
+        return ""
+    return redact_identifiers(text)
+
+
+def _await_handoff(page, seconds: int = 20) -> None:
+    """Wait for the email step to hand off, and say so plainly when it doesn't.
+
+    Submitting the email should do one of two things: bring up a password box,
+    or leave Tableau's sign-in host for the IdP. When neither happens the email
+    was rejected and **the page is still sitting there saying why** — so read it
+    rather than waiting three minutes for a viz toolbar that was never coming.
+
+    This is what run #5 (2026-09-21) spent 180 seconds not learning. The field
+    is labelled *Username* but validates as an email: a Church username in
+    CCSM_TABLEAU_USERNAME produces "Enter a valid email." and a page that never
+    moves, which is indistinguishable from a hang unless somebody reads it.
+    """
+    for _ in range(seconds):
+        if page.locator("input[type='password']:visible").count():
+            return
+        if _SIGNIN_HOST not in page.url:
+            return
+        page.wait_for_timeout(1000)
+
+    try:
+        message = signin_page_message(page.url, page.inner_text("body"))
+    except Exception:
+        message = ""
+    _inventory(page, "email_step_stuck")
+    raise RuntimeError(
+        f"Tableau did not accept CCSM_TABLEAU_USERNAME — the sign-in page never "
+        f"handed off to Church SSO. It says: \"{message or 'nothing readable'}\". "
+        f"That box is labelled Username but is validated as an EMAIL ADDRESS, so "
+        f"a Church username or member id will always stop here."
+    )
+
+
 def _login(page, username: str, password: str) -> None:
     """Two hops: Tableau's email-first page, then Church SSO.
 
@@ -217,7 +289,7 @@ def _login(page, username: str, password: str) -> None:
         else:
             user_box.press("Enter")
         _logger.info("Username submitted")
-        page.wait_for_timeout(5000)
+        _await_handoff(page)
 
     pw_box = _first_visible(page, [
         "input[name='credentials.passcode']",

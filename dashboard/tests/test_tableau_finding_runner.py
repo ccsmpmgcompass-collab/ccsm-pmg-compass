@@ -56,6 +56,41 @@ def test_view_url_omits_dates_it_was_not_given():
     assert "Start%20Date" not in url and "End%20Date" not in url
 
 
+# ── what a stuck sign-in is allowed to tell us ────────────────────────────────
+
+def test_the_signin_pages_own_message_is_readable():
+    """Tableau's sign-in page is Salesforce's, pre-authentication, and holds
+    nothing about the mission — and its message is the only thing that separates
+    a rejected username from a hang. Run #5 spent 180 seconds not reading it."""
+    msg = portal.signin_page_message(
+        "https://sso.online.tableau.com/public/idp/SSO",
+        "Sign in to Tableau Cloud\nEnter a valid email.\nUsername")
+    assert "Enter a valid email." in msg
+
+
+def test_no_text_is_read_once_we_leave_that_host():
+    """Past the sign-in page it is the Church IdP and then investigator data, on
+    a public repo. The boundary is the host, not a judgement call at the call
+    site."""
+    assert portal.signin_page_message(
+        "https://prod-useast-b.online.tableau.com/t/churchofjesuschrist/views/x",
+        "Ana Gómez  Baptized 2026-09-04") == ""
+    assert portal.signin_page_message("https://okta.churchofjesuschrist.org/",
+                                      "Welcome back") == ""
+
+
+def test_identifiers_are_masked_out_of_whatever_is_read():
+    """A sign-in page's error usually quotes the value typed into it."""
+    out = portal.redact_identifiers(
+        "'someone@missionary.org' is not valid, id 425060123 unknown")
+    assert "missionary.org" not in out and "425060123" not in out
+    assert "is not valid" in out
+
+
+def test_a_read_message_cannot_run_away_with_the_log():
+    assert len(portal.redact_identifiers("x" * 5000)) <= 240
+
+
 # ── which windows a run captures ──────────────────────────────────────────────
 
 def test_default_run_takes_the_previous_month_whole_and_this_one_to_date():
