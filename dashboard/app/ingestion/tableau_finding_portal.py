@@ -215,28 +215,57 @@ def _inventory(page, label: str) -> None:
                      + (e.id || '') + ']')""",
             )
         except Exception:
-            continue
-        if fields:
-            _logger.error(f"  frame[{i}] {fr.url.split('?')[0][:80]}: {fields}")
+            fields = []
+        try:
+            tb = fr.eval_on_selector_all(
+                "[data-tb-test-id]",
+                "els => [...new Set(els.map(e => e.getAttribute('data-tb-test-id')))]")
+        except Exception:
+            tb = []
+        # Every frame is logged, empty or not. The viz lives in one of them and a
+        # frame skipped for having no form fields is exactly the frame that
+        # matters here.
+        _logger.error(f"  frame[{i}] {fr.url.split('?')[0][:80]}: "
+                      f"fields={fields} test-ids={len(tb)}{sorted(tb)[:12]}")
     _logger.error("---- END DIAGNOSTIC ----")
 
 
 def _first_visible(page, selectors: list, timeout_ms: int = 5000):
-    """The first selector in priority order that is actually visible.
+    """The first selector in priority order that is actually visible, IN ANY FRAME.
 
     Deliberately not a comma-unioned locator with ``.first``: that picks
     whichever match comes first in DOM order regardless of which selector was
     wanted, which is the bug that put a username into an unrelated search box
     during IMOS's live testing.
+
+    **And deliberately not ``page.locator``, which only ever searches the main
+    frame.** The viz — canvas, toolbar and all — renders inside a same-origin
+    iframe, a fact the plan recorded on day one (§2.2) and this module then spent
+    runs #12 through #15 ignoring: every one of them signed in, reached the view
+    and waited three minutes for a toolbar that was on screen the whole time, one
+    frame away. Selector first, frames within it, so priority still means what it
+    says.
     """
     for sel in selectors:
+        for frame in page.frames:
+            try:
+                loc = frame.locator(sel).first
+                if loc.count() and loc.is_visible(timeout=timeout_ms):
+                    return loc
+            except Exception:
+                continue
+    return None
+
+
+def _present(page, selector: str) -> bool:
+    """Whether a selector matches anything at all, in any frame."""
+    for frame in page.frames:
         try:
-            loc = page.locator(sel).first
-            if loc.count() and loc.is_visible(timeout=timeout_ms):
-                return loc
+            if frame.locator(selector).count():
+                return True
         except Exception:
             continue
-    return None
+    return False
 
 
 def _click_first(page, selectors: list, what: str, timeout_ms: int = 5000):
@@ -478,7 +507,7 @@ def _login(page, tableau: tuple, church: tuple) -> None:
             break
         pw_box = _first_visible(page, list(_PASS_FIELDS), timeout_ms=1200)
         user_box = _first_visible(page, list(_USER_FIELDS), timeout_ms=1200)
-        toolbar = bool(page.locator(_TOOLBAR_DOWNLOAD).count())
+        toolbar = _present(page, _TOOLBAR_DOWNLOAD)
 
         marker = (step, bool(pw_box), bool(user_box))
         first_seen.setdefault(marker, time.monotonic())
@@ -542,11 +571,8 @@ def wait_for_toolbar(page, timeout_ms: int) -> bool:
     deadline = time.monotonic() + timeout_ms / 1000
     reloaded = False
     while time.monotonic() < deadline:
-        try:
-            if page.locator(_TOOLBAR_DOWNLOAD).count():
-                return True
-        except Exception:
-            pass
+        if _present(page, _TOOLBAR_DOWNLOAD):
+            return True
         dismiss_post_login_dialog(page, tries=1)
         remaining = deadline - time.monotonic()
         if not reloaded and remaining < timeout_ms / 2000:
@@ -646,7 +672,7 @@ def dismiss_post_login_dialog(page, tries: int = 3) -> bool:
     dismissed = False
     for _ in range(tries):
         try:
-            if not page.locator(_POST_LOGIN_DIALOG).count():
+            if not _present(page, _POST_LOGIN_DIALOG):
                 return dismissed
         except Exception:
             return dismissed
@@ -655,7 +681,7 @@ def dismiss_post_login_dialog(page, tries: int = 3) -> bool:
         page.wait_for_timeout(1500)
         dismissed = True
         try:
-            if not page.locator(_POST_LOGIN_DIALOG).count():
+            if not _present(page, _POST_LOGIN_DIALOG):
                 _logger.info("Dialog closed on Escape")
                 return dismissed
         except Exception:
@@ -675,7 +701,7 @@ def dismiss_post_login_dialog(page, tries: int = 3) -> bool:
                 candidates.last.click(timeout=8000)
                 _logger.info(f"Clicked dialog control: {selector}")
                 page.wait_for_timeout(1500)
-                if not page.locator(_POST_LOGIN_DIALOG).count():
+                if not _present(page, _POST_LOGIN_DIALOG):
                     return dismissed
             except Exception:
                 continue
@@ -692,9 +718,7 @@ def _load_window(page, sheet: str, start: date | None, end: date | None) -> None
         raise RuntimeError(
             f"{sheet} never showed its toolbar for {start}..{end} — the view did "
             f"not finish loading. The diagnostic above lists what was on screen.")
-    try:
-        page.wait_for_selector(_CANVAS, state="attached", timeout=_VIZ_LOAD_MS)
-    except Exception:
+    if not _present(page, _CANVAS):
         # A sheet that draws no marks for its window still exports, and the
         # export itself is what gets verified downstream, so this is a warning
         # rather than a failure.
