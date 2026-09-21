@@ -471,3 +471,76 @@ signing in. A refused password, not a slow one, and not an OTP prompt (an OTP
 box would not carry `current-password`).
 
 **So: `CCSM_TABLEAU_PASSWORD` is wrong.** Nothing past sign-in has run yet.
+
+---
+
+## §6 — It runs. Run #17, 2026-09-21 19:47 UTC
+
+**The first fully automated Tableau pull the mission has ever had.** Two and a
+half minutes, start to finish:
+
+```
+Tableau username submitted at sso.online.tableau.com
+Church username submitted at id.churchofjesuschrist.org
+Church password submitted at id.churchofjesuschrist.org
+Tableau sign-in confirmed.
+Exported summary_2026-08-01_2026-08-31.pdf (60,131 bytes)   -> 2026-08: 36 baptized
+Exported summary_2026-09-01_2026-09-21.pdf (60,027 bytes)   -> 2026-09: 19 baptized
+Exported missionfindingdetail.csv (29,211,673 bytes)
+TABLEAU_BAPTISMS: 33 months · 2024-01 -> 2026-09 · no gaps · 2026-09 month-to-date
+TABLEAU_DETAIL: 99,425 people to Drive (1.27 MB gzipped) · 39 artifact rows dropped
+```
+
+The live tab, read back straight afterwards:
+
+```
+_uploaded_by:auto:tableau   _uploaded_at:2026-09-21 19:45 UTC
+MISSION  2026-07  47                           <- legacy row, blank dates, untouched
+MISSION  2026-08  36  2026-08-01  2026-08-31   <- certified whole month
+MISSION  2026-09  19  2026-09-01  2026-09-21   <- provisional, month-to-date
+```
+
+Every guard in §1 fired correctly on live data: the PDF's own printed window
+matched the window requested, the Detail export was WIDER than the store
+(99,425 against 89,824) so the ``narrower`` refusal stayed silent, August landed
+certified and September landed visibly partial. The 31 legacy rows still carry
+blank dates and still read as whole months.
+
+### 6.1 — What the seventeen runs actually taught
+
+Two of the failures were the mission's configuration; **five were mine**, and
+the pattern in them is worth keeping.
+
+| Runs | Wall | Fix |
+|---|---|---|
+| 1-4 | secrets absent from the repo | Zackary added them |
+| 5-6 | `CCSM_TABLEAU_USERNAME` was not an email | Tableau's box is labelled *Username* and validated as an email |
+| 7 | sign-in is THREE steps, not two | a loop over whatever step is on screen |
+| 8-11 | the two hosts want DIFFERENT credentials | `credentials_for`; the Church pair defaults to the IMOS secrets |
+| 12-14 | Tableau's post-login dialog covered the view | watch for it, do not check once |
+| 15-16 | **the viz does not render in a headless container at all** | stop needing it |
+
+**The last one is the real lesson.** Four runs died waiting for a toolbar drawn
+on a canvas that a container will never paint, and the design had hung its whole
+download flow off clicking that toolbar. Tableau serves a view's PDF and CSV
+straight off its own path to an authenticated session — which is what the
+button asks for underneath. Asking the server directly removed the canvas, the
+flyout, the export dialogs and every unverified selector inside them in one
+change. The menu path remains as a fallback and has still never been needed.
+
+Runs 9-11 also spent an afternoon blaming a password its owner was certain of,
+because the diagnostic could count Okta's error regions but not read them and
+could not say whether a form had even submitted. "Field filled: True, submit
+enabled: True" plus one readable banner — "Invalid username and password
+combination" — ended that in a single run. **Evidence about our own actions is
+worth as much as evidence about theirs.**
+
+### 6.2 — Still to watch
+
+- **The nightly cron has not yet run this code.** 09:00 UTC tomorrow is its
+  first unattended outing; runs 1-16 were all failures and run 17 was manual.
+- The Detail export is now **99,425 people against the stored 89,824** — a
+  jump worth a look, and exactly the kind of change the ``narrower`` guard is
+  there to notice in the other direction.
+- `transfer-roster-pull.yml` still uploads IMOS screenshots on failure from a
+  public repo (§2.3). Untouched, still flagged.
