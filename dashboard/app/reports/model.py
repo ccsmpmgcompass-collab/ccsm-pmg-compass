@@ -20,17 +20,26 @@ Three bases appear here, and they are not interchangeable:
 
   ``actual``                   the raw sum. The headline (decision 12), never
                                compared to anything.
-  ``per_reporting_area_week``  the sum over the area-weeks that actually filed.
-                               What attainment and change are computed on,
-                               because it is the only basis where a swing in how
-                               many areas reported cannot masquerade as work.
+  ``per_reporting_area_week``  the sum over the area-weeks (or area-days) that
+                               actually filed. The only basis where a swing in
+                               how many areas reported cannot masquerade as
+                               work, so every CHANGE is computed on it.
                                Measured 2026-09-21: `contacts_attempted` rose
                                19.3% between two weeks per active area and 2.6%
                                per reporting area. The second is the true one.
   ``per_active_area_week``     the sum over every roster area, reporting or not.
-                               Decision 12's basis for comparing UNITS, where a
-                               zone whose areas go silent should rank lower on
+                               The basis for comparing UNITS (decision 12), where
+                               a zone whose areas go silent should rank lower on
                                purpose — `zone_comparison`'s standing rule.
+
+**Attainment takes whichever basis matches its own goal's population.** A Key
+Indicator's goal is the companionships' own summed meta, whose population is the
+areas that filed the goal form, so the result is reduced the same way — per
+reporting area-week. A nightly goal is one mission-wide `GOAL_*` number per area
+per week, whose population is every active area, so the result is reduced over
+all of them; an unreported night is work nobody recorded, and counting it as
+work would flatter. That is also the basis §1.1 measured on and the one decision
+22's 25% floor was calibrated against.
 
 Loading is separate from building. `load_data()` reads every frame once;
 `build_report` is pure over it. The packet renders 63 scopes from one load.
@@ -47,12 +56,35 @@ import pandas as pd
 
 from app.reports import periods as P
 from app.reports import scope as S
-from app.reports.grading import Grade, goal_is_unusable, grade_ki
+from app.reports.grading import (
+    Grade, attainment, goal_is_unusable, grade_ki, grade_nightly,
+)
 
 #: How much DAILY_LOG history to pull. The `days` argument is a client-side
 #: filter — `read_tab` reads and caches the whole tab either way — so a wide
 #: window costs no extra Sheets read and lets any period resolve.
 HISTORY_DAYS = 3650
+
+#: The nightly form's YESNO question. DAILY_LOG stores "TRUE" or a blank, so it
+#: is reported as the number of NIGHTS an exchange happened — a real figure,
+#: where summing a word would be nothing at all.
+EXCHANGES = "exchanges"
+EXCHANGE_TRUE = "TRUE"
+
+#: The nightly form's CHOICE question (Todo / La mayor parte / Algo) as the
+#: agents already score it, 1 to 3, in WEEKLY_BREAKDOWNS. Averaged across areas
+#: and weeks, never summed — it is a rate, and forty areas' scores added
+#: together is a number with no meaning.
+EFFORT_SCORE = "effort_score"
+
+#: The four Effectiveness components, in SCORES' own order (decision 18).
+SCORE_COLS = ("Effort_Score", "Skill_Score", "KI_Score", "Effectiveness_Score")
+
+#: WEEKLY_BREAKDOWNS' own pick of what an area is strong at and what it is
+#: growing. The Apps Script agents choose these; the report READS them and must
+#: not recompute them (§1.2).
+STRENGTH_COLS = ("strength1_metric", "strength2_metric")
+GROWTH_COL = "growth_metric"
 
 
 # ── Coverage ──────────────────────────────────────────────────────────────────
@@ -144,6 +176,93 @@ class MetricRow:
         return self.leadership_goal is not None and self.leadership_goal_complete
 
 
+# ── Scores, series, children ──────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class Scores:
+    """SCORES' four numbers over the period, and where the unit sits.
+
+    Averaged across the period's scored weeks and across the unit's areas. An
+    area the scoring agent wrote no row for contributes nothing rather than a
+    zero: "not scored yet" and "scored zero" are different claims, and
+    `CCSM_AgentScores` writes a genuine 0.0 for a week an area had no goals to
+    be scored against.
+
+    ``rank`` / ``of`` are filled at AREA level only — the area's place among
+    its district's areas, on Effectiveness (decision 18). That is SCORES' own
+    composite and the ranking Puntajes already shows; the CHILDREN table ranks
+    on mean Key Indicator attainment instead, because a composite of a
+    composite cannot be explained in a council (decision 14).
+    """
+
+    effort: float | None = None
+    skill: float | None = None
+    ki: float | None = None
+    effectiveness: float | None = None
+    areas_scored: int = 0
+    weeks: int = 0
+    rank: int | None = None
+    of: int | None = None
+
+    @property
+    def measured(self) -> bool:
+        return self.areas_scored > 0
+
+
+@dataclass(frozen=True)
+class SeriesPoint:
+    """One complete week of a metric, for the week-by-week strip."""
+
+    week: date
+    actual: float | None
+    reporting: int
+    per_reporting_area: float | None = None
+
+
+@dataclass(frozen=True)
+class Series:
+    """A metric's weeks, with the transfer boundaries it crosses (decision 9).
+
+    ``boundaries`` are `(date, cycle number)`. On a weekly axis each falls
+    BETWEEN two Sundays — 2026-09-07 sits between the weeks ending 09-06 and
+    09-13 — and placing it there is the renderer's business.
+    """
+
+    key: str
+    label: str
+    points: tuple[SeriesPoint, ...] = ()
+    boundaries: tuple[tuple[date, str], ...] = ()
+
+    @property
+    def reported_points(self) -> tuple[SeriesPoint, ...]:
+        return tuple(p for p in self.points if p.actual is not None)
+
+
+@dataclass(frozen=True)
+class ChildRow:
+    """One unit a level down, ranked and named (decisions 14, 15, 16).
+
+    ``mean_attainment`` is the mean of the unit's Key Indicator percentages —
+    not Effectiveness. A council can be told "this zone is at 54% of the goals
+    its companionships set themselves"; nobody can explain a composite of a
+    composite out loud.
+
+    ``rank`` is 1 for the WEAKEST, because that is the order the table prints
+    in and the order a council reads down.
+    """
+
+    scope: S.Scope
+    rank: int
+    mean_attainment: float | None
+    metrics: tuple[MetricRow, ...] = ()
+    coverage: P.Coverage = None
+    areas_silent: tuple[str, ...] = ()
+
+    @property
+    def name(self) -> str:
+        return self.scope.name
+
+
 # ── The model ─────────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -172,12 +291,30 @@ class ReportModel:
     #: The seven, always, in the catalogue's order (decision 10).
     key_indicators: tuple[MetricRow, ...] = ()
 
-    # ── Filled by step R4; declared here so the shape never changes ──────────
+    #: Every tracked nightly metric (decision 17), weakest first is the
+    #: renderer's business — here they keep the catalogue's order.
     nightly_metrics: tuple[MetricRow, ...] = ()
-    scores: dict = field(default_factory=dict)
+
+    #: The four scores and, at area level, where the area ranks in its
+    #: district (decision 18).
+    scores: "Scores | None" = None
+
+    #: The four conversion rates (decision 13). Empty below zone level, where
+    #: a ratio over one companionship's fortnight is noise.
     rates: tuple = ()
+
+    #: The units one level down, weakest first (decisions 14, 15).
     children: tuple = ()
+
+    #: `{metric key: Series}` for the seven, week by week (decision 26).
     series: dict = field(default_factory=dict)
+
+    #: What this companionship is strong at and what they are growing —
+    #: WEEKLY_BREAKDOWNS' own choice, read and never recomputed (§1.2).
+    strengths: tuple[str, ...] = ()
+    growth: str | None = None
+
+    # ── Filled by phase T ────────────────────────────────────────────────────
     tableau: object | None = None
 
     @property
@@ -230,19 +367,29 @@ class ReportData:
     """
 
     roster: pd.DataFrame
-    weekly_ki: pd.DataFrame
-    daily_log: pd.DataFrame
-    transfer_goals: pd.DataFrame
-    cycles: list[dict]
-    ki_keys: tuple[str, ...]
-    labels: dict[str, str]
-    mission_name: str
     today: date
+
+    #: Everything below defaults to empty. A caller that only exercises Key
+    #: Indicators should not have to hand in a SCORES frame to do it, and a
+    #: mission that has never run the scoring agent should get a report with
+    #: an empty scores block rather than an exception.
+    weekly_ki: pd.DataFrame = field(default_factory=pd.DataFrame)
+    daily_log: pd.DataFrame = field(default_factory=pd.DataFrame)
+    breakdowns: pd.DataFrame = field(default_factory=pd.DataFrame)
+    scores: pd.DataFrame = field(default_factory=pd.DataFrame)
+    transfer_goals: pd.DataFrame = field(default_factory=pd.DataFrame)
+    cycles: list[dict] = field(default_factory=list)
+    ki_keys: tuple[str, ...] = ()
+    nightly_keys: tuple[str, ...] = ()
+    nightly_goals: dict = field(default_factory=dict)
+    agent_config: dict = field(default_factory=dict)
+    labels: dict[str, str] = field(default_factory=dict)
+    mission_name: str = S.DEFAULT_MISSION_NAME
     #: The last day that counts toward nightly compliance — today once the
     #: evening refresh has run, yesterday before it. Resolved once at load so
     #: `build_report` stays pure and a packet cannot straddle the 9:30 PM
-    #: cutoff halfway through its 63 scopes.
-    anchor: date
+    #: cutoff halfway through its 63 scopes. Defaults to `today`.
+    anchor: date | None = None
     #: `queries.get_ki_goals_for_week`, injected rather than imported so a test
     #: can hand in a week's goals without a sheet. The W-7 rule it implements —
     #: a week's goals are written on the PREVIOUS week's form — stays in
@@ -250,6 +397,10 @@ class ReportData:
     ki_goals_fn: object = None
     _goals: dict = field(default_factory=dict, repr=False)
     _flags: dict = field(default_factory=dict, repr=False)
+
+    def __post_init__(self):
+        if self.anchor is None:
+            self.anchor = self.today
 
     def ki_goals_for_week(self, week: date, areas: frozenset) -> tuple:
         """`get_ki_goals_for_week`, memoised on (week, areas).
@@ -272,55 +423,136 @@ class ReportData:
         `grading.goal_is_unusable`. Asked per area it would answer "the goal is
         broken" every time a companionship had a bad fortnight.
         """
-        if period.key not in self._flags:
+        cache_key = ("ki", period.key)
+        if cache_key not in self._flags:
             mission = S.mission_scope(self.roster, self.mission_name)
             rows = _ki_rows(self, mission, period)
-            self._flags[period.key] = {
+            self._flags[cache_key] = {
                 r.key: goal_is_unusable(r.per_reporting_area_week,
                                         r.meta_per_area_week)
                 for r in rows
             }
-        return self._flags[period.key]
+        return self._flags[cache_key]
+
+    def nightly_goal_flags(self, period: P.Period) -> dict:
+        """The same verdict for the nightly `GOAL_*` numbers.
+
+        Judged on attainment per ACTIVE area-week, which is the basis §1.1
+        measured and the basis decision 22's 25% floor was calibrated against:
+        it catches `rc_lessons_mcp` at 6.4% and `baptismal_calendars` at 21.7%
+        and nothing else. On the reporting basis every figure rises by about
+        forty per cent and only one of the two would flag.
+        """
+        cache_key = ("nightly", period.key)
+        if cache_key not in self._flags:
+            mission = S.mission_scope(self.roster, self.mission_name)
+            self._flags[cache_key] = {
+                r.key: goal_is_unusable(r.per_active_area_week,
+                                        self.nightly_goals.get(r.key))
+                for r in _nightly_rows(self, mission, period)
+            }
+        return self._flags[cache_key]
+
+
+def _key_columns(df: pd.DataFrame, area: str, day: str,
+                 out_day: str = "_day") -> pd.DataFrame:
+    """A frame with `_area` and a normalised date column, stripped once.
+
+    Every membership test downstream compares against the roster's stripped
+    names, and SCORES, DAILY_LOG and WEEKLY_BREAKDOWNS all carry stray
+    whitespace. Doing it here means no per-scope filter pays for it 63 times.
+    """
+    if df is None or df.empty or area not in df.columns:
+        return pd.DataFrame()
+    out = df.copy()
+    out["_area"] = out[area].astype(str).str.strip()
+    out[out_day] = (out[day].astype(str).str.strip().str[:10]
+                    if day in out.columns else "")
+    return out
+
+
+def _restore_exchanges(daily: pd.DataFrame, raw: pd.DataFrame) -> pd.DataFrame:
+    """Put `exchanges` back as a 1/0 night count.
+
+    `get_daily_log` runs every metric column through `_num`, which coerces an
+    unparseable value to NaN and then fills it with 0 — so a YESNO column
+    arrives as a wall of zeros with nothing about the values revealing they
+    were never numbers. The same trap `non_numeric_metrics` documents. The raw
+    tab stores "TRUE" or a blank, which is a real count of nights, so it is
+    re-derived here from the unconverted frame and merged back on (day, area).
+    """
+    if daily is None or daily.empty or raw is None or raw.empty:
+        return daily
+    if not {"Date", "Area", EXCHANGES} <= set(raw.columns):
+        return daily
+    flags = _key_columns(raw[["Date", "Area", EXCHANGES]], "Area", "Date")
+    flags[EXCHANGES] = (flags[EXCHANGES].astype(str).str.strip().str.upper()
+                        == EXCHANGE_TRUE).astype(int)
+    flags = flags[["_day", "_area", EXCHANGES]].drop_duplicates(
+        subset=["_day", "_area"])
+    out = daily.drop(columns=[EXCHANGES], errors="ignore").merge(
+        flags, on=["_day", "_area"], how="left")
+    out[EXCHANGES] = out[EXCHANGES].fillna(0)
+    return out
 
 
 def load_data(today: date | None = None) -> ReportData:
     """Read every source once. The only impure function in this module."""
     from app.config.flavor_loader import flavor
     from app.config.metric_catalog import (
-        format_metric_label, key_indicator_metrics, strip_form_suffix,
+        format_metric_label, key_indicator_metrics, nightly_metrics,
+        non_numeric_metrics, strip_form_suffix,
     )
     from app.db.goals_queries import all_area_transfer_goals
     from app.db.queries import (
-        get_config_value, get_daily_log, get_ki_goals_for_week, get_weekly_ki,
+        get_agent_config, get_area_weekly_goals, get_config_value,
+        get_daily_log, get_ki_goals_for_week, get_scores, get_weekly_ki,
     )
+    from app.db.sheets_client import read_tab
     from app.utils.area_helpers import compliance_anchor_date, mission_today
 
     today = today or mission_today()
 
-    weekly_ki = get_weekly_ki()
-    if not weekly_ki.empty:
-        weekly_ki = weekly_ki.copy()
-        weekly_ki["_area"] = weekly_ki["area"].astype(str).str.strip()
-        weekly_ki["_week"] = weekly_ki["week_end_date"].astype(str).str[:10]
-
-    daily = get_daily_log(HISTORY_DAYS)
-    if not daily.empty:
-        daily = daily.copy()
-        daily["_area"] = daily["Area"].astype(str).str.strip()
-        daily["_day"] = daily["Date"].astype(str).str[:10]
+    weekly_ki = _key_columns(get_weekly_ki(), "area", "week_end_date", "_week")
+    daily = _key_columns(get_daily_log(HISTORY_DAYS), "Area", "Date")
+    daily = _restore_exchanges(daily, read_tab("DAILY_LOG"))
+    breakdowns = _key_columns(read_tab("WEEKLY_BREAKDOWNS"), "area",
+                              "week_end_date", "_week")
+    scores = _key_columns(get_scores(), "Area_Name", "Week_Ending_Date", "_week")
 
     ki_keys = tuple(key_indicator_metrics())
+    skip = non_numeric_metrics()
+    # Every tracked nightly metric (decision 17), in the form's own order.
+    # `exchanges` and `effort` are not summable — see `_nightly_rows`, which
+    # reports each of them the way its own data allows rather than dropping it.
+    nightly_keys = tuple(k for k in nightly_metrics() if k not in skip)
+    nightly_keys += tuple(k for k in (EXCHANGES, EFFORT_SCORE)
+                          if k not in nightly_keys)
+
+    # The four conversion rates get labels too: WEEKLY_BREAKDOWNS names one of
+    # them as an area's strength, and "contact_rate" is not a thing to print in
+    # a council packet.
+    from app.analytics.rate_metrics import RATE_METRICS
+    labelled = ki_keys + nightly_keys + tuple(m.key for m in RATE_METRICS)
+    labels = {k: strip_form_suffix(format_metric_label(k, "es"))
+              for k in labelled}
+    labels.setdefault(EFFORT_SCORE, "Nivel de Esfuerzo (1–3)")
+
     return ReportData(
         roster=S.load_roster(),
         weekly_ki=weekly_ki,
         daily_log=daily,
+        breakdowns=breakdowns,
+        scores=scores,
         transfer_goals=all_area_transfer_goals(),
         cycles=P.load_cycles(),
         ki_keys=ki_keys,
+        nightly_keys=nightly_keys,
+        nightly_goals=get_area_weekly_goals(),
+        agent_config=get_agent_config(),
         # The mission's own Spanish names, from QUESTIONS_CONFIG, without the
         # form's "(Real)" tail. Spanish literals, no t() — decision 3.
-        labels={k: strip_form_suffix(format_metric_label(k, "es"))
-                for k in ki_keys},
+        labels=labels,
         mission_name=get_config_value("MISSION_NAME", flavor.display_name),
         today=today,
         anchor=compliance_anchor_date(),
@@ -512,6 +744,301 @@ def _ki_rows(data: ReportData, scope: S.Scope, period: P.Period, *,
     return out
 
 
+# ── Nightly (decision 17) ─────────────────────────────────────────────────────
+
+def _daily_window(data: ReportData, scope: S.Scope, start: date,
+                  end: date) -> pd.DataFrame:
+    df = data.daily_log
+    if df is None or df.empty or end < start:
+        return pd.DataFrame()
+    return df[(df["_day"] >= start.isoformat()) & (df["_day"] <= end.isoformat())
+              & df["_area"].isin(set(scope.areas))]
+
+
+def _nightly_totals(rows: pd.DataFrame, key: str) -> float | None:
+    """One metric summed over a window of nights, or None if it is not there.
+
+    `exchanges` sums as a count of nights, because `_restore_exchanges` has
+    already turned the YESNO word into a 1 or a 0. `effort_score` is not in
+    DAILY_LOG at all — the agents write it per week into WEEKLY_BREAKDOWNS —
+    and is handled by its caller.
+    """
+    if rows.empty or key not in rows.columns:
+        return None
+    return float(pd.to_numeric(rows[key], errors="coerce").sum())
+
+
+def _effort_score(data: ReportData, scope: S.Scope,
+                  period: P.Period) -> tuple[float | None, int]:
+    """The agents' own 1–3 effort score, averaged over the unit's area-weeks."""
+    df = data.breakdowns
+    if df is None or df.empty or EFFORT_SCORE not in df.columns:
+        return None, 0
+    weeks = {w.isoformat() for w in period.weeks}
+    rows = df[df["_week"].isin(weeks) & df["_area"].isin(set(scope.areas))]
+    values = pd.to_numeric(rows[EFFORT_SCORE], errors="coerce").dropna()
+    return (float(values.mean()) if len(values) else None), len(values)
+
+
+def _nightly_rows(data: ReportData, scope: S.Scope, period: P.Period, *,
+                  comparison: P.Comparison | None = None,
+                  flags: dict | None = None) -> list[MetricRow]:
+    """Every tracked nightly metric for the unit — decision 17's whole table.
+
+    **Two bases, each matched to what it is being compared with.** Attainment
+    divides by every ACTIVE area-week, because the goal is one mission-wide
+    `GOAL_*` number per area per week and an unreported night is work nobody
+    recorded. That is the basis §1.1 measured on, the basis decision 22's 25%
+    floor was calibrated against, and it reads `contacts_attempted` at 65% of
+    goal rather than the 90% the reporting basis would flatter it to.
+
+    The CHANGE divides by the area-DAYS that actually filed. Nightly reporting
+    rose from 35 of 45 areas to 45 of 45 over six weeks; on the active basis
+    that swing alone moves `contacts_attempted` 19.3% between two weeks, and
+    on the reporting basis it moves 2.6%. Only the second is work.
+    """
+    end = min(period.end, data.anchor)
+    rows = _daily_window(data, scope, period.start, end)
+    weeks = len(period.weeks) or 1
+    active_area_weeks = scope.area_count * weeks
+    area_days = len(rows)
+
+    before_rows = pd.DataFrame()
+    before_days = 0
+    if comparison and comparison.period is not None:
+        cp = comparison.period
+        before_rows = _daily_window(data, scope, cp.start,
+                                    min(cp.end, data.anchor))
+        before_days = len(before_rows)
+
+    effort, effort_basis = _effort_score(data, scope, period)
+
+    out: list[MetricRow] = []
+    for key in data.nightly_keys:
+        goal = data.nightly_goals.get(key)
+        if key == EFFORT_SCORE:
+            # A rate: already per area-week, so it is its own basis and the
+            # active/reporting split does not apply.
+            before_effort, _ = (_effort_score(data, scope, comparison.period)
+                                if comparison and comparison.period else (None, 0))
+            out.append(MetricRow(
+                key=key, label=data.labels.get(key, key),
+                actual=effort, actual_area_weeks=effort_basis,
+                per_active_area_week=effort, per_reporting_area_week=effort,
+                before_per_reporting_area_week=before_effort,
+                grade=grade_nightly(effort, goal, before=before_effort),
+            ))
+            continue
+
+        actual = _nightly_totals(rows, key)
+        before = _nightly_totals(before_rows, key)
+        per_active = (actual / active_area_weeks
+                      if actual is not None and active_area_weeks else None)
+        now_rate = (actual * 7 / area_days
+                    if actual is not None and area_days else None)
+        before_rate = (before * 7 / before_days
+                       if before is not None and before_days else None)
+        out.append(MetricRow(
+            key=key, label=data.labels.get(key, key),
+            actual=actual, actual_area_weeks=area_days,
+            per_active_area_week=per_active,
+            per_reporting_area_week=now_rate,
+            before_per_reporting_area_week=before_rate,
+            grade=grade_nightly(per_active, goal, before=before_rate,
+                                now=now_rate, flag=(flags or {}).get(key)),
+        ))
+    return out
+
+
+# ── Scores (decision 18) ──────────────────────────────────────────────────────
+
+def _score_frame(data: ReportData, areas, period: P.Period) -> pd.DataFrame:
+    df = data.scores
+    if df is None or df.empty:
+        return pd.DataFrame()
+    weeks = {w.isoformat() for w in period.weeks}
+    return df[df["_week"].isin(weeks) & df["_area"].isin(set(areas))]
+
+
+def _scores(data: ReportData, scope: S.Scope, period: P.Period) -> Scores:
+    rows = _score_frame(data, scope.areas, period)
+    if rows.empty:
+        return Scores(weeks=len(period.weeks))
+
+    means = {c: (float(pd.to_numeric(rows[c], errors="coerce").mean())
+                 if c in rows.columns else None)
+             for c in SCORE_COLS}
+    rank = of = None
+    if scope.level == S.AREA and scope.district:
+        # The area's place among its district's areas, weakest LAST — a rank of
+        # 1 is the district's strongest, which is how Puntajes already reads.
+        siblings = S.area_scopes(data.roster, zone=scope.zone,
+                                 district=scope.district)
+        peers = _score_frame(data, [s.name for s in siblings], period)
+        if not peers.empty and "Effectiveness_Score" in peers.columns:
+            by_area = (peers.groupby("_area")["Effectiveness_Score"]
+                       .mean().sort_values(ascending=False))
+            of = len(by_area)
+            if scope.name in by_area.index:
+                rank = int(list(by_area.index).index(scope.name)) + 1
+    return Scores(
+        effort=means.get("Effort_Score"), skill=means.get("Skill_Score"),
+        ki=means.get("KI_Score"), effectiveness=means.get("Effectiveness_Score"),
+        areas_scored=int(rows["_area"].nunique()), weeks=len(period.weeks),
+        rank=rank, of=of,
+    )
+
+
+# ── Conversion rates (decision 13) ───────────────────────────────────────────
+
+def _rates(data: ReportData, scope: S.Scope, period: P.Period,
+           comparison: P.Comparison | None) -> tuple:
+    """The four conversion rates, at mission and zone only.
+
+    Decision 13 puts them at those two levels, and the arithmetic says why: a
+    close rate over one companionship's fortnight of three lessons is a
+    ratio of two small integers. `rate_metrics` owns the rules — the mission
+    rate is the ratio of totals rather than the mean of the areas' own rates,
+    and a missing denominator is no reading rather than zero.
+    """
+    from app.analytics.rate_metrics import rate_rows
+
+    if scope.level not in (S.MISSION, S.ZONE):
+        return ()
+    end = min(period.end, data.anchor)
+    rows = _daily_window(data, scope, period.start, end)
+    prior = pd.DataFrame()
+    prior_days = 0
+    if comparison and comparison.period is not None:
+        cp = comparison.period
+        prior = _daily_window(data, scope, cp.start, min(cp.end, data.anchor))
+        prior_days = int(prior["_day"].nunique()) if not prior.empty else 0
+
+    def totals(frame):
+        if frame.empty:
+            return {}
+        return {c: float(pd.to_numeric(frame[c], errors="coerce").sum())
+                for c in frame.columns if c not in ("_area", "_day")}
+
+    return tuple(rate_rows(
+        totals(rows), totals(prior), data.agent_config,
+        current_days=int(rows["_day"].nunique()) if not rows.empty else 0,
+        prior_days=prior_days,
+    ))
+
+
+# ── Children, ranked weakest first (decisions 14, 15) ────────────────────────
+
+def _mean_attainment(rows) -> float | None:
+    """The mean of a unit's Key Indicator percentages, per ACTIVE area-week.
+
+    **Not `grade.pct`**, which rests on the area-weeks that filed. Ranking one
+    unit against another is exactly the comparison decision 12 reserves the
+    active basis for: a zone of two areas where one filed one week and did 30
+    reads 150% of goal per reporting area-week and would top the table, while
+    per active area-week it reads 37.5% and is last, which is the truth about
+    the zone. `zone_comparison`'s standing rule — a zone whose areas go silent
+    ranks lower, on purpose.
+
+    Only indicators that HAVE a percentage count. Treating an ungraded one as a
+    zero would rank a unit down for a goal its companionships never set, which
+    is a statement about the form and not about the work.
+    """
+    pcts = [p for p in (attainment(r.per_active_area_week, r.meta_per_area_week)
+                        for r in rows) if p is not None]
+    return sum(pcts) / len(pcts) if pcts else None
+
+
+def _children(data: ReportData, scope: S.Scope, period: P.Period,
+              comparison: P.Comparison | None, flags: dict) -> tuple:
+    """Every unit one level down, weakest first — no top-N (decision 15).
+
+    Ranked on mean Key Indicator attainment (decision 14). A unit with no
+    attainment at all sorts to the END rather than to the top: it is not the
+    weakest, it is unmeasured, and printing it first would put "no data" where
+    a council looks for its biggest problem.
+    """
+    out = []
+    for child in S.children(data.roster, scope):
+        rows = _ki_rows(data, child, period, comparison=comparison, flags=flags)
+        child_rows = _weekly_rows(data, child, period)
+        reported = set(child_rows["_area"]) if not child_rows.empty else set()
+        out.append(ChildRow(
+            scope=child, rank=0, mean_attainment=_mean_attainment(rows),
+            metrics=tuple(rows),
+            coverage=P.week_coverage(period, _reported_by_week(child_rows),
+                                     child.area_count),
+            areas_silent=tuple(sorted(set(child.areas) - reported)),
+        ))
+    out.sort(key=lambda c: (c.mean_attainment is None,
+                            c.mean_attainment if c.mean_attainment is not None else 0,
+                            c.scope.name))
+    from dataclasses import replace
+    return tuple(replace(c, rank=i + 1) for i, c in enumerate(out))
+
+
+# ── The week-by-week strip (decisions 9, 26) ─────────────────────────────────
+
+def _series(data: ReportData, scope: S.Scope, period: P.Period) -> dict:
+    """One `Series` per Key Indicator, over the period's complete weeks.
+
+    Built from `data.weekly_ki` — the SAME frame the cards above are summed
+    from. `analytics/ki_history.weekly_series` answers a near-identical
+    question and is deliberately NOT used here: it reads WEEKLY_FORM_RAW,
+    which carries five area names that are not on the roster and runs a few
+    areas ahead of WEEKLY_KI in the newest week. A card reading 364 above a
+    strip totalling 430 is the one failure this whole layer exists to prevent.
+    """
+    rows = _weekly_rows(data, scope, period)
+    bounds = P.transfer_boundaries(data.cycles, period.start, period.end)
+    out: dict = {}
+    for key in data.ki_keys:
+        points = []
+        for week in period.weeks:
+            wk = (rows[rows["_week"] == week.isoformat()]
+                  if not rows.empty else pd.DataFrame())
+            reporting = int(wk["_area"].nunique()) if not wk.empty else 0
+            actual = (float(pd.to_numeric(wk[key], errors="coerce").sum())
+                      if reporting and key in wk.columns else None)
+            points.append(SeriesPoint(
+                week=week, actual=actual, reporting=reporting,
+                per_reporting_area=(actual / reporting
+                                    if actual is not None and reporting else None),
+            ))
+        out[key] = Series(key=key, label=data.labels.get(key, key),
+                          points=tuple(points), boundaries=bounds)
+    return out
+
+
+# ── Strength and growth, read and never recomputed (§1.2) ────────────────────
+
+def _strengths(data: ReportData, scope: S.Scope,
+               period: P.Period) -> tuple[tuple[str, ...], str | None]:
+    """What the agents chose as this companionship's strengths and growth edge.
+
+    From the unit's most recent WEEKLY_BREAKDOWNS week inside the period. Area
+    level only: the columns hold ONE area's judgement, and a zone made of nine
+    of them has no such row.
+    """
+    if scope.level != S.AREA:
+        return (), None
+    df = data.breakdowns
+    if df is None or df.empty:
+        return (), None
+    weeks = {w.isoformat() for w in period.weeks}
+    rows = df[df["_week"].isin(weeks) & (df["_area"] == scope.name)]
+    if rows.empty:
+        return (), None
+    row = rows.sort_values("_week").iloc[-1]
+
+    def label(col):
+        key = str(row.get(col, "") or "").strip()
+        return data.labels.get(key, key) if key else ""
+
+    strengths = tuple(s for s in (label(c) for c in STRENGTH_COLS) if s)
+    return strengths, (label(GROWTH_COL) or None)
+
+
 def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
                  data: ReportData) -> ReportModel:
     """One unit, one period, every number its pages need. Pure over `data`."""
@@ -527,6 +1054,9 @@ def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
             _reported_by_week(_weekly_rows(data, scope, comparison.period)),
             scope.area_count)
 
+    ki_flags = data.ki_goal_flags(period)
+    strengths, growth = _strengths(data, scope, period)
+
     return ReportModel(
         scope=scope,
         period=period,
@@ -539,8 +1069,16 @@ def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
         areas_reporting=tuple(sorted(reporting & in_scope)),
         areas_silent=tuple(sorted(in_scope - reporting)),
         key_indicators=tuple(_ki_rows(data, scope, period,
-                                      comparison=comparison,
-                                      flags=data.ki_goal_flags(period))),
+                                      comparison=comparison, flags=ki_flags)),
+        nightly_metrics=tuple(_nightly_rows(
+            data, scope, period, comparison=comparison,
+            flags=data.nightly_goal_flags(period))),
+        scores=_scores(data, scope, period),
+        rates=_rates(data, scope, period, comparison),
+        children=_children(data, scope, period, comparison, ki_flags),
+        series=_series(data, scope, period),
+        strengths=strengths,
+        growth=growth,
     )
 
 

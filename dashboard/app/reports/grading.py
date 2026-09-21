@@ -223,12 +223,17 @@ class Grade:
         return self.status is not None
 
 
-def grade_ki(actual, goal, before=None, *, pace=None, flag=None) -> Grade:
+def grade_ki(actual, goal, before=None, *, now=None, pace=None,
+             flag=None) -> Grade:
     """A Key Indicator: graded against its goal on 90/60, unless flagged.
 
     `pace` is the share of the goal due by now — pass `paced_goal(...)` for an
     in-progress period, so an area two weeks into a transfer is judged against
     two weeks of the target rather than all six.
+
+    `now` and `before` are the pair the CHANGE is measured on; `now` defaults
+    to `actual`. They come apart when attainment and change rest on different
+    bases — see `grade_nightly`, where they always do.
 
     `flag` is the mission-scope verdict from `goal_is_unusable`, passed in
     rather than recomputed per row — see that function for why. A flagged goal
@@ -239,12 +244,21 @@ def grade_ki(actual, goal, before=None, *, pace=None, flag=None) -> Grade:
     """
     status = None if flag else goal_bar_status(
         attainment(actual, pace if pace is not None else goal))
+    now = actual if now is None else now
     return Grade(status=status, pct=attainment(actual, goal),
-                 change_pct=change(actual, before), flag=flag)
+                 change_pct=change(now, before), flag=flag)
 
 
-def grade_nightly(actual, goal, before=None, *, flag=None) -> Grade:
+def grade_nightly(actual, goal, before=None, *, now=None, flag=None) -> Grade:
     """A nightly metric: graded on movement, never on the goal (decision 31).
+
+    ``actual`` is judged against ``goal``; ``now`` and ``before`` are what the
+    STATUS is taken from, and ``now`` defaults to ``actual``. On a nightly row
+    they are deliberately different figures. The goal is one mission-wide
+    number per area per week, so attainment divides by every ACTIVE area — an
+    unreported night is work nobody recorded, and counting it as work would
+    flatter. The change divides by the area-days that actually filed, because
+    nine more areas reporting is not nine more areas working.
 
     The goal still rides along in ``pct`` and can still carry a flag — the mark
     is drawn beside the row and a reader is owed the truth about it — but it
@@ -254,6 +268,7 @@ def grade_nightly(actual, goal, before=None, *, flag=None) -> Grade:
     says all twenty metrics are red, again, as it has every week since the
     goals were set at roughly twice what the mission does.
     """
-    return Grade(status=change_status(actual, before),
+    now = actual if now is None else now
+    return Grade(status=change_status(now, before),
                  pct=attainment(actual, goal),
-                 change_pct=change(actual, before), flag=flag)
+                 change_pct=change(now, before), flag=flag)

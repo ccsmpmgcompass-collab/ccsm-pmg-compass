@@ -471,3 +471,59 @@ short audit of their own before anything is changed.
     `meta no utilizable: demasiado alta` at mission scope — 12 achieved against
     a stated goal of 81 across the transfer's two weeks, 15.5%. It is the only
     one of the seven that flags.
+- **2026-09-21** — **R4 landed. Phase R's model is complete.** Added to
+  `model.py`: the nightly table, `Scores`, the four conversion rates,
+  `ChildRow`, `Series`/`SeriesPoint`, and the strength/growth an area's page
+  reads. Tests: `test_report_model_rest.py` (28). Suite **11 failed / 1401
+  passed** — the same 11. `build_all` renders all 63 scopes in **1.6s** from
+  one load. Decisions made mid-build:
+  (a) **The nightly table is 22 rows, not 21.** The 20 summable metrics plus
+  the two the nightly form asks that are not numbers: `exchanges` (YESNO) as a
+  count of NIGHTS an exchange happened, and `effort` as the agents' own 1–3
+  `effort_score` from WEEKLY_BREAKDOWNS, averaged and never summed. Dropping
+  them would have been the shortlist decision 17 exists to reject.
+  (b) **`get_daily_log` destroys `exchanges`.** Its `_num` pass coerces the
+  word "TRUE" to NaN and fills it with 0, so the column arrives as a wall of
+  zeros with nothing about the values revealing they were never numbers — the
+  exact trap `non_numeric_metrics` documents. `_restore_exchanges` re-derives
+  it from the raw tab and merges back on (day, area). 30 nights in the current
+  transfer's fortnight, not zero.
+  (c) **Attainment takes whichever basis matches its own goal's population.** A
+  Key Indicator's goal is the companionships' summed meta, whose population is
+  the areas that filed the goal form → per reporting area-week (R3). A nightly
+  goal is one mission-wide `GOAL_*` per area per week, whose population is
+  every active area → per active area-week. This is what keeps R2's acceptance
+  intact: on the reporting basis every nightly figure rises about 40% and only
+  one of the two flagged goals would still flag. **Change is always on the
+  reporting basis**, both paths.
+  (d) `grade_ki` / `grade_nightly` gained a `now=` keyword so attainment and
+  change can rest on different bases without a caller assembling `Grade` by
+  hand and re-implementing the bands.
+  (e) **Children rank on mean attainment per ACTIVE area-week, not on
+  `grade.pct`.** A test caught it: a zone of two areas where one filed one week
+  and did 30 reads 150% of goal per reporting area-week and would top the
+  table; per active area-week it reads 37.5% and is last, which is the zone.
+  Decision 12's cross-unit rule, and `zone_comparison`'s standing one. Live,
+  the zones rank **San Pedro 29.2% · Los Angeles Norte 32.2% · Temuco Ñielol
+  33.5% · Angol 34.3%**.
+  (f) **`ki_history.weekly_series` is deliberately NOT reused**, though §4 R4
+  names it. It reads WEEKLY_FORM_RAW — five off-roster names, and a few areas
+  ahead of WEEKLY_KI in the newest week — while the report's Key Indicator
+  actuals come from WEEKLY_KI. A card reading 364 above a strip totalling 430
+  is the one failure decision 30 exists to prevent. The strip is built from
+  `data.weekly_ki`, the same frame the cards sum, and a test asserts the two
+  add up to each other.
+  (g) **Strength/growth moved forward from P5 into the model.** P5 reading
+  WEEKLY_BREAKDOWNS itself would put a sheet read inside a renderer. Area level
+  only — the columns hold one companionship's judgement.
+  (h) Every `ReportData` field defaults to empty. A mission that has never run
+  the scoring agent gets an empty scores block rather than an exception, and a
+  test that only exercises Key Indicators need not hand in a SCORES frame.
+  (i) `rates` is `()` below zone level (decision 13), so no renderer can print
+  a close rate over one companionship's three lessons by accident.
+  **Live figures for R5/P, not to be re-derived:** conversion rates read
+  contact **44.7%** (89% of a 50% target), mc **44.2%** (88%), lesson **12.7%**
+  (63% of 20%), close **12.3%** (49% of 25%) — the mission still teaches well
+  and does not invite, though close_rate has risen from the audit's 9.7%.
+  Mission scores over the transfer's two weeks: effort **59.4**, skill
+  **69.7**, KI **37.6**, effectiveness **55.4**.
