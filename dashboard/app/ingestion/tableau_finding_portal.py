@@ -37,12 +37,20 @@ Detail view is investigator names. That is a deliberate divergence from
 ``imos_portal.py``, whose failure screenshots of a logged-in session are a
 standing flag in the plan (§2.3).
 
-**One exception, drawn at a host boundary:** Tableau's own sign-in page
-(``sso.online.tableau.com``) may have its text read and logged, redacted. That
+**Two exceptions, both narrow.** Tableau's own sign-in page
+(``sso.online.tableau.com``) may have its text read and logged, redacted: that
 page is Salesforce's, it exists before any authentication, and it holds nothing
-about the mission — while its message is the only thing that distinguishes a
-rejected username from a hang. See ``signin_page_message``. Everything past it
-is the Church IdP and then mission data, where the text-free rule stands.
+about the mission, while its message is the only thing that distinguishes a
+rejected username from a hang. See ``signin_page_message``.
+
+On the Church IdP, **the error banner alone** may be read — the elements
+matching ``_ERROR_REGIONS``, never the page body, and redacted the same way.
+Added 2026-09-21 after four runs failed at Okta's password step without anyone
+being able to say what Okta objected to; the operator was certain of the
+password and the logs could not confirm or refute him. Those banners are system
+messages ("Unable to sign in"), the surrounding page is what names the person,
+and the two are different elements. Everything else on that host, and all
+mission data past it, stays unread.
 """
 
 from __future__ import annotations
@@ -171,21 +179,14 @@ def _inventory(page, label: str) -> None:
     # was read as the former, against an operator who was sure of the password.
     # What separates them is whether any of those regions has TEXT IN IT, which
     # is a count, not a quotation.
+    total, speaking = 0, 0
     try:
-        regions = page.locator(
-            "[role=alert], [data-se=callout], .infobox-error, .okta-form-infobox-error"
-        )
+        regions = page.locator(_ERROR_REGIONS)
         total = regions.count()
-        speaking = 0
-        for i in range(min(total, 8)):
-            try:
-                if (regions.nth(i).inner_text() or "").strip():
-                    speaking += 1
-            except Exception:
-                continue
-        _logger.error(f"error regions: {total} present, {speaking} with any text")
+        speaking = len(error_banner_texts(page))
     except Exception:
         pass
+    _logger.error(f"error regions: {total} present, {speaking} with any text")
     # The form's SHAPE, across every frame. On a Tableau page the test-ids above
     # are the whole story; on the Church IdP there are none at all, and without
     # this a stuck sign-in reports an empty list and teaches nothing (run #7).
@@ -255,6 +256,38 @@ def redact_identifiers(text: str, limit: int = 240) -> str:
     is actually diagnostic, and it is generic.
     """
     return _EMAILISH.sub("<redacted>", " ".join(str(text or "").split()))[:limit]
+
+
+#: The error banner, and only the error banner. Okta's own callout classes plus
+#: the ARIA role. Used both to COUNT regions and to read them — see the module
+#: docstring for why this one element on the IdP is readable when the page
+#: around it is not.
+_ERROR_REGIONS = ("[role=alert], [data-se=callout], .infobox-error, "
+                  ".okta-form-infobox-error")
+
+
+def error_banner_texts(page, limit: int = 8) -> list:
+    """The non-empty error banners on the page, redacted.
+
+    A system message ("Unable to sign in", "We can't verify that") is what tells
+    a refused credential apart from an unknown user or a second factor, and four
+    runs failed without anyone being able to say which. The surrounding page is
+    what names the person; this reads the banner elements only, and still masks
+    anything email- or id-shaped inside them.
+    """
+    out = []
+    try:
+        regions = page.locator(_ERROR_REGIONS)
+        for i in range(min(regions.count(), limit)):
+            try:
+                text = (regions.nth(i).inner_text() or "").strip()
+            except Exception:
+                continue
+            if text:
+                out.append(redact_identifiers(text, limit=160))
+    except Exception:
+        pass
+    return out
 
 
 def signin_page_message(url: str, text: str) -> str:
@@ -465,6 +498,9 @@ def _stuck(page, on_password: bool) -> None:
         message = signin_page_message(page.url, page.inner_text("body"))
     except Exception:
         message = ""
+    banners = error_banner_texts(page)
+    if banners and not message:
+        message = " / ".join(banners)
     _inventory(page, "login_stuck")
     where = _host(page.url)
     raise RuntimeError(

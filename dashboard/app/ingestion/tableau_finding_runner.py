@@ -349,8 +349,21 @@ def main() -> None:
                     help="show the browser (local debugging only)")
     args = ap.parse_args()
 
+    # Stripped, and the stripping is REPORTED. A secret pasted out of a password
+    # manager very often carries a trailing newline, GitHub stores exactly what
+    # was pasted, and the sign-in then fails with a credential its owner is
+    # certain of — which is a day of blaming the wrong thing. The boolean says
+    # whether there was anything to strip; the value is never logged, and nor is
+    # its length.
     username = os.environ.get("CCSM_TABLEAU_USERNAME", "")
     password = os.environ.get("CCSM_TABLEAU_PASSWORD", "")
+    if username != username.strip() or password != password.strip():
+        _logger.warning(
+            f"Surrounding whitespace trimmed from the secrets "
+            f"(username: {username != username.strip()}, "
+            f"password: {password != password.strip()}) — worth removing at the "
+            f"source, since anything else pasted with it is still there.")
+    username, password = username.strip(), password.strip()
     if not username or not password:
         _logger.error("CCSM_TABLEAU_USERNAME/CCSM_TABLEAU_PASSWORD not set — aborting.")
         sys.exit(1)
