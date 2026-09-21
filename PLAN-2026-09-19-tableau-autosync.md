@@ -455,3 +455,19 @@ that in place, failed in **30 seconds** with the answer:
 in a browser with no session: any non-email value leaves the page exactly where
 runs 5 and 6 stopped. `CCSM_TABLEAU_USERNAME` must be the full email address
 used to sign in to Tableau.
+
+**Runs 7-9: sign-in is THREE steps, and the third is refused.** With an email
+in `CCSM_TABLEAU_USERNAME`, Tableau handed off to Church SSO at
+`id.churchofjesuschrist.org/app/tableauonline/…/sso/saml` — and Okta asks for
+a username and a password on SEPARATE screens. The two-step login spent its
+username on Tableau's page and then waited out the viz timeout (run 7). `_login`
+is now a loop over whatever step is on screen (`next_login_step`, tested
+without a browser), which answered all three (run 8).
+
+Run 9 ends on Okta's password screen with `input[autocomplete=current-password]`
+still present 25 seconds later and **2 error regions on the page** — the
+diagnostic counts them without reading them, because that page names the person
+signing in. A refused password, not a slow one, and not an OTP prompt (an OTP
+box would not carry `current-password`).
+
+**So: `CCSM_TABLEAU_PASSWORD` is wrong.** Nothing past sign-in has run yet.
