@@ -326,3 +326,43 @@ short audit of their own before anything is changed.
   6–67% (median ~42%), which set decision 31; Tableau pilot zones measured at
   44% of mission finding volume, which made decision 24 worth doing and
   decision 34 necessary.
+- **2026-09-21** — **R1 landed.** `app/reports/` exists: `scope.py` (MISSION_ORG
+  is the only authority; `Scope` with its areas, companions, key, trail and
+  child level; `resolve` / `children` / `parent` / `walk`) and `periods.py`
+  (the six periods of decision 5, complete-week arithmetic, the elapsed-weeks
+  pairing of decision 7, transfer boundaries, and `Coverage`). Both pure — the
+  acceptance check asserts `streamlit` is absent from `sys.modules` after
+  importing them; `load_roster()` and `load_cycles()` are the only two impure
+  calls and do nothing but delegate. Tests: `test_report_scope.py` (20),
+  `test_report_periods.py` (43). Verified against the live sheet: 45 areas / 4
+  zones / 13 districts, `walk()` = 63 scopes, and every period's real window on
+  2026-09-21 (this transfer = 2026-6, 09-07..09-21, semana 2 de 6). Suite
+  **11 failed / 1310 passed** — the same 11, and the step is purely additive
+  (no existing file touched). Decisions made mid-build:
+  (a) **a second comparison window**, `COMPARE_PRECEDING` — the same number of
+  complete weeks immediately before the period began. §3.1 asks for
+  "Comparar-contra **pills**", which needs more than one option, and §1.3
+  measured the only honest one available today: the 2 weeks since transfer day
+  against the 2 before it (2026-08-30, 09-06), where decision 7's own twin —
+  2026-5's first two weeks — rests on a single area. Capped at `ROLLING_WEEKS`
+  so "Año" is not offered "38 semanas anteriores", and `available_comparisons`
+  drops it when it resolves to the same window as the period's own twin.
+  Decision 7 is unchanged and is still the default pill.
+  (b) **2026-5 reads "5 de 6 semanas", not §1.3's narrative "4 de 6"** — the
+  stray single-area row dated 2026-08-09 is a reported week under any rule that
+  does not hide it. `Coverage.reporting_rate` (44.4% of possible area-weeks)
+  and `Coverage.thin` carry what a week count cannot.
+  (c) **`Coverage.thin`** at 25% of possible area-weeks — marks a window,
+  never hides one, so decision 6 ("partial comparisons are shown") stands. The
+  floor is measured, not picked: CCSM's real weeks run 26–36 areas of 45
+  (58–80%), while the windows it catches sit at 1.1% and 0.4%.
+  (d) `transfer_boundaries` (decision 9) lives in `periods.py` now rather than
+  waiting for R4 — it is transfer arithmetic — and excludes a cycle starting on
+  the window's own first day, since a dashed rule on the axis edge is noise.
+  (e) Two test files, not the one §4 names: `scope.py` needs its own.
+  (f) The picker's label and the period's label are different strings on
+  purpose — the pill reads "Este traslado", the caption reads "2026-6".
+  Noted, not fixed: `last_complete_week` delegates to
+  `area_helpers.latest_due_sunday` rather than copying its "if today IS Sunday"
+  step back; a cycle's final week is therefore not complete on the cycle's own
+  last day, which is correct and is pinned by a test.
