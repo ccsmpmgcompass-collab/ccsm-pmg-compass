@@ -55,6 +55,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 from app.reports import periods as P
+from app.reports import tableau as TB
 from app.reports import scope as S
 from app.reports.grading import (
     Grade, attainment, goal_is_unusable, grade_ki, grade_nightly,
@@ -450,6 +451,21 @@ class ReportData:
     #: `build_report` stays pure and a packet cannot straddle the 9:30 PM
     #: cutoff halfway through its 63 scopes. Defaults to `today`.
     anchor: date | None = None
+    #: The stored Tableau export and everything derived from it once rather
+    #: than 63 times: the frame itself, its description, the p75 milestone
+    #: lags the funnel's maturity verdict rests on, and the roster
+    #: reconciliation of decision 35. All empty when no export is stored,
+    #: which is a report with no finding section and a stated reason — not an
+    #: error (decision 32).
+    tableau_detail: pd.DataFrame = field(default_factory=pd.DataFrame)
+    tableau_export: object = None
+    tableau_maturity: dict = field(default_factory=dict)
+    tableau_reconciliation: object = None
+    #: TABLEAU_BAPTISMS, certified months only, and the open month held apart
+    #: from them (decision 21).
+    baptisms_by_month: dict = field(default_factory=dict)
+    baptisms_open: tuple = ()
+    annual_goal: float | None = None
     #: `queries.get_ki_goals_for_week`, injected rather than imported so a test
     #: can hand in a week's goals without a sheet. The W-7 rule it implements —
     #: a week's goals are written on the PREVIOUS week's form — stays in
@@ -475,6 +491,50 @@ class ReportData:
                 return ({}, {}, None, 0)
             self._goals[cache_key] = self.ki_goals_fn(week, areas=set(areas))
         return self._goals[cache_key]
+
+    def tableau_windows(self, period: P.Period) -> tuple:
+        """`(window, comparison window)` for this period, resolved once.
+
+        The gate runs per PERIOD, not per scope: the same eleven days answer
+        for the mission and for every one of the 45 areas, and asking 63 times
+        would re-read the export's bounds 63 times.
+        """
+        cache_key = ("tableau", period.key)
+        if cache_key not in self._flags:
+            export = self.tableau_export or TB.Export()
+            window = TB.clip(period, export)
+            before = TB.clamp(TB.preceding(window), export)
+            self._flags[cache_key] = (window, before)
+        return self._flags[cache_key]
+
+    def tableau_rows(self, period: P.Period) -> tuple:
+        """The export's rows inside the period's window and the window before
+        it, filtered once for all 63 scopes.
+
+        `in_window` over 99.425 rows is the expensive part of the whole block;
+        every unit then cuts its own areas out of a frame of a few thousand.
+        """
+        cache_key = ("tableau_rows", period.key)
+        if cache_key not in self._flags:
+            window, before = self.tableau_windows(period)
+            self._flags[cache_key] = (
+                TB.in_window(self.tableau_detail, window),
+                TB.in_window(self.tableau_detail, before) if before.usable else None,
+            )
+        return self._flags[cache_key]
+
+    def baptism_year(self, period: P.Period) -> object:
+        """The annual baptism block (decision 21), for the mission's page only."""
+        month, count, through = (self.baptisms_open or (None, None, None))
+        return TB.Baptisms(
+            year=period.end.year,
+            goal=self.annual_goal,
+            certified={k: v for k, v in self.baptisms_by_month.items()
+                       if k.startswith(f"{period.end.year:04d}-")},
+            provisional=(count if month and month.startswith(
+                f"{period.end.year:04d}-") else None),
+            provisional_through=through,
+        )
 
     def ki_goal_flags(self, period: P.Period) -> dict:
         """Which Key Indicator goals are not yardsticks, judged at MISSION scope.
@@ -556,6 +616,47 @@ def _restore_exchanges(daily: pd.DataFrame, raw: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _annual_goal(get_config_value) -> float | None:
+    """`GOAL_ANNUAL_baptisms`, or None when the mission has not set one.
+
+    A missing goal is not zero: `annual_baptisms.goal_pace` draws no line for
+    it, and the page prints the year without a target rather than a year that
+    missed one.
+    """
+    raw = str(get_config_value("GOAL_ANNUAL_baptisms", "") or "").strip()
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _open_baptism_month(certified: dict, by_month, capture) -> tuple:
+    """`(month, count, through)` for the month still being counted, or `()`.
+
+    TABLEAU_BAPTISMS stores the current month as a row that stops short of the
+    month's last day, and `get_mission_baptisms_by_month` leaves it out of the
+    certified series for a reason (2026-09-19: plotted as an ordinary point it
+    draws the year collapsing every time the packet is built mid-month). The
+    packet still wants it — said as the open thing it is — so it is fetched
+    separately here and never merged into `certified`.
+    """
+    everything = by_month(include_provisional=True)
+    extra = [k for k in everything if k not in certified]
+    if not extra:
+        return ()
+    month = max(extra)
+    row = capture(month) or {}
+    end = str(row.get("end_date", "") or "").strip()
+    through = None
+    if len(end) >= 10:
+        try:
+            through = date.fromisoformat(end[:10])
+        except ValueError:
+            through = None
+    return (month, int(everything[month]), through)
+
+
 def load_data(today: date | None = None) -> ReportData:
     """Read every source once. The only impure function in this module."""
     from app.config.flavor_loader import flavor
@@ -565,8 +666,10 @@ def load_data(today: date | None = None) -> ReportData:
     )
     from app.db.goals_queries import all_area_transfer_goals
     from app.db.queries import (
-        get_agent_config, get_area_weekly_goals, get_config_value,
-        get_daily_log, get_ki_goals_for_week, get_scores, get_weekly_ki,
+        get_agent_config, get_area_weekly_goals, get_baptisms_capture,
+        get_config_value, get_daily_log, get_ki_goals_for_week,
+        get_mission_baptisms_by_month, get_scores, get_tableau_detail,
+        get_weekly_ki,
     )
     from app.db.sheets_client import read_tab
     from app.utils.area_helpers import compliance_anchor_date, mission_today
@@ -598,8 +701,19 @@ def load_data(today: date | None = None) -> ReportData:
               for k in labelled}
     labels.setdefault(EFFORT_SCORE, "Nivel de Esfuerzo (1–3)")
 
+    roster = S.load_roster()
+    # The export is read once for the whole packet. Its p75 milestone lags and
+    # its reconciliation against the roster are properties of the export, not
+    # of any period, so they are computed here too.
+    detail, uploaded_by, uploaded_at = get_tableau_detail()
+    export = TB.read_export(detail, uploaded_by, uploaded_at)
+
+    certified = get_mission_baptisms_by_month()
+    open_month = _open_baptism_month(certified, get_mission_baptisms_by_month,
+                                     get_baptisms_capture)
+
     return ReportData(
-        roster=S.load_roster(),
+        roster=roster,
         weekly_ki=weekly_ki,
         daily_log=daily,
         breakdowns=breakdowns,
@@ -614,6 +728,13 @@ def load_data(today: date | None = None) -> ReportData:
         # form's "(Real)" tail. Spanish literals, no t() — decision 3.
         labels=labels,
         mission_name=get_config_value("MISSION_NAME", flavor.display_name),
+        tableau_detail=detail,
+        tableau_export=export,
+        tableau_maturity=TB.maturity_days(detail),
+        tableau_reconciliation=TB.reconcile(detail, S._clean(roster)),
+        baptisms_by_month=certified,
+        baptisms_open=open_month,
+        annual_goal=_annual_goal(get_config_value),
         today=today,
         anchor=compliance_anchor_date(),
         ki_goals_fn=get_ki_goals_for_week,
@@ -1114,6 +1235,52 @@ def _strengths(data: ReportData, scope: S.Scope,
     return strengths, (label(GROWTH_COL) or None)
 
 
+def _tableau_block(data: ReportData, scope: S.Scope, period: P.Period):
+    """This unit's finding section, or the gate's reason there is not one.
+
+    Three things differ by level and nothing else does:
+
+    * the MISSION's block covers every zone the export knows, not the
+      roster's four (decision 24), and carries the year's baptisms (M6);
+    * a zone or a district is roster-scoped and ranks its own children;
+    * an AREA gets no block at all. Its half page has 338pt and P5 measured
+      the existing block at 142-280pt of it, and eleven days of one
+      companionship's finding is four people — a funnel drawn over four people
+      is decoration. The area's finding work is in its Key Indicators, which
+      are its own report of it.
+    """
+    export = data.tableau_export
+    if export is None or scope.level == S.AREA:
+        return None
+
+    window, before = data.tableau_windows(period)
+    rows, prior = data.tableau_rows(period) if window.usable else (None, None)
+    whole_mission = scope.level == S.MISSION
+    children = S.children(data.roster, scope)
+    nouns = {S.MISSION: "zonas", S.ZONE: "distritos", S.DISTRICT: "áreas"}
+
+    units = ()
+    if window.usable:
+        if whole_mission:
+            zones = sorted({z for z in S._clean(data.roster)["Zone"] if z})
+            units = TB.zone_rows(rows, zones)
+        else:
+            units = TB.unit_rows(TB.for_areas(rows, scope.areas), children)
+
+    return TB.build_block(
+        data.tableau_detail, export, period,
+        areas=(None if whole_mission else scope.areas),
+        units=units,
+        unit_noun=nouns.get(scope.level, ""),
+        whole_mission=whole_mission,
+        reconciliation=data.tableau_reconciliation,
+        baptisms=(data.baptism_year(period) if whole_mission else None),
+        maturity=data.tableau_maturity,
+        window=window,
+        before=before,
+    )
+
+
 def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
                  data: ReportData) -> ReportModel:
     """One unit, one period, every number its pages need. Pure over `data`."""
@@ -1159,6 +1326,7 @@ def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
         series=_series(data, scope, period),
         strengths=strengths,
         growth=growth,
+        tableau=_tableau_block(data, scope, period),
     )
 
 

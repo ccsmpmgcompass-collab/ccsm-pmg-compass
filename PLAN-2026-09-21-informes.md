@@ -929,6 +929,68 @@ short audit of their own before anything is changed.
   area. The four zones in the current transfer's window hold 130 · 181 · 188 ·
   187 rows.
 
+- **2026-09-21** — **T3 landed** (the analytics; the two renderers are T4 and
+  T5 — see (a)). `tableau.py` gained the Spanish vocabulary, `maturity_days`,
+  `Stage` / `Share` / `UnitRow`, `funnel` / `channel_mix` / `top_sources` /
+  `zone_rows` / `unit_rows`, `Baptisms`, and `Block` + `build_block`;
+  `model.py` loads the export once and `ReportModel.tableau` is filled at last.
+  Tests: `test_report_tableau_blocks.py` (24). Suite **11 failed / 1595
+  passed** — the same 11. Live: **63 models in 4.7s** (from 1.6s — the export
+  read is 21s of the load, once). Decisions made mid-build:
+  (a) **Phase T runs in five steps, not three.** §4 names T1–T3 and P3's note
+  (d) moved M6 and M7 here as well, so "the blocks" is the analytics AND two
+  renderers AND two new mission pages. Split: T3 is the model, T4 the packet,
+  T5 the screen. One commit each, as the convention asks.
+  (b) **THE BIG ONE — the funnel is a COHORT reading, and a young cohort's
+  bottom is empty by construction.** `compute_funnel_stage_counts` takes the
+  people FOUND in the window and asks how far each has since travelled.
+  Measured over the whole export, days from found to milestone (p75, among
+  those who got there): contact attempted **6** · contacted **10** · being
+  taught **5** · attended church **33** · baptism date **52** · **baptized
+  133**. Over this transfer's eleven days exactly **1%** of eventual baptisms
+  have happened, so the row reads **0** — on a packet whose baptism page says
+  19 for September. A flat contradiction, on two pages of one document.
+  **So a stage is MATURE only when the window is at least as long as its own
+  p75 lag.** An immature stage keeps its count (decision 25) and loses its
+  percentage, its direction and its eligibility to be the funnel's named worst
+  step; the block carries a sentence saying which stages those are and
+  pointing at the baptism page for the real figure. Live, the top four mature
+  and the bottom three do not. p75 rather than the median because a median
+  means half the events have not happened yet; measured from the export rather
+  than hardcoded, so it tracks the mission's own pace.
+  (c) **An AREA gets no Tableau block.** Its half page is 338pt against a
+  block P5 measured at 142–280pt, and eleven days of one companionship's
+  finding is four people; a funnel over four people is decoration. Its finding
+  work is in its Key Indicators, which are its own report of it.
+  (d) **The mission's block is the only place in this report where MISSION_ORG
+  is not the authority.** Decision 24 puts all ten zones on it, and six of them
+  have no roster, so it reads the export's own zone column and every row says
+  whether it is a pilot zone. `Block.scope_note` prints that difference out
+  loud, because nothing else in the packet changes population from one page to
+  the next.
+  (e) **The open month is held apart from the certified series** — the same
+  trap `get_mission_baptisms_by_month` learned on 2026-09-19. September's 19
+  is printed as "sin cerrar" beside the year, never as a point on it, or the
+  cumulative line collapses every time the packet is built mid-month.
+  (f) **The finding SOURCES are translated here for the first time.** Nothing
+  in the app had Spanish for them — the Embudo prints them as written — and
+  decision 3 is Spanish only. Free text from Tableau, so an unlisted value
+  falls back to itself: a source the mission has never used should appear, not
+  vanish into "Desconocido". The stage and category strings are repeated from
+  `app/i18n/es.py` (which cannot be imported — Streamlit) and a test asserts
+  the two copies agree.
+  (g) The gate and the windowed frames are memoised **per period, not per
+  scope**: the same eleven days answer for the mission and for all 45 areas,
+  and `in_window` over 99.425 rows is the whole cost of the block.
+  **Measured live, not to be re-derived:** this transfer's window holds **1.633
+  people** mission-wide against 1.581 in the fortnight before (+3%); the mix is
+  **Misioneros 1.279 · Medios 298 · Miembros 53 · Centros 3**; the top sources
+  are contacto en la calle 678 and casa por casa 515. Zones by contact rate,
+  weakest first: **Temuco Cautín 55% · Temuco Ñielol 64% · Arauco 67% · San
+  Pedro 70%**, best Los Angeles Norte 83%. Baptisms: **319 certified through
+  August against a goal of 527** — 60,5% of the year's goal, **32,3 behind
+  pace**, landing at **478** — plus 19 uncertified in September.
+
 ### Phase R is done. What Phase P starts from
 
 `app/reports/` is `scope.py`, `periods.py`, `grading.py`, `model.py` — all

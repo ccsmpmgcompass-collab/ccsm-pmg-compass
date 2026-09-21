@@ -30,6 +30,7 @@ from datetime import date
 
 import pandas as pd
 
+from app.analytics import annual_baptisms as AB
 from app.analytics import finding_funnel as FF
 from app.config import es_display
 
@@ -426,4 +427,489 @@ def reconcile(det: pd.DataFrame, roster: pd.DataFrame) -> Reconciliation:
         missing=tuple(sorted(areas - set(found))),
         scoped_rows=int(len(in_pilot)),
         total_rows=int(len(det)),
+    )
+
+
+# ── The vocabulary ────────────────────────────────────────────────────────────
+#
+# Spanish for the things the export names in English. The stage and category
+# strings are the ones `app/i18n/es.py` already carries, repeated here because
+# importing that package pulls in Streamlit (P2's note on `es_display.py`, same
+# reason). `test_report_tableau_blocks.py` asserts the two agree, so the packet
+# and the Embudo page cannot drift apart without a test saying so.
+
+STAGE_LABELS = {
+    "Found":                  "Encontradas",
+    "Contact Attempted":      "Intento de Contacto",
+    "Successfully Contacted": "Contactadas con Éxito",
+    "Being Taught":           "Recibiendo Lecciones",
+    "Attended Church":        "Asistió a la Iglesia",
+    "Baptism Date Set":       "Fecha de Bautismo Fijada",
+    "Baptized":               "Bautizados",
+    "Referred":               "Referidas",
+}
+
+CATEGORY_LABELS = {
+    "Missionary":                  "Misioneros",
+    "Member":                      "Miembros",
+    "Media":                       "Medios",
+    "Visitors Centers and Events": "Centros de visitantes y eventos",
+    "Unknown":                     "Desconocido",
+}
+
+#: The finding sources the live export carries, translated. Nothing in the app
+#: translated these before — the Embudo page prints them as written — and a
+#: council packet is Spanish only (decision 3). Free text from Tableau, so an
+#: unlisted value falls back to itself rather than to a placeholder: a source
+#: the mission has never used before should appear, not disappear.
+SOURCE_LABELS = {
+    "Contacting in Public":              "Contacto en la calle",
+    "Home to Home Contacting":           "Contacto casa por casa",
+    "Through Person Being Taught":       "Por alguien que recibe lecciones",
+    "Headquarters Paid Ad":              "Anuncio pagado de las oficinas",
+    "Headquarters Local":                "Oficinas locales",
+    "Headquarters Non-Paid Ad":          "Anuncio no pagado de las oficinas",
+    "Facebook - Mission Ad":             "Facebook · anuncio de la misión",
+    "Facebook - Mission and Zone Pages": "Facebook · páginas de misión y zona",
+    "Facebook - Personal Profile":       "Facebook · perfil personal",
+    "Member":                            "Miembro",
+    "New Member":                        "Miembro nuevo",
+    "Less Active":                       "Menos activo",
+    "Sought out Church or Missionaries": "Buscó a la Iglesia o a los misioneros",
+    "Visitors Centers and Events":       "Centros de visitantes y eventos",
+    "Service":                           "Servicio",
+    "English Class":                     "Clase de inglés",
+    "Ward Council":                      "Consejo de barrio",
+    "Church Activity":                   "Actividad de la Iglesia",
+    "Chalkboard Activity":               "Actividad de pizarra",
+    "Book of Mormon Experiment":         "Experimento del Libro de Mormón",
+    "Family History":                    "Historia familiar",
+    "Unknown":                           "Desconocido",
+}
+
+
+def stage_label(value: str) -> str:
+    return STAGE_LABELS.get(str(value), str(value))
+
+
+def category_label(value: str) -> str:
+    return CATEGORY_LABELS.get(str(value), str(value))
+
+
+def finding_source_label(value: str) -> str:
+    return SOURCE_LABELS.get(str(value), str(value))
+
+
+# ── How long a stage takes to fill ────────────────────────────────────────────
+#
+# The funnel is a COHORT reading: it takes the people FOUND in the window and
+# asks how far each has since travelled. That is the right question, and it has
+# one trap that would wreck a council packet if left alone — the bottom of the
+# funnel is empty for a young cohort by construction, not by failure.
+#
+# Measured over the whole live export 2026-09-21, days from found to milestone
+# (p75, among the people who reached it): contact attempted 6 · contacted 10 ·
+# being taught 5 · attended church 33 · baptism date 52 · BAPTIZED 133. Over
+# this transfer's eleven-day window exactly 1% of eventual baptisms have
+# happened yet, so the stage reads 0 — beside a September baptism figure of 19
+# on the same page, which is a flat contradiction nobody should have to
+# reconcile.
+#
+# So a stage is called MATURE only when the window is at least as long as that
+# stage's own p75 lag. An immature stage still prints its count — decision 25,
+# no compression — and loses its conversion percentage, its direction and its
+# eligibility to be named the funnel's worst step.
+#
+# p75 rather than the median because the median means half the eventual events
+# have not happened yet, which is not a number to draw a conversion rate from.
+# Measured from the export rather than hardcoded, so it tracks the mission's
+# own pace; and it is conditioned on the people who DID reach the milestone,
+# which biases it short — the direction p75 is there to compensate for.
+MATURITY_QUANTILE = 0.75
+
+
+def maturity_days(det: pd.DataFrame) -> dict:
+    """`{English stage label: p75 days from found}` over the whole export.
+
+    The whole export, never the window: the window is the thing being judged
+    against this, and a fortnight asked how long a baptism takes would answer
+    "at most a fortnight".
+    """
+    out = {}
+    if det is None or det.empty:
+        return out
+    found = FF.parse_dates(det, "event_date_selected")
+    for label, col in FF.FUNNEL_STAGES:
+        if col is None:
+            continue
+        lag = (FF.parse_dates(det, col) - found).dt.days
+        lag = lag[lag.notna() & (lag >= 0)]
+        if len(lag):
+            out[label] = float(lag.quantile(MATURITY_QUANTILE))
+    return out
+
+
+# ── The blocks ────────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class Stage:
+    """One step of the finding funnel, for one cohort."""
+
+    label: str
+    count: int
+    before: int | None = None
+    mature: bool = True
+    lag_days: float | None = None
+
+    @property
+    def change(self) -> float | None:
+        """Per cent against the equal-length window before it, or None.
+
+        Only for a mature stage: an immature one compares two numbers that are
+        both mostly unwritten, and a swing from one to three is not a 200%
+        improvement in baptisms.
+        """
+        if not self.mature or self.before is None or self.before == 0:
+            return None
+        return (self.count - self.before) / self.before * 100
+
+
+@dataclass(frozen=True)
+class Share:
+    """A slice of the channel mix, or one finding source."""
+
+    label: str
+    count: int
+    before: int | None = None
+
+    def share_of(self, total: int) -> float | None:
+        return (self.count / total * 100) if total else None
+
+
+@dataclass(frozen=True)
+class UnitRow:
+    """One zone, district or area in a Tableau ranking.
+
+    `roster` is False for the six zones that run no Compass forms — decision
+    24 puts them on the mission's page, and the row says which it is so that
+    no reader takes a zone with no Compass figures for one that reported
+    nothing.
+    """
+
+    name: str
+    found: int
+    contacted: int
+    teaching: int
+    roster: bool = True
+
+    @property
+    def contact_rate(self) -> float | None:
+        return (self.contacted / self.found * 100) if self.found else None
+
+    @property
+    def teaching_rate(self) -> float | None:
+        return (self.teaching / self.found * 100) if self.found else None
+
+
+def funnel(det: pd.DataFrame, window: Window, *,
+           before: pd.DataFrame | None = None,
+           maturity: dict | None = None) -> tuple:
+    """The seven stages for the cohort found in `window`, Spanish-labelled.
+
+    `compute_funnel_stage_counts` reads "at least this far" rather than a bare
+    per-column count, which is what keeps the funnel monotonic when a milestone
+    is skipped — `finding_funnel` documents the bulge that taught it. This adds
+    the maturity verdict and the comparison, and nothing else.
+    """
+    if det is None or det.empty:
+        return ()
+    counts = FF.compute_funnel_stage_counts(det)
+    prior = FF.compute_funnel_stage_counts(before) if before is not None else {}
+    lags = maturity or {}
+    days = window.days
+    out = []
+    for label, _ in FF.FUNNEL_STAGES:
+        lag = lags.get(label)
+        out.append(Stage(
+            label=stage_label(label),
+            count=int(counts.get(label, 0)),
+            before=(int(prior[label]) if label in prior else None),
+            mature=(lag is None or days >= lag),
+            lag_days=lag,
+        ))
+    return tuple(out)
+
+
+def _counted(det: pd.DataFrame, column: str, labeller,
+             before: pd.DataFrame | None = None, limit: int | None = None):
+    """Value counts of one column as `Share` rows, biggest first."""
+    if det is None or det.empty:
+        return ()
+    counts = _names(det, column).replace("", "Unknown").value_counts()
+    prior = (_names(before, column).replace("", "Unknown").value_counts()
+             if before is not None and not before.empty else None)
+    rows = []
+    for name, n in counts.items():
+        if limit is not None and len(rows) >= limit:
+            break
+        rows.append(Share(
+            label=labeller(name),
+            count=int(n),
+            before=(int(prior.get(name, 0)) if prior is not None else None),
+        ))
+    return tuple(rows)
+
+
+def channel_mix(det: pd.DataFrame, before: pd.DataFrame | None = None) -> tuple:
+    """Who found these people: missionaries, members, media, visitors' centres."""
+    return _counted(det, "finding_category", category_label, before)
+
+
+def top_sources(det: pd.DataFrame, before: pd.DataFrame | None = None,
+                limit: int = 8) -> tuple:
+    """The finding sources that actually produced people, biggest first."""
+    return _counted(det, "finding_source", finding_source_label, before, limit)
+
+
+def _unit_row(name: str, rows: pd.DataFrame, *, roster: bool = True) -> UnitRow:
+    counts = FF.compute_funnel_stage_counts(rows)
+    return UnitRow(name=name,
+                   found=int(counts.get("Found", 0)),
+                   contacted=int(counts.get("Successfully Contacted", 0)),
+                   teaching=int(counts.get("Being Taught", 0)),
+                   roster=roster)
+
+
+def zone_rows(det: pd.DataFrame, pilot_zones=()) -> tuple:
+    """Every zone the export knows, weakest first by contact rate (decision 24).
+
+    Read off the export's OWN zone column, which is the only authority there is
+    for the six zones MISSION_ORG does not carry. That is why this exists
+    beside `unit_rows` rather than being the same function: the mission's
+    ten-zone block is the one place in this report where the roster is not the
+    authority, and the page says so.
+    """
+    if det is None or det.empty:
+        return ()
+    pilot = {str(z).strip() for z in pilot_zones}
+    names = _names(det, ZONE_COL).replace("", "Unknown")
+    rows = [_unit_row(str(zone), det[names == zone], roster=(zone in pilot))
+            for zone in sorted(names.unique()) if zone]
+    return tuple(sorted(rows, key=lambda r: (r.contact_rate is None,
+                                             r.contact_rate or 0, r.name)))
+
+
+def unit_rows(det: pd.DataFrame, units) -> tuple:
+    """A roster unit's children, weakest first by contact rate.
+
+    `units` are `Scope`s, so membership is MISSION_ORG's area list and a child
+    that produced nothing keeps its row — a unit with no finding rows is a
+    finding worth printing, not an absence to drop.
+    """
+    if det is None:
+        return ()
+    rows = [_unit_row(unit.name, for_areas(det, unit.areas)) for unit in units]
+    return tuple(sorted(rows, key=lambda r: (r.found == 0,
+                                             r.contact_rate is None,
+                                             r.contact_rate or 0, r.name)))
+
+
+# ── The year against its goal (M6) ────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class Baptisms:
+    """The mission's year of baptisms against the one annual goal it has.
+
+    Decision 21. Two figures exist and they do not agree: TABLEAU_BAPTISMS
+    carries the certified "Total People Baptized" and the weekly form carries
+    what companionships typed in, which `queries.get_baptisms_actual` already
+    documents as undercounting badly. This block is the certified one, always,
+    and the page prints the form's own Key Indicator beside it under its own
+    name rather than reconciling them into a single number.
+
+    The current month is held apart from the certified series rather than
+    appended to it. A month-to-date figure plotted as an ordinary point draws
+    the year collapsing every time the packet is built mid-month — the same
+    trap `get_mission_baptisms_by_month` was taught on 2026-09-19.
+    """
+
+    year: int
+    goal: float | None = None
+    certified: dict = None
+    provisional: int | None = None
+    provisional_through: date | None = None
+
+    def __post_init__(self):
+        object.__setattr__(self, "certified", dict(self.certified or {}))
+
+    @property
+    def cumulative(self) -> list:
+        return AB.cumulative(self.certified, self.year)
+
+    @property
+    def pace(self) -> list | None:
+        return AB.goal_pace(self.goal)
+
+    @property
+    def months(self) -> int:
+        """How many months of the year are certified."""
+        return AB.months_covered(self.cumulative)
+
+    @property
+    def total(self) -> int | None:
+        """Baptisms so far this year, certified only."""
+        n = self.months
+        return int(self.cumulative[n - 1]) if n else None
+
+    @property
+    def gap(self) -> float | None:
+        """How far ahead of the goal's pace the year stands. Negative is short."""
+        return AB.pace_gap(self.cumulative, self.goal)
+
+    @property
+    def landing(self) -> dict | None:
+        """Where the year ends if the certified months are representative."""
+        return AB.landing_estimate(self.cumulative, self.goal)
+
+    @property
+    def attainment(self) -> float | None:
+        """The year's total as a percentage of the whole annual goal.
+
+        The whole goal, not the goal to date: a council asks how much of the
+        year's work is done, and the pace comparison is `gap`'s job.
+        """
+        total = self.total
+        if total is None or not self.goal:
+            return None
+        return total / float(self.goal) * 100
+
+    @property
+    def certified_label(self) -> str:
+        """"319 bautismos certificados hasta agosto" — the figure and its reach."""
+        total = self.total
+        if total is None:
+            return "sin meses certificados"
+        month = es_display.MONTHS[self.months - 1] if self.months else ""
+        return (f"{es_display.integer(total)} bautismos certificados "
+                f"hasta {month}")
+
+    @property
+    def provisional_label(self) -> str:
+        """The open month, said as the open thing it is, or ""."""
+        if self.provisional is None:
+            return ""
+        through = (f" hasta el {es_display.day_month(self.provisional_through)}"
+                   if self.provisional_through else "")
+        return (f"{es_display.integer(self.provisional)} más en el mes en "
+                f"curso{through}, sin cerrar")
+
+
+# ── One unit's finding section ────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class Block:
+    """Everything a unit's finding pages need, or the reason there are none.
+
+    `ReportModel.tableau` holds one of these. A block whose `window` is not
+    usable carries nothing but the refusal, and both renderers print the
+    reason where the section would have been — decision 32, and the reason
+    the packet's page count is generated rather than fixed (§5 risk 2).
+    """
+
+    export: Export
+    window: Window
+    before: Window = None
+    stages: tuple = ()
+    mix: tuple = ()
+    sources: tuple = ()
+    units: tuple = ()
+    reconciliation: Reconciliation = None
+    baptisms: Baptisms = None
+    #: True only for the mission's block, which covers every zone the export
+    #: knows rather than the roster's four (decision 24).
+    whole_mission: bool = False
+    #: What `units` are, for the ranking's heading: "zonas", "distritos", "áreas".
+    unit_noun: str = ""
+
+    @property
+    def present(self) -> bool:
+        return self.window is not None and self.window.usable
+
+    @property
+    def reason(self) -> str:
+        return "" if self.present else (self.window.reason if self.window else "")
+
+    @property
+    def found(self) -> int:
+        return self.stages[0].count if self.stages else 0
+
+    @property
+    def scope_note(self) -> str:
+        """The sentence that keeps decision 34 true on the page.
+
+        The mission's block covers all ten zones while every form-sourced
+        figure in this packet covers four. Nothing else in the document
+        changes population between one page and the next, so it is said
+        outright rather than left to a footnote.
+        """
+        if self.whole_mission:
+            return ("Esta sección cubre las 10 zonas de la misión, no sólo "
+                    "las 4 del piloto de Compass. Ninguna cifra de Tableau se "
+                    "suma con una cifra de los formularios.")
+        return ("Áreas del roster de MISSION_ORG, emparejadas por nombre de "
+                "área; la zona y el distrito son los del roster, no los de "
+                "Tableau.")
+
+    @property
+    def maturity_note(self) -> str:
+        """Why the bottom of a young funnel is empty, in one sentence."""
+        young = [s for s in self.stages if not s.mature]
+        if not young:
+            return ""
+        names = " · ".join(s.label.lower() for s in young)
+        return (f"El embudo sigue a las personas encontradas en esta ventana. "
+                f"{names.capitalize()} tardan más que la ventana en ocurrir, "
+                f"así que esas filas se muestran sin porcentaje ni dirección: "
+                f"están contando una cohorte que aún no ha tenido tiempo. El "
+                f"número real de bautismos del período está en la página de "
+                f"bautismos, no aquí.")
+
+
+def build_block(det: pd.DataFrame, export: Export, period, *,
+                areas=None, units=(), unit_noun: str = "",
+                whole_mission: bool = False, reconciliation: Reconciliation = None,
+                baptisms: Baptisms = None, maturity: dict = None,
+                window: Window = None, before: Window = None) -> Block:
+    """One unit's finding section, gated first and computed only if it passes.
+
+    `areas` is None for the mission's whole-export block and the unit's roster
+    areas everywhere else. `window` and `before` are passed in by the model,
+    which resolves them once for all 63 scopes rather than 63 times.
+    """
+    window = window if window is not None else clip(period, export)
+    if not window.usable:
+        return Block(export=export, window=window, before=before,
+                     reconciliation=reconciliation, baptisms=baptisms,
+                     whole_mission=whole_mission, unit_noun=unit_noun)
+
+    if before is None:
+        before = clamp(preceding(window), export)
+    now_rows = in_window(det, window)
+    prior_rows = in_window(det, before) if before.usable else None
+    if areas is not None:
+        now_rows = for_areas(now_rows, areas)
+        prior_rows = for_areas(prior_rows, areas) if prior_rows is not None else None
+
+    return Block(
+        export=export,
+        window=window,
+        before=before,
+        stages=funnel(now_rows, window, before=prior_rows, maturity=maturity),
+        mix=channel_mix(now_rows, prior_rows),
+        sources=top_sources(now_rows, prior_rows),
+        units=units,
+        reconciliation=reconciliation,
+        baptisms=baptisms,
+        whole_mission=whole_mission,
+        unit_noun=unit_noun,
     )
