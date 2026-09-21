@@ -5,8 +5,9 @@ import html as _html
 import streamlit as st
 import plotly.io as pio
 import plotly.graph_objects as go
-from app.config.theme import (DIM, DIMMEST, MARK, SERIES_COLORS, STATUS,
-                              rgba)
+from app.config.theme import (DIM, DIMMEST, GOAL_BAR_BELOW, GOAL_BAR_TIERS,
+                              MARK, SERIES_COLORS, STATUS, goal_bar_color,
+                              goal_bar_status, rgba)
 from app.i18n import t
 from app.i18n.formats import fmt_int, fmt_number
 from app.analytics import period_delta as _pd
@@ -591,15 +592,12 @@ def render_page_header(title: str, subtitle: str, icon: str = "") -> None:
     )
 
 
-#: Goal-bar tiers, and the one place they are written down. Four, not three:
-#: amber used to run all the way from 60% to nothing, so baptismal invitation
-#: at 39% of target -- the single most actionable fact the 2026-08-21 audit
-#: found (H2) -- drew the same colour as a metric sitting at 55%.
-#: Three states, no blue (decision 10): on pace >= 90% of pace, behind 60-89%,
-#: far behind below. Blue means "this metric, this period" on every chart, so
-#: it can never also mean a grade.
-_GOAL_BAR_TIERS = ((90, STATUS["good"]), (60, STATUS["warn"]))
-_GOAL_BAR_BELOW = STATUS["bad"]
+#: Goal-bar tiers and their two functions now live in `app/config/theme.py`,
+#: beside the STATUS palette they colour with — `reports/grading.py` needs them
+#: and cannot import this module, which pulls in Streamlit. Re-exported here
+#: under their original names so every caller of design_system is unchanged.
+_GOAL_BAR_TIERS = GOAL_BAR_TIERS
+_GOAL_BAR_BELOW = GOAL_BAR_BELOW
 
 
 def goal_bar_state(value, goal, *, pace=None, value_basis=None, goal_basis=None):
@@ -666,31 +664,6 @@ def goal_bar_state(value, goal, *, pace=None, value_basis=None, goal_basis=None)
         "pct": pct, "width": max(0, min(100, pct)) if measured else 0,
         "grade_pct": grade_pct, "tick": tick,
     }
-
-
-def goal_bar_status(grade_pct: float | None) -> str | None:
-    """A graded percentage as "good" / "warn" / "bad" — decision 10's three
-    states, in the vocabulary theme.STATUS and charts.ranked_list both speak.
-
-    The one home for those two thresholds. The drill-down carried its own copy
-    (_ON_PACE_PCT / _BEHIND_PCT) until the nightly rows needed a third caller,
-    and three copies of "90 and 60" is how a page ends up grading the same
-    number two ways.
-    """
-    if grade_pct is None:
-        return None
-    for threshold, _ in _GOAL_BAR_TIERS:
-        if grade_pct >= threshold:
-            return "good" if threshold == _GOAL_BAR_TIERS[0][0] else "warn"
-    return "bad"
-
-
-def goal_bar_color(grade_pct: float) -> str:
-    """The tier colour for a graded percentage."""
-    for threshold, color in _GOAL_BAR_TIERS:
-        if grade_pct >= threshold:
-            return color
-    return _GOAL_BAR_BELOW
 
 
 #: Submission compliance: did the form arrive, as a share of the areas that

@@ -366,3 +366,46 @@ short audit of their own before anything is changed.
   `area_helpers.latest_due_sunday` rather than copying its "if today IS Sunday"
   step back; a cycle's final week is therefore not complete on the cycle's own
   last day, which is correct and is pinned by a test.
+- **2026-09-21** — **R2 landed.** `app/reports/grading.py`: `attainment`,
+  `paced_goal`, `change` / `change_status`, `goal_is_unusable`, and the `Grade`
+  both renderers consume via `grade_ki` / `grade_nightly`. Tests:
+  `test_report_grading.py` (36). Suite **11 failed / 1346 passed** — the same
+  11. **Acceptance met**: on the twenty real measured nightly figures,
+  `goal_is_unusable` flags exactly two — `rc_lessons_mcp` (6.4% of goal) and
+  `baptismal_calendars` (21.7%) — and nothing comes near the ceiling, so 18
+  usable / 2 flagged. Decisions made mid-build:
+  (a) **`goal_bar_status`, `goal_bar_color` and the 90/60 tiers moved from
+  `design_system.py` to `config/theme.py`**, beside the STATUS palette they
+  colour with, and are re-exported from design_system under their original
+  names so no existing caller changed. §4 R2 says reuse them rather than
+  re-implement, and design_system imports Streamlit — grading cannot. This is
+  the only edit to a shipped file in Phase R so far; the 123 tests over
+  `test_kpi_pace_goal` / `test_kpi_goal_bar` / `test_ki_drilldown` /
+  `test_charts` pass unchanged.
+  (b) **`FLAT_BAND` is ±15%**, measured rather than picked: across 100
+  metric-weeks (20 metrics × the five week-over-week steps) the median absolute
+  change is 15.6%–19.6% on all three candidate bases, so ±15% sits near the
+  middle of the real distribution and about half the rows carry a direction.
+  ±5% would colour 80–88% of rows — decision 10's wall of red wearing arrows —
+  and ±25% would call a genuine quarter-sized drop "steady".
+  (c) **The unusable-goal flag is a mission-scope verdict handed down, not
+  computed per row.** `grade_ki` / `grade_nightly` take `flag=` as an argument.
+  Computing it per row turned "this area produced nothing this fortnight" into
+  "the goal is broken", which buries the news — and a `GOAL_*` is one
+  mission-wide configured number, so whether it is a usable yardstick is a
+  property of the goal, not of one companionship.
+  (d) `change_status` distinguishes `before=None` (no comparison period) from
+  `before=0` (the comparison period recorded nothing). Conflating them turned
+  every absent comparison into good news; a test caught it.
+  (e) **Exact counts, correcting §1.1's approximations.** There are **20**
+  numeric nightly metrics, not 21 — `effort` is CHOICE and `exchanges` is
+  YESNO, both dropped by `non_numeric_metrics()`. Under 90/60 they are **17
+  red, 3 amber, none green** (§1.1's "~18 of 20" rounds that). The three above
+  60% are `contacts_attempted` 65.3%, `new_people_found` 61.3%,
+  `member_contacts` 67.4%.
+  (f) **For R4, measured and not to be re-derived:** the 26→36 reporting
+  whipsaw of §1.3 is the WEEKLY form, not the nightly one. Areas filing at
+  least one nightly report per week run 35 · 35 · 36 · 37 · 43 · 45 of 45. The
+  basis still changes the answer, though — `contacts_attempted`'s 09-06→09-13
+  step reads **+19.3% per active area and +2.6% per reporting area** — so R4
+  must choose the change basis deliberately and say which it used.

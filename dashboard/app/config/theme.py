@@ -69,6 +69,52 @@ def series_style(i: int) -> tuple[str, str, str]:
 STATUS = {"good": "#3ecf6f", "warn": "#f2b134", "bad": "#f0645a"}
 
 
+#: Goal-bar tiers, and the one place they are written down. Four, not three:
+#: amber used to run all the way from 60% to nothing, so baptismal invitation
+#: at 39% of target -- the single most actionable fact the 2026-08-21 audit
+#: found (H2) -- drew the same colour as a metric sitting at 55%.
+#: Three states, no blue (decision 10): on pace >= 90% of pace, behind 60-89%,
+#: far behind below. Blue means "this metric, this period" on every chart, so
+#: it can never also mean a grade.
+#:
+#: These live in theme.py rather than in design_system.py, where they were
+#: written, because `app/reports/grading.py` needs them too and that layer must
+#: stay importable without Streamlit (PLAN-2026-09-21-informes.md decision 30).
+#: design_system re-exports both functions, so its own callers are unchanged.
+GOAL_BAR_TIERS = ((90, STATUS["good"]), (60, STATUS["warn"]))
+GOAL_BAR_BELOW = STATUS["bad"]
+
+
+def goal_bar_status(grade_pct: float | None) -> str | None:
+    """A graded percentage as "good" / "warn" / "bad" — decision 10's three
+    states, in the vocabulary theme.STATUS and charts.ranked_list both speak.
+
+    The one home for those two thresholds. The drill-down carried its own copy
+    (_ON_PACE_PCT / _BEHIND_PCT) until the nightly rows needed a third caller,
+    and three copies of "90 and 60" is how a page ends up grading the same
+    number two ways.
+
+    **Key Indicators only.** The nightly metrics do NOT grade here — they grade
+    on movement, in `reports/grading.change_status`, because every one of them
+    sits between 6% and 67% of its configured goal and 90/60 would paint
+    eighteen of twenty rows red every week (decision 31).
+    """
+    if grade_pct is None:
+        return None
+    for threshold, _ in GOAL_BAR_TIERS:
+        if grade_pct >= threshold:
+            return "good" if threshold == GOAL_BAR_TIERS[0][0] else "warn"
+    return "bad"
+
+
+def goal_bar_color(grade_pct: float) -> str:
+    """The tier colour for a graded percentage."""
+    for threshold, color in GOAL_BAR_TIERS:
+        if grade_pct >= threshold:
+            return color
+    return GOAL_BAR_BELOW
+
+
 SEVERITY_COLORS = {
     "HIGH":   "#D32F2F",
     "MEDIUM": "#F57C00",
