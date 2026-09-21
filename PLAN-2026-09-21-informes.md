@@ -858,6 +858,46 @@ short audit of their own before anything is changed.
   looking at, and **uninstalled at the end of the phase** — it is not in
   `requirements.txt` and nothing in the app or the tests imports it.
 
+- **2026-09-21** — **T1 landed.** `app/reports/tableau.py`: `Export` (the
+  stored export described rather than trusted — its real first and last
+  found-date, its age, the freshness strip decision 32 makes mandatory) and
+  `Window` + `clip` / `preceding` / `clamp` (what a period can honestly be
+  answered over). Pure, and the purity test runs in a subprocess as P3's does.
+  Tests: `test_report_tableau_gate.py` (20). Decisions made mid-build:
+  (a) **The export is no longer stale. The premise of decision 32 has
+  changed, the decision has not.** [[project_tableau_autosync]]'s run #17
+  landed at 19:47 UTC today: the stored export is **99.425 people ending
+  2026-09-17**, four days behind, against the 2026-08-03 / 49 days the plan
+  was written on. So the packet WILL have a finding section — but the gate is
+  what makes that a fact rather than an assumption, and it is built exactly as
+  planned.
+  (b) **The gate keys on COVERAGE OF THE PERIOD, not on the age of the
+  export.** Those come apart and conflating them fails both ways: "Traslado
+  pasado" closed on 09-06 and an export a month late still answers every day
+  of it, while "Semana pasada" against an export six days behind covers one
+  day of seven. Age is printed (the freshness strip) and never gated on. §4
+  T1's "refusal path when the requested period falls outside it" is coverage,
+  read literally.
+  (c) **`MIN_WINDOW_COVERAGE` is 25%**, the same floor as
+  `periods.THIN_REPORTING_RATE` and for the same reason. Measured against the
+  live export, the six periods cover **57% · 73% · 100% · 93% · 81% · 98%** of
+  their own days, so nothing is refused today; the floor bites when the export
+  goes a week behind, which is when "Semana pasada" would print one evening
+  under a week's name.
+  (d) **The comparison is taken from the CLIPPED window, not from the
+  period.** Eleven days of this transfer against forty-two of the last one
+  would print a collapse that is entirely the two windows being different
+  sizes. `preceding` is `finding_funnel.previous_window` over the clipped
+  window, so both sides are always the same length, and `clamp` refuses
+  outright rather than returning a short one — an unequal comparison is worse
+  than none.
+  (e) The window's own caption carries `fuente: Tableau` (decision 34) rather
+  than leaving it to each caller, so a block cannot be drawn without it.
+  **Measured live, not to be re-derived:** the export holds **99.425 rows,
+  2024-01-01 → 2026-09-17**, uploaded `auto:tableau` 2026-09-21 19:47 UTC; the
+  pilot four zones are **42.9%** of its volume (42.616 rows), close to §1.1's
+  44%; it carries **10 zones, 4 finding categories and 21 finding sources**.
+
 ### Phase R is done. What Phase P starts from
 
 `app/reports/` is `scope.py`, `periods.py`, `grading.py`, `model.py` — all
