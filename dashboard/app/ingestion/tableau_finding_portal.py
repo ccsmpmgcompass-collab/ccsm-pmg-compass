@@ -160,6 +160,18 @@ def _inventory(page, label: str) -> None:
                       f"menuitems={page.locator('[role=menuitem]').count()}")
     except Exception:
         pass
+    # Whether the page is SHOWING AN ERROR, without reading what it says. On the
+    # Church IdP the text is off limits (it names the person signing in), but the
+    # count alone answers the question that matters after a password is
+    # submitted: was it refused, or is the page simply still thinking? Selectors
+    # are Okta's own error regions plus the ARIA role.
+    try:
+        alerts = page.locator(
+            "[role=alert], [data-se=callout], .infobox-error, .okta-form-infobox-error"
+        ).count()
+        _logger.error(f"error regions on page: {alerts}")
+    except Exception:
+        pass
     # The form's SHAPE, across every frame. On a Tableau page the test-ids above
     # are the whole story; on the Church IdP there are none at all, and without
     # this a stuck sign-in reports an empty list and teaches nothing (run #7).
@@ -262,8 +274,10 @@ _SUBMIT_BUTTONS = (
 
 #: How long a box we already answered may stay on screen before we call it a
 #: rejection rather than a page still thinking about it. Okta leaves the
-#: password field up while it verifies, so this cannot be instant.
-_STEP_SETTLE_S = 15
+#: password field up while it verifies, so this cannot be instant — and calling
+#: a slow verification "stuck" costs a whole run, while waiting a few seconds
+#: too long costs nothing.
+_STEP_SETTLE_S = 25
 
 #: The whole sign-in, end to end. Three steps and two redirects fit easily;
 #: anything longer is a prompt we do not understand and should be reported.
