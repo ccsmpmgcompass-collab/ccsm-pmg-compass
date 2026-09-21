@@ -61,6 +61,14 @@ DAILY = pd.DataFrame(
      for d in ("2026-09-14", "2026-09-15") for a in ("A1", "B1")]
 )
 
+#: A2 is deliberately absent: the scoring agent writes no row for an area it
+#: has not scored, and "not scored" must not average in as a zero.
+SCORES = pd.DataFrame([
+    {"_week": "2026-09-13", "_area": a, "Effort_Score": 60.0,
+     "Skill_Score": 70.0, "KI_Score": 40.0, "Effectiveness_Score": 55.0}
+    for a in ("A1", "B1")
+])
+
 
 def _ki_goals(week, areas=None):
     """Three areas filed the source form; the goals are round numbers."""
@@ -70,6 +78,7 @@ def _ki_goals(week, areas=None):
 
 def _data(**over) -> M.ReportData:
     kw = dict(roster=ROSTER, weekly_ki=WEEKLY_KI, daily_log=DAILY,
+              scores=SCORES,
               cycles=CYCLES, ki_keys=(NEW, SACR, BAUT),
               nightly_keys=("contacts_attempted", "roleplays"),
               nightly_goals={"contacts_attempted": 150.0, "roleplays": 7.0},
@@ -281,8 +290,8 @@ def test_the_week_columns_give_way_to_the_line_when_there_are_too_many():
 
 # ── The pages themselves ──────────────────────────────────────────────────────
 
-def test_the_mission_section_is_five_pages_and_each_one_is_headed(models):
-    """M1-M5, in order, one to a page.
+def test_the_missions_pages_run_in_order_one_section_to_a_page(models):
+    """M1-M5 and the scores, in order, one to a page.
 
     Scanned forward rather than searched: "Indicadores Clave" also appears in
     M1's own section note ("de los Indicadores Clave con una meta utilizable"),
@@ -296,13 +305,16 @@ def test_the_mission_section_is_five_pages_and_each_one_is_headed(models):
     pages = [(p.extract_text() or "").upper()
              for p in PdfReader(io.BytesIO(pdf)).pages]
     heads = ["DÓNDE ESTAMOS", "INDICADORES CLAVE", "SEMANA A SEMANA", "ZONAS",
-             "TODO EL TRABAJO NOCTURNO"]
+             "TODO EL TRABAJO NOCTURNO", "PUNTAJES"]
     at, found = 0, []
     for head in heads:
         at = next(i for i in range(at, len(pages)) if head in pages[i])
         found.append(at)
         at += 1
-    assert found == list(range(found[0], found[0] + 5))
+    # Strictly increasing and one to a page. Outcomes, then activity, then
+    # process: the scores are last because they judge how the work was done.
+    assert found == sorted(set(found))
+    assert found[-1] - found[0] == len(heads) - 1
 
 
 def test_every_string_the_mission_pages_print_survives_the_encoding(mission):

@@ -63,6 +63,9 @@ class Section:
     title: str
     audience: str
     print_it: str = "Imprimir"
+    #: How many UNITS the section covers, so `describe` can say how many pages
+    #: each of them took once a pass has measured it.
+    units: int = 1
     first_page: int | None = None
     last_page: int | None = None
 
@@ -309,25 +312,52 @@ def _render(flowables) -> tuple:
 def sections_for(models) -> list:
     """The contents, in packet order, described for the print guide.
 
-    Titles carry their own counts ("Cada zona - 4 zonas") because Provo's
+    Titles carry their own counts ("Cada zona — 4 zonas") because Provo's
     contents does and it answers the second question a reader has. The counts
     come from the models actually built, never from the roster, so a packet
     built with one zone missing says three when there are three.
+
+    How many PAGES each unit takes is not known here and is filled in by
+    `describe`, once a pass has measured it.
     """
-    zones = sum(1 for m in models if m.scope.level == S.ZONE)
-    districts = sum(1 for m in models if m.scope.level == S.DISTRICT)
-    areas = sum(1 for m in models if m.scope.level == S.AREA)
+    counts = {level: sum(1 for m in models if m.scope.level == level)
+              for level in (S.ZONE, S.DISTRICT, S.AREA)}
     return [
-        Section(MISSION, "La misión", "Todos en el consejo"),
-        Section(ZONES, f"Cada zona — {zones} zonas",
-                "Se discute zona por zona"),
-        Section(DISTRICTS, f"Cada distrito — {districts}, una página cada uno",
-                "Entregar a cada líder de distrito"),
-        Section(AREAS, f"Cada área — {areas}, dos por página",
-                "Referencia durante el consejo"),
+        Section(MISSION, "La misión", "Todos en el consejo", units=1),
+        Section(ZONES, f"Cada zona — {counts[S.ZONE]} zonas",
+                "Se discute zona por zona", units=counts[S.ZONE]),
+        Section(DISTRICTS, f"Cada distrito — {counts[S.DISTRICT]}",
+                "Entregar a cada líder de distrito", units=counts[S.DISTRICT]),
+        Section(AREAS, f"Cada área — {counts[S.AREA]}",
+                "Referencia durante el consejo", units=counts[S.AREA]),
         Section(DATA_NOTE, "Nota de datos",
                 "Quien pregunte de dónde sale una cifra", "Referencia"),
     ]
+
+
+def describe(sections) -> list:
+    """The contents' titles, once the page count for each section is known.
+
+    §3.2 planned "13 districts, one page each"; the districts print five, since
+    decision 10 gives every unit all seven Key Indicators and decision 17 gives
+    it all twenty-two nightly metrics. The decisions outrank the estimate — and
+    the contents should describe the document that was built rather than the
+    one that was sketched, so the count is measured here rather than written
+    into the title.
+    """
+    out = []
+    for section in sections:
+        title = section.title
+        if section.units > 1 and section.page_count:
+            each = section.page_count / section.units
+            if each == int(each):
+                n = int(each)
+                title += (", una página cada uno" if n == 1
+                          else f", {es_display.integer(n)} páginas cada uno")
+            else:
+                title += f", {es_display.number(each, 1)} páginas cada uno"
+        out.append(replace(section, title=title))
+    return out
 
 
 def front_matter(mission, sections, units, roster, *, total_pages: int) -> list:
@@ -345,6 +375,7 @@ def front_matter(mission, sections, units, roster, *, total_pages: int) -> list:
         ("Semanas completas", period.progress_label),
         ("Cumplimiento", mission.compliance_label),
     ]
+    sections = describe(sections)
     rows = hand_outs(sections, units, roster)
     paper = sheets(rows)
     lead = leadership(roster)
@@ -466,8 +497,14 @@ def ki_lines(model, *, comparable: bool, confident: bool = True) -> list:
     for row in model.key_indicators:
         mark = None
         note = ""
-        if row.has_leadership_goal and row.meta:
-            mark = row.leadership_goal / row.meta * 100
+        if row.has_leadership_goal:
+            # The figure as well as the mark. The mark is a position on a bar
+            # scaled to the companionships' own meta, and leadership's goal is
+            # routinely larger than that — pinned to the track's end, four
+            # different goals would all read as "exactly at the line".
+            note = f"meta de traslado {_count(row.leadership_goal)}"
+            if row.meta:
+                mark = row.leadership_goal / row.meta * 100
         elif row.leadership_goal_areas or row.meta:
             note = (f"sin meta de traslado · "
                     f"{es_display.integer(row.leadership_goal_areas)} de "
@@ -541,21 +578,7 @@ def child_rows(model, spec: PP.RankedSpec) -> list:
     beside it, so a row's cells average to its own figure. A zone where seven
     of eleven areas went quiet reads as the zone, not as the four that filed.
     """
-    keys = [k for k, _ in _child_keys(model)]
-    out = [PP.ranked_row(spec, name="unidad", header=True)]
-    for child in model.children:
-        cells = [_pct(next((m.attainment_per_active_area
-                            for m in child.metrics if m.key == key), None))
-                 for key in keys]
-        silent = (f" · {es_display.integer(len(child.areas_silent))} sin informar"
-                  if child.areas_silent else "")
-        out.append(PP.ranked_row(
-            spec, rank=child.rank, name=child.name,
-            sub=f"{child.coverage.label}{silent}" if child.coverage else "",
-            status=_attainment_status(child.mean_attainment),
-            cells=cells, value=_pct(child.mean_attainment),
-            bar=child.mean_attainment, bar_max=100))
-    return out
+    return ranked_unit_rows(model.children, model, spec)
 
 
 def _attainment_status(pct) -> str | None:
@@ -666,22 +689,127 @@ def _best_and_worst(model):
     return ordered[-1], ordered[0]
 
 
-def mission_pages(model, goals) -> list:
-    """M1-M5: where we stand, the seven, the weeks, the zones, the nights.
+# ── Blocks every level shares ─────────────────────────────────
 
-    One `ReportModel` and nothing else. M6 (baptisms against the annual goal)
-    and M7 (finding) both read TABLEAU_BAPTISMS and the Tableau export, so they
-    belong to phase T with the rest of the freshness gate and decision 34's
-    separation — putting them here would have meant a form-sourced page
-    quietly carrying a Tableau figure.
+def rate_lines(model) -> list:
+    """The four conversion rates as printable rows (decision 13).
+
+    Empty below zone level, because the model leaves them empty there: a close
+    rate over one companionship's three lessons is a ratio of two small
+    integers wearing a percentage sign.
+
+    The bar fills against the rate's own target rather than against 100, so
+    "44,7% de contacto" reads as 89% of a 50% target and not as half of
+    nothing. That is the same statement the screen's card makes.
+    """
+    lines = []
+    for rate in model.rates:
+        value, target = rate.get("value"), rate.get("target")
+        pct = rate.get("pct_of_target")
+        lines.append(PP.MetricLine(
+            label=rate.get("label") or rate.get("key", ""),
+            value=es_display.percent(value, 1),
+            goal=es_display.percent(target, 0) if target else es_display.NA,
+            pct=pct, status=_attainment_status(pct), magnitude=pct is None,
+            verdict=(f"{PP.STATUS_WORD[_attainment_status(pct)]} · "
+                     f"{_pct(pct)} de la meta") if pct is not None else "sin meta",
+            note=(f"{es_display.integer(rate.get('numerator'))} de "
+                  f"{es_display.integer(rate.get('denominator'))}")))
+    return lines
+
+
+def score_tiles(model) -> list:
+    """The four scores as a tile band (decision 18).
+
+    Ungraded on purpose: these are the scoring agent's own composites on a
+    0-100 scale that is not a percentage of a goal, and colouring them with the
+    90/60 bands would claim they are. The rank line beneath says where the unit
+    sits, which is the comparison that means something.
+    """
+    scores = model.scores
+    if scores is None or not scores.measured:
+        return []
+    pairs = (("Esfuerzo", scores.effort), ("Habilidad", scores.skill),
+             ("Indicadores Clave", scores.ki),
+             ("Efectividad", scores.effectiveness))
+    return [PP.Tile(label=label, value=es_display.number(value, 1),
+                    note="de 100")
+            for label, value in pairs if value is not None]
+
+
+def peer_rows(model, peers, spec: PP.RankedSpec) -> list:
+    """This unit against the unit above it and against the mission.
+
+    The district page's reason for existing. A district leader has no way to
+    know whether 73% is good until they can see the zone at 78 and the mission
+    at 76 — Provo draws it as a three-way line; here it is three rows of the
+    same shape as every other ranked table in the packet, which prints legibly
+    at 7,5pt and photocopies.
+
+    ``peers`` is `{Scope.key: ReportModel}` from `build_all`, so nothing has to
+    be recomputed and no peer-series field has to be added to the model that
+    only one page would read.
+    """
+    keys = [k for k, _ in _child_keys(model)]
+    ladder = [(model, "este " + _level_noun(model.scope.level))]
+    parent = peers.get(_parent_key(model.scope))
+    if parent is not None:
+        ladder.append((parent, "su " + _level_noun(parent.scope.level)))
+    mission = peers.get(S.MISSION)
+    if mission is not None and mission.scope.key != model.scope.key:
+        ladder.append((mission, "la misión"))
+    if len(ladder) < 2:
+        return []
+    out = [PP.ranked_row(spec, name="unidad", header=True)]
+    for unit, role in ladder:
+        cells = [_pct(next((r.attainment_per_active_area
+                            for r in unit.key_indicators if r.key == key), None))
+                 for key in keys]
+        mean = _mean_of(unit)
+        out.append(PP.ranked_row(
+            spec, rank=None, name=unit.scope.name, sub=role,
+            status=_attainment_status(mean), cells=cells, value=_pct(mean),
+            bar=mean, bar_max=100))
+    return out
+
+
+def _level_noun(level: str) -> str:
+    return {S.MISSION: "misión", S.ZONE: "zona", S.DISTRICT: "distrito",
+            S.AREA: "área"}.get(level, "unidad")
+
+
+def _parent_key(scope) -> str:
+    if scope.level == S.AREA and scope.district:
+        return f"{S.DISTRICT}:{scope.zone or ''}/{scope.district}"
+    if scope.level == S.DISTRICT:
+        return f"{S.ZONE}:{scope.zone or ''}"
+    if scope.level == S.ZONE:
+        return S.MISSION
+    return ""
+
+
+def _mean_of(model) -> float | None:
+    """The unit's mean Key Indicator attainment per ACTIVE area.
+
+    The same figure `ChildRow.mean_attainment` carries, recomputed here for a
+    unit that is nobody's child on this page — the mission has no parent to be
+    ranked under, and a district comparing itself upward needs its own.
+    """
+    values = [r.attainment_per_active_area for r in model.key_indicators
+              if r.attainment_per_active_area is not None and not r.grade.flag]
+    return sum(values) / len(values) if values else None
+
+
+def at_a_glance(model, *, weekly_ok: bool, weekly_sure: bool) -> list:
+    """The unit's first page: what is strongest, what to move, the headlines.
+
+    Identical at every level, because the question is. Provo opens a zone page
+    and a district page the same way it opens the mission's, and a leader who
+    has read one has read them all.
     """
     st = PP.styles()
     W = PP.CONTENT_WIDTH
-    weekly_ok = _weekly_comparable(model)
-    weekly_sure = _weekly_confident(model)
     best, worst = _best_and_worst(model)
-
-    # M1 — where the mission stands
     flow = _heading(model)
     flow.append(PP.SectionHead("Dónde estamos", model.period.window_label))
     if best is not None:
@@ -693,10 +821,12 @@ def mission_pages(model, goals) -> list:
         flow.append(Paragraph(
             PP.text(f"Lo que hay que mover: {worst.label} es lo más atrasado, "
                     f"en {_pct(worst.grade.pct)} — {_count(worst.actual)} "
-                    f"contra {_count(worst.meta)}. Es el número que mover antes "
-                    f"del próximo consejo."), st["body"]))
-    flagged = [r for r in model.key_indicators if r.grade.flag]
-    for row in flagged:
+                    f"contra {_count(worst.meta)}."), st["body"]))
+    if best is None and worst is None:
+        flow.append(Paragraph(PP.text(
+            "Ningún Indicador Clave tiene con qué medirse en este período: "
+            "o no hay meta, o nadie informó."), st["body"]))
+    for row in [r for r in model.key_indicators if r.grade.flag]:
         flow.append(Paragraph(
             PP.text(f"{row.label}: {row.grade.flag_label}. "
                     f"{_count(row.actual)} contra una meta declarada de "
@@ -704,67 +834,80 @@ def mission_pages(model, goals) -> list:
                     f"revisarla."), st["note_lead"]))
     flow.append(Spacer(0, 8))
     flow.append(PP.stat_tiles(W, _headline_tiles(model)))
-    flow.append(Spacer(0, 10))
     behind = furthest_behind(model)
     if behind:
+        flow.append(Spacer(0, 10))
+        wanted = {r.label for r in behind}
         flow.append(PP.SectionHead(
             "Los tres más atrasados",
             "de los Indicadores Clave con una meta utilizable"))
-        wanted = {r.label for r in behind}
         flow.append(PP.metric_table(
             [line for line in ki_lines(model, comparable=weekly_ok,
                                        confident=weekly_sure)
-             if line.label in wanted],
-            headers=("Métrica", "Real", "Meta", "", "Contra la meta",
-                     "Cambio")))
+             if line.label in wanted]))
     flow.append(Spacer(0, 8))
     flow.append(PP.legend(W, GRADED_NOTE))
+    return flow
 
-    # M2 — every Key Indicator against its goal
-    flow.append(PageBreak())
-    flow.append(PP.SectionHead("Indicadores Clave",
-                               f"los siete · {model.compliance_label}"))
-    flow.append(PP.metric_table(ki_lines(model, comparable=weekly_ok, confident=weekly_sure)))
-    flow.append(Spacer(0, 6))
-    flow.append(Paragraph(PP.text(BASIS_NOTE), st["note"]))
-    flow.append(Paragraph(PP.text(_comparison_note(model)), st["note"]))
-    flow.append(Spacer(0, 4))
-    flow.append(PP.legend(W, GRADED_NOTE))
 
-    # M3 — the seven, week by week
-    flow.append(PageBreak())
-    weeks, week_rows, boundaries, reporting = _week_rows(model)
-    flow.append(PP.SectionHead("Semana a semana", "solo semanas completas"))
-    flow.append(PP.week_table(
-        W, weeks, week_rows, boundaries=boundaries,
-        footer=("Áreas que informaron, de "
-                f"{es_display.integer(model.scope.area_count)}", reporting,
-                "")))
-    flow.append(Spacer(0, 6))
-    flow.append(Paragraph(PP.text(
-        "Cada línea tiene su propia escala — la forma es la noticia y las "
-        "cifras son el tamaño. La regla punteada es el día de traslado. Una "
-        "semana que nadie informó corta la línea en vez de atravesarla, y su "
-        "columna va en raya."), st["note"]))
-    flow.append(Paragraph(PP.text(
-        "Estas son sumas sin dividir. La fila de abajo dice cuántas áreas "
-        "informaron cada semana, porque una semana con menos formularios se "
-        "lee igual que una semana con menos trabajo y no es lo mismo."),
-        st["note"]))
+def key_indicator_page(model, *, weekly_ok: bool, weekly_sure: bool) -> list:
+    st = PP.styles()
+    return [
+        PP.SectionHead("Indicadores Clave",
+                       f"los siete · {model.compliance_label}"),
+        PP.metric_table(ki_lines(model, comparable=weekly_ok,
+                                 confident=weekly_sure)),
+        Spacer(0, 6),
+        Paragraph(PP.text(BASIS_NOTE), st["note"]),
+        Paragraph(PP.text(_comparison_note(model)), st["note"]),
+        Spacer(0, 4),
+        PP.legend(PP.CONTENT_WIDTH, GRADED_NOTE),
+    ]
+
+
+def week_page(model) -> list:
+    st = PP.styles()
+    weeks, rows, boundaries, reporting = _week_rows(model)
+    if not rows:
+        return [PP.SectionHead("Semana a semana", "solo semanas completas"),
+                Paragraph(PP.text(
+                    "Sin semanas completas informadas en este período."),
+                    st["body"])]
+    flow = [
+        PP.SectionHead("Semana a semana", "solo semanas completas"),
+        PP.week_table(PP.CONTENT_WIDTH, weeks, rows, boundaries=boundaries,
+                      footer=("Áreas que informaron, de "
+                              f"{es_display.integer(model.scope.area_count)}",
+                              reporting, "")),
+        Spacer(0, 6),
+        Paragraph(PP.text(
+            "Cada línea tiene su propia escala — la forma es la noticia y las "
+            "cifras son el tamaño. La regla punteada es el día de traslado. "
+            "Una semana que nadie informó corta la línea en vez de "
+            "atravesarla, y su columna va en raya."), st["note"]),
+        Paragraph(PP.text(
+            "Estas son sumas sin dividir. La fila de abajo dice cuántas áreas "
+            "informaron cada semana, porque una semana con menos formularios "
+            "se lee igual que una semana con menos trabajo y no es lo mismo."),
+            st["note"]),
+    ]
     if len(weeks) > PP.WEEK_COLUMN_LIMIT:
         flow.append(Paragraph(PP.text(
             f"El período tiene {es_display.integer(len(weeks))} semanas "
             f"completas, más de las que caben en columnas; queda la línea."),
             st["note"]))
+    return flow
 
-    # M4 — the zones, weakest first
-    flow.append(PageBreak())
-    flow.append(PP.SectionHead(
-        _children_title(model),
-        "más atrasada primero · cada celda por área activa"))
+
+def children_page(model) -> list:
+    """The units one level down, weakest first (decisions 14, 15, 16)."""
+    st = PP.styles()
+    W = PP.CONTENT_WIDTH
     spec = PP.RankedSpec(width=W, cells=_child_cells(model))
-    for row in child_rows(model, spec):
-        flow.append(row)
+    flow = [PP.SectionHead(
+        _children_title(model),
+        "más atrasada primero · cada celda por área activa")]
+    flow.extend(child_rows(model, spec))
     flow.append(Spacer(0, 6))
     flow.append(Paragraph(PP.text(
         "El porcentaje de la derecha es el promedio de los siete Indicadores "
@@ -773,21 +916,99 @@ def mission_pages(model, goals) -> list:
         "trabajo que no se hizo ni trabajo que sí."), st["note"]))
     flow.append(Spacer(0, 4))
     flow.append(PP.legend(W, GRADED_NOTE))
+    return flow
 
-    # M5 — every tracked nightly metric
-    flow.append(PageBreak())
-    flow.append(PP.SectionHead(
-        "Todo el trabajo nocturno",
-        f"más atrasado primero · {len(model.nightly_metrics)} medidas"))
-    flow.append(PP.metric_table(
-        nightly_lines(model, goals, comparable=_nightly_comparable(model))))
+
+def _child_sub(child, model) -> str:
+    """The line under a unit's name in a ranked table.
+
+    Its place in the mission MINUS whatever the running head already says: on
+    a zone's own page an area is "El Mirador", not "Angol · El Mirador", and
+    the zone's name is at the top of the page either way.
+
+    A unit with no reading at all says so here. Left with only a grey dot and
+    a row of dashes it reads as a unit doing badly, when the truth is that
+    nobody filed a form.
+    """
+    trail = [part for part in child.scope.trail if part != model.scope.name]
+    bits = [" · ".join(trail)] if trail else []
+    if child.mean_attainment is None:
+        bits.append("sin informes en el período")
+    elif child.coverage is not None:
+        bits.append(child.coverage.label)
+        if child.areas_silent:
+            bits.append(f"{es_display.integer(len(child.areas_silent))} "
+                        f"sin informar")
+    return " · ".join(b for b in bits if b)
+
+
+def ranked_unit_rows(units, model, spec: PP.RankedSpec, *,
+                     header: str = "unidad") -> list:
+    """A ranked table of units — children or areas, the same row either way.
+
+    A unit with nothing to measure keeps its place at the end of the list and
+    loses its rank NUMBER: an area that filed no form is not the ninth best
+    area, it is an area nobody can rank, and printing "9" beside it invites
+    exactly the reading the grey dot is trying to prevent.
+    """
+    keys = [k for k, _ in _child_keys(model)]
+    out = [PP.ranked_row(spec, name=header, header=True)]
+    for child in units:
+        cells = [_pct(next((m.attainment_per_active_area
+                            for m in child.metrics if m.key == key), None))
+                 for key in keys]
+        out.append(PP.ranked_row(
+            spec, rank=child.rank if child.mean_attainment is not None else None,
+            name=child.name, sub=_child_sub(child, model),
+            status=_attainment_status(child.mean_attainment), cells=cells,
+            value=_pct(child.mean_attainment), bar=child.mean_attainment,
+            bar_max=100))
+    return out
+
+
+def areas_page(model) -> list:
+    """Every area inside the unit, weakest first (decision 15 — no top-N).
+
+    Filled at mission and zone level only. At district level the areas already
+    ARE the children, and the same list under two headings is noise.
+    """
+    st = PP.styles()
+    W = PP.CONTENT_WIDTH
+    if not model.areas_ranked:
+        return []
+    spec = PP.RankedSpec(width=W, cells=_child_cells(model))
+    flow = [PP.SectionHead(
+        f"Las {es_display.integer(len(model.areas_ranked))} áreas",
+        "más atrasada primero · cada celda por área activa")]
+    flow.extend(ranked_unit_rows(model.areas_ranked, model, spec,
+                                 header="área"))
     flow.append(Spacer(0, 6))
     flow.append(Paragraph(PP.text(
-        "El relleno es la suma del período contra la meta configurada por "
-        "área activa por semana. El color está en el CAMBIO, no en la barra: "
-        "estas metas están puestas cerca del doble de lo que la misión hace "
-        "hoy, así que pintarlas de rojo cada semana no diría nada de la "
-        "semana."), st["note"]))
+        "Cada área tiene además su propia página más adelante en el "
+        "paquete, con los nombres de la companería."), st["note"]))
+    flow.append(Spacer(0, 4))
+    flow.append(PP.legend(W, GRADED_NOTE))
+    return flow
+
+
+def nightly_page(model, goals) -> list:
+    st = PP.styles()
+    W = PP.CONTENT_WIDTH
+    flow = [
+        PP.SectionHead(
+            "Todo el trabajo nocturno",
+            f"más atrasado primero · "
+            f"{es_display.integer(len(model.nightly_metrics))} medidas"),
+        PP.metric_table(nightly_lines(
+            model, goals, comparable=_nightly_comparable(model))),
+        Spacer(0, 6),
+        Paragraph(PP.text(
+            "El relleno es la suma del período contra la meta configurada por "
+            "área activa por semana. El color está en el CAMBIO, no en la "
+            "barra: estas metas están puestas cerca del doble de lo que la "
+            "misión hace hoy, así que pintarlas de rojo cada semana no diría "
+            "nada de la semana."), st["note"]),
+    ]
     nightly = model.nightly_coverage
     if nightly is not None:
         flow.append(Paragraph(PP.text(
@@ -801,6 +1022,164 @@ def mission_pages(model, goals) -> list:
             "Sin cambio comparable: el período de comparación casi no tiene "
             "noches registradas, y un porcentaje calculado sobre eso sería la "
             "tarde de un área hablando por toda la unidad."), st["note"]))
+    return flow
+
+
+def rates_and_scores(model) -> list:
+    """The four conversion rates and the four scores, where each belongs.
+
+    Rates at mission and zone (decision 13); scores wherever the agent wrote
+    any (decision 18), with the area's rank in its district when it has one.
+    """
+    st = PP.styles()
+    W = PP.CONTENT_WIDTH
+    flow = []
+    if model.rates:
+        flow.append(PP.SectionHead("Tasas de conversión",
+                                   "la razón de los totales de la unidad"))
+        flow.append(PP.metric_table(
+            rate_lines(model),
+            headers=("Tasa", "Real", "Meta", "", "Contra la meta", "")))
+        flow.append(Spacer(0, 4))
+        flow.append(Paragraph(PP.text(
+            "La razón de los totales de la unidad, no el promedio de las "
+            "razones de sus áreas: promediar cuarenta áreas deja que un "
+            "puñado con pocos contactos y buena suerte levante el número. Un "
+            "denominador en cero no es cero por ciento — es que no hubo "
+            "lecciones que medir."), st["note"]))
+    tiles = score_tiles(model)
+    if tiles:
+        flow.append(Spacer(0, 10))
+        scores = model.scores
+        flow.append(PP.SectionHead(
+            "Puntajes",
+            f"{es_display.integer(scores.areas_scored)} áreas calificadas en "
+            f"{es_display.integer(scores.weeks)} semanas"))
+        flow.append(PP.stat_tiles(W, tiles))
+        note = ("Los cuatro puntajes que escribe el agente, promediados sobre "
+                "las semanas del período. Un área que todavía no calificó no "
+                "cuenta como cero: no calificada y calificada en cero son "
+                "cosas distintas. Van sin color — son una escala de 0 a 100, "
+                "no un porcentaje de una meta.")
+        if scores.rank:
+            note = (f"{model.scope.name} va {es_display.integer(scores.rank)} "
+                    f"de {es_display.integer(scores.of)} en su distrito, por "
+                    f"efectividad. ") + note
+        flow.append(Spacer(0, 4))
+        flow.append(Paragraph(PP.text(note), st["note"]))
+    return flow
+
+
+# ── The pages of one unit ────────────────────────────────────
+
+def mission_pages(model, goals, peers=None) -> list:
+    """M1-M5: where we stand, the seven, the weeks, the zones, the nights.
+
+    M6 (baptisms against the annual goal) and M7 (finding) both read
+    TABLEAU_BAPTISMS and the Tableau export, so they belong to phase T with the
+    freshness gate (decision 32) and decision 34's separation — putting them
+    here would have meant a form-sourced page quietly carrying a Tableau
+    figure.
+    """
+    weekly_ok = _weekly_comparable(model)
+    weekly_sure = _weekly_confident(model)
+    # Outcomes, then activity, then process — §3.2's order within every unit,
+    # and the reason the scores come last rather than first: they are a
+    # judgement about how the work was done, and a council reads them after it
+    # knows what the work was.
+    flow = at_a_glance(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure)
+    for block in (key_indicator_page(model, weekly_ok=weekly_ok,
+                                     weekly_sure=weekly_sure),
+                  week_page(model), children_page(model),
+                  nightly_page(model, goals), rates_and_scores(model)):
+        if block:
+            flow.append(PageBreak())
+            flow.extend(block)
+    return flow
+
+
+def zone_pages(model, goals, peers=None) -> list:
+    """Z1-Z3 plus the week-by-week: at a glance, the seven, its districts and
+    every one of its areas, the nights.
+
+    The same order as the mission's, because the reader is the same reader one
+    rung down and Provo's zone page opens exactly like its mission page. Z4
+    (finding) is phase T.
+
+    The area roster is the page a zone leader actually uses — Provo's "EVERY
+    AREA IN KINGS PEAK — ALL 8" — and it is every area, not a top five
+    (decision 15). It runs on from the district table rather than starting its
+    own page: a zone of three districts left two thirds of a sheet blank, and
+    platypus breaks the list wherever it has to.
+    """
+    weekly_ok = _weekly_comparable(model)
+    weekly_sure = _weekly_confident(model)
+    flow = at_a_glance(model, weekly_ok=weekly_ok,
+                       weekly_sure=weekly_sure)
+    for block in (key_indicator_page(model, weekly_ok=weekly_ok,
+                                     weekly_sure=weekly_sure),
+                  week_page(model),
+                  children_page(model) + areas_page(model),
+                  nightly_page(model, goals), rates_and_scores(model)):
+        if block:
+            flow.append(PageBreak())
+            flow.extend(block)
+    return flow
+
+
+def district_pages(model, goals, peers=None) -> list:
+    """One page, as §3.2 budgets: the headlines, where the district sits
+    against its zone and the mission, its areas, and its seven.
+
+    The comparison is the whole reason this page exists. A district leader has
+    no way to know whether 73% is good until they can see the zone at 78 and
+    the mission at 76 — the audit's own words, and the thing nothing in
+    Compass did before.
+
+    It is allowed to run onto a second page rather than being squeezed
+    (decision 25); the pagination is generated, so nothing downstream cares.
+    """
+    st = PP.styles()
+    W = PP.CONTENT_WIDTH
+    weekly_ok = _weekly_comparable(model)
+    weekly_sure = _weekly_confident(model)
+    flow = _heading(model)
+    best, worst = _best_and_worst(model)
+    if worst is not None:
+        flow.append(PP.SectionHead("Dónde estamos", model.period.window_label))
+        flow.append(Paragraph(
+            PP.text(f"Lo que hay que mover: {worst.label} es lo más atrasado, "
+                    f"en {_pct(worst.grade.pct)} — {_count(worst.actual)} "
+                    f"contra {_count(worst.meta)}."
+                    + (f" Lo más fuerte: {best.label} en "
+                       f"{_pct(best.grade.pct)}." if best is not None else "")),
+            st["body"]))
+    flow.append(Spacer(0, 6))
+    flow.append(PP.stat_tiles(W, _headline_tiles(model)))
+
+    peers = peers or {}
+    spec = PP.RankedSpec(width=W, cells=_child_cells(model))
+    rows = peer_rows(model, peers, spec)
+    if rows:
+        flow.append(Spacer(0, 10))
+        flow.append(PP.SectionHead("Contra su zona y la misión",
+                                   "cada celda por área activa"))
+        flow.extend(rows)
+        flow.append(Spacer(0, 4))
+        flow.append(Paragraph(PP.text(
+            "Un 73% no dice nada por sí solo. Estas tres filas son la misma "
+            "medida en las tres escalas, para que el número de arriba tenga "
+            "contra qué leerse."), st["note"]))
+
+    flow.append(Spacer(0, 10))
+    flow.extend(children_page(model))
+    flow.append(PageBreak())
+    flow.extend(key_indicator_page(model, weekly_ok=weekly_ok,
+                                   weekly_sure=weekly_sure))
+    flow.append(PageBreak())
+    flow.extend(week_page(model))
+    flow.append(PageBreak())
+    flow.extend(nightly_page(model, goals))
     return flow
 
 
@@ -870,12 +1249,21 @@ def furniture_for(model) -> PP.Furniture:
                         mission=model.mission_name)
 
 
-def unit_pages(model, goals) -> list:
-    """One unit's pages. The mission's are built; P4-P5 add the rest."""
+#: One builder per level. The mission's and the zone's are the same shape in a
+#: different order; the district's is denser, because §3.2 budgets it a page
+#: and its content fits one.
+PAGES = {S.MISSION: lambda m, g, p: mission_pages(m, g, p),
+         S.ZONE: lambda m, g, p: zone_pages(m, g, p),
+         S.DISTRICT: lambda m, g, p: district_pages(m, g, p)}
+
+
+def unit_pages(model, goals, peers=None) -> list:
+    """One unit's pages, whichever level it is. P5 adds the area's."""
     flow = [PP.SetFurniture(furniture_for(model))]
-    if model.scope.level == S.MISSION:
-        return flow + mission_pages(model, goals)
-    return flow + _heading(model)
+    build = PAGES.get(model.scope.level)
+    if build is None:
+        return flow + _heading(model)
+    return flow + build(model, goals, peers or {})
 
 
 def data_note(models) -> list:
@@ -895,6 +1283,11 @@ def _body(models, goals, pagination: Pagination) -> list:
     """
     section_of = {S.MISSION: MISSION, S.ZONE: ZONES, S.DISTRICT: DISTRICTS,
                   S.AREA: AREAS}
+    # Every model by scope key, so a district page can look up its zone and the
+    # mission without a second query (R6's note: `build_all` already returns
+    # all 63, and a peer-series field only one page would read does not belong
+    # on the model).
+    peers = {m.scope.key: m for m in models}
     flow, opened = [], set()
     for model in models:
         key = section_of[model.scope.level]
@@ -903,7 +1296,7 @@ def _body(models, goals, pagination: Pagination) -> list:
             opened.add(key)
             flow.append(SectionStart(key, pagination))
         flow.append(SectionStart(model.scope.key, pagination))
-        flow.extend(unit_pages(model, goals))
+        flow.extend(unit_pages(model, goals, peers))
     flow.append(PageBreak())
     flow.append(SectionStart(DATA_NOTE, pagination))
     flow.extend(data_note(models))

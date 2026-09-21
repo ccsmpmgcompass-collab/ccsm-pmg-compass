@@ -739,6 +739,55 @@ short audit of their own before anything is changed.
   `metric_table`'s six columns are 150/44/44/120/96/66; `week_table` is
   150 + 70 + weeks + 48.
 
+- **2026-09-21** — **P4 landed.** The zone pages and the district pages, from
+  the same builders the mission uses. `packet.py` gained `at_a_glance`,
+  `key_indicator_page`, `week_page`, `children_page`, `areas_page`,
+  `nightly_page`, `rates_and_scores`, `ranked_unit_rows`, `peer_rows`,
+  `zone_pages` and `district_pages`; `PAGES` dispatches on level. Tests:
+  `test_packet_units.py` (16). Suite **11 failed / 1512 passed** — the same 11.
+  Live: **130 pages**. Decisions made mid-build:
+  (a) **One set of blocks serves every level**, as R5 decision (a) found for
+  the screen: the model has the same shape at all four, the reader is the same
+  reader one rung down, and Provo opens a zone page exactly like its mission
+  page. The district's order differs (its three-way comparison comes second)
+  and nothing else does.
+  (b) **The district's three-way comparison is three ranked ROWS, not a line.**
+  It is the page's reason for existing — "a 73% means nothing until you can
+  see the zone at 78 and the mission at 76" — and three rows of the packet's
+  own ranked shape print legibly at 7,5pt and photocopy, which a three-series
+  line chart at that size does not. It reads `build_all`'s own models by
+  `Scope.key` (R6's note), so nothing is recomputed.
+  (c) **A unit nobody reported keeps its place and loses its rank NUMBER.** An
+  area that filed no form is not the ninth-best area; it is one nobody can
+  rank, and printing "9" beside it invites exactly the reading the grey dot is
+  trying to prevent. Its sub-line says "sin informes en el período".
+  (d) **A ranked row does not repeat the unit whose page it is on**: on Angol's
+  own page an area is "El Mirador", not "Angol · El Mirador".
+  (e) **A leadership goal past the end of the bar gets an arrowhead outside the
+  track, and its figure in the row's note.** Clamped, four different transfer
+  goals all read as "exactly at the line" — and on CCSM that is the common
+  case, because leadership routinely asks for more than the companionships
+  promised.
+  (f) **Outcomes, then activity, then process.** The rates and the scores moved
+  to the END of a unit's pages. A council reads a judgement about how the work
+  was done after it knows what the work was, and the scores are ungraded on
+  purpose: they are the agent's 0–100 composites, not a percentage of a goal,
+  and the 90/60 bands would claim they were.
+  (g) **§3.2's "13 districts, one page each" was an estimate and the decisions
+  outrank it.** Decision 10 gives every unit all seven Key Indicators and
+  decision 17 all twenty-two nightly metrics, so a district prints five pages
+  and the packet is **130**. The contents no longer asserts a count: `describe`
+  measures it after a pass and writes "5 páginas cada uno". **Worth raising
+  with Zackary** — 130 pages at two full copies is 220 sheets, and decision 25
+  (no compression) is his to revisit.
+  (h) The zone's district table and its area table share a page rather than
+  each starting one: a zone of three districts left two thirds of a sheet
+  blank.
+  **Found by rendering, not by a test:** the nightly block measured **693pt
+  against 688pt of frame** — five points over — which put its last note alone
+  on a page of its own behind every unit in the packet. `metric_table`'s row
+  padding is 3.5pt now and a test pins the height budget.
+
 ### Phase R is done. What Phase P starts from
 
 `app/reports/` is `scope.py`, `periods.py`, `grading.py`, `model.py` — all

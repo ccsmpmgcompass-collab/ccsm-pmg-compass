@@ -531,6 +531,10 @@ def bar_vs_goal(width: float, *, pct: float | None, status: str | None = None,
     the same scale (`mark_pct`), and it is drawn taller than the track so it
     reads as a reference laid across the bar rather than as part of it.
 
+    A ``mark_pct`` past 100 keeps its rule on the track's last point and adds
+    an arrowhead just outside it, so a goal beyond the bar's own scale reads as
+    beyond rather than as met.
+
     ``fill`` overrides the grade's colour for a bar that is a MAGNITUDE rather
     than a grade — the nightly rows, whose colour lives in their movement
     (decision 31). It draws in the one magnitude blue, not in the ungraded
@@ -551,10 +555,19 @@ def bar_vs_goal(width: float, *, pct: float | None, status: str | None = None,
                        fillColor=fill if fill is not None else status_color(status),
                        strokeColor=None, strokeWidth=0, rx=1.5, ry=1.5))
     if mark_pct is not None:
-        x = max(0.0, min(100.0, float(mark_pct))) / 100.0 * width
-        x = min(x, width - 1.2)
+        value = float(mark_pct)
+        x = min(max(0.0, min(100.0, value)) / 100.0 * width, width - 1.2)
         d.add(Rect(x, -1.6, 1.2, height + 3.2, fillColor=MARK,
                    strokeColor=None, strokeWidth=0))
+        if value > 100.0:
+            # A mark past the end of the track would be clamped onto the edge,
+            # where four different leadership goals all read as "exactly at the
+            # line". The arrowhead says the goal is beyond it — which on CCSM
+            # today is the common case, because leadership's transfer goal
+            # routinely asks for more than the companionships promised.
+            d.add(Polygon(points=[width + 1.5, -1.6, width + 1.5, height + 1.6,
+                                  width + 5.0, height / 2],
+                          fillColor=MARK, strokeColor=None, strokeWidth=0))
     return d
 
 
@@ -1179,6 +1192,11 @@ def metric_table(lines, *, widths=METRIC_COLUMNS, headers=None) -> Table:
     Provo prints METRIC / ACTUAL / GOAL / AGAINST GOAL. This adds the bar, so
     the column a reader scans is a length rather than a number, and the change,
     because a council's question is which way a thing is moving.
+
+    The row padding is 3.5pt rather than the table default's 4. Measured: the
+    nightly table is twenty-two rows, and with its three closing notes the
+    block came to 693pt against 688pt of frame — five points over, which put
+    the last note alone on a page of its own behind every unit in the packet.
     """
     st = styles()
     headers = headers or ("Métrica", "Real", "Meta", "", "Contra la meta",
@@ -1199,7 +1217,7 @@ def metric_table(lines, *, widths=METRIC_COLUMNS, headers=None) -> Table:
             Paragraph(text(line.verdict), st["cell"]),
             change_chip(widths[5] - 8, line.change),
         ])
-    return table(rows, widths, headers=headers,
+    return table(rows, widths, headers=headers, pad=3.5,
                  align=["l", "r", "r", "l", "l", "l"])
 
 

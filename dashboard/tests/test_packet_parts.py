@@ -277,12 +277,27 @@ def test_a_bar_with_no_reading_draws_an_empty_track_not_a_zero_fill():
 
 
 def test_the_leadership_mark_is_violet_and_stays_on_the_track():
-    marked = PP.bar_vs_goal(200.0, pct=40.0, status="bad", mark_pct=140.0)
-    violet = [s for s in _shapes(marked)
+    inside = PP.bar_vs_goal(200.0, pct=40.0, status="bad", mark_pct=80.0)
+    violet = [s for s in _shapes(inside)
               if getattr(s, "fillColor", None) is not None
               and s.fillColor.hexval() == PP.MARK.hexval()]
     assert len(violet) == 1
     assert violet[0].x + violet[0].width <= 200.0
+
+
+def test_a_goal_past_the_end_of_the_track_says_so_instead_of_sitting_on_it():
+    """Clamped, four different leadership goals all read as "exactly at the
+    line" — and on CCSM they routinely exceed the companionships' own meta,
+    so that is the common case rather than the edge one."""
+    over = PP.bar_vs_goal(200.0, pct=40.0, status="bad", mark_pct=140.0)
+    violet = [s for s in _shapes(over)
+              if getattr(s, "fillColor", None) is not None
+              and s.fillColor.hexval() == PP.MARK.hexval()]
+    assert len(violet) == 2
+    rule = next(s for s in violet if isinstance(s, Rect))
+    head = next(s for s in violet if isinstance(s, Polygon))
+    assert rule.x + rule.width <= 200.0
+    assert min(head.points[0::2]) > 200.0        # the arrowhead is outside it
 
 
 def test_a_sparkline_breaks_at_a_week_nobody_reported():
@@ -467,3 +482,17 @@ def test_a_ranked_header_label_sits_over_the_numbers_it_names():
                          and s.text in ("4,6", "1,3", "0,1")})
     for edge in cell_right:
         assert min(abs(edge - h) for h in head_right) <= 1.5
+
+
+def test_the_metric_table_leaves_its_notes_room_on_the_same_page():
+    """Measured: the nightly table is twenty-two rows, and with its three
+    closing notes the block came to 693pt against 688pt of frame. Five points
+    over put the last note alone on a page of its own behind every unit in the
+    packet, which is the kind of thing only a rendered document shows."""
+    lines = [PP.MetricLine(label=f"Métrica {i}", value="100", goal="200",
+                           pct=50.0, magnitude=True, verdict="50% de la meta",
+                           note="meta 10/área/sem")
+             for i in range(22)]
+    table = PP.metric_table(lines)
+    _, height = table.wrap(PP.CONTENT_WIDTH, PP.CONTENT_HEIGHT)
+    assert height <= PP.CONTENT_HEIGHT - 60, "no room left for the notes"
