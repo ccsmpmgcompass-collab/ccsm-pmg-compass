@@ -331,6 +331,26 @@ _STEP_SETTLE_S = 25
 _LOGIN_BUDGET_S = 150
 
 
+def credentials_for(url: str, tableau: tuple, church: tuple) -> tuple:
+    """Which pair of credentials the page in front of us wants.
+
+    **Tableau's page and the Church IdP do not want the same thing**, which
+    cost runs 8-11. Tableau's box takes an EMAIL ADDRESS (it validates as one).
+    Okta at ``id.churchofjesuschrist.org`` takes a CHURCH ACCOUNT USERNAME,
+    which is a different string for most people — and because Okta shows the
+    password screen even for usernames it does not recognise (so that nobody can
+    test which ones exist), sending the email to both produces a failure at the
+    PASSWORD step reading "Invalid username and password combination". Which is
+    exactly what it said, about a password that was never the problem.
+
+    Returns ``(username, password, label)``; the label is for the log, so a run
+    says which pair it used without saying what they are.
+    """
+    if _SIGNIN_HOST in str(url or ""):
+        return tableau[0], tableau[1], "Tableau"
+    return church[0], church[1], "Church"
+
+
 def next_login_step(*, toolbar: bool, password: bool, username: bool,
                     answered: set, step: str, settled: bool) -> str:
     """What to do about the page in front of us: the sign-in flow's whole logic,
@@ -403,10 +423,10 @@ def _host(url: str) -> str:
     return str(url or "").split("//")[-1].split("/")[0]
 
 
-def _login(page, username: str, password: str) -> None:
-    """Sign in, however many steps it takes.
+def _login(page, tableau: tuple, church: tuple) -> None:
+    """Sign in, however many steps it takes, with the right pair at each host.
 
-    **It is three, not two** — the thing run #7 (2026-09-21) cost us. Tableau's
+    **It is three steps, not two** — the thing run #7 (2026-09-21) cost us. Tableau's
     page takes an email and hands off to Church SSO at
     ``id.churchofjesuschrist.org/app/tableauonline/…/sso/saml``, and Okta then
     asks for a username and a password on SEPARATE screens. A login written as
@@ -418,6 +438,10 @@ def _login(page, username: str, password: str) -> None:
     script, which also covers the two-step case and any reordering. Every value
     is submitted at most once per page: ``next_login_step`` holds the rules and
     the reasons.
+
+    **And the two hosts want different credentials** — runs 8-11. Tableau takes
+    an email, the Church IdP takes a Church Account username; ``credentials_for``
+    picks, and says which pair it used without saying what they are.
 
     The viz toolbar is the success test — the only proof that gets past every
     redirect. When the loop ends without it, the page's own field inventory is
@@ -445,12 +469,13 @@ def _login(page, username: str, password: str) -> None:
         if action == "done":
             _logger.info("Tableau sign-in confirmed (viz toolbar present).")
             return
+        user, pw, whose = credentials_for(page.url, tableau, church)
         if action == "password":
-            _submit(page, pw_box, password, "password")
+            _submit(page, pw_box, pw, f"{whose} password")
             answered.add(("password", step))
             continue
         if action == "username":
-            _submit(page, user_box, username, "username")
+            _submit(page, user_box, user, f"{whose} username")
             answered.add(("username", step))
             continue
         if action == "stuck":
@@ -520,7 +545,8 @@ def _stuck(page, on_password: bool) -> None:
 
 
 @contextmanager
-def tableau_session(username: str, password: str, headless: bool = True):
+def tableau_session(username: str, password: str, headless: bool = True,
+                    church_username: str = "", church_password: str = ""):
     """One browser, one sign-in, yielding the page every download reuses.
 
     A context manager because a nightly run takes three exports — two summary
@@ -547,7 +573,8 @@ def tableau_session(username: str, password: str, headless: bool = True):
             page.goto(view_url(SHEET_SUMMARY), wait_until="domcontentloaded",
                       timeout=90_000)
             page.wait_for_timeout(4000)
-            _login(page, username, password)
+            _login(page, (username, password),
+                   (church_username or username, church_password or password))
             yield page
         finally:
             browser.close()

@@ -100,6 +100,19 @@ def _step(**kw):
     return portal.next_login_step(**base)
 
 
+def test_each_host_gets_its_own_credentials():
+    """Tableau's box validates as an email; Okta wants a Church Account
+    username. Sending the email to both fails at the PASSWORD step — Okta shows
+    that screen even for unknown usernames — which is how runs 8-11 spent an
+    afternoon suspecting a password that was never the problem."""
+    tableau, church = ("me@example.org", "tp"), ("churchuser", "cp")
+    assert portal.credentials_for("https://sso.online.tableau.com/public/idp/SSO",
+                                  tableau, church) == ("me@example.org", "tp", "Tableau")
+    assert portal.credentials_for(
+        "https://id.churchofjesuschrist.org/app/tableauonline/x/sso/saml",
+        tableau, church) == ("churchuser", "cp", "Church")
+
+
 def test_the_toolbar_ends_the_sign_in_whatever_else_is_on_screen():
     """It is the only proof of being signed in; everything else is a guess."""
     assert _step(toolbar=True, password=True, username=True, settled=True) == "done"

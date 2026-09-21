@@ -70,6 +70,14 @@ jobs:
         env:
           CCSM_TABLEAU_USERNAME: ${{ secrets.CCSM_TABLEAU_USERNAME }}
           CCSM_TABLEAU_PASSWORD: ${{ secrets.CCSM_TABLEAU_PASSWORD }}
+          # Tableau's page takes an email; the Church IdP behind it takes a
+          # Church Account username. The IMOS pair already signs into that exact
+          # Okta for the roster pull, so it is the default second credential and
+          # nothing new has to be added. CCSM_CHURCH_* overrides it.
+          CCSM_CHURCH_USERNAME: ${{ secrets.CCSM_CHURCH_USERNAME }}
+          CCSM_CHURCH_PASSWORD: ${{ secrets.CCSM_CHURCH_PASSWORD }}
+          CCSM_IMOS_USERNAME: ${{ secrets.CCSM_IMOS_USERNAME }}
+          CCSM_IMOS_PASSWORD: ${{ secrets.CCSM_IMOS_PASSWORD }}
         run: >
           python -m app.ingestion.cloud_job_wrapper
           --job-id "${{ env.JOB_ID }}" --job-type tableau_finding

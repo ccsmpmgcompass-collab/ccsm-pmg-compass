@@ -368,6 +368,26 @@ def main() -> None:
         _logger.error("CCSM_TABLEAU_USERNAME/CCSM_TABLEAU_PASSWORD not set — aborting.")
         sys.exit(1)
 
+    # The Church IdP wants a DIFFERENT credential from Tableau's own page: an
+    # email gets you through Tableau and then fails at Okta as "Invalid username
+    # and password combination", because Okta shows the password screen even for
+    # usernames it does not know (runs 8-11).
+    #
+    # Default to the IMOS pair. It is the same Okta — imos_portal signs into
+    # id.churchofjesuschrist.org with exactly these — and they are already
+    # secrets on this repository, so the common case needs nothing added.
+    # CCSM_CHURCH_* overrides when the Tableau account belongs to someone else.
+    church_user = (os.environ.get("CCSM_CHURCH_USERNAME")
+                   or os.environ.get("CCSM_IMOS_USERNAME") or "").strip()
+    church_pass = (os.environ.get("CCSM_CHURCH_PASSWORD")
+                   or os.environ.get("CCSM_IMOS_PASSWORD") or "").strip()
+    _logger.info(
+        "Church SSO credentials: "
+        + ("CCSM_CHURCH_*" if os.environ.get("CCSM_CHURCH_USERNAME")
+           else "CCSM_IMOS_* (same Okta as the roster pull)" if church_user
+           else "none set — falling back to the Tableau pair, which Okta will "
+                "refuse unless they happen to be the Church ones"))
+
     if args.detail_only and args.no_detail:
         _logger.error("--detail-only and --no-detail ask for nothing at all.")
         sys.exit(2)
@@ -385,7 +405,9 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp_name:
         tmp = Path(tmp_name)
         status("Signing in to Tableau...")
-        with portal.tableau_session(username, password, headless=not args.headed) as page:
+        with portal.tableau_session(username, password, headless=not args.headed,
+                                    church_username=church_user,
+                                    church_password=church_pass) as page:
             if not args.detail_only:
                 try:
                     results.append(pull_baptisms(page, sh, windows, tmp))
