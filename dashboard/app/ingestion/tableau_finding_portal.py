@@ -161,15 +161,29 @@ def _inventory(page, label: str) -> None:
     except Exception:
         pass
     # Whether the page is SHOWING AN ERROR, without reading what it says. On the
-    # Church IdP the text is off limits (it names the person signing in), but the
-    # count alone answers the question that matters after a password is
-    # submitted: was it refused, or is the page simply still thinking? Selectors
-    # are Okta's own error regions plus the ARIA role.
+    # Church IdP the text is off limits (it names the person signing in), but
+    # this answers the question that matters after a password is submitted: was
+    # it refused, or is the page simply still thinking?
+    #
+    # **Counting the regions was not enough.** Okta ships empty ``aria-live``
+    # containers as part of its widget, so run #9's "error regions: 2" was
+    # consistent with a refusal AND with nothing having happened at all — and it
+    # was read as the former, against an operator who was sure of the password.
+    # What separates them is whether any of those regions has TEXT IN IT, which
+    # is a count, not a quotation.
     try:
-        alerts = page.locator(
+        regions = page.locator(
             "[role=alert], [data-se=callout], .infobox-error, .okta-form-infobox-error"
-        ).count()
-        _logger.error(f"error regions on page: {alerts}")
+        )
+        total = regions.count()
+        speaking = 0
+        for i in range(min(total, 8)):
+            try:
+                if (regions.nth(i).inner_text() or "").strip():
+                    speaking += 1
+            except Exception:
+                continue
+        _logger.error(f"error regions: {total} present, {speaking} with any text")
     except Exception:
         pass
     # The form's SHAPE, across every frame. On a Tableau page the test-ids above
@@ -315,13 +329,40 @@ def next_login_step(*, toolbar: bool, password: bool, username: bool,
 
 
 def _submit(page, box, value: str, kind: str) -> None:
+    """Put a value in and send the form, and record enough to prove it happened.
+
+    Two things get logged, both booleans, never the value or its length: whether
+    the field actually holds anything after ``fill`` (a React widget can outrun
+    a fill and leave its own state empty, so a click then submits nothing), and
+    whether the submit button was enabled when it was clicked.
+
+    Without those, a form that quietly did nothing is indistinguishable from a
+    credential that was refused — the ambiguity that had run #9 blaming a
+    password its owner was sure of.
+
+    Enter is pressed as well as the button being clicked. Belt and braces: some
+    widgets bind one and not the other, and submitting twice is harmless because
+    the first submission navigates away.
+    """
     box.fill(value)
+    page.wait_for_timeout(300)
+    try:
+        landed = bool((box.input_value() or "").strip())
+    except Exception:
+        landed = None
     button = _first_visible(page, list(_SUBMIT_BUTTONS), timeout_ms=2000)
-    if button:
+    enabled = None
+    if button is not None:
+        try:
+            enabled = button.is_enabled()
+        except Exception:
+            enabled = None
         button.click(timeout=15_000)
     else:
         box.press("Enter")
-    _logger.info(f"{kind.capitalize()} submitted at {_host(page.url)}")
+    _logger.info(f"{kind.capitalize()} submitted at {_host(page.url)} "
+                 f"(field filled: {landed}, submit button: "
+                 f"{'none found, pressed Enter' if button is None else f'enabled={enabled}'})")
     page.wait_for_timeout(3000)
 
 
@@ -350,6 +391,7 @@ def _login(page, username: str, password: str) -> None:
     logged (attributes, never values or text) and the failure names the step.
     """
     answered: set = set()
+    nudged: set = set()
     first_seen: dict = {}
     deadline = time.monotonic() + _LOGIN_BUDGET_S
 
@@ -379,6 +421,23 @@ def _login(page, username: str, password: str) -> None:
             answered.add(("username", step))
             continue
         if action == "stuck":
+            # One nudge before giving up: press Enter in the box we already
+            # answered. If the click went to a button the widget does not listen
+            # to, this submits; if the credential was really refused, nothing
+            # changes and the next pass reports it with a run's worth of
+            # evidence rather than a guess.
+            box = pw_box or user_box
+            if step not in nudged and box is not None:
+                nudged.add(step)
+                _logger.info(f"Step did not move at {_host(page.url)} — "
+                             f"pressing Enter once before reporting it stuck")
+                try:
+                    box.press("Enter")
+                except Exception:
+                    pass
+                first_seen.pop(marker, None)
+                page.wait_for_timeout(4000)
+                continue
             _stuck(page, pw_box is not None)
         page.wait_for_timeout(2000)
 
@@ -410,14 +469,17 @@ def _stuck(page, on_password: bool) -> None:
     where = _host(page.url)
     raise RuntimeError(
         f"Tableau sign-in stopped at {where}: the "
-        f"{'password' if on_password else 'username'} step was answered and the "
-        f"page did not move on."
+        f"{'password' if on_password else 'username'} step was answered, Enter "
+        f"was pressed, and the page did not move on."
         + (f' It says: "{message}".' if message else
-           " Check CCSM_TABLEAU_USERNAME / CCSM_TABLEAU_PASSWORD, and whether "
-           "the account has started asking for a second factor — an Okta OTP "
-           "box has the same name as its password box, so a code prompt looks "
-           "like a refused password from here. The field inventory above is "
-           "attributes only.")
+           " Read the diagnostic above before blaming a credential: 'field "
+           "filled: False' means the value never reached the widget and this is "
+           "our bug; '0 with any text' means no error was shown, so nothing was "
+           "refused either. **And a failure at the PASSWORD step is not proof "
+           "the password is wrong** — Okta shows the password screen even for a "
+           "username it does not recognise, precisely so that nobody can test "
+           "which usernames exist. A second factor looks the same from here too: "
+           "its OTP box shares a name with the password box.")
     )
 
 
