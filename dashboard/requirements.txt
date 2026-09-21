@@ -22,3 +22,11 @@ google-genai>=1.0.0
 # of the deployed app, not dev-only tools.
 openpyxl>=3.1.0
 pypdf>=4.0.0
+# The council packet (Informes → Generar paquete) is drawn with ReportLab and
+# nothing else: platypus for the page, reportlab.graphics for the charts, the
+# base-14 fonts for the type. Deliberately NOT matplotlib, Kaleido or
+# WeasyPrint — no packages.txt, no headless browser, no cairo/Pango, which is
+# the likeliest way to break the Streamlit Cloud build. It pulls only pillow
+# and charset-normalizer, both already resolved here, and it does not move the
+# streamlit pin above (verified 2026-09-21).
+reportlab>=4.0,<6

@@ -608,6 +608,63 @@ short audit of their own before anything is changed.
   parent and the mission by `Scope.key` rather than the model growing a
   peer-series field that only one page would read.
 
+- **2026-09-21** — **P1 landed.** `app/reports/packet_parts.py`: the page
+  (Letter, the margins, the running head and the footer), the type scale (nine
+  steps, base-14 Helvetica, no font file ships), the print colour tokens, and
+  the five vector charts of §4 P1 — `bar_vs_goal`, `sparkline`, `stage_bars`,
+  `share_bar`, `ranked_row`. Tests: `test_packet_parts.py` (45). `reportlab`
+  added to `requirements.txt`; it pulls only pillow and charset-normalizer,
+  both already resolved, and **does not move the streamlit pin** (§5 risk 4,
+  checked with `pip install --dry-run`). Decisions made mid-build:
+  (a) **The print palette lives in `theme.py` beside the screen's, as
+  PRINT_\*.** Measured on white, STATUS' green reads **2.03:1** and its amber
+  **1.89:1** — a highlighter, not a grade. The print values are the audit
+  artifact's own light-mode tokens (good 3.49:1, warn 3.90:1, bad 4.69:1, mark
+  4.88:1). This is not a second palette: it is the same three states re-valued
+  for the other surface, in the same file, which is what "never a second
+  palette" was protecting. **SERIES_COLORS needed no print variant at all** —
+  measured on white the eight run 3.07:1 to 4.95:1, because a categorical
+  palette is built for separation rather than brightness, so a zone is the
+  same colour on the screen and on the page.
+  (b) **3:1, not 4.5:1, and colour is never the only channel.** A status is
+  carried by a filled dot or bar AND by the word beside it (`STATUS_WORD`:
+  "al ritmo" / "atrasado" / "muy atrasado"), so the non-text threshold is the
+  right one — and half these pages get photocopied in black and white.
+  (c) **Every direction is a drawn triangle, never a typed arrow.** Measured:
+  ReportLab silently font-switches a character the base-14 encoding cannot
+  reach — "↑" is emitted in **Symbol**, "▲" in **ZapfDingbats** — so a change
+  chip would print in a different typeface from the number beside it and
+  nothing in the build would say so. Every string goes through `text()`, which
+  normalises the ten characters the app's vocabulary carries and folds or drops
+  the rest; a test runs the packet's strings through it and fails if any
+  changes.
+  (d) **The furniture is drawn on `onPageEnd`, not `onPage`.** A `SetFurniture`
+  marker at the top of a unit's first page has not run yet when onPage fires,
+  so the head would name the *previous* unit — wrong on exactly the first page
+  of every section, which is the page anybody checks.
+  (e) **`Tc` is text state and survives `ET`.** Setting the character spacing
+  only when non-zero left the section note inheriting its label's 0.9pt: it set
+  30pt wider than it measured and ran over the right margin. Found by rendering
+  a page and looking at it, not by a test — right-aligned text that overflows
+  to the RIGHT is invisible to anything measuring widths. `draw_tracked` now
+  always emits it, and a test reads the content stream to pin that.
+  (f) **The sparkline BREAKS at a week nobody reported** rather than joining
+  across it, which is where it parts company with `design_system.sparkline_svg`
+  (that filters the gaps out). On a 96px card drawing through is right; on a
+  printed page a straight run through a silent week is a claim that the week
+  happened, and this packet's argument is that a silent week is news.
+  (g) `ranked_row` draws a whole row as one Drawing — rank, dot, name, sub,
+  measures, bar, value — rather than being assembled from table cells, so the
+  screen's row and the printed row cannot drift. Names truncate by MEASURE:
+  the widest of the 45 real areas ("Purén y Los Sauces") sets at 67pt against a
+  column of 246, so nothing truncates today.
+  **For P2–P6, measured and not to be re-derived:** the content box is
+  **520 × 688pt**; a `RankedSpec` at that width leaves a 246pt name column with
+  three measure columns; `stage_bars` of five stages is 111pt tall and
+  `share_bar` of three parts 27pt. Verification of a printed page is
+  `pypdfium2` (installed into the venv, **not** in requirements) rendering to
+  PNG — the browser pane cannot screenshot a local PDF.
+
 ### Phase R is done. What Phase P starts from
 
 `app/reports/` is `scope.py`, `periods.py`, `grading.py`, `model.py` — all

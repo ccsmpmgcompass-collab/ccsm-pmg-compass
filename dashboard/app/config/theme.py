@@ -168,3 +168,46 @@ def rgba(hex_color: str, alpha: float) -> str:
         h = "".join(c * 2 for c in h)
     r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
     return f"rgba({r},{g},{b},{alpha})"
+
+
+# ── The same palette, on paper ────────────────────────────────────────────────
+# Every colour above is tuned for the app's near-black surface (#08080e). The
+# council packet (PLAN-2026-09-21-informes.md, phase P) prints on white, where
+# three of them stop working. Measured against white: STATUS' green reads
+# 2.03:1 and its amber 1.89:1 — a highlighter on paper, not a grade.
+#
+# This is NOT a second palette. It is the same three states and the same
+# leadership mark re-valued for the other surface, written here beside the
+# originals so there is still one home — the same thing the audit artifact's
+# own light-mode tokens do. Measured on white: good 3.49:1, warn 3.90:1,
+# bad 4.69:1, mark 4.88:1.
+#
+# They clear 3:1 rather than 4.5:1, and that is deliberate: on paper a status
+# is carried by a filled dot or bar AND by the word beside it ("al ritmo",
+# "atrasado", "muy atrasado"), so colour is never the only channel and the
+# non-text threshold is the right one. The status WORD prints in PRINT_INK,
+# never in its own hue.
+PRINT_STATUS = {"good": "#1f9d57", "warn": "#b07500", "bad": "#c9483d"}
+
+#: The leadership transfer goal's mark on paper. MARK itself is 3.13:1 on
+#: white, which is enough for a fill and not enough for the 1pt rule this
+#: actually draws.
+PRINT_MARK = "#6f63c9"
+
+#: The packet's one accent — section rules, the cover, a link-coloured figure.
+PRINT_ACCENT = "#2f6fd0"
+
+# SERIES_COLORS needs no print variant: measured on white the eight run 3.07:1
+# (yellow) to 4.95:1 (green), every one above the floor, because a categorical
+# palette is built for separation rather than for brightness. The channel mix
+# and the finding sources print the same eight hues the screen draws, in the
+# same order, so a zone is the same colour on both.
+
+#: Ink on paper — INK…DIMMEST inverted, and measured: 18.5:1, 9.9:1, 4.7:1.
+PRINT_INK       = "#11131c"   # a number, a name, a heading
+PRINT_INK_2     = "#3c4257"   # body text and table cells
+PRINT_INK_3     = "#6b7387"   # captions, notes, the running head
+PRINT_RULE      = "#dfe3ec"   # a hairline between rows
+PRINT_RULE_SOFT = "#eceef4"   # the same, quieter still
+PRINT_TINT      = "#eef2fa"   # a table header's band
+PRINT_PAPER     = "#ffffff"
