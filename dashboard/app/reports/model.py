@@ -108,6 +108,29 @@ class NightlyCoverage:
         return self.days_reported / self.days_possible if self.days_possible else None
 
     @property
+    def usable(self) -> bool:
+        """Whether any night was filed in this window at all.
+
+        The nightly twin of `periods.Coverage.usable`, and needed for the same
+        reason: DAILY_LOG begins 2026-08-09, so the default comparison for the
+        current transfer — the first two weeks of 2026-5 — holds almost no
+        nights. A change computed across it is arithmetic over one area's
+        evening, and the row has to be able to say so.
+        """
+        return self.days_reported > 0
+
+    @property
+    def thin(self) -> bool:
+        """Reported so sparsely that a figure over it is one or two areas.
+
+        Same quarter-of-possible floor as `periods.Coverage.thin`, and for the
+        same measured reason: CCSM's real nightly weeks run 68%–72% of possible
+        area-days, while the windows this catches are a rounding error away
+        from empty.
+        """
+        return self.rate is not None and self.rate < P.THIN_REPORTING_RATE
+
+    @property
     def label(self) -> str:
         return f"{self.days_reported} de {self.days_possible} días-área"
 
@@ -161,6 +184,19 @@ class MetricRow:
         if self.meta is None or not self.meta_area_weeks:
             return None
         return self.meta / self.meta_area_weeks
+
+    @property
+    def attainment_per_active_area(self) -> float | None:
+        """Attainment reduced over EVERY roster area, silent ones included.
+
+        `grade.pct` is the unit's own reading, on the population that filed.
+        This is the cross-UNIT reading (decision 12), and the two are
+        different numbers: a zone where seven of eleven areas went quiet is at
+        59% of goal among those that reported and 26% of the zone. A table
+        comparing units has to use this one, or its rows do not add up to the
+        headline beside them.
+        """
+        return attainment(self.per_active_area_week, self.meta_per_area_week)
 
     @property
     def has_leadership_goal(self) -> bool:
@@ -281,6 +317,7 @@ class ReportModel:
     coverage: P.Coverage = None
     comparison_coverage: P.Coverage | None = None
     nightly_coverage: NightlyCoverage | None = None
+    comparison_nightly_coverage: NightlyCoverage | None = None
 
     #: Roster areas that filed a weekly form in the period, and those that did
     #: not. The silent list is named, at every level, including the mission
@@ -353,6 +390,25 @@ class ReportModel:
 
     def ki(self, key: str) -> MetricRow | None:
         return next((r for r in self.key_indicators if r.key == key), None)
+
+    @property
+    def nightly_weakest_first(self) -> tuple[MetricRow, ...]:
+        """Decision 17's table order: furthest from its goal at the top.
+
+        Attainment, not movement — the ORDER is about which metric is furthest
+        behind, while the row's colour is about which way it moved (decision
+        31). A metric with no goal to be measured against sorts to the end
+        rather than to the top: it is not the weakest, it is unmeasured.
+
+        Lives on the model rather than in either renderer, so the screen and
+        the printed page list them in the same order.
+        """
+        return tuple(sorted(
+            self.nightly_metrics,
+            key=lambda r: (r.grade.pct is None,
+                           r.grade.pct if r.grade.pct is not None else 0,
+                           r.label),
+        ))
 
 
 # ── Loading ───────────────────────────────────────────────────────────────────
@@ -944,8 +1000,8 @@ def _mean_attainment(rows) -> float | None:
     zero would rank a unit down for a goal its companionships never set, which
     is a statement about the form and not about the work.
     """
-    pcts = [p for p in (attainment(r.per_active_area_week, r.meta_per_area_week)
-                        for r in rows) if p is not None]
+    pcts = [p for p in (r.attainment_per_active_area for r in rows)
+            if p is not None]
     return sum(pcts) / len(pcts) if pcts else None
 
 
@@ -1066,6 +1122,9 @@ def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
         coverage=coverage,
         comparison_coverage=comparison_coverage,
         nightly_coverage=_nightly_coverage(data, scope, period),
+        comparison_nightly_coverage=(
+            _nightly_coverage(data, scope, comparison.period)
+            if comparison and comparison.period is not None else None),
         areas_reporting=tuple(sorted(reporting & in_scope)),
         areas_silent=tuple(sorted(in_scope - reporting)),
         key_indicators=tuple(_ki_rows(data, scope, period,

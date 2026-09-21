@@ -27,6 +27,19 @@ def test_no_ui_literal_bypasses_translation():
     assert todo == [], f"{len(todo)} literals never reach t(): {todo[:10]}"
 
 
+def test_only_the_council_report_opts_out_of_translation():
+    """A file can declare itself Spanish-only and leave the coverage guard's
+    denominator. Exactly one does, and it is a deliberate answer to a question
+    that was asked out loud (PLAN-2026-09-21-informes.md, decision 3).
+
+    Pinned here so the escape hatch stays an exception. A page that adds the
+    marker to quiet this suite has to change this list first, which is the
+    moment somebody notices.
+    """
+    from tools.i18n_coverage import spanish_only_files
+    assert spanish_only_files() == ["views/11_Informes.py"]
+
+
 def test_isolation_still_holds_after_the_retrofit():
     """The i18n work touched almost every file; re-assert the project's core
     promise rather than trusting that it survived."""

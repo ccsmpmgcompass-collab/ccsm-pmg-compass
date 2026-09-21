@@ -527,3 +527,54 @@ short audit of their own before anything is changed.
   and does not invite, though close_rate has risen from the audit's 9.7%.
   Mission scores over the transfer's two weeks: effort **59.4**, skill
   **69.7**, KI **37.6**, effectiveness **55.4**.
+- **2026-09-21** — **R5 landed.** `views/11_Informes.py` rewritten against the
+  model: the control bar (scope selectors, Período pills, Comparar-contra
+  pills) and seven sections — Indicadores Clave, Semana a semana, the ranked
+  children, Trabajo nocturno, Tasas de conversión, Puntajes, Cumplimiento. The
+  week selectbox, the three tables, the two CSV buttons and the
+  `get_daily_log(365)` call (F9) are all gone. Suite **11 failed / 1402
+  passed** — the same 11. **Acceptance met, measured with `javascript_tool`
+  and not eyeballed**: at 1400px and at 375px the main pane's `scrollWidth`
+  equals its `clientWidth` (1060 and 371) and NO element inside it overflows
+  without its own `overflow-x`. Decisions made mid-build:
+  (a) **The body renders at every level, not only the mission.** The model has
+  the same shape at all four, so one body serves them; R6 adds the
+  level-specific extras (the `?ki=` drill-down, `render_companionship_card` at
+  area level, the district's three-way line) rather than the bodies
+  themselves. A page that broke the moment someone picked a zone would not
+  have been shippable on its own, which §5 risk 1 asks Phase R to be.
+  (b) **The nightly table is a `ranked_list`, not a `render_table`.** Measured
+  at 375px: nine columns rendered 892px wide inside a 338px box. That
+  measurement is the one that put `ranked_list`'s wrapping cell strip into the
+  design system (auditoría P5), so the remedy already existed. Ordered
+  weakest-first (decision 17) via a new `ReportModel.nightly_weakest_first`, so
+  the screen and the packet list them the same way.
+  (c) **The nightly change needs its own coverage gate.** DAILY_LOG begins
+  2026-08-09, so the default comparison — 2026-5's first two weeks — holds
+  almost no nights, and the rows were printing "↓ 91%" off one area's evening.
+  `NightlyCoverage` gained `usable`/`thin` and the model now carries
+  `comparison_nightly_coverage`; the view suppresses both the change and the
+  row's colour when it is thin, and says why.
+  (d) **The zone table's cells were on the wrong basis.** They were each
+  unit's own `grade.pct` while the headline beside them was the per-active-area
+  mean, so a row's cells did not average to its own value. Added
+  `MetricRow.attainment_per_active_area`, which is also what `_mean_attainment`
+  now uses.
+  (e) **`render_section_tabs` opens on the first option, which is display order,
+  not the default.** Seeded `rep_period_section` to `P.DEFAULT_PERIOD` so the
+  page opens on "Este traslado" (decision 5).
+  (f) **Decision 3 collided with a project-wide guard.**
+  `test_final_verification.test_no_ui_literal_bypasses_translation` fails any
+  UI literal that does not reach `t()`, and this page is Spanish-only by
+  Zackary's answer to Q3. Resolved with an opt-in per-file marker —
+  `tools/i18n_coverage.SPANISH_ONLY_MARKER`, declared in the page's own
+  docstring — rather than a directory exclusion that would have taken a dozen
+  bilingual pages with it. A new test pins the opt-out list to exactly
+  `["views/11_Informes.py"]`, so the next page to try it has to change that
+  list first.
+  (g) **Generar paquete is deliberately absent**, not present-and-disabled. It
+  arrives with P6.
+  **Noted, not fixed:** WEEKLY_BREAKDOWNS' newest week is **2026-09-13**, a
+  week behind WEEKLY_KI's 09-20, so on "Semana pasada" the effort score and the
+  strength/growth lines read "—" for the whole mission. That is the tab
+  lagging, not a bug here, but P5 should expect it.
