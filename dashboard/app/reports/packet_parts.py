@@ -51,9 +51,10 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase.pdfmetrics import stringWidth
-from reportlab.platypus import Flowable
+from reportlab.platypus import (Flowable, Paragraph, Spacer, Table,
+                                TableStyle)
 
-from app.config import theme
+from app.config import es_display, theme
 
 # ── The paper ─────────────────────────────────────────────────────────────────
 
@@ -99,8 +100,9 @@ class Type:
     track: float = 0.0
 
 
-#: Nine steps and no more. Every string in the packet is one of these; a size
-#: written inline is how a document ends up with eleven sizes and no hierarchy.
+#: Nine steps for the body, and two more the cover alone uses. Every string in
+#: the packet is one of these; a size written inline is how a document ends up
+#: with eleven sizes and no hierarchy.
 TITLE = Type(21, 24, FONT_BOLD)
 SUBTITLE = Type(8.8, 12)
 SECTION = Type(8, 11, FONT_BOLD, track=0.9)        # uppercase
@@ -112,6 +114,11 @@ NOTE = Type(6.4, 8.6)
 TILE_VALUE = Type(18, 20, FONT_BOLD)
 TILE_LABEL = Type(6.2, 8.5, FONT_BOLD, track=0.7)  # uppercase
 FURNITURE = Type(6.4, 8.5, FONT, track=0.6)
+
+#: The cover's own two. A cover is the one page in a document that is allowed
+#: a size nothing else uses — it has one job and no neighbours to sit beside.
+COVER_TITLE = Type(32, 35, FONT_BOLD)
+COVER_LEAD = Type(11, 15.5)
 
 
 # ── The colour ────────────────────────────────────────────────────────────────
@@ -498,6 +505,9 @@ def styles() -> dict[str, ParagraphStyle]:
     return {
         "title": make("title", TITLE, INK, spaceAfter=2),
         "subtitle": make("subtitle", SUBTITLE, INK_3, spaceAfter=6),
+        "cover_title": make("cover_title", COVER_TITLE, INK, spaceAfter=10),
+        "cover_lead": make("cover_lead", COVER_LEAD, INK_2, spaceAfter=0),
+        "cell_center": make("cell_center", CELL, INK_2, alignment=1),
         "body": make("body", BODY, INK_2, spaceAfter=4),
         "cell": make("cell", CELL, INK_2),
         "cell_bold": make("cell_bold", Type(CELL.size, CELL.leading, FONT_BOLD),
@@ -512,13 +522,19 @@ def styles() -> dict[str, ParagraphStyle]:
 
 def bar_vs_goal(width: float, *, pct: float | None, status: str | None = None,
                 mark_pct: float | None = None, height: float = 7.0,
-                track_color: colors.Color | None = None) -> Drawing:
+                track_color: colors.Color | None = None,
+                fill: colors.Color | None = None) -> Drawing:
     """The packet's twin of the KPI card's goal bar (decision 11).
 
     The fill is the work as a percentage of the companionships' own meta and
     takes the grade's colour; the violet rule is leadership's transfer goal on
     the same scale (`mark_pct`), and it is drawn taller than the track so it
     reads as a reference laid across the bar rather than as part of it.
+
+    ``fill`` overrides the grade's colour for a bar that is a MAGNITUDE rather
+    than a grade — the nightly rows, whose colour lives in their movement
+    (decision 31). It draws in the one magnitude blue, not in the ungraded
+    grey: the reading exists, it is simply not being judged here.
 
     Over 100% the fill stops at the end of the track and the figure beside it
     carries the overshoot — a bar that runs past its own track would have to
@@ -531,7 +547,8 @@ def bar_vs_goal(width: float, *, pct: float | None, status: str | None = None,
     if pct is not None and pct > 0:
         filled = max(0.0, min(100.0, float(pct))) / 100.0 * width
         if filled > 0:
-            d.add(Rect(0, 0, filled, height, fillColor=status_color(status),
+            d.add(Rect(0, 0, filled, height,
+                       fillColor=fill if fill is not None else status_color(status),
                        strokeColor=None, strokeWidth=0, rx=1.5, ry=1.5))
     if mark_pct is not None:
         x = max(0.0, min(100.0, float(mark_pct))) / 100.0 * width
@@ -636,7 +653,7 @@ def stage_bars(width: float, stages, *, value_fmt=None,
     milestone fell before it, so a funnel can legitimately widen and a
     percentage over 100 there would be arithmetic about two different cohorts.
     """
-    fmt = value_fmt or (lambda v: f"{round(float(v)):,}".replace(",", "."))
+    fmt = value_fmt or es_display.integer
     rows = [(str(lbl), 0.0 if v is None else float(v)) for lbl, v in stages]
     n = len(rows)
     height = max(1.0, n * STAGE_ROW_HEIGHT + max(0, n - 1) * STAGE_CONV_HEIGHT)
@@ -699,7 +716,7 @@ def share_bar(width: float, parts, *, value_fmt=None,
     wraps into fixed columns rather than flowing, so two packets of the same
     section always break in the same place.
     """
-    fmt = value_fmt or (lambda v: f"{round(float(v)):,}".replace(",", "."))
+    fmt = value_fmt or es_display.integer
     rows = [(str(lbl), max(0.0, float(v or 0))) for lbl, v in parts]
     total = sum(v for _, v in rows)
     legend_rows = (len(rows) + legend_columns - 1) // legend_columns if rows else 0
@@ -818,7 +835,11 @@ def ranked_row(spec: RankedSpec, *, rank=None, name: str = "", sub: str = "",
             d.add(Line(0, 0, spec.width, 0, strokeColor=RULE, strokeWidth=0.5))
         return d
 
-    base = 6.5 if sub else 5.0
+    # A row with a sub-line sets its name higher so the sub still lands INSIDE
+    # the row's declared height. At 6.5 the sub's baseline came out at -0.7 and
+    # printed over whatever the page put underneath — a Drawing does not clip,
+    # so nothing complains and the last row of every table bleeds.
+    base = 8.5 if sub else 5.0
     if rank is not None:
         d.add(_string(spec.rank_width - 5, base, str(rank), NOTE, INK_3,
                       anchor="end"))
@@ -826,7 +847,7 @@ def ranked_row(spec: RankedSpec, *, rank=None, name: str = "", sub: str = "",
     d.add(_string(spec.name_x, base, fit(name, CELL, spec.name_width), CELL,
                   INK))
     if sub:
-        d.add(_string(spec.name_x, base - 7.2, fit(sub, NOTE, spec.name_width),
+        d.add(_string(spec.name_x, base - 7.5, fit(sub, NOTE, spec.name_width),
                       NOTE, INK_3))
     for i, cell in enumerate(cells):
         d.add(_string(spec.cells_x + i * spec.cell_width + spec.cell_width - 8,
@@ -848,6 +869,468 @@ def ranked_row(spec: RankedSpec, *, rank=None, name: str = "", sub: str = "",
     return d
 
 
+# ── Labels, tables and the front matter ───────────────────────────────────────
+
+class TrackedLabel(Flowable):
+    """An uppercase letter-spaced label, as a flowable.
+
+    A `Paragraph` cannot track — ReportLab's `ParagraphStyle` has no character
+    spacing at all — so every uppercase label that has to live inside a table
+    cell or a flowable stream comes through here instead.
+    """
+
+    def __init__(self, label: str, *, style: Type = CELL_HEAD,
+                 color: colors.Color | None = None, align: str = "start",
+                 width: float | None = None, pad_bottom: float = 2.0):
+        super().__init__()
+        self.label = label
+        self.style = style
+        self.color = color if color is not None else INK_3
+        self.align = align
+        self.width = width if width is not None else CONTENT_WIDTH
+        self.pad_bottom = pad_bottom
+        self.height = style.leading + pad_bottom
+
+    def wrap(self, availWidth, availHeight):
+        self.width = availWidth
+        return (availWidth, self.height)
+
+    def draw(self):
+        x = {"start": 0.0, "middle": self.width / 2, "end": self.width}[self.align]
+        draw_tracked(self.canv, x, self.pad_bottom + 1.5, self.label,
+                     self.style, self.color, anchor=self.align, upper=True)
+
+
+def table(rows, widths, *, headers=None, align=None, head_band: bool = True,
+          row_rules: bool = True, pad: float = 4.0, para=None) -> Table:
+    """A print table: a tinted header band, hairlines between rows, nothing else.
+
+    No vertical rules and no outer box. A ruled grid is how a page of figures
+    stops being readable — the columns are already aligned, and a line between
+    every one of them is ink doing no work.
+
+    A cell may be a string, a `Drawing` (one of the five primitives) or any
+    flowable. Strings become `Paragraph`s so a long name wraps inside its
+    column instead of colliding with the next; ``para`` names the style, and
+    ``align`` is a per-column "l"/"r"/"c".
+    """
+    st = styles()
+    aligns = list(align or ["l"] * len(widths))
+    style_for = {"l": para or "cell", "r": "cell_right", "c": "cell_center"}
+
+    def cell(value, col):
+        if isinstance(value, (list, tuple)):
+            # Platypus stacks a list of flowables inside one cell. Left to the
+            # coercion below, a two-line name cell printed its own repr — three
+            # hundred characters of ParaFrag across the page, which is what a
+            # 22-row nightly table looked like before this line existed.
+            return [cell(v, col) for v in value]
+        if isinstance(value, (Drawing, Flowable)):
+            return value
+        return Paragraph(text(value), st[style_for[aligns[col]]])
+
+    body = [[cell(v, i) for i, v in enumerate(row)] for row in rows]
+    if headers is not None:
+        head = [TrackedLabel(h, align={"l": "start", "r": "end",
+                                       "c": "middle"}[aligns[i]],
+                             width=widths[i] - 2 * pad, pad_bottom=0.0)
+                for i, h in enumerate(headers)]
+        body = [head] + body
+
+    cmds = [
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), pad),
+        ("RIGHTPADDING", (0, 0), (-1, -1), pad),
+        ("TOPPADDING", (0, 0), (-1, -1), pad),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), pad),
+    ]
+    first_body = 0
+    if headers is not None:
+        first_body = 1
+        if head_band:
+            cmds.append(("BACKGROUND", (0, 0), (-1, 0), TINT))
+        cmds.append(("LINEBELOW", (0, 0), (-1, 0), 0.5, RULE))
+    if row_rules and len(body) > first_body + 1:
+        cmds.append(("LINEBELOW", (0, first_body), (-1, -2), 0.5, RULE_SOFT))
+    return Table(body, colWidths=list(widths), style=TableStyle(cmds),
+                 hAlign="LEFT", repeatRows=first_body)
+
+
+def cover_page(*, kicker: str, title: str, standfirst: str, facts,
+               contents, note: str) -> list:
+    """Page 1: who it is for, what window it covers, and what is inside.
+
+    Provo's cover states four facts and then lists the packet's sections with
+    their page ranges, and it is right to: the first question anybody asks of a
+    62-page document is which part of it they have to read. ``facts`` and
+    ``contents`` are already-resolved `(label, value)` pairs — the page ranges
+    come from the second pass (`packet.Pagination`), never from this module.
+
+    The cover carries no running head and no page number, so nothing sets the
+    furniture before it.
+    """
+    st = styles()
+    fact_rows = [[TrackedLabel(label, width=150, pad_bottom=0.0),
+                  Paragraph(text(value), st["body"])] for label, value in facts]
+    content_rows = [[Paragraph(text(label), st["body"]),
+                     Paragraph(text(pages), st["cell_right"])]
+                    for label, pages in contents]
+    return [
+        Spacer(0, 26),
+        TrackedLabel(kicker, style=SECTION, color=ACCENT, pad_bottom=14.0),
+        Paragraph(text(title), st["cover_title"]),
+        Paragraph(text(standfirst), st["cover_lead"]),
+        Spacer(0, 18),
+        HairRule(color=INK, thickness=1.2, space_before=0, space_after=16),
+        table(fact_rows, [150, CONTENT_WIDTH - 150], row_rules=False, pad=3.0),
+        Spacer(0, 22),
+        TrackedLabel("Contenido", style=SECTION, color=INK, pad_bottom=6.0),
+        table(content_rows, [CONTENT_WIDTH - 90, 90], align=["l", "r"],
+              pad=3.0),
+        Spacer(0, 26),
+        Paragraph(text(note), st["note"]),
+    ]
+
+
+def print_guide(*, heading_note: str, intro: str, sections, handouts,
+                closing) -> list:
+    """Page 2: what to print, and who each stack of paper goes to.
+
+    Two tables, as Provo does. The first says what the packet contains and
+    whether that section is meant to be printed at all; the second is the run
+    sheet — one row per person at the table, with the pages and the number of
+    copies. ``sections`` and ``handouts`` arrive as rows of strings; the copy
+    counts behind them come from MISSION_ORG (`packet.hand_outs`).
+
+    ``closing`` is a list of sentences, each its own small paragraph: the total
+    paper, and whatever the roster could not answer.
+    """
+    st = styles()
+    return [
+        SectionHead("Guía de impresión", heading_note),
+        Paragraph(text(intro), st["body"]),
+        Spacer(0, 6),
+        TrackedLabel("Qué contiene este paquete", style=CELL_HEAD,
+                     pad_bottom=3.0),
+        table(sections, [196, 62, 172, 90],
+              headers=["Sección", "Páginas", "Para quién", "¿Imprimir?"],
+              align=["l", "r", "l", "l"]),
+        Spacer(0, 14),
+        TrackedLabel("Orden de impresión — qué entregar", style=CELL_HEAD,
+                     pad_bottom=3.0),
+        table(handouts, [176, 96, 54, 194],
+              headers=["Entregar a", "Páginas", "Copias", "Notas"],
+              align=["l", "r", "r", "l"]),
+        Spacer(0, 10),
+    ] + [Paragraph(text(line), st["note"]) for line in closing]
+
+
+# ── Page blocks ───────────────────────────────────────────────
+#
+# Compositions of the five primitives above, still knowing nothing about what a
+# Key Indicator is: everything arrives as a `MetricLine`, a `Tile` or a tuple of
+# strings that `packet.py` has already resolved. That boundary is what lets a
+# page be laid out in a test with no model and no sheet behind it.
+
+#: How wide a stat tile's own column is before it starts truncating its label.
+TILE_MIN_WIDTH = 96.0
+TILE_HEIGHT = 52.0
+
+
+@dataclass(frozen=True)
+class Tile:
+    """One headline figure: what it is, how big, and how it is doing.
+
+    ``note`` is the line under the number — Provo's "confirmed by Assistants to
+    the President", or a status and its percentage. ``status`` colours the
+    number's underline, never the number itself: a figure printed in amber on
+    white is a figure a photocopier loses.
+    """
+
+    label: str
+    value: str
+    note: str = ""
+    status: str | None = None
+
+
+def _wrap(label: str, style: Type, limit: float, lines: int = 2) -> list:
+    """`label` broken on spaces into at most `lines` runs that each fit.
+
+    Measured, not counted, and the LAST line takes everything that is left and
+    is truncated rather than dropped: "Amigos en la Reunión Sacramental" in a
+    130pt column is three words too long for one line and exactly right for
+    two, and an ellipsis after "Amigos en la Reunión" names nothing.
+    """
+    words = text(label).split()
+    out, current = [], ""
+    for i, word in enumerate(words):
+        trial = f"{current} {word}".strip()
+        if not current or width_of(trial, style) <= limit:
+            current = trial
+            continue
+        out.append(current)
+        if len(out) == lines - 1:
+            current = " ".join(words[i:])
+            break
+        current = word
+    out.append(fit(current, style, limit))
+    return out
+
+
+def stat_tiles(width: float, tiles, *, columns: int = 4) -> Drawing:
+    """A band of headline figures, as Provo puts at the foot of a unit's page.
+
+    Wraps into rows of ``columns``, so five tiles are four and one rather than
+    five squeezed. A tile's LABEL wraps onto a second line — Provo's does the
+    same with "New People Being Taught (NEW)" — because the Spanish names run
+    long and a band of "AMIGOS EN LA REUNIÓN SACR..." tells a reader nothing
+    they did not already know.
+    """
+    tiles = list(tiles)
+    if not tiles:
+        return Drawing(width, 1)
+    columns = max(1, min(columns, int(width // TILE_MIN_WIDTH) or 1))
+    rows = (len(tiles) + columns - 1) // columns
+    height = rows * TILE_HEIGHT
+    d = Drawing(width, height)
+    col_w = width / columns
+    for i, tile in enumerate(tiles):
+        row, col = divmod(i, columns)
+        x = col * col_w
+        top = height - row * TILE_HEIGHT
+        g = Group()
+        for n, line in enumerate(_wrap(tile.label.upper(), TILE_LABEL,
+                                       col_w - 10)):
+            _tracked(g, x, top - 9 - n * (TILE_LABEL.leading - 1.5), line,
+                     TILE_LABEL, INK_3)
+        d.add(g)
+        d.add(_string(x, top - 30, fit(tile.value, TILE_VALUE, col_w - 10),
+                      TILE_VALUE, INK))
+        d.add(Rect(x, top - 36, 22, 2, fillColor=status_color(tile.status),
+                   strokeColor=None, strokeWidth=0))
+        if tile.note:
+            d.add(_string(x, top - 44, fit(tile.note, NOTE, col_w - 10), NOTE,
+                          INK_3))
+    return d
+
+
+@dataclass(frozen=True)
+class MetricLine:
+    """One row of a metric table, already reduced to strings by `packet.py`.
+
+    ``pct`` fills the bar and ``mark_pct`` is the violet leadership mark, both
+    as percentages of the same goal. ``status`` colours the fill; None leaves
+    it the single magnitude blue, which is what a nightly row wants — decision
+    31 puts a nightly row's colour on its MOVEMENT, not on its distance from a
+    goal set at roughly twice what the mission does.
+
+    ``verdict`` is the words beside the bar ("al ritmo \u00b7 93%"), or the flag when
+    the goal is not a yardstick. ``change`` is `(direction, text)`.
+    """
+
+    label: str
+    value: str
+    goal: str
+    pct: float | None = None
+    mark_pct: float | None = None
+    status: str | None = None
+    #: True when the bar is a size and not a verdict — it then draws in the one
+    #: magnitude blue and the row's colour lives entirely in its change.
+    magnitude: bool = False
+    verdict: str = ""
+    change: tuple | None = None
+    note: str = ""
+
+
+#: The metric table's columns at content width. The bar gets the most room of
+#: anything because it is the only column a reader can scan without reading.
+METRIC_COLUMNS = (150.0, 44.0, 44.0, 120.0, 96.0, 66.0)
+
+
+def change_chip(width: float, change, *, height: float = 9.0) -> Drawing:
+    """A direction and a size, right-aligned: a drawn triangle and its number.
+
+    The triangle rather than an arrow glyph — see this module's docstring — and
+    the number carries its own sign, so a photocopy that loses the colour keeps
+    the direction twice over.
+
+    A ``direction`` of 0 draws no triangle and prints the figure in the muted
+    ink. That is what a change measured across a window too thin to trust looks
+    like: the number is still there, because decision 6 says a partial
+    comparison is shown, but it does not claim a direction it cannot know.
+    """
+    d = Drawing(width, height)
+    if not change:
+        return d
+    direction, label = change
+    label = text(label)
+    w = width_of(label, CELL)
+    d.add(_string(width, 1.5, label, CELL,
+                  INK_2 if direction else INK_3, anchor="end"))
+    tri = change_mark(width - w - 7, 1.8, int(direction), size=4.2)
+    if tri is not None:
+        d.add(tri)
+    return d
+
+
+def metric_table(lines, *, widths=METRIC_COLUMNS, headers=None) -> Table:
+    """Every metric of a unit, one row each — the packet's workhorse table.
+
+    Provo prints METRIC / ACTUAL / GOAL / AGAINST GOAL. This adds the bar, so
+    the column a reader scans is a length rather than a number, and the change,
+    because a council's question is which way a thing is moving.
+    """
+    st = styles()
+    headers = headers or ("Métrica", "Real", "Meta", "", "Contra la meta",
+                          "Cambio")
+    bar_width = widths[3] - 8
+    rows = []
+    for line in lines:
+        name = Paragraph(text(line.label), st["cell_bold"])
+        if line.note:
+            name = [name, Paragraph(text(line.note), st["note"])]
+        rows.append([
+            name,
+            Paragraph(text(line.value), st["cell_right"]),
+            Paragraph(text(line.goal), st["cell_right"]),
+            bar_vs_goal(bar_width, pct=line.pct, status=line.status,
+                        mark_pct=line.mark_pct, track_color=RULE_SOFT,
+                        fill=SERIES[0] if line.magnitude else None),
+            Paragraph(text(line.verdict), st["cell"]),
+            change_chip(widths[5] - 8, line.change),
+        ])
+    return table(rows, widths, headers=headers,
+                 align=["l", "r", "r", "l", "l", "l"])
+
+
+#: Above this many complete weeks the value columns stop fitting and the strip
+#: falls back to the line alone. Six is a transfer; "Ano" can run to thirty-
+#: eight, and thirty-eight columns of 13pt is not a table anybody can read.
+WEEK_COLUMN_LIMIT = 6
+WEEK_ROW_HEIGHT = 15.0
+
+
+def week_table(width: float, weeks, rows, *, boundaries=(), footer=None,
+               spark_width: float = 70.0) -> Drawing:
+    """A metric per line: its name, its shape, every week's figure, the total.
+
+    Provo prints the weeks' own numbers and is right to: over a transfer there
+    are at most six of them, and a line through two points is a straight line
+    whatever the two points are — which is precisely what the current transfer
+    has, and what made the first version of this block say nothing at all.
+
+    The spark stays, narrow, because shape is faster to read than six numbers
+    when a reader is scanning seven rows for the one that turned. Every spark
+    is drawn on its OWN scale: seven Key Indicators whose totals run from 1 to
+    364 share no axis worth having, and the figures carry the size.
+
+    ``boundaries`` are the indices of the weeks that OPEN a transfer — a dashed
+    rule is drawn down the table immediately before each (decision 9), so a
+    companionship change is visible as the discontinuity it is.
+
+    ``footer`` is `(label, values, total)` printed under a rule, and on this
+    table it is not optional in practice: these are RAW weekly sums, and CCSM's
+    weekly reporting has run 26 to 36 areas of 45 between one week and the
+    next. Without the count of areas that filed sitting under the figures, a
+    week where nine fewer companionships sent a form reads as a mission that
+    halved its work (§1.3's reporting-rate trap).
+    """
+    rows, weeks = list(rows), list(weeks)
+    if not rows:
+        return Drawing(width, 1)
+    show_weeks = 0 < len(weeks) <= WEEK_COLUMN_LIMIT
+    total_w = 48.0
+    label_w = 150.0
+    week_w = ((width - label_w - spark_width - total_w) / len(weeks)
+              if show_weeks else 0.0)
+    if show_weeks and week_w < 26:
+        show_weeks, week_w = False, 0.0
+    if not show_weeks:
+        spark_width = width - label_w - total_w - 10
+
+    weeks_x = label_w + spark_width + 10
+    height = (len(rows) + 1 + (1.6 if footer else 0)) * WEEK_ROW_HEIGHT
+    d = Drawing(width, height)
+
+    head_y = height - 9
+    g = Group()
+    if show_weeks:
+        for i, week in enumerate(weeks):
+            right = weeks_x + i * week_w + week_w - 4
+            _tracked(g, right, head_y, es_display.day_month(week), CELL_HEAD,
+                     INK_3, anchor="end")
+    _tracked(g, width, head_y, "total", CELL_HEAD, INK_3, anchor="end",
+             upper=True)
+    d.add(g)
+    d.add(Line(0, height - WEEK_ROW_HEIGHT, width, height - WEEK_ROW_HEIGHT,
+               strokeColor=RULE, strokeWidth=0.5))
+
+    if show_weeks:
+        for index in boundaries or ():
+            if 0 < index <= len(weeks):
+                x = weeks_x + index * week_w - week_w - 2
+                d.add(Line(x, 0, x, height - WEEK_ROW_HEIGHT + 4,
+                           strokeColor=RULE, strokeWidth=0.6,
+                           strokeDashArray=[1.6, 1.6]))
+
+    for i, (label, values, total) in enumerate(rows):
+        top = height - (i + 1) * WEEK_ROW_HEIGHT
+        base = top - 10
+        d.add(_string(0, base, fit(label, CELL, label_w - 8), CELL, INK_2))
+        spark = sparkline(spark_width, WEEK_ROW_HEIGHT - 5, values)
+        holder = Group(*spark.contents)
+        holder.transform = (1, 0, 0, 1, label_w, top - WEEK_ROW_HEIGHT + 2)
+        d.add(holder)
+        if show_weeks:
+            for n, value in enumerate(values[:len(weeks)]):
+                right = weeks_x + n * week_w + week_w - 4
+                shown = es_display.NA if value is None else es_display.integer(value)
+                d.add(_string(right, base, shown, CELL,
+                              INK_2 if value is not None else INK_3,
+                              anchor="end"))
+        d.add(_string(width, base, total, CELL, INK, anchor="end"))
+        if i:
+            d.add(Line(0, top, width, top, strokeColor=RULE_SOFT,
+                       strokeWidth=0.5))
+    if footer:
+        label, values, total = footer
+        top = height - (len(rows) + 1) * WEEK_ROW_HEIGHT
+        base = top - 11
+        d.add(Line(0, top - 2, width, top - 2, strokeColor=RULE,
+                   strokeWidth=0.5))
+        d.add(_string(0, base, fit(label, NOTE, label_w + spark_width), NOTE,
+                      INK_3))
+        if show_weeks:
+            for n, value in enumerate(values[:len(weeks)]):
+                right = weeks_x + n * week_w + week_w - 4
+                d.add(_string(right, base, es_display.integer(value), NOTE,
+                              INK_3, anchor="end"))
+        if total:
+            d.add(_string(width, base, total, NOTE, INK_3, anchor="end"))
+    return d
+
+
+def legend(width: float, sentence: str = "") -> Drawing:
+    """The three states, spelled out, and the sentence that qualifies them.
+
+    On every page that grades anything. A packet gets photocopied, read by
+    somebody who was not in the room when it was built, and argued with — so
+    the key travels with the page rather than living once on page 2.
+    """
+    height = 9.0 + (NOTE.leading if sentence else 0)
+    d = Drawing(width, height)
+    x = 0.0
+    for state in ("good", "warn", "bad"):
+        d.add(Rect(x, height - 8, 6, 6, fillColor=STATUS[state],
+                   strokeColor=None, strokeWidth=0))
+        word = STATUS_WORD[state]
+        d.add(_string(x + 9, height - 7.5, word, NOTE, INK_2))
+        x += 9 + width_of(word, NOTE) + 16
+    if sentence:
+        d.add(_string(0, 0, fit(sentence, NOTE, width), NOTE, INK_3))
+    return d
+
+
 __all__ = [
     "PAGE_SIZE", "PAGE_WIDTH", "PAGE_HEIGHT", "MARGIN_X", "MARGIN_TOP",
     "MARGIN_BOTTOM", "CONTENT_WIDTH", "CONTENT_HEIGHT",
@@ -859,7 +1342,10 @@ __all__ = [
     "STATUS_WORD",
     "text", "is_printable", "width_of", "fit",
     "change_mark", "dot", "draw_tracked", "Furniture", "SetFurniture", "draw_furniture",
-    "SectionHead", "HairRule", "styles",
+    "SectionHead", "HairRule", "TrackedLabel", "styles", "table",
+    "cover_page", "print_guide", "COVER_TITLE", "COVER_LEAD",
+    "Tile", "stat_tiles", "MetricLine", "METRIC_COLUMNS", "change_chip",
+    "metric_table", "week_table", "WEEK_COLUMN_LIMIT", "legend",
     "bar_vs_goal", "sparkline", "stage_bars", "share_bar", "ranked_row",
     "RankedSpec",
 ]

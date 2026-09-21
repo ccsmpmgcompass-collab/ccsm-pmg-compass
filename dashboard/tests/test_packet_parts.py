@@ -18,7 +18,6 @@ in ZapfDingbats — so `text()` is the gate and this file pins its behaviour.
 
 import io
 import re
-import sys
 
 import pytest
 from reportlab.graphics.shapes import (Circle, Drawing, Group, Line, Polygon,
@@ -80,18 +79,35 @@ def _page_texts(pdf_bytes):
     return [(p.extract_text() or "") for p in PdfReader(io.BytesIO(pdf_bytes)).pages]
 
 
+def _imports_streamlit(module: str) -> bool:
+    """Whether importing `module` in a FRESH interpreter pulls in Streamlit.
+
+    A subprocess, not `sys.modules` surgery. Deleting streamlit from this
+    process and reloading proved the point and then broke 122 later tests in
+    the same session — every one that had monkeypatched something inside the
+    module object it no longer shared. A cold interpreter is both isolated and
+    a stronger claim: it tests the import GRAPH rather than what this session
+    happens to have loaded already.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    code = (f"import {module}, sys; "
+            "sys.exit(1 if 'streamlit' in sys.modules else 0)")
+    done = subprocess.run([sys.executable, "-c", code], cwd=str(root),
+                          capture_output=True, text=True)
+    assert done.returncode in (0, 1), done.stderr
+    return done.returncode == 1
+
+
 # ── The module stays pure ─────────────────────────────────────────────────────
 
 def test_packet_parts_does_not_pull_in_streamlit():
     """The same acceptance every module in `app/reports` carries: the packet is
     built in a background process and in a test, neither of which has a
     browser."""
-    for mod in list(sys.modules):
-        if mod == "streamlit" or mod.startswith("streamlit."):
-            del sys.modules[mod]
-    import importlib
-    importlib.reload(PP)
-    assert "streamlit" not in sys.modules
+    assert not _imports_streamlit("app.reports.packet_parts")
 
 
 # ── Geometry ──────────────────────────────────────────────────────────────────

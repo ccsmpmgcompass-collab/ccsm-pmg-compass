@@ -665,6 +665,80 @@ short audit of their own before anything is changed.
   `pypdfium2` (installed into the venv, **not** in requirements) rendering to
   PNG — the browser pane cannot screenshot a local PDF.
 
+- **2026-09-21** — **P2 and P3 landed, in one commit.** The two steps' edits
+  interleave in the same two files — P3's page blocks are built on the table
+  helper P2 added — and splitting them after the fact would have meant
+  reverting working code to fabricate a boundary. Recorded here rather than
+  pretended away; the next steps go back to one commit each.
+  `app/reports/packet.py` is new: `Section` / `HandOut` / `Pagination` /
+  `SectionStart`, `leadership`, `hand_outs`, `sections_for`, `front_matter`,
+  the mission pages M1–M5, and `build_packet`. `packet_parts.py` gained
+  `TrackedLabel`, `table`, `cover_page`, `print_guide`, and the page blocks
+  `stat_tiles`, `metric_table`, `week_table` and `legend`. Tests:
+  `test_packet_front_matter.py` (20) and `test_packet_mission.py` (22). Suite
+  **11 failed / 1494 passed** — the same 11. Live: **63 models, 71 pages, 3.0s
+  to render** from one sheet read. Decisions made mid-build:
+  (a) **Page numbers resolve by laying the document out repeatedly until a
+  pass confirms what it was handed** — not by a fixed two passes. Printing the
+  first pass's ranges lengthens the guide, which moves everything after it, and
+  that correction can itself move a row. `MAX_PASSES` is 3; the live packet
+  settles in 2, and a test asserts it.
+  (b) **`app/config/es_display.py`** holds the Spanish month names, the date
+  shapes and the number conventions, because `app/i18n/__init__.py` imports
+  Streamlit and the report layer cannot. `i18n/formats.py` now takes its
+  Spanish tables and its digit grouping from there, so a month still cannot be
+  spelled two ways. Same move, same reason, as R2's goal-bar tiers.
+  `Period.window_label` / `elapsed_label` were added on top of it.
+  (c) **The run sheet names every zone and every district by name**, with its
+  own page range and its own copy count, instead of Provo's single "give them
+  their own zone packet" row — decision 2 means there is no separate zone PDF
+  to give them. **Measured: 4 zone leaders and 12 district leaders in
+  MISSION_ORG against 13 districts**; San Pedro's La Marina 1 has none and is
+  the assistants' own area. That row prints 0 copies and says why, and the
+  closing note carries the count. Never one copy for a leader the roster does
+  not know about.
+  (d) **M6 and M7 move to phase T.** §3.2 puts baptisms-vs-the-annual-goal and
+  the finding section on the mission's pages, but both read TABLEAU_BAPTISMS
+  and the Tableau export. Building them here would have put a Tableau figure on
+  a form-sourced page without the freshness gate (decision 32) or decision 34's
+  separation. P3 is therefore M1–M5.
+  (e) **A change measured across a THIN window keeps its number and loses its
+  arrow.** `Coverage.thin` marks the live default comparison — 2026-5's first
+  two weeks, one area — and every one of the seven Key Indicators prints
+  between −36% and −65% off it. Seven red triangles down a council page would
+  report that area's fortnight as the mission collapsing. Decision 6 says show
+  the partial comparison; §1.3 says degrade visibly; so the figure prints grey
+  with no triangle and the note says there is nothing to sustain a direction.
+  (f) **The week-by-week block prints the weeks' own figures, not just a
+  line.** A line through two points is a straight line whatever the points
+  are, and the current transfer has exactly two complete weeks — the first
+  version of that page was seven identical diagonal strokes. `week_table` adds
+  a column per week up to **six** (`WEEK_COLUMN_LIMIT`; "Año" runs to 38 and
+  falls back to the line) **and a footer row counting the areas that filed each
+  week** — 36 then 27 live. Without it, 211 → 153 new people reads as the
+  mission halving when nine fewer companionships sent a form (§1.3's trap).
+  (g) **A nightly bar draws in the magnitude blue, not in a grade colour.**
+  Decision 31 puts the row's status on its movement; the bar is its distance
+  from a goal set at roughly twice what the mission does, so `bar_vs_goal`
+  gained a `fill` override and the ungraded grey stays for "no reading".
+  (h) **The purity tests run in a subprocess.** The first version deleted
+  streamlit from `sys.modules` and reloaded — it passed, and broke **122** later
+  tests in the same session, every one that had monkeypatched something inside
+  the module object it no longer shared. A cold interpreter is isolated and is
+  the stronger claim: it tests the import graph, not what the session happens
+  to have loaded.
+  **Found by rendering and looking, not by a test:** `ranked_row`'s sub-line
+  sat at y = −0.7 and printed over whatever the page put underneath (a Drawing
+  does not clip, so nothing complains); a table cell holding a LIST of
+  flowables printed its own repr, three hundred characters of ParaFrag per row,
+  across the whole 22-row nightly table; and tile labels truncated to "AMIGOS
+  EN LA REUNIÓN SACR..." until they learned to wrap onto a second line.
+  **For P4–P6, measured and not to be re-derived:** the mission section is 5
+  pages; the whole packet with stub zone/district/area pages is 71; a
+  `RankedSpec` at 520pt with three measure columns leaves a 246pt name column;
+  `metric_table`'s six columns are 150/44/44/120/96/66; `week_table` is
+  150 + 70 + weeks + 48.
+
 ### Phase R is done. What Phase P starts from
 
 `app/reports/` is `scope.py`, `periods.py`, `grading.py`, `model.py` — all

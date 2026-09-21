@@ -47,6 +47,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from typing import Mapping
 
+from app.config import es_display
 from app.utils.area_helpers import latest_due_sunday
 
 # ── The six periods ───────────────────────────────────────────────────────────
@@ -271,6 +272,22 @@ class Period:
     def days(self) -> int:
         """Days elapsed in the window, both ends inclusive."""
         return (self.end - self.start).days + 1
+
+    @property
+    def window_label(self) -> str:
+        """`7 de sep - 18 de oct de 2026` — the window, in words.
+
+        The FULL window, not the elapsed one: a running head reading
+        "7 de sep - 21 de sep" on a transfer that runs to 18 October would say
+        the transfer is over. How far through it we are is `progress_label`'s
+        sentence, and the two are printed side by side.
+        """
+        return es_display.day_range(self.start, self.full_end)
+
+    @property
+    def elapsed_label(self) -> str:
+        """The window that has actually happened, for a figure's caption."""
+        return es_display.day_range(self.start, self.end)
 
     @property
     def progress_label(self) -> str:

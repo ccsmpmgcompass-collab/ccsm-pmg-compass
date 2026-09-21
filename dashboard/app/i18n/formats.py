@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+from app.config import es_display
 from app.i18n import get_lang
 
 #: What a missing value looks like. Deliberately not "0" and not "".
@@ -51,14 +52,12 @@ _CONVENTIONS: dict[str, dict[str, str]] = {
 
 #: Lowercase per RAE: Spanish month names are common nouns, not proper nouns,
 #: and capitalising them is a visible error to a native reader.
-_MONTHS_ES = (
-    "enero", "febrero", "marzo", "abril", "mayo", "junio",
-    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
-)
-_MONTHS_ES_ABBR = (
-    "ene", "feb", "mar", "abr", "may", "jun",
-    "jul", "ago", "sep", "oct", "nov", "dic",
-)
+#: The Spanish tables live in `app/config/dates_es.py`, not here: this package's
+#: __init__ imports Streamlit, and `app/reports` — which builds the Spanish-only
+#: council packet in a background process — must stay importable without one.
+#: Same move, and the same reason, as the goal-bar tiers going to theme.py.
+_MONTHS_ES = es_display.MONTHS
+_MONTHS_ES_ABBR = es_display.MONTHS_ABBR
 _MONTHS_EN = (
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December",
@@ -90,13 +89,10 @@ def _conv() -> dict[str, str]:
 
 # ── Numbers ───────────────────────────────────────────────────────────────────
 
-def _group(digits: str, sep: str) -> str:
-    out = []
-    for i, ch in enumerate(reversed(digits)):
-        if i and i % 3 == 0:
-            out.append(sep)
-        out.append(ch)
-    return "".join(reversed(out))
+#: Grouping is the same operation in both languages, only the separator
+#: differs, so it lives beside the Spanish conventions rather than being
+#: written twice.
+_group = es_display.group_digits
 
 
 def fmt_number(value, places: int = 0) -> str:
