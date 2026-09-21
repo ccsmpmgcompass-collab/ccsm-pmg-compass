@@ -820,6 +820,44 @@ short audit of their own before anything is changed.
   **Measured:** an area's block is 142–280pt against a half page of 338pt, and
   a test asserts every one of them fits.
 
+- **2026-09-21** — **P6 landed. PHASE P IS COMPLETE.** The data note, the one
+  call the screen makes (`packet.build(period) -> bytes`, plus `filename`), and
+  **Generar paquete** on `views/11_Informes.py`. Tests:
+  `test_packet_build.py` (18) — this file IS the phase's acceptance. Suite
+  **11 failed / 1544 passed** — the same 11. Decisions made mid-build:
+  (a) **Two controls, not one.** `st.download_button` needs the bytes before it
+  is drawn and building them takes about a minute on the live sheet, so a
+  download button on its own would rebuild the whole packet on every rerun —
+  including the reruns a period pill causes. The first button builds and parks
+  the result in session state keyed by the period; the second hands it over.
+  Changing the período pill therefore offers a fresh build rather than
+  yesterday's bytes under today's label.
+  (b) **The packet is always the whole mission**, whatever the selectors point
+  at: it contains that unit's pages either way, and a packet whose contents
+  changed with a dropdown would be a different document under the same name.
+  (c) **The data note names what is missing, not only what is there** — the six
+  silent areas by name, the goals that are not yardsticks (Key Indicator and
+  nightly), and why there is no finding section at all. A reader who wants to
+  argue with a number should be able to find out what it is made of without
+  asking anybody; that is the only thing that makes the rest safe to hand out.
+  (d) The contents' page counts read as Spanish: "dos por página" rather than
+  "0,5 páginas cada una", and "cada una" for a zona or an área.
+  **ACCEPTANCE MET, and measured rather than eyeballed.** `test_packet_build.py`
+  checks all four of §4 P6's: every page is **612 × 792** (Letter); every page
+  but the cover carries its own number; no page is blank; and nothing is drawn
+  into the running head's band or the footer's — read off each page's content
+  stream, tracking the `q`/`cm`/`Q` translations, because a `Tm` inside a
+  flowable is in local coordinates and the first version of that test read a
+  footer at y=1.5 and called it a flowable in the margin. In the running app at
+  **1400px and at 375px**: the button builds the real packet (**108 pages, 374
+  KB**), the download button appears carrying
+  `paquete-consejo-this_transfer-2026-09-21.pdf`, and the main pane's
+  `scrollWidth` equals its `clientWidth` at both (1060 and 371) with nothing
+  overflowing at 375.
+  **Note:** `pypdfium2` was installed into the venv to rasterize pages for
+  looking at, and **uninstalled at the end of the phase** — it is not in
+  `requirements.txt` and nothing in the app or the tests imports it.
+
 ### Phase R is done. What Phase P starts from
 
 `app/reports/` is `scope.py`, `periods.py`, `grading.py`, `model.py` — all

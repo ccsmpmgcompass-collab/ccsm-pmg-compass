@@ -117,9 +117,58 @@ _comparison = P.comparison_for(_period, _data.today, _data.cycles,
 
 _model = M.build_report(_scope, _period, _comparison, _data)
 
-# **Generar paquete** is Phase P (step P6). The button is deliberately absent
-# rather than present-and-dead: a disabled control in a council is a promise
-# nobody made.
+
+# ── Generar paquete (P6) ──────────────────────────────────────────────────────
+#
+# Two controls, not one. `st.download_button` needs the bytes in hand before it
+# is drawn, and building them takes about a minute on the live sheet — 63
+# models and 108 pages — so a download button alone would rebuild the whole
+# packet on every rerun of the page, including the reruns a pill click causes.
+# The first button builds and parks the result; the second hands it over.
+#
+# The packet is the whole mission, always (decisión 1), whatever unit the
+# selectors point at: it contains that unit's pages either way, and a packet
+# whose contents changed with a dropdown would be a different document under
+# the same name.
+
+#: Where the built packet waits between the two clicks, keyed by the period it
+#: was built for — so changing the período pill offers a fresh build rather
+#: than yesterday's bytes under today's label.
+_PACKET_KEY = "rep_packet"
+
+
+def _render_packet_control() -> None:
+    from app.reports import packet as PK
+
+    left, right = st.columns([1, 2])
+    built = st.session_state.get(_PACKET_KEY)
+    with left:
+        if st.button("Generar paquete", type="primary",
+                     use_container_width=True):
+            with st.spinner("Armando el paquete — 63 unidades…"):
+                try:
+                    st.session_state[_PACKET_KEY] = {
+                        "period": _period.key,
+                        "bytes": PK.build(_period.key, _against, data=_data),
+                        "name": PK.filename(_model),
+                    }
+                except Exception as exc:          # noqa: BLE001 - shown, not hidden
+                    st.session_state.pop(_PACKET_KEY, None)
+                    st.error(f"No se pudo armar el paquete: {exc}")
+            built = st.session_state.get(_PACKET_KEY)
+    with right:
+        if built and built.get("period") == _period.key:
+            size = len(built["bytes"]) / 1024
+            st.download_button(
+                f"Descargar · {built['name']} ({fmt_int(size)} KB)",
+                data=built["bytes"], file_name=built["name"],
+                mime="application/pdf", use_container_width=True)
+        else:
+            st.caption("Todo el consejo en un PDF: la misión, las 4 zonas, los "
+                       "13 distritos y las 45 áreas, con su guía de impresión.")
+
+
+_render_packet_control()
 
 #: What a drill-down link has to carry to come back to this unit.
 _SCOPE_PARAMS = {

@@ -65,8 +65,11 @@ class Section:
     audience: str
     print_it: str = "Imprimir"
     #: How many UNITS the section covers, so `describe` can say how many pages
-    #: each of them took once a pass has measured it.
+    #: each of them took once a pass has measured it, and what one of them is
+    #: called — "cada una" for a zona or an área, "cada uno" for a distrito.
     units: int = 1
+    unit_noun: str = ""
+    feminine: bool = False
     first_page: int | None = None
     last_page: int | None = None
 
@@ -326,11 +329,14 @@ def sections_for(models) -> list:
     return [
         Section(MISSION, "La misión", "Todos en el consejo", units=1),
         Section(ZONES, f"Cada zona — {counts[S.ZONE]} zonas",
-                "Se discute zona por zona", units=counts[S.ZONE]),
+                "Se discute zona por zona", units=counts[S.ZONE],
+                unit_noun="zona", feminine=True),
         Section(DISTRICTS, f"Cada distrito — {counts[S.DISTRICT]}",
-                "Entregar a cada líder de distrito", units=counts[S.DISTRICT]),
+                "Entregar a cada líder de distrito", units=counts[S.DISTRICT],
+                unit_noun="distrito"),
         Section(AREAS, f"Cada área — {counts[S.AREA]}",
-                "Referencia durante el consejo", units=counts[S.AREA]),
+                "Referencia durante el consejo", units=counts[S.AREA],
+                unit_noun="área", feminine=True),
         Section(DATA_NOTE, "Nota de datos",
                 "Quien pregunte de dónde sale una cifra", "Referencia"),
     ]
@@ -348,17 +354,29 @@ def describe(sections) -> list:
     """
     out = []
     for section in sections:
-        title = section.title
-        if section.units > 1 and section.page_count:
-            each = section.page_count / section.units
-            if each == int(each):
-                n = int(each)
-                title += (", una página cada uno" if n == 1
-                          else f", {es_display.integer(n)} páginas cada uno")
-            else:
-                title += f", {es_display.number(each, 1)} páginas cada uno"
-        out.append(replace(section, title=title))
+        out.append(replace(section, title=_titled(section)))
     return out
+
+
+def _titled(section) -> str:
+    """A section's title with its real page count, in agreeing Spanish.
+
+    "0,5 páginas cada una" is arithmetically right and reads like a mistake;
+    two areas to a page is the sentence a person would say. Below one page per
+    unit that is the only shape the number takes, so it is the only special
+    case worth writing.
+    """
+    if section.units <= 1 or not section.page_count:
+        return section.title
+    each = section.page_count / section.units
+    agree = "cada una" if section.feminine else "cada uno"
+    if each <= 0.6:
+        return f"{section.title}, dos por página"
+    if each == int(each):
+        n = int(each)
+        return (f"{section.title}, una página {agree}" if n == 1
+                else f"{section.title}, {es_display.integer(n)} páginas {agree}")
+    return f"{section.title}, {es_display.number(each, 1)} páginas {agree}"
 
 
 def front_matter(mission, sections, units, roster, *, total_pages: int) -> list:
@@ -1367,11 +1385,96 @@ def unit_pages(model, goals, peers=None) -> list:
     return flow + build(model, goals, peers or {})
 
 
-def data_note(models) -> list:
-    """The last page: where every figure came from. P6 finishes it."""
+def data_note(models, goals=None) -> list:
+    """The last page: where every figure came from, and what is missing.
+
+    Provo's "About the baptism figure" note, generalised. The rule it follows
+    is that a reader who wants to argue with a number should be able to find
+    out what it is made of without asking anybody — which is also the only
+    thing that makes the rest of the packet safe to hand out.
+    """
     st = PP.styles()
-    return [PP.SectionHead("Nota de datos", "de dónde sale cada cifra"),
-            Paragraph("Pendiente.", st["body"])]
+    W = PP.CONTENT_WIDTH
+    mission = next((m for m in models if m.scope.level == S.MISSION), None)
+    flow = [PP.SectionHead("Nota de datos", "de dónde sale cada cifra")]
+    if mission is None:
+        return flow
+    period = mission.period
+    cov = mission.coverage
+    rows = [
+        ["Indicadores Clave", "WEEKLY_KI",
+         "Lo que las companerías informaron cada semana, filtrado al "
+         "organigrama por el agente."],
+        ["Meta de las companerías", "Formulario semanal",
+         "La meta de una semana se escribe en el formulario de la semana "
+         "ANTERIOR, y así se lee aquí."],
+        ["Meta de traslado", "AREA_TRANSFER_GOALS",
+         "La meta del liderazgo por área por ciclo, prorrateada a la parte "
+         "del traslado que cubre este período."],
+        ["Trabajo nocturno", "DAILY_LOG",
+         "Un informe por área por noche. La meta por métrica sale de "
+         "AGENT_CONFIG y es una sola cifra para toda la misión."],
+        ["Fortaleza y crecimiento", "WEEKLY_BREAKDOWNS",
+         "Elegidas por los agentes, no recalculadas aquí. Esa pestaña va una "
+         "semana atrás de WEEKLY_KI."],
+        ["Puntajes", "SCORES",
+         "Los cuatro puntajes del agente, promediados sobre las semanas del "
+         "período. Un área sin calificar no cuenta como cero."],
+        ["Organigrama", "MISSION_ORG",
+         "Zona, distrito y companería. La pertenencia se decide aquí y nunca "
+         "en la columna de una fila de datos."],
+    ]
+    flow.append(PP.table(rows, [128, 118, W - 246],
+                         headers=["Cifra", "Fuente", "Qué es"]))
+    flow.append(Spacer(0, 10))
+    flow.append(PP.SectionHead("Lo que este paquete no dice", rule=False))
+    sentences = [
+        f"Período: {period.label}, {period.window_label}. "
+        f"{period.progress_label}. Sólo se cuentan semanas completas; la "
+        f"semana en curso no aparece en ninguna cifra.",
+        f"Cumplimiento: {mission.compliance_label}. Cada porcentaje de este "
+        f"paquete se apoya en eso, y una unidad que informó la mitad tiene "
+        f"cifras que valen la mitad.",
+    ]
+    if cov is not None and cov.thin:
+        sentences.append(
+            "La cobertura de este período es demasiado delgada para sostener "
+            "una comparación: las cifras se muestran, las flechas no.")
+    silent = mission.areas_silent
+    if silent:
+        sentences.append(
+            f"{es_display.integer(len(silent))} de "
+            f"{es_display.integer(mission.scope.area_count)} áreas no "
+            f"informaron ninguna semana completa del período: "
+            f"{', '.join(sorted(silent))}. Cuentan en cada denominador por "
+            f"área activa, y no aparecen en ninguna suma.")
+    flagged = [r for r in mission.key_indicators if r.grade.flag]
+    if flagged:
+        names = ", ".join(r.label for r in flagged)
+        sentences.append(
+            f"Meta no utilizable: {names}. La cifra es real y la meta no da "
+            f"para medirla, así que la fila se muestra sin calificar en vez "
+            f"de pintarse de rojo. Hay que revisar la meta, no el trabajo.")
+    nightly_flags = [r for r in mission.nightly_metrics if r.grade.flag]
+    if nightly_flags:
+        names = ", ".join(r.label for r in nightly_flags)
+        sentences.append(
+            f"Lo mismo en el trabajo nocturno: {names}.")
+    sentences.append(
+        "Las metas nocturnas de AGENT_CONFIG están puestas cerca del doble de "
+        "lo que la misión hace hoy. Por eso esas filas se califican por su "
+        "movimiento y no por su distancia a la meta.")
+    sentences.append(
+        "Sin datos de Tableau en este paquete: la exportación guardada no "
+        "cubre el período y un paquete con cifras de hace dos meses sería "
+        "peor que uno sin sección de hallazgo.")
+    for line in sentences:
+        flow.append(Paragraph(PP.text(line), st["note_lead"]))
+    flow.append(Spacer(0, 8))
+    flow.append(Paragraph(PP.text(
+        f"Generado por PMG Compass desde COMPASS_CCSM el "
+        f"{es_display.long_date(mission.today)}."), st["note"]))
+    return flow
 
 
 def _body(models, goals, pagination: Pagination) -> list:
@@ -1421,7 +1524,7 @@ def _body(models, goals, pagination: Pagination) -> list:
             flow.append(KeepTogether(area_block(model)))
     flow.append(PageBreak())
     flow.append(SectionStart(DATA_NOTE, pagination))
-    flow.extend(data_note(models))
+    flow.extend(data_note(models, goals))
     return flow
 
 
@@ -1464,3 +1567,31 @@ def build_packet(models, roster, goals=None) -> bytes:
             break
         given = measured
     return pdf
+
+
+def build(period_key: str = None, against: str = None, *, data=None) -> bytes:
+    """A period in, a packet out — the whole of `build_packet(period)`.
+
+    The one call the screen's button makes. It reads the sheet once, builds the
+    63 models and lays the document out; measured live on CCSM it is about 35
+    seconds for the models and 20 for the PDF, which is why the button stores
+    the bytes rather than a `download_button` regenerating them on every rerun.
+
+    ``data`` is injected by the screen, which already has a cached
+    `ReportData` — so a packet built from the page costs the render alone.
+    """
+    from app.reports import model as M
+    from app.reports import periods as P
+
+    data = data or M.load_data()
+    models = M.build_all(period_key or P.DEFAULT_PERIOD,
+                         against or P.COMPARE_PRIOR, data=data)
+    if not models:
+        raise ValueError("no hay período que informar")
+    return build_packet(models, data.roster, data.nightly_goals)
+
+
+def filename(model) -> str:
+    """What the browser saves it as. ISO, because a filename is a key."""
+    return (f"paquete-consejo-{model.period.key}-"
+            f"{model.today.isoformat()}.pdf")
