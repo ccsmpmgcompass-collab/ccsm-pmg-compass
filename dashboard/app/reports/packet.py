@@ -402,7 +402,7 @@ def front_matter(mission, sections, units, roster, *, total_pages: int) -> list:
     closing = [
         f"Papel total: {paper} hojas a doble cara si imprime exactamente las "
         f"filas de arriba. Las copias salen de MISSION_ORG — una por "
-        f"companería de liderazgo."]
+        f"compañería de liderazgo."]
     if missing:
         names = ", ".join(sorted(k.split("/")[-1] for k in missing))
         closing.append(
@@ -421,7 +421,7 @@ def front_matter(mission, sections, units, roster, *, total_pages: int) -> list:
             contents=[(s.title, s.page_label) for s in sections],
             note="Generado por PMG Compass desde COMPASS_CCSM el "
                  f"{es_display.long_date(mission.today)}. Cada cifra viene de lo "
-                 f"que las companerías informaron; la nota de datos al final "
+                 f"que las compañerías informaron; la nota de datos al final "
                  f"dice qué falta y por qué.")
         + [PageBreak(),
            PP.SetFurniture(PP.Furniture(
@@ -620,7 +620,7 @@ GRADED_NOTE = ("Cada porcentaje es esta unidad contra su propia meta — al ritm
                "aquí compara un área, distrito o zona con otra.")
 
 BASIS_NOTE = ("Real es la suma del período. El relleno de la barra es esa suma "
-              "contra la meta que las companerías se pusieron, por área que "
+              "contra la meta que las compañerías se pusieron, por área que "
               "informó; la marca violeta es la meta de traslado del liderazgo.")
 
 
@@ -1004,7 +1004,7 @@ def areas_page(model) -> list:
     flow.append(Spacer(0, 6))
     flow.append(Paragraph(PP.text(
         "Cada área tiene además su propia página más adelante en el "
-        "paquete, con los nombres de la companería."), st["note"]))
+        "paquete, con los nombres de la compañería."), st["note"]))
     flow.append(Spacer(0, 4))
     flow.append(PP.legend(W, GRADED_NOTE))
     return flow
@@ -1089,16 +1089,370 @@ def rates_and_scores(model) -> list:
     return flow
 
 
+# ── The Tableau pages (M6, M7, Z4) ───────────────────────────────
+
+#: Every Tableau block opens with this, and it is not optional (decision 32).
+#: A reader who does not know how far the export reaches cannot weigh a single
+#: figure under it.
+def _freshness(model) -> str:
+    block = model.tableau
+    return block.export.freshness_label(model.today)
+
+
+def _finding_absent(model, title: str) -> list:
+    """The refusal, printed where the section would have been.
+
+    Decision 32: a packet with no finding section is better than one quietly
+    showing August. The reason is printed rather than the section silently
+    disappearing, because a reader who notices the gap should not have to
+    guess whether it is a bug.
+    """
+    st = PP.styles()
+    block = model.tableau
+    return [
+        PP.SectionHead(title, "sin datos"),
+        Paragraph(PP.text(f"Sin sección de hallazgo: {block.reason}."),
+                  st["body"]),
+        Spacer(0, 4),
+        Paragraph(PP.text(_freshness(model)), st["note"]),
+        Paragraph(PP.text(
+            "Las cifras de Tableau no se estiman ni se rellenan con el "
+            "período anterior. Cuando la exportación no alcanza, la sección "
+            "no se imprime y esta página dice por qué."), st["note"]),
+    ]
+
+
+def _stage_change(stage) -> tuple | None:
+    """`(direction, text)` for a funnel stage, or None.
+
+    Only a mature stage carries one. `Stage.change` already refuses for an
+    immature one; this is the formatting.
+    """
+    pct = stage.change
+    if pct is None:
+        return None
+    direction = 0 if abs(pct) < 1 else (1 if pct > 0 else -1)
+    return (direction, es_display.signed_percent(pct))
+
+
+def funnel_block(model) -> list:
+    """The cohort funnel, its channel mix and its top sources.
+
+    The three answer one question in three grains: how far the people found in
+    this window have travelled, who found them, and by what means.
+    """
+    st = PP.styles()
+    W = PP.CONTENT_WIDTH
+    block = model.tableau
+    stages = block.stages
+    flow = [
+        PP.stage_bars(W, [(s.label, s.count) for s in stages],
+                      mature=[s.mature for s in stages],
+                      changes=[_stage_change(s) for s in stages]),
+        Spacer(0, 6),
+        Paragraph(PP.text(
+            "Cada barra son las personas encontradas en esta ventana que han "
+            "llegado al menos hasta ahí: una cohorte seguida hacia adelante, "
+            "no lo que ocurrió en la ventana. El porcentaje entre barras es "
+            "cuántas del paso anterior siguieron."), st["note"]),
+    ]
+    # One note, not two. The pair said "el embudo sigue a las personas
+    # encontradas en esta ventana" twice, and these seven lines print on all
+    # 18 finding sections — they have to travel with every page, because a
+    # zone leader is handed their own pages and nothing else, so the saving
+    # has to come out of the words rather than out of the page.
+    if block.maturity_note:
+        flow.append(Paragraph(PP.text(block.maturity_note), st["note"]))
+
+    if any(_stage_change(s) for s in stages):
+        flow.append(Paragraph(PP.text(
+            f"La columna de la derecha compara con los mismos "
+            f"{es_display.integer(block.window.days)} días justo antes "
+            f"({block.before.label}), para que las dos ventanas midan lo "
+            f"mismo."), st["note"]))
+    return flow
+
+
+def mix_block(model) -> list:
+    """Who found these people, and by what means."""
+    st = PP.styles()
+    W = PP.CONTENT_WIDTH
+    block = model.tableau
+    flow = []
+    if block.mix:
+        flow += [
+            KeepTogether([
+                PP.SectionHead("Quién las encontró", "categoría de hallazgo"),
+                PP.share_bar(W, [(m.label, m.count) for m in block.mix])]),
+            Spacer(0, 4),
+            Paragraph(PP.text(
+                "Las cuatro categorías de Tableau. Un obrero, un miembro, un "
+                "anuncio o un centro de visitantes: la mezcla dice de dónde "
+                "viene el trabajo, no si fue bueno."), st["note"]),
+        ]
+    if block.sources:
+        total = block.found or 1
+        rows = [[s.label, es_display.integer(s.count),
+                 es_display.percent(s.count / total * 100),
+                 PP.bar_vs_goal(90, pct=s.count / total * 100,
+                                fill=PP.SERIES[0])]
+                for s in block.sources]
+        flow += [
+            Spacer(0, 10),
+            KeepTogether([
+                PP.SectionHead(
+                    "De dónde salieron",
+                    f"las {es_display.integer(len(block.sources))} fuentes "
+                    f"más grandes"),
+                PP.table(rows, (210.0, 60.0, 60.0, 110.0),
+                         headers=("fuente", "personas", "del total", ""),
+                         align=("l", "r", "r", "l"))]),
+            Spacer(0, 4),
+            Paragraph(PP.text(
+                "El porcentaje es sobre las personas encontradas en esta "
+                "ventana, no sobre el año. Una fuente que no aparece no "
+                "produjo a nadie en estos días."), st["note"]),
+        ]
+    return flow
+
+
+def finding_units_block(model) -> list:
+    """The unit ranking under a finding section — zones at mission level, the
+    unit's own children below it.
+
+    Ranked by CONTACT RATE rather than by people found, weakest first. Found
+    is a size: a big zone finds more people and that is not a verdict on it.
+    What a council can act on is the share of those people the missionaries
+    got to talk to, which is the same reasoning `zone_comparison` applies to
+    every other cross-unit table in this app.
+    """
+    st = PP.styles()
+    W = PP.CONTENT_WIDTH
+    block = model.tableau
+    if not block.units:
+        return []
+    # 44pt (the default) clipped both headers to "ENCON..." / "ENSEÑ...".
+    spec = PP.RankedSpec(width=W, cells=("encontradas", "enseñándose"),
+                         cell_width=64.0)
+    title = ("Las zonas de la misión" if block.whole_mission
+             else f"Sus {block.unit_noun}")
+    sub = "menor tasa de contacto primero"
+    # The head, the column header and the first rows travel together: without
+    # it a district's page ended with "SUS ÁREAS" and an empty column header
+    # at the foot and every row on the next sheet. Three rows rather than all
+    # of them, so a ten-zone table can still break where it has to.
+    opening, flow = [PP.SectionHead(title, sub),
+                     PP.ranked_row(spec,
+                                   name=block.unit_noun.rstrip("s") or "unidad",
+                                   header=True)], []
+    for i, unit in enumerate(block.units, start=1):
+        marks = []
+        if block.whole_mission:
+            marks.append("zona piloto de Compass" if unit.roster
+                         else "sin formularios de Compass")
+        if not unit.found:
+            marks.append("nadie encontrado en la ventana")
+        flow.append(PP.ranked_row(
+            spec, rank=(i if unit.found else None), name=unit.name,
+            sub=" · ".join(marks),
+            cells=(es_display.integer(unit.found),
+                   es_display.integer(unit.teaching)),
+            value=(_pct(unit.contact_rate) if unit.contact_rate is not None
+                   else es_display.NA),
+            bar=unit.contact_rate, bar_max=100))
+    flow = [KeepTogether(opening + flow[:3])] + flow[3:]
+    flow += [
+        Spacer(0, 6),
+        Paragraph(PP.text(
+            "La barra es la proporción de las personas encontradas que los "
+            "misioneros lograron contactar. Encontradas es un tamaño — una "
+            "zona grande encuentra más — así que el orden va por la tasa, no "
+            "por el total."), st["note"]),
+    ]
+    if block.whole_mission:
+        flow.append(Paragraph(PP.text(
+            "Las seis zonas sin formularios de Compass no aparecen en "
+            "ninguna otra página de este paquete. Aquí sí, porque Tableau las "
+            "cubre y el consejo dirige a toda la misión."), st["note"]))
+    return flow
+
+
+def finding_page(model) -> list:
+    """M7 · Z4 · the district's finding pages (decisions 20, 24, 32, 34).
+
+    Runs to whatever length the content needs (decision 25); the pagination is
+    generated, so nothing downstream cares how many pages it turns out to be.
+    """
+    st = PP.styles()
+    block = model.tableau
+    if block is None:
+        return []
+    title = "Hallazgo"
+    if not block.present:
+        return _finding_absent(model, title)
+
+    flow = [
+        PP.SectionHead(title, block.window.caption),
+        Paragraph(PP.text(_freshness(model)), st["note"]),
+        Paragraph(PP.text(block.scope_note), st["note"]),
+        Spacer(0, 8),
+    ]
+    flow.extend(funnel_block(model))
+    # The three blocks run on rather than each starting a sheet. Forcing a
+    # break between them printed three pages of finding behind every one of
+    # the 18 units and took the packet from 108 to 163 — for a district, three
+    # pages about fifty people. Same reasoning as P4 (h): platypus breaks
+    # where it has to and a zone of three districts does not need two thirds
+    # of a sheet left blank to prove it.
+    for part in (mix_block(model), finding_units_block(model)):
+        if part:
+            flow.append(Spacer(0, 12))
+            flow.extend(part)
+    return flow
+
+
+# ── M6 · the year against its goal ───────────────────────────────
+
+#: A year behind its pace by less than this many baptisms is amber, not red.
+#: Roughly one month's work on CCSM's own run rate (36-47 a month), which is
+#: the distance a mission can still make up inside a year. Painting a year at
+#: 61% of its goal in September entirely red says "lost" about a year that is
+#: 32 baptisms behind.
+PACE_WARN_BAPTISMS = 40.0
+
+
+def _pace_status(gap: float | None) -> str | None:
+    if gap is None:
+        return None
+    if gap >= 0:
+        return "good"
+    return "warn" if gap > -PACE_WARN_BAPTISMS else "bad"
+
+
+def _baptism_tiles(bap) -> list:
+    tiles = [PP.Tile(label="Bautismos certificados",
+                     value=(es_display.integer(bap.total)
+                            if bap.total is not None else es_display.NA),
+                     note=(f"{es_display.integer(bap.months)} meses cerrados"
+                           if bap.months else "sin meses cerrados"))]
+    if bap.goal:
+        tiles.append(PP.Tile(label="Meta anual",
+                             value=es_display.integer(bap.goal),
+                             note=(f"{_pct(bap.attainment)} alcanzado"
+                                   if bap.attainment is not None else "")))
+    gap = bap.gap
+    if gap is not None:
+        tiles.append(PP.Tile(
+            label="Contra el ritmo de la meta",
+            value=es_display.number(gap, 0) if gap < 0
+            else f"+{es_display.number(gap, 0)}",
+            note="a esta altura del año",
+            status=_pace_status(gap)))
+    landing = bap.landing
+    if landing:
+        tiles.append(PP.Tile(
+            label="Si el año sigue así",
+            value=es_display.integer(round(landing["value"])),
+            note=(f"proyección sobre {es_display.integer(landing['months'])} "
+                  f"meses")))
+    return tiles
+
+
+def baptism_page(model) -> list:
+    """M6 — the mission's year of baptisms against the one annual goal it has.
+
+    Certified figures only (decision 21). The weekly form's own baptism Key
+    Indicator is on M2 and does not agree with this; both are named here
+    rather than reconciled into a number that is neither.
+    """
+    st = PP.styles()
+    W = PP.CONTENT_WIDTH
+    block = model.tableau
+    bap = block.baptisms if block is not None else None
+    if bap is None:
+        return []
+
+    flow = [PP.SectionHead(f"Bautismos {bap.year}",
+                           "cifra certificada · fuente: Tableau"),
+            PP.stat_tiles(W, _baptism_tiles(bap)), Spacer(0, 10)]
+
+    if bap.goal and bap.attainment is not None:
+        pace = bap.pace
+        mark = None
+        if pace and bap.months:
+            mark = pace[bap.months - 1] / float(bap.goal) * 100
+        flow += [
+            PP.bar_vs_goal(W, pct=bap.attainment, height=11.0,
+                           status=_pace_status(bap.gap), mark_pct=mark),
+            Spacer(0, 5),
+            Paragraph(PP.text(
+                f"{bap.certified_label} de una meta de "
+                f"{es_display.integer(bap.goal)}. La marca violeta es dónde "
+                f"debería ir el año a esta altura, a un doceavo de la meta "
+                f"por mes."), st["note"]),
+        ]
+    if bap.total is None:
+        flow.append(Paragraph(PP.text(
+            f"{bap.certified_label}: TABLEAU_BAPTISMS no tiene ningún mes "
+            f"cerrado de {bap.year}, así que el año no se dibuja contra su "
+            f"meta. No es un año sin bautismos; es un año sin captura."),
+            st["note"]))
+    if bap.provisional_label:
+        flow.append(Paragraph(PP.text(
+            f"{bap.provisional_label}. No entra en la barra ni en la suma de "
+            f"arriba: un mes a medio contar dibujado como punto hace que el "
+            f"año parezca desplomarse cada vez que se genera el paquete."),
+            st["note"]))
+
+    months = [(es_display.MONTHS_ABBR[i], bap.certified.get(
+        f"{bap.year:04d}-{i + 1:02d}")) for i in range(12)]
+    shown = [(name, value) for name, value in months if value is not None]
+    if shown:
+        biggest = max(value for _, value in shown) or 1
+        rows = [[name, es_display.integer(value),
+                 PP.bar_vs_goal(120, pct=value / biggest * 100,
+                                fill=PP.SERIES[0])]
+                for name, value in shown]
+        flow += [
+            Spacer(0, 12),
+            PP.SectionHead("Mes a mes", "sólo meses cerrados"),
+            PP.table(rows, (120.0, 60.0, 140.0),
+                     headers=("mes", "bautismos", ""),
+                     align=("l", "r", "l")),
+        ]
+
+    # The note is unconditional. It is the packet's statement about WHICH of
+    # two disagreeing figures it used, and that is worth saying even in a
+    # period where the form happened to report nothing.
+    ki = model.ki("ki_baptized_confirmed_real")
+    said = (f"El formulario semanal de las compañerías informó "
+            f"{_count(ki.actual)} en {model.period.label.lower()}, y las dos "
+            f"no coinciden: los misioneros no siempre anotan el campo."
+            if ki is not None else
+            "El formulario semanal de las compañerías pregunta lo mismo y no "
+            "coincide: los misioneros no siempre anotan el campo.")
+    flow += [
+        Spacer(0, 10),
+        Paragraph(PP.text(
+            f"Sobre la cifra de bautismos (decisión 21). Arriba está la cifra "
+            f"CERTIFICADA de Tableau, que es la que cuenta. {said} Donde "
+            f"exista la certificada se usa esa; la del formulario aparece en "
+            f"sus Indicadores Clave bajo su propio nombre, y nunca se "
+            f"suman."), st["note_lead"]),
+    ]
+    return flow
+
+
 # ── The pages of one unit ────────────────────────────────────
 
 def mission_pages(model, goals, peers=None) -> list:
-    """M1-M5: where we stand, the seven, the weeks, the zones, the nights.
+    """M1-M7: where we stand, the seven, the weeks, the zones, the nights, the
+    year's baptisms, the finding.
 
-    M6 (baptisms against the annual goal) and M7 (finding) both read
-    TABLEAU_BAPTISMS and the Tableau export, so they belong to phase T with the
-    freshness gate (decision 32) and decision 34's separation — putting them
-    here would have meant a form-sourced page quietly carrying a Tableau
-    figure.
+    M6 and M7 sit where §3.2 numbered them — after the nightly work and before
+    the scores — rather than being promoted for being outcomes. The baptism
+    figure is already the first tile on M1, so M6 is the year's ARC, which is
+    context and reads better once the council knows what the fortnight held.
     """
     weekly_ok = _weekly_comparable(model)
     weekly_sure = _weekly_confident(model)
@@ -1110,7 +1464,8 @@ def mission_pages(model, goals, peers=None) -> list:
     for block in (key_indicator_page(model, weekly_ok=weekly_ok,
                                      weekly_sure=weekly_sure),
                   week_page(model), children_page(model),
-                  nightly_page(model, goals), rates_and_scores(model)):
+                  nightly_page(model, goals), baptism_page(model),
+                  finding_page(model), rates_and_scores(model)):
         if block:
             flow.append(PageBreak())
             flow.extend(block)
@@ -1122,14 +1477,16 @@ def zone_pages(model, goals, peers=None) -> list:
     every one of its areas, the nights.
 
     The same order as the mission's, because the reader is the same reader one
-    rung down and Provo's zone page opens exactly like its mission page. Z4
-    (finding) is phase T.
+    rung down and Provo's zone page opens exactly like its mission page.
 
     The area roster is the page a zone leader actually uses — Provo's "EVERY
     AREA IN KINGS PEAK — ALL 8" — and it is every area, not a top five
     (decision 15). It runs on from the district table rather than starting its
     own page: a zone of three districts left two thirds of a sheet blank, and
     platypus breaks the list wherever it has to.
+
+    Z4 is the finding section, roster-scoped: a zone's pages count the zone's
+    own areas, never the export's idea of which zone an area is in.
     """
     weekly_ok = _weekly_comparable(model)
     weekly_sure = _weekly_confident(model)
@@ -1139,7 +1496,8 @@ def zone_pages(model, goals, peers=None) -> list:
                                      weekly_sure=weekly_sure),
                   week_page(model),
                   children_page(model) + areas_page(model),
-                  nightly_page(model, goals), rates_and_scores(model)):
+                  nightly_page(model, goals), finding_page(model),
+                  rates_and_scores(model)):
         if block:
             flow.append(PageBreak())
             flow.extend(block)
@@ -1157,6 +1515,10 @@ def district_pages(model, goals, peers=None) -> list:
 
     It is allowed to run onto a second page rather than being squeezed
     (decision 25); the pagination is generated, so nothing downstream cares.
+
+    The finding section closes it, roster-scoped and ranking the district's
+    own areas — §3.2's "top finding sources", which turned out to be worth a
+    section rather than a line once decision 24 had one shape for all of them.
     """
     st = PP.styles()
     W = PP.CONTENT_WIDTH
@@ -1199,6 +1561,10 @@ def district_pages(model, goals, peers=None) -> list:
     flow.extend(week_page(model))
     flow.append(PageBreak())
     flow.extend(nightly_page(model, goals))
+    finding = finding_page(model)
+    if finding:
+        flow.append(PageBreak())
+        flow.extend(finding)
     return flow
 
 
@@ -1403,9 +1769,9 @@ def data_note(models, goals=None) -> list:
     cov = mission.coverage
     rows = [
         ["Indicadores Clave", "WEEKLY_KI",
-         "Lo que las companerías informaron cada semana, filtrado al "
+         "Lo que las compañerías informaron cada semana, filtrado al "
          "organigrama por el agente."],
-        ["Meta de las companerías", "Formulario semanal",
+        ["Meta de las compañerías", "Formulario semanal",
          "La meta de una semana se escribe en el formulario de la semana "
          "ANTERIOR, y así se lee aquí."],
         ["Meta de traslado", "AREA_TRANSFER_GOALS",
@@ -1421,8 +1787,14 @@ def data_note(models, goals=None) -> list:
          "Los cuatro puntajes del agente, promediados sobre las semanas del "
          "período. Un área sin calificar no cuenta como cero."],
         ["Organigrama", "MISSION_ORG",
-         "Zona, distrito y companería. La pertenencia se decide aquí y nunca "
+         "Zona, distrito y compañería. La pertenencia se decide aquí y nunca "
          "en la columna de una fila de datos."],
+        ["Hallazgo", "TABLEAU_DETAIL",
+         "Una fila por persona encontrada, con las fechas de sus hitos. "
+         "Cubre las 10 zonas; los formularios de Compass cubren 4."],
+        ["Bautismos del año", "TABLEAU_BAPTISMS",
+         "La cifra certificada por mes. No es la que informa el formulario "
+         "semanal, y las dos no se suman."],
     ]
     flow.append(PP.table(rows, [128, 118, W - 246],
                          headers=["Cifra", "Fuente", "Qué es"]))
@@ -1464,10 +1836,7 @@ def data_note(models, goals=None) -> list:
         "Las metas nocturnas de AGENT_CONFIG están puestas cerca del doble de "
         "lo que la misión hace hoy. Por eso esas filas se califican por su "
         "movimiento y no por su distancia a la meta.")
-    sentences.append(
-        "Sin datos de Tableau en este paquete: la exportación guardada no "
-        "cubre el período y un paquete con cifras de hace dos meses sería "
-        "peor que uno sin sección de hallazgo.")
+    sentences.extend(_tableau_sentences(mission))
     for line in sentences:
         flow.append(Paragraph(PP.text(line), st["note_lead"]))
     flow.append(Spacer(0, 8))
@@ -1475,6 +1844,60 @@ def data_note(models, goals=None) -> list:
         f"Generado por PMG Compass desde COMPASS_CCSM el "
         f"{es_display.long_date(mission.today)}."), st["note"]))
     return flow
+
+
+def _tableau_sentences(mission) -> list:
+    """What the data note says about the finding figures (decisions 32, 34, 35).
+
+    Four things, and the packet is not safe to hand out without any of them:
+    where the export reaches, that its pages count a different set of zones
+    from every other page, which names it carries that the roster does not,
+    and — when there is no section at all — why.
+    """
+    block = getattr(mission, "tableau", None)
+    if block is None:
+        return ["Sin sección de hallazgo: este paquete se generó sin acceso "
+                "a la exportación de Tableau."]
+
+    out = [block.export.freshness_label(mission.today) + "."]
+    source = block.export.source_label()
+    if source:
+        out[-1] = out[-1][:-1] + f", cargada por {source}."
+
+    if not block.present:
+        out.append(f"Sin sección de hallazgo en este paquete: {block.reason}. "
+                   f"Las cifras de Tableau no se estiman ni se rellenan con "
+                   f"el período anterior.")
+        return out
+
+    window = block.window
+    out.append(
+        f"Las páginas de hallazgo se apoyan en {window.label}"
+        + (f", que son {window.shortfall_label}: la exportación termina antes "
+           f"de que termine el período, y esas páginas no cubren los últimos "
+           f"días." if window.clipped else ", el período completo.")
+    )
+    out.append(
+        "Toda cifra de hallazgo viene de Tableau y toda cifra de Indicadores "
+        "Clave y de trabajo nocturno viene de los formularios de Compass. "
+        "Nunca se suman ni comparten una tabla: los formularios cubren las 4 "
+        "zonas del piloto y Tableau cubre las 10, y la página de hallazgo de "
+        "la misión es la única del paquete que cuenta las diez.")
+    rec = block.reconciliation
+    if rec is not None and rec.note:
+        out.append(rec.note)
+    out.append(
+        "Las áreas de Tableau se emparejan con MISSION_ORG por nombre de "
+        "área. La zona y el distrito de cada cifra son los del roster, no los "
+        "de Tableau, que registra dónde estaba un área cuando se escribió la "
+        "fila.")
+    baptisms = block.baptisms
+    if baptisms is not None and baptisms.provisional_label:
+        out.append(f"Bautismos: {baptisms.certified_label}. "
+                   f"{baptisms.provisional_label[0].upper()}"
+                   f"{baptisms.provisional_label[1:]}, así que no entra en el "
+                   f"total del año.")
+    return out
 
 
 def _body(models, goals, pagination: Pagination) -> list:
@@ -1523,6 +1946,14 @@ def _body(models, goals, pagination: Pagination) -> list:
             flow.append(SectionStart(model.scope.key, pagination))
             flow.append(KeepTogether(area_block(model)))
     flow.append(PageBreak())
+    # Its own furniture, or it inherits the last area spread's and the page
+    # explaining every source in the packet is headed "Áreas".
+    mission = next((m for m in models if m.scope.level == S.MISSION), None)
+    if mission is not None:
+        flow.append(PP.SetFurniture(PP.Furniture(
+            eyebrow="Nota de datos",
+            period=mission.period.window_label,
+            mission=mission.mission_name)))
     flow.append(SectionStart(DATA_NOTE, pagination))
     flow.extend(data_note(models, goals))
     return flow

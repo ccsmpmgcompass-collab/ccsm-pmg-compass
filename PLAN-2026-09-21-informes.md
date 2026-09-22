@@ -991,6 +991,57 @@ short audit of their own before anything is changed.
   August against a goal of 527** — 60,5% of the year's goal, **32,3 behind
   pace**, landing at **478** — plus 19 uncertified in September.
 
+- **2026-09-21** — **T4 landed.** The packet's finding pages. `packet.py`
+  gained `finding_page` (M7 · Z4 · the district's), `funnel_block`,
+  `mix_block`, `finding_units_block`, `baptism_page` (M6) and
+  `_tableau_sentences`; `packet_parts.stage_bars` learned `mature=` and
+  `changes=`. Tests: `test_packet_tableau.py` (25) — **this file is §4 T3's
+  acceptance**. Suite **11 failed / 1620 passed** — the same 11. Live: **133
+  pages, 489 KB** (from 108). Decisions made mid-build:
+  (a) **The change rides the funnel bar; there is no table of it.** The first
+  version printed a four-row table repeating the same counts to add a before
+  column, and it cost a SECOND SHEET behind every zone and district — 145
+  pages. Folding the chip onto the bar took it to 133 and put the change
+  beside the number it is about. `stage_bars` grew a `changes=` column for it.
+  (b) **An immature stage draws no conversion, no direction, and cannot be
+  named the widest drop.** `stage_bars` takes `mature=` and, crucially, an
+  immature stage is not a rung the next one is measured from — its own number
+  is still being written. Live, "Bautizados 0" prints under "aún madurando"
+  and "0% del paso anterior · la mayor caída" never appears.
+  (c) **The finding blocks run on rather than each starting a sheet** (P4's
+  (h) again), and the section head, the column header and the first three rows
+  travel in a `KeepTogether`: a district's page ended with "SUS ÁREAS" and an
+  empty column header at the foot and every row overleaf. **Found by
+  rendering and looking.**
+  (d) **A year behind its pace is amber, not red, until it is a month's work
+  behind.** `PACE_WARN_BAPTISMS` is 40 — about one month on CCSM's own run
+  rate of 36–47. The first version painted the whole bar red at 61% of the
+  goal in September for being 32 short, which says "lost" about a year that is
+  still winnable.
+  (e) **The decision-21 note is unconditional.** It says WHICH of two
+  disagreeing figures the packet used, and that is worth printing even in a
+  period where the form reported nothing. Live it reads: certified 319 through
+  August, and the weekly form reported **1** for this transfer.
+  (f) M6 and M7 stay where §3.2 numbered them, after the nightly work. The
+  baptism figure is already the first tile on M1, so M6 is the year's ARC —
+  context, which reads better once the council knows what the fortnight held.
+  (g) **The data note page had been inheriting the last area spread's running
+  head**, so the page explaining every source in the packet was headed
+  "Áreas". Its own furniture now. Pre-existing, from P6.
+  (h) **"companería" was missing its ñ in eight places**, all from Phase P,
+  in a Spanish-only document the mission president reads. Corrected
+  throughout.
+  (i) The funnel's inter-stage label now says "del **paso** anterior": the
+  same page compares stages against each other AND the window against the one
+  before it, and two unqualified "anterior"s are two different comparisons
+  wearing one word.
+  **Also found by rendering:** the stage-change table's headers printed over
+  each other at 70pt ("ESTA VENTANXENTANA ANTERIOR") — moot now that the table
+  is gone; the unit ranking's cell headers clipped to "ENCON…"/"ENSEÑ…" at the
+  default 44pt column and needed 64; and the change chip sat 1,5pt above the
+  count's baseline, because `change_chip` draws its own label at y=1.5 inside
+  its drawing.
+
 ### Phase R is done. What Phase P starts from
 
 `app/reports/` is `scope.py`, `periods.py`, `grading.py`, `model.py` — all

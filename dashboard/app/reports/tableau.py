@@ -867,12 +867,10 @@ class Block:
         if not young:
             return ""
         names = " · ".join(s.label.lower() for s in young)
-        return (f"El embudo sigue a las personas encontradas en esta ventana. "
-                f"{names.capitalize()} tardan más que la ventana en ocurrir, "
-                f"así que esas filas se muestran sin porcentaje ni dirección: "
-                f"están contando una cohorte que aún no ha tenido tiempo. El "
-                f"número real de bautismos del período está en la página de "
-                f"bautismos, no aquí.")
+        return (f"{names.capitalize()} tardan más que la ventana en ocurrir, "
+                f"así que van sin porcentaje ni dirección: esa cohorte aún no "
+                f"ha tenido tiempo. Los bautismos reales del período están en "
+                f"la página de bautismos, no aquí.")
 
 
 def build_block(det: pd.DataFrame, export: Export, period, *,

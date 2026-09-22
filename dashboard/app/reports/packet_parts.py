@@ -656,7 +656,7 @@ def _widest_drop(values) -> int | None:
 
 def stage_bars(width: float, stages, *, value_fmt=None,
                highlight_worst: bool = True,
-               label_share: float = 0.36) -> Drawing:
+               label_share: float = 0.36, mature=None, changes=None) -> Drawing:
     """The teaching pipeline: one bar per stage, the step's conversion between.
 
     Single hue, because these are five sizes of one thing. The step that loses
@@ -667,6 +667,22 @@ def stage_bars(width: float, stages, *, value_fmt=None,
     screen's does: people reach a milestone during the window whose earlier
     milestone fell before it, so a funnel can legitimately widen and a
     percentage over 100 there would be arithmetic about two different cohorts.
+
+    ``mature`` is an optional per-stage sequence of booleans. A stage the
+    window is too young to have filled keeps its bar and its count — decision
+    25, no compression — and loses the conversion printed above it, the words
+    beside that, and any chance of being named the widest drop. Over an
+    eleven-day window "Bautizados" is 0 because a baptism takes 133 days, not
+    because the step lost everybody, and "0% del anterior · la mayor caída"
+    printed there would be the packet's worst single sentence. The stage is
+    marked "aún madurando" in its place. See `reports/tableau.maturity_days`.
+
+    ``changes`` is an optional per-stage `(direction, text)` drawn to the
+    right of each count — the same window one period earlier. It lives on the
+    bar rather than in a table of its own because a table repeating these
+    counts to add one column cost a second sheet behind every zone and
+    district in the packet, and a change belongs beside the number it is
+    about.
     """
     fmt = value_fmt or es_display.integer
     rows = [(str(lbl), 0.0 if v is None else float(v)) for lbl, v in stages]
@@ -675,13 +691,25 @@ def stage_bars(width: float, stages, *, value_fmt=None,
     d = Drawing(width, height)
     if not rows:
         return d
+    grown = list(mature) if mature is not None else [True] * n
+    grown += [True] * (n - len(grown))
     full = max([v for _, v in rows] + [0.0]) or 1.0
-    worst = _widest_drop([v for _, v in rows]) if highlight_worst else None
+    # Only the stages the window has had time to fill can be the widest drop,
+    # and a drop INTO an immature stage is not a drop at all.
+    ranked = [v if grown[i] else None for i, (_, v) in enumerate(rows)]
+    worst = (_widest_drop([v for v in ranked if v is not None])
+             if highlight_worst else None)
+    if worst is not None:
+        kept = [i for i, v in enumerate(ranked) if v is not None]
+        worst = kept[worst] if worst < len(kept) else None
 
+    moved = list(changes) if changes is not None else [None] * n
+    moved += [None] * (n - len(moved))
     label_w = width * label_share
     value_w = 42.0
+    change_w = 54.0 if any(moved) else 0.0
     track_x = label_w + 8
-    track_w = max(10.0, width - label_w - value_w - 16)
+    track_w = max(10.0, width - label_w - value_w - change_w - 16)
 
     y = height
     prev = None
@@ -689,14 +717,23 @@ def stage_bars(width: float, stages, *, value_fmt=None,
         if prev is not None:
             y -= STAGE_CONV_HEIGHT
             worst_here = (i == worst)
-            conv = (f"{round(v / prev * 100)}%" if prev > 0 and v <= prev
-                    else "")
+            if not grown[i]:
+                d.add(_string(track_x + 6, y + 1.5, "aún madurando", NOTE,
+                              INK_3))
+                conv = ""
+            else:
+                conv = (f"{round(v / prev * 100)}%" if prev > 0 and v <= prev
+                        else "")
             if conv:
                 col = STATUS["warn"] if worst_here else INK_3
                 tri = change_mark(track_x, y + 1.5, -1, size=3.6, color=col)
                 if tri is not None:
                     d.add(tri)
-                note = f"{conv} del anterior"
+                # "del PASO anterior": the packet also prints a table of
+                # the same stages against the previous WINDOW, and two
+                # unqualified "anterior"s on one page are two different
+                # comparisons wearing the same word.
+                note = f"{conv} del paso anterior"
                 if worst_here:
                     note += " · la mayor caída"
                 d.add(_string(track_x + 6, y + 1.5, note, NOTE, col))
@@ -710,8 +747,19 @@ def stage_bars(width: float, stages, *, value_fmt=None,
         if filled > 0:
             d.add(Rect(track_x, bar_y, filled, bar_h, fillColor=SERIES[0],
                        strokeColor=None, strokeWidth=0, rx=1.5, ry=1.5))
-        d.add(_string(width, bar_y + 1.5, fmt(v), CELL, INK, anchor="end"))
-        prev = v
+        d.add(_string(width - change_w, bar_y + 1.5, fmt(v), CELL,
+                      INK if grown[i] else INK_3, anchor="end"))
+        if moved[i]:
+            chip = change_chip(change_w - 6, moved[i])
+            holder = Group(*chip.contents)
+            # change_chip draws its own label at y = 1.5 inside the drawing,
+            # so the group sits on bar_y and the chip lands on the count's
+            # baseline rather than 1.5pt above it.
+            holder.transform = (1, 0, 0, 1, width - change_w + 6, bar_y)
+            d.add(holder)
+        # An immature stage is not a rung the next one can be measured from:
+        # its own number is still being written.
+        prev = v if grown[i] else prev
     return d
 
 
