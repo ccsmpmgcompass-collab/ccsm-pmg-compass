@@ -1042,6 +1042,52 @@ short audit of their own before anything is changed.
   count's baseline, because `change_chip` draws its own label at y=1.5 inside
   its drawing.
 
+- **2026-09-21** — **T5 landed. PHASE T IS COMPLETE.** The screen's finding
+  section and the year's baptisms, from the same `model.tableau` the packet
+  prints (decision 30). `views/11_Informes.py` gained sections **4b Hallazgo**
+  and **4c Bautismos del año**, in the packet's own order — after the nightly
+  work, before the rates. `components/charts.stage_bars` learned `mature=`,
+  the twin of the print one. Tests: +4 in `test_charts.py`, **70** there.
+  Suite **11 failed / 1624 passed** — the same 11. Decisions made mid-build:
+  (a) **The maturity rule lives in BOTH renderers, not just on paper.** The
+  screen's funnel had `highlight_worst` and would have hung "0% · mayor
+  caída" on Bautizados exactly as the printed one nearly did. `charts.py` now
+  takes `mature=` with the same three consequences — no conversion, no
+  direction, never the widest drop — and the same rule about an immature
+  stage not being a rung the next one is measured from. "still maturing" →
+  "aún madurando" added to `i18n/es.py`, which is where the screen's copy
+  lives.
+  (b) The screen's funnel uses `stage_bars(twin=...)`, which the print one has
+  no equivalent of: on screen the previous window is a dim second bar on the
+  same scale, on paper it is the change chip T4 put on the bar. Same numbers,
+  each drawn the way its surface reads best.
+  **ACCEPTANCE MET, measured with `javascript_tool` and not eyeballed.** At
+  **1400px** the main pane's `scrollWidth` equals its `clientWidth` (1395) and
+  at **375px** it equals 371, with `document.documentElement` clean at both.
+  The only elements reporting overflow anywhere on the page are **8 KPI
+  goal-bar rows at 2px**, from `render_kpi_row` in the Key Indicator section —
+  **pre-existing and not this phase's**: the Panel page, untouched here, shows
+  **33** of exactly the same thing. Live on screen: the freshness strip, the
+  ten-zone note, the funnel with its three "aún madurando" rows and the dim
+  twin bars, the mix, the eight sources, the ten zones ranked by contact rate,
+  and 319 certified against 527 with September's 19 held apart.
+
+### PHASE T IS DONE. What Phase V starts from
+
+`app/reports/tableau.py` is the gate, the reconciliation and the blocks — one
+pure module of about 700 lines under **51 tests** across two files, plus 25 on
+the packet's pages and 4 on the screen's chart. `ReportModel.tableau` is filled
+for all 63 scopes from one read of the export, and both renderers draw it.
+
+The live packet is **133 pages, 489 KB**. What V should check, beyond §4's own
+list: that the packet still builds when the export is absent (T4's tests cover
+the code path, V should see the PDF), and that the run sheet's page ranges
+still name the right pages now that every unit has a finding section.
+
+**Still open for Zackary, and now bigger:** the packet is **133 pages**, 266
+sheets at two full copies. Decision 25 is his to revisit. The mission's name
+still prints in English.
+
 ### Phase R is done. What Phase P starts from
 
 `app/reports/` is `scope.py`, `periods.py`, `grading.py`, `model.py` — all

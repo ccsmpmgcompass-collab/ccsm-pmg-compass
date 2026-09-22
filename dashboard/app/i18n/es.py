@@ -570,6 +570,9 @@ ES: dict[str, str] = {
         "certificadas hasta que se exporte el mes terminado.",
     # E3/E4: the pipeline, the mix and the two ranked lists
     "largest drop": "mayor caída",
+    # A cohort funnel stage the window is too young to have filled —
+    # see reports/tableau.maturity_days.
+    "still maturing": "aún madurando",
     "{n} people found": "{n} personas encontradas",
     "top {n}": "las {n} primeras",
     "{n} zones": "{n} zonas",

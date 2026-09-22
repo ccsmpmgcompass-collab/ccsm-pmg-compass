@@ -536,3 +536,47 @@ def test_no_hex_colour_literal_outside_the_theme(page):
     assert found == [], (
         f"{page} carries hex colour literals {found} — name them in "
         f"app/config/theme.py and import the name instead.")
+
+
+# ── stage_bars · a cohort that has not had time (phase T, step T5) ───────────
+
+def test_an_immature_stage_keeps_its_bar_and_gives_up_its_conversion():
+    """The funnel follows the people found in a window, so a young cohort's
+    bottom stages are empty by construction. Over eleven days "Baptized" is 0
+    because a baptism takes 133 days — see `reports/tableau.maturity_days`."""
+    html = stage_bars([("Found", 1633), ("Taught", 898), ("Baptized", 0)],
+                      mature=[True, True, False])
+    convs = re.findall(r'pmg-stage-conv[^>]*>(.*?)</div>', html)
+    assert len(convs) == 2
+    assert "55%" in convs[0]
+    assert "madurando" in convs[1] or "maturing" in convs[1]
+    assert "0%" not in convs[1]
+    assert "1.633" in html and "898" in html and ">0<" in html
+
+
+def test_an_immature_stage_cannot_be_named_the_widest_drop():
+    """"0% · largest drop" printed on a stage nobody has had time to reach is
+    a lie about the step rather than a fact about the calendar."""
+    html = stage_bars([("Found", 1633), ("Taught", 898), ("Baptized", 0)],
+                      highlight_worst=True, mature=[True, True, False])
+    convs = re.findall(r'pmg-stage-conv[^>]*>(.*?)</div>', html)
+    marked = [i for i, c in enumerate(convs)
+              if "largest drop" in c or "mayor" in c]
+    assert marked == [0]          # found -> taught, the one real step
+
+
+def test_an_immature_stage_is_not_a_rung_the_next_one_is_measured_from():
+    """Its own number is still being written, so the stage after it compares
+    against the last stage that has finished."""
+    html = stage_bars([("Found", 100), ("Church", 0), ("Baptized", 50)],
+                      mature=[True, False, True])
+    convs = re.findall(r'pmg-stage-conv[^>]*>(.*?)</div>', html)
+    assert "madurando" in convs[0] or "maturing" in convs[0]
+    assert "50%" in convs[1]      # 50 of 100, not 50 of 0
+
+
+def test_stage_bars_without_maturity_behave_exactly_as_before():
+    plain = stage_bars([("A", 100), ("B", 40)], highlight_worst=True)
+    same = stage_bars([("A", 100), ("B", 40)], highlight_worst=True,
+                      mature=[True, True])
+    assert plain == same

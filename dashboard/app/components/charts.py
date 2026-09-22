@@ -392,7 +392,8 @@ def stage_bars(stages: Iterable[tuple[str, float]], *,
                value_fmt: Callable = fmt_int,
                highlight_worst: bool = False,
                twin: Sequence[float | None] | None = None,
-               twin_label: str | None = None) -> str:
+               twin_label: str | None = None,
+               mature: Sequence[bool] | None = None) -> str:
     """Horizontal single-hue bars, one per stage, with the step conversion
     written between rows (mockup 3.3). Pure HTML — a funnel chart's shrinking
     trapezoids encode nothing a bar and a percentage do not, and its labels
@@ -409,6 +410,15 @@ def stage_bars(stages: Iterable[tuple[str, float]], *,
     on the row's hover, named by ``twin_label``. A stage the twin has no
     reading for simply has no second bar — the previous cambio's first weeks
     are legitimately empty on a mission four cycles old (plan step D5).
+
+    ``mature`` is an optional per-stage sequence of booleans for a funnel read
+    as a COHORT: a stage the window is too young to have filled keeps its bar
+    and its count and loses its conversion, and cannot be named the widest
+    drop. Over an eleven-day window "Baptized" is 0 because a baptism takes
+    133 days, and "0% · largest drop" printed there would be a lie about the
+    step rather than a fact about the calendar. The same rule and the same
+    argument as `reports/packet_parts.stage_bars`; see
+    `reports/tableau.maturity_days` for where the 133 comes from.
     """
     rows = [(str(lbl), (0.0 if v is None else float(v))) for lbl, v in stages]
     if not rows:
@@ -417,23 +427,37 @@ def stage_bars(stages: Iterable[tuple[str, float]], *,
     twins += [None] * (len(rows) - len(twins))
     # ONE scale for both series: a twin scaled to its own maximum would draw a
     # collapsed period as a healthy one.
+    grown = list(mature) if mature is not None else [True] * len(rows)
+    grown += [True] * (len(rows) - len(grown))
     full = max([v for _, v in rows]
                + [t for t in twins if t is not None] + [0]) or 1.0
-    worst = _widest_drop([v for _, v in rows]) if highlight_worst else None
+    worst = None
+    if highlight_worst:
+        kept = [i for i, ok in enumerate(grown) if ok]
+        found = _widest_drop([rows[i][1] for i in kept])
+        worst = kept[found] if found is not None and found < len(kept) else None
     out = ['<div class="pmg-stages" style="margin:4px 0 12px 0;">']
     prev = None
     for i, (lbl, v) in enumerate(rows):
         if prev is not None:
-            conv = f"{fmt_int(round(v / prev * 100))}%" if prev > 0 else "—"
             worst_here = (i == worst)
-            note = (f'<span style="font-weight:600;">· '
-                    f'{_html.escape(t("largest drop"))}</span>') if worst_here else ""
-            out.append(
-                f'<div class="pmg-stage-conv" style="display:flex;align-items:center;'
-                f'gap:6px;padding:2px 0 2px 0;margin-left:34%;font-size:0.7rem;'
-                f'color:{STATUS["warn"] if worst_here else MUTED};">'
-                f'<span style="opacity:.7;">↓</span><span>{conv}</span>{note}</div>'
-            )
+            if not grown[i]:
+                out.append(
+                    f'<div class="pmg-stage-conv" style="padding:2px 0;'
+                    f'margin-left:34%;font-size:0.7rem;color:{MUTED};">'
+                    f'{_html.escape(t("still maturing"))}</div>')
+            else:
+                conv = f"{fmt_int(round(v / prev * 100))}%" if prev > 0 else "—"
+                note = (f'<span style="font-weight:600;">· '
+                        f'{_html.escape(t("largest drop"))}</span>'
+                        ) if worst_here else ""
+                out.append(
+                    f'<div class="pmg-stage-conv" style="display:flex;'
+                    f'align-items:center;gap:6px;padding:2px 0 2px 0;'
+                    f'margin-left:34%;font-size:0.7rem;'
+                    f'color:{STATUS["warn"] if worst_here else MUTED};">'
+                    f'<span style="opacity:.7;">↓</span><span>{conv}</span>'
+                    f'{note}</div>')
         width = max(0.0, min(100.0, v / full * 100))
         tv = twins[i]
         hover = lbl
@@ -466,7 +490,9 @@ def stage_bars(stages: Iterable[tuple[str, float]], *,
             f'{_html.escape(str(value_fmt(v)))}</span>'
             f'</div>'
         )
-        prev = v
+        # An immature stage is not a rung the next one can be measured from:
+        # its own number is still being written.
+        prev = v if grown[i] else prev
     out.append("</div>")
     return "".join(out)
 

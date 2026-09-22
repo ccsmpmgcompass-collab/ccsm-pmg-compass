@@ -28,7 +28,8 @@ from __future__ import annotations
 import streamlit as st
 
 from app.auth.auth import require_auth
-from app.components.charts import ranked_list, spark_multiples
+from app.components.charts import (ranked_list, share_bar, spark_multiples,
+                                   stage_bars)
 from app.components.design_system import (
     render_companionship_card, render_kpi_row, render_page_header,
     render_section_label, render_section_tabs,
@@ -481,6 +482,144 @@ else:
             f"{fmt_int(_model.nightly_coverage.areas_in_scope)} áreas "
             f"informaron al menos una noche."
         )
+
+
+# ── 4b · Hallazgo (decisiones 20, 24, 32, 34) ────────────────────────────────
+#
+# La misma sección que imprime el paquete, del mismo `model.tableau`. La
+# diferencia entre pantalla y papel es sólo el dibujo: aquí `charts.stage_bars`
+# con su barra gemela, allá `packet_parts.stage_bars` con su columna de cambio.
+
+_BLOCK = _model.tableau
+
+
+def _finding_units() -> str:
+    """Las unidades de la sección de hallazgo, peor tasa de contacto primero.
+
+    Por tasa y no por personas encontradas: encontradas es un tamaño — una
+    zona grande encuentra más — y lo accionable es qué proporción de esa gente
+    los misioneros alcanzaron a contactar.
+    """
+    return ranked_list([{
+        "name": u.name,
+        "rank": i if u.found else None,
+        "sub": " · ".join(x for x in (
+            ("zona piloto de Compass" if u.roster else
+             "sin formularios de Compass") if _BLOCK.whole_mission else "",
+            "" if u.found else "nadie encontrado en la ventana") if x),
+        "value": u.contact_rate,
+        "bar": u.contact_rate,
+        "cells": [fmt_int(u.found), fmt_int(u.teaching),
+                  _pct(u.teaching_rate)],
+    } for i, u in enumerate(_BLOCK.units, start=1)],
+        value_fmt=lambda v: NA if v is None else fmt_percent(v),
+        columns=[("encontradas", "personas encontradas en la ventana"),
+                 ("enseñándose", "de ellas, cuántas reciben lecciones"),
+                 ("% enseñ.", "enseñándose sobre encontradas")],
+    )
+
+
+if _BLOCK is not None:
+    render_section_label(
+        "Hallazgo",
+        right=(_BLOCK.window.caption if _BLOCK.present else "sin datos"),
+        info=("Viene de Tableau, no de los formularios de Compass, y las dos "
+              "cifras nunca se suman ni comparten una tabla (decisión 34). "
+              "La ventana es la del período recortada a lo que alcanza la "
+              "exportación guardada: si no alcanza, la sección no se dibuja y "
+              "dice por qué."),
+    )
+    st.caption(_BLOCK.export.freshness_label(_model.today))
+
+    if not _BLOCK.present:
+        st.info(f"Sin sección de hallazgo: {_BLOCK.reason}. Las cifras de "
+                f"Tableau no se estiman ni se rellenan con el período "
+                f"anterior.")
+    else:
+        st.caption(_BLOCK.scope_note)
+        _stages = _BLOCK.stages
+        st.markdown(stage_bars(
+            [(x.label, x.count) for x in _stages],
+            highlight_worst=True,
+            mature=[x.mature for x in _stages],
+            twin=[x.before for x in _stages],
+            twin_label=(_BLOCK.before.label if _BLOCK.before
+                        and _BLOCK.before.usable else None),
+        ), unsafe_allow_html=True)
+        st.caption(
+            "Cada barra son las personas encontradas en esta ventana que han "
+            "llegado al menos hasta ahí: una cohorte seguida hacia adelante, "
+            "no lo que ocurrió en la ventana."
+            + (f" La barra tenue es la misma cantidad de días justo antes "
+               f"({_BLOCK.before.label})."
+               if _BLOCK.before and _BLOCK.before.usable else ""))
+        if _BLOCK.maturity_note:
+            st.caption(_BLOCK.maturity_note)
+
+        if _BLOCK.mix:
+            st.markdown(share_bar([(m.label, m.count) for m in _BLOCK.mix]),
+                        unsafe_allow_html=True)
+            st.caption("Quién las encontró — las cuatro categorías de "
+                       "Tableau.")
+
+        if _BLOCK.sources:
+            _found = _BLOCK.found or 1
+            st.markdown(ranked_list([{
+                "name": x.label,
+                "rank": i,
+                "value": x.count,
+                "bar": x.count / _found * 100,
+                "cells": [_pct(x.count / _found * 100)],
+            } for i, x in enumerate(_BLOCK.sources, start=1)],
+                columns=[("del total", "sobre las personas encontradas en "
+                                       "esta ventana")],
+            ), unsafe_allow_html=True)
+            st.caption(f"De dónde salieron — las "
+                       f"{fmt_int(len(_BLOCK.sources))} fuentes más grandes.")
+
+        if _BLOCK.units:
+            st.markdown(_finding_units(), unsafe_allow_html=True)
+            st.caption(
+                "La barra es la proporción de las personas encontradas que "
+                "los misioneros lograron contactar, peor primero."
+                + (" Las seis zonas sin formularios de Compass no aparecen en "
+                   "ninguna otra parte de esta página."
+                   if _BLOCK.whole_mission else ""))
+
+
+# ── 4c · Bautismos del año (M6, decisión 21) ─────────────────────────────────
+
+if _BLOCK is not None and _BLOCK.baptisms is not None:
+    _BAP = _BLOCK.baptisms
+    render_section_label(
+        "Bautismos del año", right="cifra certificada · fuente: Tableau",
+        info=("La cifra certificada de TABLEAU_BAPTISMS, que es la que "
+              "cuenta. El formulario semanal pregunta lo mismo y no coincide "
+              "— los misioneros no siempre anotan el campo — así que aparece "
+              "aparte, en Indicadores Clave, bajo su propio nombre. El mes en "
+              "curso se informa por separado: un mes a medio contar sumado al "
+              "total hace que el año parezca desplomarse."),
+    )
+    render_kpi_row([
+        {"label": f"Bautismos certificados {_BAP.year}",
+         "value": _BAP.total if _BAP.total is not None else 0,
+         "goal": _BAP.goal,
+         "note": (f"{fmt_int(_BAP.months)} meses cerrados"
+                  if _BAP.months else "sin meses cerrados")},
+        {"label": "Contra el ritmo de la meta",
+         "value": round(_BAP.gap, 1) if _BAP.gap is not None else 0,
+         "decimals": 1,
+         "note": "a esta altura del año"},
+        {"label": "Si el año sigue así",
+         "value": (round(_BAP.landing["value"])
+                   if _BAP.landing else 0),
+         "goal": _BAP.goal,
+         "note": (f"proyección sobre {fmt_int(_BAP.landing['months'])} meses"
+                  if _BAP.landing else "sin proyección")},
+    ])
+    if _BAP.provisional_label:
+        st.caption(f"{_BAP.provisional_label}. No entra en el total de "
+                   f"arriba.")
 
 
 # ── 5 · Tasas de conversión ───────────────────────────────────────────────────
