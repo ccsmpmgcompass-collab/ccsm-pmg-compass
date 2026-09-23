@@ -805,8 +805,11 @@ def gap_rows(model, *, limit: int | None = None,
         rows = sorted(rows, key=lambda row: (row[1] is None,
                                              row[1] if row[1] is not None
                                              else 0))[:limit]
+    # The rung's ROLE, not its name: the ranked table directly above already
+    # says which zone this is, and "contra Chile Concepción South Mission"
+    # does not fit a 168pt column at any size worth reading.
     return [PP.gap_bars(PP.CONTENT_WIDTH, rows, label_width=label_width,
-                        note=f"contra {parent.scope.name}")]
+                        note=f"contra {parent.role}")]
 
 
 def ladder_block(model) -> list:
@@ -870,10 +873,12 @@ def sibling_strip(model) -> list:
         return []
     noun = _level_plural(model.scope.level)
     silent = sum(1 for _, v in peers if v is None)
-    caption = (f"{es_display.integer(len(peers))} {noun} de "
-               f"{model.siblings[0].scope.trail[0] if model.siblings[0].scope.trail else 'la misión'}"
-               if model.scope.level != S.ZONE
-               else f"las {es_display.integer(len(peers))} {noun} de la misión")
+    # Named off the LADDER, which is the unit one rung up by construction. Read
+    # off `trail[0]` it named an area's zone where its district belongs:
+    # "3 áreas de Los Angeles Norte" under a companionship of Huepil & Tucapel.
+    above = next((r.scope.name for r in model.ladder[1:] if not r.is_self),
+                 "la misión")
+    caption = f"{es_display.integer(len(peers))} {noun} de {above}"
     if silent:
         caption += (f" · {es_display.integer(silent)} sin lectura, "
                     f"sin punto en la línea")

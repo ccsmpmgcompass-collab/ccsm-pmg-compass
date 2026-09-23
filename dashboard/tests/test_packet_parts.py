@@ -587,3 +587,19 @@ def test_a_dot_at_either_end_keeps_its_label_on_the_page():
     left, right = label_x(0.0), label_x(100.0)
     assert left.textAnchor == "start" and left.x == 0
     assert right.textAnchor == "end" and right.x == 400.0
+
+
+def test_a_tracked_note_is_fitted_as_it_will_be_set():
+    """Capitals set wider than lower case, and the note is upper-cased when it
+    is drawn. Fitted before, "contra Chile Concepción South Mission" passed a
+    162pt column and then ran straight through the word at the head of the
+    axis. A tracked run is one String per glyph, so the check is on where the
+    last one lands."""
+    note = "contra Chile Concepción South Mission"
+    d = PP.gap_bars(PP.CONTENT_WIDTH, [("Nuevas", 4.0)], label_width=168.0,
+                    note=note)
+    glyphs = [s for s in _shapes(d)
+              if isinstance(s, String) and s.fontSize == PP.CELL_HEAD.size]
+    left = [s for s in glyphs if s.x < 168.0]
+    assert "".join(s.text for s in left[:6]) == "CONTRA"
+    assert max(s.x for s in left) < 168.0 - 6

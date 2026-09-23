@@ -1092,6 +1092,77 @@ short audit of their own before anything is changed.
   twin bars, the mix, the eight sources, the ten zones ranked by contact rate,
   and 319 certified against 527 with September's 19 held apart.
 
+### PHASE V IS DONE. The project is finished.
+
+Verified 2026-09-23, against the live sheet.
+
+**V1 — the suite.** 11 failed / **1664 passed**. The same eleven as the
+baseline before Phase R; the passed count rose by 40, which is this phase's
+own tests. Compare FAILURES, never the passed count.
+
+**V2 — the comparison ladder** (`9043747`). `ReportModel.ladder`: this unit,
+the unit above it, the mission, every figure per ACTIVE area. An area climbs
+the whole ladder for the same price, because the rungs are units the packet
+was already building and `_ki_rows_for` memoises them — measured, turning the
+ladder off changes the call list not at all.
+
+**V3 + V4 — the density pass and what filled the space** (`6247295`).
+
+**V5 — the screen** (`65b7dc7`), driven at 1400px and 375px and measured with
+`javascript_tool`, never eyeballed. No horizontal overflow at either width; 66
+ranked rows at 375px, none overflowing; the comparison section 339px inside a
+375px viewport.
+
+**V6 — the packet, printed and read.** Six pages rasterised at 150 dpi and
+read as pages: the print guide, the mission's first, a zone's, a district's,
+an area spread. It caught two things no test would have:
+
+- The gap chart's note ran straight through the word "detrás" at the head of
+  the axis. `fit()` was applied BEFORE `upper=True`, and capitals set wider.
+  The note is the rung's ROLE now — "contra su zona" — because the ranked
+  table directly above already names it.
+- The sibling strip named an area's ZONE where its district belonged: "3
+  áreas de Los Angeles Norte" under a companionship of Huepil & Tucapel. It
+  is named off the ladder now, which is the unit one rung up by construction.
+
+**The run sheet's page ranges are right** — Phase T's open question. Mission
+3–7, zones 8–27 at five each, districts 28–82, areas 83–105, data note 106,
+and **53 sheets per complete copy** against 67 before.
+
+### What the packet is now
+
+| | before Phase V | after |
+|---|---|---|
+| pages | 134 | **106** |
+| blank at the foot of the average page | **36,6%** | **10,3%** |
+| pages more than half empty | 15 | 4 |
+| sheets, double-sided, one copy | 67 | **53** |
+
+The four that are still more than half empty: the cover (by design), the last
+area alone on its spread, and two districts whose finding section is short.
+
+`app/reports/` is seven modules under **409 tests** across 15 files. The live
+build is about 33 seconds end to end — 22 for the sheet, 5 for the 63 models,
+5 for the PDF.
+
+### Do not re-derive
+
+- **Measuring white space** is `pypdfium2`: install it, rasterize each page to
+  greyscale at 72 dpi, mask out the running head and the footer rule, and take
+  the lowest row of ink. **Uninstall it afterwards** — it is not in
+  requirements, and it was uninstalled again at the end of Phase V.
+- **The section floor is 140pt** and the number barely matters: sweeping it at
+  140, 90 and 60 gave 117 pages every time. What moved the page count was
+  block ORDER and what could split.
+- **`KeepTogether` on a table's tail costs pages.** Tying the finding note to
+  its last two rows turned 111 pages into 116: 60pt that jumps takes a page
+  with it. Put the note above the table instead.
+- **Only the nightly table is long enough to split usefully.** It is 660pt and
+  it is why a district closing on it fits in four sheets instead of five. The
+  same move on a zone and on the mission was measured and saved nothing.
+- **A `ReportData` pickles** (7,8 MB), which is how a layout change is measured
+  in 30 seconds instead of 90.
+
 ### PHASE T IS DONE. What Phase V starts from
 
 `app/reports/tableau.py` is the gate, the reconciliation and the blocks — one

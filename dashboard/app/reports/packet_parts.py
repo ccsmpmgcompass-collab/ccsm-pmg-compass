@@ -903,8 +903,12 @@ def gap_bars(width: float, rows, *, span: float | None = None,
     _tracked(g, axis_x + axis_w, top + 3, "delante", CELL_HEAD, INK_3,
              anchor="end")
     if note:
-        _tracked(g, 0, top + 3, fit(note, CELL_HEAD, label_width - 6),
-                 CELL_HEAD, INK_3, upper=True)
+        # Fitted AFTER upper-casing, not before: capitals set wider, and
+        # measured on the live packet "contra Chile Concepción South Mission"
+        # passed a 162pt fit as lower case and then ran straight through the
+        # word "detrás" at the head of the axis.
+        _tracked(g, 0, top + 3, fit(note.upper(), CELL_HEAD, label_width - 6),
+                 CELL_HEAD, INK_3)
     d.add(g)
     d.add(Line(centre, 0, centre, top + 1, strokeColor=RULE, strokeWidth=0.5))
 
