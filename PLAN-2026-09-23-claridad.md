@@ -529,3 +529,20 @@ Packet only: the screen shows the mark as a tooltip, already rounded.
 
 Both packets built from the live data and read: "Prior period" (no base, 106
 pages) and "Semanas anteriores" (based, 106 pages).
+
+### 2026-09-23 — R2.3 (B8): the reporting row is read, not skipped
+
+The week table's "Áreas que informaron, de 45" row was already a footer row —
+in 6,4pt grey, the smallest ink on the page. It now prints in the table's own
+body size and ink (`CELL`, `INK_2` / `INK`). And when a period is too long for
+week columns ("Año", 38 weeks) the row used to print its label over nothing;
+it now states the range — live: **"entre 0 y 36 por semana"**, which is the
+reporting-rate trap in five words (WEEKLY_KI begins in August).
+
+**The screen never had it.** "Semana a semana" drew seven sparks with no count
+of who filed. It now carries the same line in bold under them — live, "Áreas
+que informaron, de 45 — 13 de sep: 36 · 20 de sep: 31", the packet's two
+figures exactly; a range beyond six weeks.
+
+Verified: page 3 of the transfer and the year packets read at 150 dpi; the
+screen read through the DOM, no exceptions, zero sideways scroll at 375px.

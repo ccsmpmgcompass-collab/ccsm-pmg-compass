@@ -1559,6 +1559,12 @@ def week_table(width: float, weeks, rows, *, boundaries=(), footer=None,
     next. Without the count of areas that filed sitting under the figures, a
     week where nine fewer companionships sent a form reads as a mission that
     halved its work (§1.3's reporting-rate trap).
+
+    **It prints at body weight, in the table's own ink** (finding B8). It was
+    the smallest, greyest line on the sheet while being the one line that says
+    whether the figures above it can be read as work at all. And when the
+    period is too long for week columns ("Año"), the row states the weekly
+    range instead of printing its label over nothing.
     """
     rows, weeks = list(rows), list(weeks)
     if not rows:
@@ -1623,15 +1629,22 @@ def week_table(width: float, weeks, rows, *, boundaries=(), footer=None,
         base = top - 11
         d.add(Line(0, top - 2, width, top - 2, strokeColor=RULE,
                    strokeWidth=0.5))
-        d.add(_string(0, base, fit(label, NOTE, label_w + spark_width), NOTE,
-                      INK_3))
+        counted = [v for v in values if v is not None]
+        if not show_weeks and counted:
+            low, high = min(counted), max(counted)
+            label += (f": {es_display.integer(low)} cada semana"
+                      if low == high else
+                      f": entre {es_display.integer(low)} y "
+                      f"{es_display.integer(high)} por semana")
+        d.add(_string(0, base, fit(label, CELL, label_w + spark_width), CELL,
+                      INK_2))
         if show_weeks:
             for n, value in enumerate(values[:len(weeks)]):
                 right = weeks_x + n * week_w + week_w - 4
-                d.add(_string(right, base, es_display.integer(value), NOTE,
-                              INK_3, anchor="end"))
+                d.add(_string(right, base, es_display.integer(value), CELL,
+                              INK, anchor="end"))
         if total:
-            d.add(_string(width, base, total, NOTE, INK_3, anchor="end"))
+            d.add(_string(width, base, total, CELL, INK, anchor="end"))
     return d
 
 

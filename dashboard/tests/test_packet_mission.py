@@ -547,3 +547,31 @@ def test_a_change_that_prints_as_zero_draws_no_direction(mission):
                              pct=-0.3).change == (0, "0%")
     assert _line_with_change(mission, comparable=True, confident=True,
                              pct=0.6).change == (1, "+1%")
+
+
+# ── B8: the reporting row is read, not skipped ────────────────────────────────
+
+def _footer_strings(drawing):
+    return [c for c in drawing.contents if hasattr(c, "text")]
+
+
+def test_the_reporting_row_prints_at_body_weight_in_the_table_s_ink():
+    weeks = [date(2026, 9, 13), date(2026, 9, 20)]
+    d = PP.week_table(520, weeks, [("Nuevas", [211, 181], "392")],
+                      footer=("Áreas que informaron, de 45", [36, 31], ""))
+    footer = [s for s in _footer_strings(d)
+              if s.text in ("Áreas que informaron, de 45", "36", "31")]
+    assert len(footer) == 3
+    assert all(s.fontSize == PP.CELL.size for s in footer)
+    assert all(s.fillColor != PP.INK_3 for s in footer)
+
+
+def test_without_week_columns_the_row_gives_the_weekly_range():
+    """"Año": thirty-eight weeks, no columns — the row used to print its label
+    over nothing."""
+    weeks = [date(2026, 1, 4)] * (PP.WEEK_COLUMN_LIMIT + 2)
+    d = PP.week_table(520, weeks, [("x", [1] * len(weeks), "9")],
+                      footer=("Áreas que informaron, de 45",
+                              [1] + [30] * (len(weeks) - 2) + [36], ""))
+    texts = [s.text for s in _footer_strings(d)]
+    assert "Áreas que informaron, de 45: entre 1 y 36 por semana" in texts

@@ -36,6 +36,7 @@ from app.components.design_system import (
 )
 from app.components.ki_drilldown import ki_href, render_ki_drilldown
 from app.components.scope_selector import ANY, render_scope_selectors
+from app.config import es_display
 from app.i18n.formats import NA, fmt_int, fmt_number, fmt_percent
 from app.reports import model as M
 from app.reports import periods as P
@@ -526,6 +527,23 @@ else:
         ),
         unsafe_allow_html=True,
     )
+    # B8: how many areas filed each week, under the lines it qualifies. The
+    # packet prints it as the week table's last row; here it is the first
+    # thing under the sparks, because a week where nine fewer companionships
+    # sent a form draws the same dip as a week of less work.
+    _filed = [(p.week, p.reporting) for p in _series[0].points]
+    _counts = [n for _, n in _filed if n is not None]
+    if _counts:
+        _of = fmt_int(_model.scope.area_count)
+        if len(_filed) <= 6:
+            _weeks = " · ".join(
+                f"{es_display.day_month(w)}: {fmt_int(n) if n is not None else NA}"
+                for w, n in _filed)
+            st.markdown(f"**Áreas que informaron, de {_of}** — {_weeks}")
+        else:
+            st.markdown(f"**Áreas que informaron, de {_of}** — entre "
+                        f"{fmt_int(min(_counts))} y {fmt_int(max(_counts))} "
+                        f"por semana")
     for _mark, _number in _series[0].boundaries:
         st.caption(f"Inicio del traslado {_number}: {_mark}")
 
