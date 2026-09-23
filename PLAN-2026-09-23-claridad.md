@@ -414,3 +414,24 @@ Suite: **11 failed / 1698 passed** — the same 11 as baseline, +34 new tests.
 **Round 0 is built.** What it cannot show until the sync runs: a real window
 figure on the page. Every one of the four window periods prints its refusal
 until TABLEAU_BAPTISM_WINDOWS exists.
+
+### 2026-09-23 — R1.1 (A1): the form's baptisms never open a unit
+
+`packet.NOT_FOR_VERDICTS` holds `ki_baptized_confirmed_real`, and
+`_verdict_candidates(model)` is now the one list both `_best_and_worst` and
+`furthest_behind` draw from.
+
+**Live, mission, Este traslado:** the form's baptisms grade **123%** (5 against
+a meta of about 4) and were "Lo más fuerte". Now "Lo más fuerte" is **Nuevas
+Personas Encontradas, 81%**, and "Lo que hay que mover" is **Amigos en la
+Reunión Sacramental, 42%**.
+
+**One reach past the letter of decision 37, flagged for Zackary:** the rule is
+applied to "Los más atrasados, en orden" as well as to the two sentences. It
+sits on the same page, it is the same claim as "lo que hay que mover" made
+three times, and the form's baptism figure would have been named in it on any
+transfer where companionships left the field blank. Its note now adds "los
+bautismos tienen su propia página, con la cifra certificada". The tile, the Key
+Indicator row and M6 are unchanged. The screen has no equivalent sentence.
+
+Tests: three new in `test_packet_mission.py`.

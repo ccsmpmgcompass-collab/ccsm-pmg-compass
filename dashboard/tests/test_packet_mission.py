@@ -242,8 +242,43 @@ def test_the_furthest_behind_excludes_a_goal_that_is_not_a_yardstick(mission):
 def test_the_best_and_the_worst_are_the_ends_of_the_same_ordering(mission):
     best, worst = PK._best_and_worst(mission)
     graded = sorted((r.grade.pct for r in mission.key_indicators
-                     if r.grade.pct is not None and not r.grade.flag))
+                     if r.grade.pct is not None and not r.grade.flag
+                     and r.key not in PK.NOT_FOR_VERDICTS))
     assert best.grade.pct == graded[-1] and worst.grade.pct == graded[0]
+
+
+# ── Decision 37: the form's baptisms never open a unit ────────────────────────
+
+BAPTIZED = "ki_baptized_confirmed_real"
+
+
+def _with_baptisms_at(mission, pct):
+    rows = [replace(r, grade=G.Grade(status="warn", pct=pct))
+            if r.key == BAPTIZED else r for r in mission.key_indicators]
+    assert any(r.key == BAPTIZED for r in rows), "fixture lost the baptism row"
+    return replace(mission, key_indicators=tuple(rows))
+
+
+def test_the_form_s_baptisms_are_never_called_the_strongest(mission):
+    """A1: page 3 called baptisms the mission's strongest number off the
+    form's 5, beside a certified 319 + 24."""
+    best, _ = PK._best_and_worst(_with_baptisms_at(mission, 999.0))
+    assert best is not None and best.key != BAPTIZED
+
+
+def test_nor_the_one_that_has_to_move(mission):
+    model = _with_baptisms_at(mission, 0.5)
+    _, worst = PK._best_and_worst(model)
+    assert worst is not None and worst.key != BAPTIZED
+    assert BAPTIZED not in {r.key for r in PK.furthest_behind(model)}
+
+
+def test_the_baptism_row_itself_stays_on_the_page(mission):
+    """Only the opening sentences lose it — the tile and the row keep it."""
+    model = _with_baptisms_at(mission, 999.0)
+    assert BAPTIZED in {r.key for r in model.key_indicators}
+    labels = {t.label for t in PK._headline_tiles(model)}
+    assert model.ki(BAPTIZED).label in labels
 
 
 def test_a_mission_with_nothing_graded_names_neither(mission):

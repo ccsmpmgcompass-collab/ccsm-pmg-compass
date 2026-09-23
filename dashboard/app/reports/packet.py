@@ -694,15 +694,31 @@ def _headline_tiles(model) -> list:
     return tiles
 
 
-def _best_and_worst(model):
-    """The strongest and the weakest graded Key Indicator, by attainment.
+#: Decision 37. The weekly form's baptism Key Indicator is the figure the
+#: packet trusts least — companionships leave the field blank, and on
+#: 2026-09-23 it read 5 for a transfer Tableau certified far more of — so it is
+#: never the sentence a unit's first page opens with, in either direction. It
+#: keeps its tile, its row and its page (M6), where it sits beside the
+#: certified figure under its own name.
+NOT_FOR_VERDICTS = frozenset({"ki_baptized_confirmed_real"})
 
-    A flagged goal is not eligible for either: it is neither the mission's best
+
+def _verdict_candidates(model) -> list:
+    """The Key Indicators a sentence may name as strongest or most behind.
+
+    A flagged goal is not eligible (decision 22): it is neither the unit's best
     work nor its worst, and naming it as either would be reporting the goal as
-    though it were the work (decision 22).
+    though it were the work. Nor is the form's baptism figure (decision 37).
     """
-    graded = [r for r in model.key_indicators
-              if r.grade.pct is not None and not r.grade.flag]
+    return [r for r in model.key_indicators
+            if r.grade.pct is not None and not r.grade.flag
+            and r.key not in NOT_FOR_VERDICTS]
+
+
+def _best_and_worst(model):
+    """The strongest and the weakest graded Key Indicator, by attainment —
+    of the ones `_verdict_candidates` allows."""
+    graded = _verdict_candidates(model)
     if not graded:
         return None, None
     ordered = sorted(graded, key=lambda r: r.grade.pct)
@@ -951,7 +967,8 @@ def at_a_glance(model, *, weekly_ok: bool, weekly_sure: bool) -> list:
         flow.append(Paragraph(PP.text(
             "Los más atrasados, en orden: "
             + " · ".join(f"{r.label} {_pct(r.grade.pct)}" for r in behind)
-            + ". De los Indicadores Clave con una meta utilizable."),
+            + ". De los Indicadores Clave con una meta utilizable; los "
+            "bautismos tienen su propia página, con la cifra certificada."),
             st["note_lead"]))
     flow.append(Spacer(0, 4))
     flow.append(Paragraph(PP.text(GRADED_NOTE), st["note"]))
@@ -1756,12 +1773,12 @@ def _week_rows(model):
 def furthest_behind(model, limit: int = 3) -> list:
     """The Key Indicators furthest from their own goal, weakest first.
 
-    Provo's "THE SIX FURTHEST BEHIND", at CCSM's scale. A flagged goal is not
-    eligible: the row would top the table for the goal's sake rather than the
-    work's, which is the reading decision 22 exists to stop.
+    Provo's "THE SIX FURTHEST BEHIND", at CCSM's scale. The same candidates as
+    the two sentences above it on the page (`_verdict_candidates`): a list of
+    the most behind is the same claim as "lo que hay que mover", three times,
+    and decision 37's reason applies to it word for word.
     """
-    graded = [r for r in model.key_indicators
-              if r.grade.pct is not None and not r.grade.flag]
+    graded = _verdict_candidates(model)
     return sorted(graded, key=lambda r: r.grade.pct)[:limit]
 
 # ── An area, which is a companionship ───────────────────────────
