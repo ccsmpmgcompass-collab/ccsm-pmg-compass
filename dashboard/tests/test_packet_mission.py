@@ -497,3 +497,53 @@ def test_no_leadership_note_carries_a_decimal(mission):
     for line in PK.ki_lines(mission, comparable=False):
         if line.note.startswith("meta del traslado") or                 line.note.startswith("meta de traslado,"):
             assert "," not in line.note.split(":")[-1]
+
+
+# ── B7: each column head says what its percentage is against ─────────────────
+
+def test_the_verdict_head_says_whose_goal_it_is():
+    table = PP.metric_table([], headers=PK._metric_headers(based=True))
+    head = table._cellvalues[0][4]
+    assert [h.label for h in head] == ["Contra su", "propia meta"]
+
+
+def test_the_change_head_names_what_it_is_against():
+    assert PK._metric_headers(based=True, against="2026-5")[-1] == (
+        "Cambio", "vs 2026-5")
+    # With no base the reason wins over the name (decision 38).
+    assert PK._metric_headers(based=False, against="2026-5")[-1] == (
+        PK.NO_BASE_HEAD)
+
+
+def test_the_head_takes_the_short_name_and_leaves_the_qualifier_to_the_note(
+        mission):
+    from app.reports import periods as P
+    comp = P.Comparison(P.Period(
+        key="this_transfer", label="2026-5 (primeras 2 semanas)",
+        start=date(2026, 7, 27), end=date(2026, 8, 9), weeks=(),
+        full_end=date(2026, 8, 9), full_weeks=2), P.SAME_WEEKS_ELAPSED)
+    assert PK._against_label(replace(mission, comparison=comp)) == "2026-5"
+    assert PK._against_label(replace(mission, comparison=None)) == ""
+
+
+@pytest.mark.parametrize("label", [
+    "Semana anterior", "6 semanas anteriores", "2 semanas anteriores",
+    "2026-5 (primeras 2 semanas)", "Mes anterior (primeros 23 días)", "2025",
+])
+def test_every_comparison_head_fits_on_one_line(mission, label):
+    """A head that wraps to three lines costs four pages across the packet."""
+    from app.reports import periods as P
+    comp = P.Comparison(P.Period(
+        key="last_week", label=label, start=date(2026, 9, 7),
+        end=date(2026, 9, 13), weeks=(), full_end=date(2026, 9, 13),
+        full_weeks=1), P.PREVIOUS)
+    sub = PK._metric_headers(
+        based=True, against=PK._against_label(replace(mission, comparison=comp)))[-1][1]
+    assert PP.width_of(sub, PP.NOTE) <= PP.METRIC_COLUMNS[-1] - 2 * 3.5, sub
+
+
+def test_a_change_that_prints_as_zero_draws_no_direction(mission):
+    assert _line_with_change(mission, comparable=True, confident=True,
+                             pct=-0.3).change == (0, "0%")
+    assert _line_with_change(mission, comparable=True, confident=True,
+                             pct=0.6).change == (1, "+1%")

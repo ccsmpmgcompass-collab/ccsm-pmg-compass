@@ -505,3 +505,27 @@ Rounded to a whole number everywhere — "679,3" read as a data error. Live on
 2026-6 the seven notes read "… 2 de 6 semanas: 111 / 164 / 176 …"; the other
 periods print "sin meta de traslado · 1 de 45 áreas" as before (decision 23).
 Packet only: the screen shows the mark as a tooltip, already rounded.
+
+### 2026-09-23 — R2.2 (B7): each column head says what its percentage is against
+
+- **`PP.OWN_GOAL_HEAD = "Contra su\npropia meta"`** on the Key Indicator, the
+  nightly and the area tables — two tracked lines, because "CONTRA SU PROPIA
+  META" is 110pt against the column's 89. Table heads now split a string at a
+  newline into stacked tracked lines. **The rates table keeps "Contra la
+  meta"**: a rate's target is the mission's, the same for every unit, so "su
+  propia" would be untrue there.
+- **The change head names its window**: `("Cambio", "vs 2026-5")`, from
+  `_against_label` — the comparison's short name, with its "(primeras 2
+  semanas)" qualifier left to the note under the table. With no base,
+  decision 38's head wins.
+- **Measured, and cut back:** the first cut printed "vs 2 semanas
+  anteriores", which wraps a head to three lines on every table with a base —
+  **110 pages instead of 106** on the "Semanas anteriores" packet. "semanas
+  previas" fits (61,9 of 63pt): **106 again**. A test holds every comparison
+  label the periods module can produce to one line.
+- **A bug in the same column, fixed:** a change of −0,3% printed "▼ -0%" — a
+  red triangle beside a figure that says nothing moved. The direction now
+  follows the figure as printed: "0%", no triangle.
+
+Both packets built from the live data and read: "Prior period" (no base, 106
+pages) and "Semanas anteriores" (based, 106 pages).

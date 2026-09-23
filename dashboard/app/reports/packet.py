@@ -467,12 +467,37 @@ def _count(value) -> str:
 NO_BASE_HEAD = ("Cambio", "sin base este período")
 
 
-def _metric_headers(*, based: bool, real="Real", meta="Meta") -> tuple:
-    """The metric table's six heads, the change column's saying whether it
-    has a base. ``real`` and ``meta`` take a ``(label, unit)`` pair where the
-    two columns are not measured on the same footing (R1.4)."""
-    return ("Métrica", real, meta, "", "Contra la meta",
-            "Cambio" if based else NO_BASE_HEAD)
+def _against_label(model) -> str:
+    """The comparison window's short name for the change column's head —
+    "2026-5", "Mes anterior", "2025" — with its qualifier left to the note
+    under the table, where "(primeras 2 semanas)" has the room to be read."""
+    comparison = model.comparison
+    if comparison is None or comparison.period is None:
+        return ""
+    short = comparison.period.label.split(" (")[0]
+    # "vs 2 semanas anteriores" is 70pt in a 63pt column and wraps the head to
+    # three lines on every table that has a base — measured, four pages on the
+    # "Semanas anteriores" packet. "previas" says the same and fits.
+    short = short.replace(" semanas anteriores", " semanas previas")
+    return short[:1].lower() + short[1:] if short[:1].isalpha() else short
+
+
+def _metric_headers(*, based: bool, against: str = "", real="Real",
+                    meta="Meta") -> tuple:
+    """The metric table's six heads (findings A2, A4, B7).
+
+    The verdict column says whose goal it is against (`PP.OWN_GOAL_HEAD`); the
+    change column says what it is against — "CAMBIO / vs 2026-5" — or, with no
+    base, why it is empty (`NO_BASE_HEAD`). ``real`` and ``meta`` take a
+    ``(label, unit)`` pair where the two are not on the same footing (R1.4).
+    """
+    if not based:
+        change = NO_BASE_HEAD
+    elif against:
+        change = ("Cambio", f"vs {against}")
+    else:
+        change = "Cambio"
+    return ("Métrica", real, meta, "", PP.OWN_GOAL_HEAD, change)
 
 
 def _change(row, *, comparable: bool, confident: bool = True) -> tuple:
@@ -494,7 +519,11 @@ def _change(row, *, comparable: bool, confident: bool = True) -> tuple:
     pct = row.grade.change_pct
     if pct is None or not (comparable and confident):
         return (0, es_display.NA)
-    direction = 1 if pct > 0 else (-1 if pct < 0 else 0)
+    # The direction of the figure as PRINTED: -0,3% prints "0%", and a red
+    # triangle beside "-0%" reported a fall nobody could see in the number.
+    if round(pct) == 0:
+        return (0, es_display.signed_percent(0))
+    direction = 1 if pct > 0 else -1
     return (direction, es_display.signed_percent(pct))
 
 
@@ -1036,7 +1065,8 @@ def key_indicator_page(model, *, weekly_ok: bool, weekly_sure: bool) -> list:
         PP.metric_table(ki_lines(model, comparable=weekly_ok,
                                  confident=weekly_sure),
                         headers=_metric_headers(
-                            based=weekly_ok and weekly_sure)),
+                            based=weekly_ok and weekly_sure,
+                            against=_against_label(model))),
         Spacer(0, 6),
         Paragraph(PP.text(BASIS_NOTE), st["note"]),
         Paragraph(PP.text(_comparison_note(model)), st["note"]),
@@ -1187,6 +1217,7 @@ def nightly_page(model, goals) -> list:
         PP.metric_table(nightly_lines(
             model, goals, comparable=_nightly_comparable(model)),
             headers=_metric_headers(based=_nightly_comparable(model),
+                                    against=_against_label(model),
                                     real=NIGHTLY_REAL_HEAD,
                                     meta=NIGHTLY_META_HEAD)),
         Spacer(0, 6),

@@ -1166,8 +1166,9 @@ def table(rows, widths, *, headers=None, align=None, head_band: bool = True,
     column instead of colliding with the next; ``para`` names the style, and
     ``align`` is a per-column "l"/"r"/"c".
 
-    A header is a string — one tracked uppercase label — or a ``(label, sub)``
-    pair, which puts a short lowercase line under the label: what the column
+    A header is a string — one tracked uppercase label, broken onto a second
+    tracked line at a newline — or a ``(label, sub)`` pair, which puts a short
+    lowercase line under the label: what the column
     is measured in ("período", "área/semana") or why it is empty ("sin base
     este período", decision 38). A 44pt column holds "REAL" and not "REAL
     (PERÍODO)", and a head truncated to "REAL (PER..." says less than either.
@@ -1191,14 +1192,15 @@ def table(rows, widths, *, headers=None, align=None, head_band: bool = True,
     if headers is not None:
         def head_cell(h, i):
             label, sub = (h, "") if isinstance(h, str) else (h[0], h[1])
-            tracked = TrackedLabel(label, align={"l": "start", "r": "end",
-                                                 "c": "middle"}[aligns[i]],
-                                   width=widths[i] - 2 * pad, pad_bottom=0.0)
-            if not sub:
-                return tracked
-            sub_style = {"l": "head_sub", "r": "head_sub_right",
-                         "c": "head_sub_center"}[aligns[i]]
-            return [tracked, Paragraph(text(sub), st[sub_style])]
+            lines = [TrackedLabel(part, align={"l": "start", "r": "end",
+                                               "c": "middle"}[aligns[i]],
+                                  width=widths[i] - 2 * pad, pad_bottom=0.0)
+                     for part in str(label).split("\n")]
+            if sub:
+                sub_style = {"l": "head_sub", "r": "head_sub_right",
+                             "c": "head_sub_center"}[aligns[i]]
+                lines.append(Paragraph(text(sub), st[sub_style]))
+            return lines[0] if len(lines) == 1 else lines
 
         body = [[head_cell(h, i) for i, h in enumerate(headers)]] + body
 
@@ -1448,6 +1450,14 @@ def change_chip(width: float, change, *, height: float = 9.0) -> Drawing:
     return d
 
 
+#: The verdict column's head (finding B7). "CONTRA LA META" sat beside a violet
+#: mark that is ANOTHER goal — leadership's — and a change column measured
+#: against another PERIOD, so a row carried four percentages and the head of
+#: one of them could be read as any of the others. Two tracked lines: 110pt
+#: on one does not fit the column's 89.
+OWN_GOAL_HEAD = "Contra su\npropia meta"
+
+
 def metric_table(lines, *, widths=METRIC_COLUMNS, headers=None) -> Table:
     """Every metric of a unit, one row each — the packet's workhorse table.
 
@@ -1461,7 +1471,7 @@ def metric_table(lines, *, widths=METRIC_COLUMNS, headers=None) -> Table:
     the last note alone on a page of its own behind every unit in the packet.
     """
     st = styles()
-    headers = headers or ("Métrica", "Real", "Meta", "", "Contra la meta",
+    headers = headers or ("Métrica", "Real", "Meta", "", OWN_GOAL_HEAD,
                           "Cambio")
     bar_width = widths[3] - 8
     rows = []
@@ -1507,7 +1517,7 @@ def area_metric_table(lines, *, widths=AREA_COLUMNS) -> Table:
     """
     return metric_table(lines, widths=widths,
                         headers=("Métrica", "Real", "Meta", "",
-                                 "Contra la meta", "Semana a semana"))
+                                 OWN_GOAL_HEAD, "Semana a semana"))
 
 
 def companionship_line(names, *, width: float = CONTENT_WIDTH) -> Drawing:
