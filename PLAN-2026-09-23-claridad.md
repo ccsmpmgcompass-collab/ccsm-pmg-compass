@@ -245,3 +245,60 @@ Two things landed today that are not part of this plan and are already pushed
   Apps Script agents email a companionship.
 - **106 pages stays.** Decision 25 is not re-opened; decision 39 now says the
   cover's white space is deliberate too.
+
+### 2026-09-23 — R0.1: the source, measured
+
+Against the live export (auto-sync, uploaded 2026-09-23 14:08 UTC, 99.897
+people, found-dates 2024-01-01 → 2026-09-21) and TABLEAU_BAPTISMS. Read-only;
+no code changed.
+
+**The detail export CAN answer "baptisms that happened in [start, end]".** The
+column is `confirmation_date` (the funnel's "Bautizados" stage). **890 rows
+carry one, every one parses, none is later than the export's last found-date**,
+span 2024-01-28 → 2026-09-20. 84% fall on a Sunday, 11% on a Saturday — it is
+the confirmation, dated by the event, not by when it was typed in.
+
+**It runs LOW against the certified figure, never high:**
+
+| | detail | certified | gap |
+|---|---|---|---|
+| 2026-01 … 2026-08, month by month | 19 29 43 44 40 42 41 32 | 19 37 47 44 43 46 47 36 | 0 −8 −4 0 −3 −4 −6 −4 |
+| 2026 Jan–Aug | **290** | **319** | **−29 (−9,1%)** |
+| **September to date (1–23)** | **24** | **24** (capture 1–23 Sep, provisional) | **0** |
+| 2025, month by month | — | — | −1 to −13 every month |
+
+The gap is **zero in the open month** and opens up once a month closes. Why is
+not provable from here (the certified figure is a PDF total, not people); the
+direction is what matters — a detail figure is a **floor**, and the fresher the
+window, the closer it sits to the certified one.
+
+**The six periods, as built on 2026-09-23:**
+
+| Period | Window | detail | certified available? |
+|---|---|---|---|
+| Semana pasada | 14–20 sep (7 d) | **5** | no — not whole months |
+| Este traslado (2026-6) | 7–23 sep (17 d) | **12** | no |
+| Traslado pasado (2026-5) | 27 jul – 6 sep (42 d) | **44** | no |
+| Últimas 6 semanas | 10 ago – 20 sep (42 d) | **47** | no |
+| Mes calendario | 1–23 sep (23 d) | 24 | **yes, exactly: 24** — the month-to-date capture ran for exactly 1–23 Sep |
+| Año | 1 ene – 23 sep | 314 | **yes, exactly: 319 closed + 24 open = 343** — the same tab, no second source |
+
+So **two of the six periods have a certified figure for exactly their own
+days** (when the nightly capture ran today; a day behind, it covers one day
+fewer and has to say so), and **four can only be answered by the detail
+export**, which on the recent evidence reads 0–11% low.
+
+**Something R0.1 found that the plan did not know.**
+`tableau_finding_portal.download_summary_pdf(page, start, end)` already
+exports the certified Summary for ANY window, not only whole months; the
+runner just only ever asks it for months (`capture_windows`). The Sep 1–23
+capture matching detail to the person says the Summary filters on the event
+date, so a transfer window asked for directly would come back as Tableau's own
+certified count for those days. That makes a third design possible: the
+nightly sync ALSO captures the current transfer, the last transfer, the last
+week and the last six weeks — one source for all six periods, and no detail
+figure printed at all. Its cost: four more PDF exports a night on a run that
+takes 2,5 minutes, a new window-keyed storage shape (TABLEAU_BAPTISMS is keyed
+by month), and a fallback for any night the sync fails.
+
+**This is Zackary's call before R0.2 is designed** — see the next entry.
