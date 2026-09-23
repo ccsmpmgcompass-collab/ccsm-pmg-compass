@@ -862,6 +862,12 @@ def sibling_strip(model) -> list:
     peers = [(c.name, c.mean_attainment) for c in model.siblings]
     if len([1 for _, v in peers if v is not None]) < 2:
         return []
+    # And no strip at all when THIS unit has no reading: its dot would be the
+    # one missing from the line, and a distribution with an unmarked
+    # highlight is a picture of everybody except the reader.
+    if not any(name == model.scope.name and value is not None
+               for name, value in peers):
+        return []
     noun = _level_plural(model.scope.level)
     silent = sum(1 for _, v in peers if v is None)
     caption = (f"{es_display.integer(len(peers))} {noun} de "
@@ -883,7 +889,12 @@ def _level_plural(level: str) -> str:
 def _ladder_title(model) -> str:
     """What the comparison section is called, named for the rungs it holds."""
     names = [r.role for r in model.ladder[1:] if not r.is_self]
-    return "Contra " + (" y ".join(names) if names else "las demás escalas")
+    if not names:
+        return "Contra las demás escalas"
+    # "su distrito y su zona y la misión" — a comma before the last "y", the
+    # way a sentence is written rather than the way a list is joined.
+    head = ", ".join(names[:-1])
+    return "Contra " + (f"{head} y {names[-1]}" if head else names[-1])
 
 
 def at_a_glance(model, *, weekly_ok: bool, weekly_sure: bool) -> list:

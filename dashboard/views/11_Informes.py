@@ -372,14 +372,26 @@ def _sibling_line() -> str:
     mine = next((c for c in peers if c.name == _model.scope.name), None)
     if mine is None:
         return ""
-    noun = {"zone": "zonas", "district": "distritos",
-            "area": "áreas"}.get(_model.scope.level, "unidades")
-    place = sorted(peers, key=lambda c: -(c.mean_attainment or 0)).index(mine) + 1
+    # No bare ordinal. "1º" means the WEAKEST everywhere else in this app —
+    # every ranked table in Compass is most-behind-first — so a line reading
+    # "1º de 3" beside a unit at the top of its peers would be read backwards
+    # by anybody who had just come from one of those tables.
+    noun, article = {"zone": ("zonas", "la"), "district": ("distritos", "el"),
+                     "area": ("áreas", "la")}.get(_model.scope.level,
+                                                  ("unidades", "la"))
+    ending = "a" if article == "la" else "o"
     low = min(c.mean_attainment for c in peers)
     high = max(c.mean_attainment for c in peers)
+    if mine.mean_attainment >= high:
+        where = f"{article} más fuerte"
+    elif mine.mean_attainment <= low:
+        where = f"{article} más atrasad{ending}"
+    else:
+        where = (f"{article} númer{ending} {fmt_int(mine.rank)} contando "
+                 f"desde {article} más atrasad{ending}")
+    line = (f"{where} de {fmt_int(len(peers))} {noun}, que van de "
+            f"{fmt_percent(low)} a {fmt_percent(high)}")
     silent = len(_model.siblings) - len(peers)
-    line = (f"{fmt_int(place)}º de {fmt_int(len(peers))} {noun} — las demás "
-            f"van de {fmt_percent(low)} a {fmt_percent(high)}")
     if silent:
         line += f" · {fmt_int(silent)} sin lectura"
     return line
@@ -464,8 +476,10 @@ render_ki_drilldown("scope", _model.scope.name, _model.scope.areas,
 
 if _model.ladder:
     _above = [r.role for r in _model.ladder[1:] if not r.is_self]
+    _head = ", ".join(_above[:-1])
     render_section_label(
-        "Contra " + " y ".join(_above), right="cada celda por área activa",
+        "Contra " + (f"{_head} y {_above[-1]}" if _head else _above[-1]),
+        right="cada celda por área activa",
         info=("Un porcentaje no dice nada por sí solo: un 73% es bueno si la "
               "zona va en 60 y malo si va en 85. Estas filas son la misma "
               "medida en cada escala a la que se puede leer — por ÁREA "
