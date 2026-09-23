@@ -461,27 +461,39 @@ def _count(value) -> str:
             else es_display.number(value, 1))
 
 
-def _change(row, *, comparable: bool, confident: bool = True) -> tuple | None:
-    """`(direction, "+12%")`, or None when there is nothing to say at all.
+#: Decision 38: a change with no base is a dash, and the column head says why.
+#: It supersedes printing the figure and disowning it in a note four lines
+#: below, which is what the packet did until 2026-09-23 (finding A2).
+NO_BASE_HEAD = ("Cambio", "sin base este período")
 
-    Two gates, because there are two different kinds of nothing. ``comparable``
-    is "there is no comparison window"; the column prints blank. ``confident``
-    is "there is one, and it rests on one or two areas" — `Coverage.thin`. Then
-    the number is still printed, because decision 6 says a partial comparison
-    is shown rather than hidden, but the DIRECTION is dropped: a direction of 0
-    draws no triangle and prints grey.
+
+def _metric_headers(*, based: bool, real="Real", meta="Meta") -> tuple:
+    """The metric table's six heads, the change column's saying whether it
+    has a base. ``real`` and ``meta`` take a ``(label, unit)`` pair where the
+    two columns are not measured on the same footing (R1.4)."""
+    return ("Métrica", real, meta, "", "Contra la meta",
+            "Cambio" if based else NO_BASE_HEAD)
+
+
+def _change(row, *, comparable: bool, confident: bool = True) -> tuple:
+    """`(direction, "+12%")`, or `(0, "—")` when there is no base for one.
+
+    Two ways to have no base, and since decision 38 they print the same: there
+    is no comparison window at all (``comparable`` is False), or there is one
+    and it rests on one or two areas (``confident`` is False — `Coverage.thin`).
+    Either way the cell is a dash and the column head reads "sin base este
+    período" (`NO_BASE_HEAD`), so the reason sits where the eye is rather than
+    in a note under the table.
 
     The live case is not hypothetical. The default comparison for this transfer
     is the first two weeks of 2026-5, which hold a single area, and every one
-    of the seven Key Indicators comes out between -36% and -65%. Seven red
-    triangles down a council page would report that single area's fortnight as
-    the mission collapsing.
+    of the seven Key Indicators comes out between -36% and -65%. The packet
+    used to print those figures in grey and explain below that they meant
+    nothing; a reader who stops at the table takes -63% at its word.
     """
     pct = row.grade.change_pct
-    if pct is None or not comparable:
-        return None
-    if not confident:
-        return (0, es_display.signed_percent(pct))
+    if pct is None or not (comparable and confident):
+        return (0, es_display.NA)
     direction = 1 if pct > 0 else (-1 if pct < 0 else 0)
     return (direction, es_display.signed_percent(pct))
 
@@ -632,19 +644,27 @@ def _heading(model) -> list:
 
 
 def _comparison_note(model) -> str:
-    """What the change column is measured against, or why there is no change."""
+    """What the change column is measured against, or why it has no base.
+
+    Says WHY there is no base; the column head already says THAT there is
+    none (decision 38), so this no longer has to disown a figure printed
+    above it.
+    """
     comparison = model.comparison
     if comparison is None or comparison.period is None:
         reason = getattr(comparison, "reason", "") if comparison else ""
         return f"Sin comparación: {reason}" if reason else "Sin comparación."
     cov = model.comparison_coverage
-    out = f"Cambio contra {comparison.period.label} ({comparison.period.elapsed_label})"
-    if cov is not None:
-        out += f" · {cov.label}"
-        if cov.thin:
-            out += (" — apenas un puñado de áreas. La cifra se muestra pero "
-                    "sin dirección: no hay con qué sostener una flecha")
-    return out + "."
+    # A comma, not brackets: the label often carries its own ("2026-5
+    # (primeras 2 semanas)") and two sets in a row read as a typo.
+    against = (f"{comparison.period.label}, "
+               f"{comparison.period.elapsed_label}")
+    if cov is None or not cov.usable:
+        return f"Sin base para el cambio: {against} no tiene informes."
+    if cov.thin:
+        return (f"Sin base para el cambio: {against} · {cov.label} — apenas "
+                f"un puñado de áreas.")
+    return f"Cambio contra {against} · {cov.label}."
 
 
 def _weekly_comparable(model) -> bool:
@@ -981,7 +1001,9 @@ def key_indicator_page(model, *, weekly_ok: bool, weekly_sure: bool) -> list:
         PP.SectionHead("Indicadores Clave",
                        f"los siete · {model.compliance_label}"),
         PP.metric_table(ki_lines(model, comparable=weekly_ok,
-                                 confident=weekly_sure)),
+                                 confident=weekly_sure),
+                        headers=_metric_headers(
+                            based=weekly_ok and weekly_sure)),
         Spacer(0, 6),
         Paragraph(PP.text(BASIS_NOTE), st["note"]),
         Paragraph(PP.text(_comparison_note(model)), st["note"]),
@@ -1119,7 +1141,8 @@ def nightly_page(model, goals) -> list:
             f"más atrasado primero · "
             f"{es_display.integer(len(model.nightly_metrics))} medidas"),
         PP.metric_table(nightly_lines(
-            model, goals, comparable=_nightly_comparable(model))),
+            model, goals, comparable=_nightly_comparable(model)),
+            headers=_metric_headers(based=_nightly_comparable(model))),
         Spacer(0, 6),
         Paragraph(PP.text(
             "El relleno es la suma del período contra la meta configurada por "
@@ -1136,11 +1159,8 @@ def nightly_page(model, goals) -> list:
             f"{es_display.integer(nightly.areas_reporting)} de "
             f"{es_display.integer(nightly.areas_in_scope)} áreas informaron "
             f"al menos una noche."), st["note"]))
-    if not _nightly_comparable(model):
-        flow.append(Paragraph(PP.text(
-            "Sin cambio comparable: el período de comparación casi no tiene "
-            "noches registradas, y un porcentaje calculado sobre eso sería la "
-            "tarde de un área hablando por toda la unidad."), st["note"]))
+    # No "sin cambio comparable" note: the column head says "sin base este
+    # período" now (decision 38), where the eye already is.
     return flow
 
 

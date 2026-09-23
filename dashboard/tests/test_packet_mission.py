@@ -163,18 +163,48 @@ def _line_with_change(mission, *, comparable, confident, pct=-64.0):
                        comparable=comparable, confident=confident)[0]
 
 
-def test_no_comparison_window_prints_no_change_at_all(mission):
-    assert _line_with_change(mission, comparable=False, confident=False).change is None
+def test_no_comparison_window_prints_a_dash(mission):
+    """Decision 38: no base, no figure — a dash, not a blank cell that reads
+    like a rendering fault."""
+    assert _line_with_change(mission, comparable=False,
+                             confident=False).change == (0, "—")
 
 
-def test_a_thin_window_keeps_the_number_and_drops_the_direction(mission):
-    """The live case: the default comparison for this transfer is the first two
-    weeks of 2026-5, which hold a single area, and all seven Key Indicators
-    come out between −36% and −65%. Seven red triangles down a council page
-    would report that area's fortnight as the mission collapsing."""
+def test_a_thin_window_prints_a_dash_not_a_figure_it_disowns(mission):
+    """A2. The live case: the default comparison for this transfer is the first
+    two weeks of 2026-5, which hold a single area, and all seven Key
+    Indicators come out between −36% and −65%. The packet printed them in grey
+    and disowned them four lines below; decision 38 prints nothing."""
     change = _line_with_change(mission, comparable=True, confident=False).change
-    assert change == (0, "-64%")
+    assert change == (0, "—")
     assert PP.change_mark(0, 0, change[0]) is None      # no triangle is drawn
+
+
+def test_the_column_head_carries_the_reason():
+    assert PK._metric_headers(based=True)[-1] == "Cambio"
+    assert PK._metric_headers(based=False)[-1] == ("Cambio",
+                                                   "sin base este período")
+
+
+def test_a_head_with_a_second_line_prints_both(mission):
+    table = PP.metric_table([], headers=PK._metric_headers(based=False))
+    head = table._cellvalues[0][-1]
+    assert isinstance(head, list) and len(head) == 2
+    assert head[0].label == "Cambio"
+    assert "sin base este período" in head[1].text
+
+
+def test_the_second_line_fits_its_column_on_one_line():
+    """70pt, less 7pt of padding, holds 61pt of note."""
+    room = PP.METRIC_COLUMNS[-1] - 2 * 3.5
+    assert PP.width_of("sin base este período", PP.NOTE) <= room
+    assert sum(PP.METRIC_COLUMNS) == PP.CONTENT_WIDTH
+
+
+def test_the_note_under_the_table_no_longer_disowns_a_figure(mission):
+    note = PK._comparison_note(mission)
+    assert "sin dirección" not in note
+    assert "La cifra se muestra" not in note
 
 
 def test_a_window_worth_trusting_carries_its_direction(mission):

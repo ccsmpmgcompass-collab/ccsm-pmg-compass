@@ -215,7 +215,7 @@ def _comparison_note() -> str:
     if cov.reporting_rate is not None:
         text += f" · {fmt_percent(cov.reporting_rate * 100)} de los informes"
     if cov.thin:
-        text += " — apenas un puñado de áreas, léase con cuidado"
+        text += " — apenas un puñado de áreas: sin base para el cambio"
     return text
 
 
@@ -226,8 +226,12 @@ def _ki_cards() -> list[dict]:
     transfer goal rides as a second violet tick (decisión 11) — identical to
     Panel and Desgloses, one vocabulary app-wide.
     """
+    # Decision 38: a thin comparison is no base at all. The card says so
+    # instead of drawing a coloured arrow off one area's fortnight — the
+    # packet's rule, so the page and the paper cannot disagree about it.
     comparable = (_model.comparison_coverage is not None
-                  and _model.comparison_coverage.usable)
+                  and _model.comparison_coverage.usable
+                  and not _model.comparison_coverage.thin)
     cards = []
     for row in _model.key_indicators:
         card = {
@@ -251,7 +255,7 @@ def _ki_cards() -> list[dict]:
         if row.grade.change_pct is not None and comparable:
             card["delta"] = row.grade.change_pct
         else:
-            card["change_note"] = "sin comparación"
+            card["change_note"] = "sin base este período"
             card["change_note_title"] = _comparison_note()
         cards.append(card)
     return cards

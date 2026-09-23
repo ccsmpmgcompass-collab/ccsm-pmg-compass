@@ -435,3 +435,34 @@ bautismos tienen su propia página, con la cifra certificada". The tile, the Key
 Indicator row and M6 are unchanged. The screen has no equivalent sentence.
 
 Tests: three new in `test_packet_mission.py`.
+
+### 2026-09-23 — R1.2 (A2): a change with no base is a dash, and the head says why
+
+- `packet._change` returns `(0, "—")` whenever there is no base — no
+  comparison window, OR a thin one. The grey "−63%" is gone.
+- `packet.NO_BASE_HEAD = ("Cambio", "sin base este período")` and
+  `_metric_headers(based=)`. The Key Indicator table and the nightly table
+  both take it.
+- **`packet_parts.table` headers can carry a second line**: a `(label, sub)`
+  pair prints the tracked label and a lowercase NOTE line under it. Needed
+  because "CAMBIO — SIN BASE ESTE PERÍODO" is 153pt tracked in a 59pt column.
+  R1.4 and R2.2 use the same mechanism.
+- **`METRIC_COLUMNS` 66 → 70pt for the change column**, 120 → 116 for the bar,
+  so "sin base este período" (61pt) sits on one line. A test holds the sum to
+  520.
+- `_comparison_note` says WHY there is no base ("Sin base para el cambio:
+  2026-5 (primeras 2 semanas), 27 de jul - 9 de ago de 2026 · 1 de 2 semanas —
+  apenas un puñado de áreas.") and no longer disowns a figure. The nightly
+  page's "Sin cambio comparable…" note is removed: the head says it.
+- **The screen agreed with neither.** Its Key Indicator cards drew a coloured
+  arrow for a THIN comparison, while the packet greyed it. Now both follow
+  decision 38: all seven cards read "sin base este período" on the live
+  transfer.
+
+Verified: pages 3 and 4 of the live packet read at 150 dpi; the screen's seven
+cards read through the DOM. Still 106 pages.
+
+**Seen in passing, for Round 2 (B7):** the screen's cards print 83% / 125%
+where the packet prints 81% / 123% for the same two Key Indicators — the card
+divides the totals, the packet divides per reporting area-week. That is the
+"four percentages meaning four things" finding, not something R1.2 changed.

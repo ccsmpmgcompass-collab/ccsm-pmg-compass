@@ -552,6 +552,11 @@ def styles() -> dict[str, ParagraphStyle]:
                            spaceAfter=1),
         "note": make("note", NOTE, INK_3, spaceAfter=3),
         "note_lead": make("note_lead", NOTE, INK_2, spaceAfter=3),
+        # A column head's second line: what the tracked label above it is
+        # measured in, or why its column is empty (`table`'s header pairs).
+        "head_sub": make("head_sub", NOTE, INK_3),
+        "head_sub_right": make("head_sub_right", NOTE, INK_3, alignment=2),
+        "head_sub_center": make("head_sub_center", NOTE, INK_3, alignment=1),
     }
 
 
@@ -1160,6 +1165,12 @@ def table(rows, widths, *, headers=None, align=None, head_band: bool = True,
     flowable. Strings become `Paragraph`s so a long name wraps inside its
     column instead of colliding with the next; ``para`` names the style, and
     ``align`` is a per-column "l"/"r"/"c".
+
+    A header is a string — one tracked uppercase label — or a ``(label, sub)``
+    pair, which puts a short lowercase line under the label: what the column
+    is measured in ("período", "área/semana") or why it is empty ("sin base
+    este período", decision 38). A 44pt column holds "REAL" and not "REAL
+    (PERÍODO)", and a head truncated to "REAL (PER..." says less than either.
     """
     st = styles()
     aligns = list(align or ["l"] * len(widths))
@@ -1178,11 +1189,18 @@ def table(rows, widths, *, headers=None, align=None, head_band: bool = True,
 
     body = [[cell(v, i) for i, v in enumerate(row)] for row in rows]
     if headers is not None:
-        head = [TrackedLabel(h, align={"l": "start", "r": "end",
-                                       "c": "middle"}[aligns[i]],
-                             width=widths[i] - 2 * pad, pad_bottom=0.0)
-                for i, h in enumerate(headers)]
-        body = [head] + body
+        def head_cell(h, i):
+            label, sub = (h, "") if isinstance(h, str) else (h[0], h[1])
+            tracked = TrackedLabel(label, align={"l": "start", "r": "end",
+                                                 "c": "middle"}[aligns[i]],
+                                   width=widths[i] - 2 * pad, pad_bottom=0.0)
+            if not sub:
+                return tracked
+            sub_style = {"l": "head_sub", "r": "head_sub_right",
+                         "c": "head_sub_center"}[aligns[i]]
+            return [tracked, Paragraph(text(sub), st[sub_style])]
+
+        body = [[head_cell(h, i) for i, h in enumerate(headers)]] + body
 
     cmds = [
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -1396,7 +1414,12 @@ class MetricLine:
 
 #: The metric table's columns at content width. The bar gets the most room of
 #: anything because it is the only column a reader can scan without reading.
-METRIC_COLUMNS = (150.0, 44.0, 44.0, 120.0, 96.0, 66.0)
+#:
+#: The change column is 70pt rather than 66 so its head's second line, "sin
+#: base este período" (61pt at NOTE), sits on one line (decision 38); the four
+#: points come off the bar, which is the one column whose width is a scale and
+#: not a string.
+METRIC_COLUMNS = (150.0, 44.0, 44.0, 116.0, 96.0, 70.0)
 
 
 def change_chip(width: float, change, *, height: float = 9.0) -> Drawing:
