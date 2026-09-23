@@ -23,6 +23,15 @@ Usage::
    refreshes daily — it stamped ``Data Last Updated: 9/18/2026 12:55 PM`` when
    read on 2026-09-19.
 
+   **Then the report periods' own windows** (decision 42,
+   PLAN-2026-09-23-claridad.md). The council packet prints the certified
+   figure for whatever period it is built for, and four of its six periods —
+   last week, this transfer, last transfer, the last six weeks — are not
+   whole months. The Summary answers any window, so each run captures those
+   four too, into TABLEAU_BAPTISM_WINDOWS. They are resolved by
+   ``app.reports.periods``, the same code the packet uses, so the windows
+   captured here are exactly the ones the packet looks up.
+
 2. **Detail second, and always in full.** A Detail write REPLACES the store;
    it cannot merge, because the only stable per-person key is the ``person_id``
    the privacy decision drops at ingest. ``describe_replacement``'s ``narrower``
@@ -64,8 +73,10 @@ from app.ingestion.tableau_detail_transform import clean_detail
 from app.ingestion.tableau_summary_parser import baptisms_rows, parse_summary_pdf
 from app.ingestion.tableau_upload import (
     date_span, describe_replacement, is_provisional, merge_baptism_rows,
-    read_tabular, summarize_months,
+    merge_window_rows, read_tabular, summarize_months,
 )
+from app.reports import periods as P
+from app.utils.transfer_helpers import rows_from_frame, transfer_cycles
 from app.integrations.gcp_creds import get_service_account_dict
 from app.utils.area_helpers import mission_today
 from app.utils.logger import get_logger
@@ -83,6 +94,8 @@ _SCOPES = [
 UPLOADED_BY = "auto:tableau"
 
 BAPTISMS_TAB = "TABLEAU_BAPTISMS"
+BAPTISM_WINDOWS_TAB = "TABLEAU_BAPTISM_WINDOWS"
+SCHEDULE_TAB = "TRANSFER_SCHEDULE"
 DETAIL_TAB = "TABLEAU_DETAIL"
 AGENT_CONFIG_TAB = "AGENT_CONFIG"
 DETAIL_FILE_ID_KEY = "TABLEAU_DETAIL_FILE_ID"
@@ -118,6 +131,30 @@ def capture_windows(today: date, months_back: int = 2) -> list[tuple[date, date]
         if month == 0:
             year, month = year - 1, 12
     return list(reversed(windows))
+
+
+#: The report periods that are not whole months, in the picker's order.
+#: "Mes calendario" and "Año" are left out on purpose: they start on the 1st,
+#: so the month captures above already answer them to the day.
+WINDOW_PERIODS = (P.LAST_WEEK, P.THIS_TRANSFER, P.LAST_TRANSFER, P.LAST_6_WEEKS)
+
+
+def period_windows(today: date, cycles: list[dict]) -> list[tuple[str, date, date]]:
+    """``(period key, start, end)`` for each report period that is not a month.
+
+    ``periods.resolve`` decides the days, so the packet and this job cannot
+    disagree about where "Semana pasada" begins. A transfer period the schedule
+    does not reach is skipped, as the picker skips it; two periods resolving to
+    the same days are captured once.
+    """
+    out, seen = [], set()
+    for key in WINDOW_PERIODS:
+        period = P.resolve(key, today, cycles)
+        if period is None or (period.start, period.end) in seen:
+            continue
+        seen.add((period.start, period.end))
+        out.append((key, period.start, period.end))
+    return out
 
 
 def detail_window(today: date, existing_start: date | None) -> tuple[date, date]:
@@ -311,6 +348,38 @@ def pull_baptisms(page, sh, windows, tmp: Path) -> str:
     return note
 
 
+def pull_baptism_windows(page, sh, today: date, tmp: Path) -> str:
+    """Capture the certified Summary for each report period that is not a
+    month, and merge them into TABLEAU_BAPTISM_WINDOWS.
+
+    Every window goes through the same ``verify_window`` as a month: a figure
+    is stored only for the days the PDF itself says it covers.
+    """
+    from app.ingestion import tableau_finding_portal as portal
+
+    cycles = transfer_cycles(rows_from_frame(_read_tab(sh, SCHEDULE_TAB)))
+    windows = period_windows(today, cycles)
+    if not windows:
+        return f"{BAPTISM_WINDOWS_TAB}: no period windows to capture"
+
+    rows = []
+    for key, start, end in windows:
+        status(f"Exporting the Summary for {P.PERIOD_LABELS[key]} "
+               f"({start} to {end})...")
+        pdf_path = portal.download_summary_pdf(page, start, end, tmp)
+        summary = parse_summary_pdf(pdf_path)
+        verify_window(summary, start, end)
+        rows.append([key, start.isoformat(), end.isoformat(),
+                     summary.baptized, today.isoformat()])
+        _logger.info(f"{key}: {summary.baptized} baptized ({start}..{end})")
+
+    merged = merge_window_rows(_read_tab(sh, BAPTISM_WINDOWS_TAB), rows)
+    _write_tab(sh, BAPTISM_WINDOWS_TAB, merged)
+    got = " · ".join(f"{P.PERIOD_LABELS[k]} {r[3]}"
+                     for (k, *_), r in zip(windows, rows))
+    return f"{BAPTISM_WINDOWS_TAB}: {got}"
+
+
 def pull_detail(page, sh, client, today: date, tmp: Path) -> str:
     """Take a FULL Detail export, clean it, and refuse it if it is narrower than
     what is already stored."""
@@ -416,6 +485,13 @@ def main() -> None:
                     # salvages half is worth more than one that abandons both.
                     _logger.error(f"Baptism capture failed: {e}")
                     failures.append(f"baptisms: {e}")
+                # Its own try: a period window that will not export must not
+                # cost the months above or the Detail pull below.
+                try:
+                    results.append(pull_baptism_windows(page, sh, today, tmp))
+                except Exception as e:
+                    _logger.error(f"Baptism window capture failed: {e}")
+                    failures.append(f"baptism windows: {e}")
             if not args.no_detail:
                 try:
                     results.append(pull_detail(page, sh, client, today, tmp))

@@ -33,6 +33,7 @@ Recorded here so no step below re-opens them.
 | 39 | **The cover stays a cover.** No figures on page 1. | Its lower 44% is empty by decision, not by neglect. Do not "fill" it in a future density pass. |
 | 40 | **A third front-matter page**, "Cómo leer este paquete". | The run sheet keeps its NOTAS column. 106 → 107 pages before Round 3's savings. |
 | 41 | **The baptism block follows the selected period.** | New requirement, §4 Round 0. See §2 for why it is not simply a filter. |
+| 42 | **Every period prints the CERTIFIED figure — the nightly sync captures the windows that are not months.** (2026-09-23, after R0.1) | No detail-export baptism count is printed anywhere, labelled or not. The four periods that are not whole months get their certified figure from TABLEAU_BAPTISM_WINDOWS, which the nightly job fills; a period with no capture yet prints `—` and says why. Chosen over "detail, labelled" and over "both, in order". |
 
 ### 1.1 — Zackary's own words on decision 41
 
@@ -101,12 +102,24 @@ detail count that disagrees with the certified one by a wide margin is a
 finding for Zackary, not a number to print. **Write the answer into STATUS
 before writing any code.**
 
-**R0.2 — the model.** `ReportModel.baptisms` gains the period's own window: the
-certified figure where the period aligns to whole months, the detail figure
-where it does not, each carrying which source it came from and the window it
-covers. Never both summed (decision 21, decision 34).
+**R0.2 — the sync captures the period windows** (decision 42, which replaced
+the detail-figure design this step first had). `tableau_finding_runner` asks
+`periods.resolve` for last week, this transfer, last transfer and the last six
+weeks, exports the Summary PDF for each, verifies its printed window, and
+merges the figures into a NEW tab, `TABLEAU_BAPTISM_WINDOWS` — never into the
+month-keyed TABLEAU_BAPTISMS, where a 10 Aug – 20 Sep window would be stored
+as August. Its own try block: a window that will not export costs neither the
+months nor the Detail pull.
 
-**R0.3 — both renderers.** The baptism page and the screen's block print the
+**R0.3 — the model.** `ReportModel.baptisms` gains the period's own figure,
+certified in every case: the month capture for "Mes calendario", the closed
+months plus the open month's capture for "Año", and the window capture for the
+other four. Looked up by DAYS — same first day, the latest last day not past
+the period's — so a capture a night behind answers with its own shorter window
+and says so; below the 25% floor, or with no capture at all, it is refused with
+its reason. Never a detail count, never summed with one (decisions 21, 34, 42).
+
+**R0.4 — both renderers.** The baptism page and the screen's block print the
 period's figure as the headline, with the year-to-date and the annual goal kept
 as context below it rather than as the headline. The source label is not
 optional.
@@ -302,3 +315,38 @@ takes 2,5 minutes, a new window-keyed storage shape (TABLEAU_BAPTISMS is keyed
 by month), and a fallback for any night the sync fails.
 
 **This is Zackary's call before R0.2 is designed** — see the next entry.
+
+### 2026-09-23 — decision 42, and R0.2: the sync captures the period windows
+
+**Zackary chose "extend the nightly sync"** over "detail, labelled" and over
+"both, in order". So the detail export is not a baptism source anywhere, and
+§4 Round 0 is re-cut: R0.2 the sync, R0.3 the model, R0.4 the renderers.
+
+**What R0.2 changed:**
+
+- `tableau_finding_runner.period_windows(today, cycles)` — the four periods
+  that are not months, resolved by `app.reports.periods.resolve`, the same
+  function the packet calls. On 2026-09-23 they are 14–20 Sep, 7–23 Sep,
+  27 Jul – 6 Sep and 10 Aug – 20 Sep.
+- `pull_baptism_windows` exports each through the existing
+  `portal.download_summary_pdf` and the existing `verify_window`, and runs in
+  its own try between the month captures and the Detail pull.
+- `tableau_upload.merge_window_rows` — the same days re-captured replace the
+  old figure; a window that grew replaces its shorter self within one period
+  (so "Este traslado" keeps one row, not one per night); a week that shares its
+  first day with the transfer survives. Tab: **`TABLEAU_BAPTISM_WINDOWS`**
+  (`period | start_date | end_date | baptisms | captured_on`), created by the
+  first run that writes it.
+- `transfer_helpers.rows_from_frame` — the schedule parser split out of
+  `transfer_rows`, because the job reads TRANSFER_SCHEDULE through its own
+  gspread client. One parser, so the job and the app cannot disagree about a
+  transfer's days.
+- `tests/test_baptism_windows.py`, 14 tests. The existing
+  `test_the_runner_reaches_no_streamlit_when_it_starts_up` now walks
+  `app.reports.periods` and `app.utils.transfer_helpers` too, and passes.
+
+**Not yet proven live.** The four windows export through the same code path as
+the month captures, which has run nightly since #17 — but a window crossing a
+month boundary has never been asked of the Summary. The first run that writes
+TABLEAU_BAPTISM_WINDOWS is the test, and until one does, every one of the four
+periods prints its refusal instead of a figure.

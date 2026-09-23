@@ -43,8 +43,18 @@ def transfer_rows() -> list[dict]:
     """
     from app.db.sheets_client import read_tab
 
-    df = read_tab("TRANSFER_SCHEDULE")
-    if df.empty or "Start_Date" not in df.columns:
+    return rows_from_frame(read_tab("TRANSFER_SCHEDULE"))
+
+
+def rows_from_frame(df) -> list[dict]:
+    """`transfer_rows`' parsing, for a TRANSFER_SCHEDULE frame read elsewhere.
+
+    The nightly Tableau job reads the tab through its own gspread client — it
+    runs with no Streamlit — and has to place the transfer windows exactly
+    where the packet will look for them. One parser, so the two cannot
+    disagree about which days a transfer holds.
+    """
+    if df is None or df.empty or "Start_Date" not in df.columns:
         return []
     out: list[dict] = []
     for _, r in df.iterrows():

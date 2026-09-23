@@ -216,6 +216,102 @@ def merge_baptism_rows(existing: pd.DataFrame, new_rows) -> pd.DataFrame:
     return pd.DataFrame(ordered, columns=list(BAPTISM_COLUMNS))
 
 
+# ── Certified baptisms for a window that is not a month ──────────────────────
+#
+# Decision 42 (PLAN-2026-09-23-claridad.md): the council packet's baptism
+# figure follows the selected period, and every period prints the CERTIFIED
+# figure. Four of the six periods — last week, this transfer, last transfer,
+# the last six weeks — start and end mid-month, so TABLEAU_BAPTISMS cannot
+# answer them. The Summary PDF can: it takes any window and prints the one it
+# ran for. So the nightly job captures those windows too, into their OWN tab.
+#
+# Never into TABLEAU_BAPTISMS. That tab is keyed by month, and a window of
+# 10 Aug – 20 Sep parses to month "2026-08"; merged there it would be stored
+# as August's certified figure. The two shapes are kept apart by construction.
+
+#: TABLEAU_BAPTISM_WINDOWS' contract. `period` is the `periods.PERIOD_KEYS`
+#: key the window was captured for — a label for the person reading the tab and
+#: the grouping `merge_window_rows` prunes by. It is NOT how a figure is looked
+#: up: the packet looks up by DAYS, so a window captured under one name answers
+#: any period that covers exactly the same days.
+BAPTISM_WINDOW_COLUMNS = ("period", "start_date", "end_date", "baptisms",
+                          "captured_on")
+
+
+def _iso(raw) -> date | None:
+    try:
+        return date.fromisoformat(str(raw or "").strip()[:10])
+    except ValueError:
+        return None
+
+
+def stored_window_rows(existing: pd.DataFrame) -> list[list]:
+    """The real rows out of a TABLEAU_BAPTISM_WINDOWS read, oldest first.
+
+    The metadata row the writer stamps under the header comes back as ordinary
+    data, and so does anything a person typed into the tab; a row is kept only
+    when both of its dates parse and its count is a whole number.
+    """
+    if existing is None or existing.empty:
+        return []
+    cols = {str(c).strip().lower(): c for c in existing.columns}
+    if not all(c in cols for c in ("start_date", "end_date", "baptisms")):
+        return []
+    rows = []
+    for _, r in existing.iterrows():
+        start, end = _iso(r[cols["start_date"]]), _iso(r[cols["end_date"]])
+        if start is None or end is None or end < start:
+            continue
+        try:
+            count = int(float(str(r[cols["baptisms"]]).strip()))
+        except (ValueError, TypeError):
+            continue
+        period = str(r[cols["period"]]).strip() if "period" in cols else ""
+        captured = (str(r[cols["captured_on"]]).strip()[:10]
+                    if "captured_on" in cols else "")
+        rows.append([period, start.isoformat(), end.isoformat(), count, captured])
+    return sorted(rows, key=lambda r: (r[1], r[2]))
+
+
+def merge_window_rows(existing: pd.DataFrame, new_rows) -> pd.DataFrame:
+    """Fold freshly captured windows into what the tab already holds.
+
+    Two rules, in this order:
+
+    1. **The same days, re-captured, are replaced.** A window captured again
+       tonight is the corrected version of last night's: a baptism recorded
+       late lands in it. Keyed by (start, end), never by period name.
+
+    2. **A window that grew replaces the shorter one it grew from — within one
+       period.** "Este traslado" is captured every night as 7 Sep → today, so
+       it would otherwise leave a row per night. Within one (period, start),
+       only the row reaching the latest day is kept. The grouping is by period
+       as well as start because two DIFFERENT questions can share a first day:
+       on 14 Sep the last week is 7–13 Sep and the transfer is 7–14 Sep, and
+       the week must survive the transfer's longer row.
+    """
+    merged: dict[tuple, list] = {}
+    for row in stored_window_rows(existing):
+        merged[(row[1], row[2])] = row
+    for row in new_rows:
+        period = str(row[0]).strip()
+        start, end = _iso(row[1]), _iso(row[2])
+        if start is None or end is None or end < start:
+            raise UploadError(f"'{row[1]}'..'{row[2]}' is not a window")
+        captured = str(row[4]).strip()[:10] if len(row) > 4 else ""
+        merged[(start.isoformat(), end.isoformat())] = [
+            period, start.isoformat(), end.isoformat(), int(row[3]), captured]
+
+    longest: dict[tuple, str] = {}
+    for period, start, end, _count, _captured in merged.values():
+        key = (period, start)
+        if end > longest.get(key, ""):
+            longest[key] = end
+    kept = [r for r in merged.values() if r[2] == longest[(r[0], r[1])]]
+    kept.sort(key=lambda r: (r[1], r[2]))
+    return pd.DataFrame(kept, columns=list(BAPTISM_WINDOW_COLUMNS))
+
+
 def upload_token(uploaded) -> str:
     """A cheap identity for an uploaded file, so the page can tell a NEW upload
     from the same one surviving a rerun.
