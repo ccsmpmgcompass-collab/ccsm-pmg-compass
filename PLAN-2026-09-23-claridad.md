@@ -491,3 +491,17 @@ totals, which is the whole contrast. Read on page 4 of the live packet.
 is Nuevas Personas, CAMBIO reads "sin base este período" over a column of
 dashes, the grades' note points at "Contra la misión" above it, and the
 nightly table's heads carry their units. Still 106 pages.
+
+### 2026-09-23 — R2.1 (B5): leadership's goal says what it is, and rounds
+
+`packet.leadership_note(goal, period)`. The figure is the cycle goal PRO-RATED
+to the period's weeks (`model._leadership_goals`), so:
+
+- this transfer, part-way: **"meta del traslado · 2 de 6 semanas: 679"**;
+- a whole transfer: "meta del traslado: 2.038";
+- anything else: "meta de traslado, a prorrata de 6 semanas: 1.150".
+
+Rounded to a whole number everywhere — "679,3" read as a data error. Live on
+2026-6 the seven notes read "… 2 de 6 semanas: 111 / 164 / 176 …"; the other
+periods print "sin meta de traslado · 1 de 45 áreas" as before (decision 23).
+Packet only: the screen shows the mark as a tooltip, already rounded.

@@ -517,6 +517,26 @@ def _verdict(row, *, graded: bool = True) -> str:
     return f"{word} · {pct}"
 
 
+def leadership_note(goal: float, period) -> str:
+    """The line under a Key Indicator's name that gives leadership's goal
+    (finding B5).
+
+    It used to read "meta de traslado 679,3" — a decimal no goal was ever set
+    at, under the name of a goal that is 2.038. The figure is the transfer
+    goal PRO-RATED to the weeks this period holds (`model._leadership_goals`),
+    so the note says so, and rounds: a third of a person is not a target.
+    """
+    value = es_display.integer(round(goal))
+    weeks = period.weeks_elapsed
+    if period.key == P.THIS_TRANSFER and weeks < period.full_weeks:
+        return (f"meta del traslado · {weeks} de {period.full_weeks} "
+                f"semanas: {value}")
+    if period.key in (P.THIS_TRANSFER, P.LAST_TRANSFER):
+        return f"meta del traslado: {value}"
+    noun = "semana" if weeks == 1 else "semanas"
+    return f"meta de traslado, a prorrata de {weeks} {noun}: {value}"
+
+
 def ki_lines(model, *, comparable: bool, confident: bool = True) -> list:
     """The seven Key Indicators as printable rows (decision 10).
 
@@ -534,7 +554,7 @@ def ki_lines(model, *, comparable: bool, confident: bool = True) -> list:
             # scaled to the companionships' own meta, and leadership's goal is
             # routinely larger than that — pinned to the track's end, four
             # different goals would all read as "exactly at the line".
-            note = f"meta de traslado {_count(row.leadership_goal)}"
+            note = leadership_note(row.leadership_goal, model.period)
             if row.meta:
                 mark = row.leadership_goal / row.meta * 100
         elif row.leadership_goal_areas or row.meta:

@@ -462,3 +462,38 @@ def test_the_unit_lines_fit_their_columns():
     room = PP.METRIC_COLUMNS[1] - 2 * 3.5
     for _, sub in (PK.NIGHTLY_REAL_HEAD, PK.NIGHTLY_META_HEAD):
         assert PP.width_of(sub, PP.NOTE) <= room
+
+
+# ── B5: leadership's goal says what it is, and rounds ──────────────────────────
+
+def _period(key, today=date(2026, 9, 23)):
+    from app.reports import periods as P
+    cycles = [{"number": "2026-5", "start": date(2026, 7, 27),
+               "end": date(2026, 9, 6), "weeks": 6},
+              {"number": "2026-6", "start": date(2026, 9, 7),
+               "end": date(2026, 10, 18), "weeks": 6}]
+    return P.resolve(key, today, cycles)
+
+
+def test_a_transfer_in_progress_says_how_much_of_it_the_goal_covers():
+    from app.reports import periods as P
+    assert PK.leadership_note(679.33, _period(P.THIS_TRANSFER)) == (
+        "meta del traslado · 2 de 6 semanas: 679")
+
+
+def test_a_whole_transfer_prints_the_goal_itself():
+    from app.reports import periods as P
+    assert PK.leadership_note(2038.0, _period(P.LAST_TRANSFER)) == (
+        "meta del traslado: 2.038")
+
+
+def test_a_period_across_cycles_says_it_is_pro_rated():
+    from app.reports import periods as P
+    note = PK.leadership_note(1150.4, _period(P.LAST_6_WEEKS))
+    assert note == "meta de traslado, a prorrata de 6 semanas: 1.150"
+
+
+def test_no_leadership_note_carries_a_decimal(mission):
+    for line in PK.ki_lines(mission, comparable=False):
+        if line.note.startswith("meta del traslado") or                 line.note.startswith("meta de traslado,"):
+            assert "," not in line.note.split(":")[-1]
