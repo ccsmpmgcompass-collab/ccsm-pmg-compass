@@ -2,9 +2,9 @@
 
 The district page exists for one thing the audit named and nothing in Compass
 did before: **a 73% means nothing until you can see the zone at 78 and the
-mission at 76.** `peer_rows` is that comparison, and it reads the models
-`build_all` already returned rather than asking the model to grow a
-peer-series field only one page would use (R6's note).
+mission at 76.** `ladder_rows` is that comparison, and since Phase V it reads
+`ReportModel.ladder` — the model does the arithmetic once so the screen and
+the printed page cannot disagree about the sign of a gap (decision 30).
 
 The rest is about a ranked table refusing to overstate what it knows: a unit
 nobody filed a form for keeps its place at the end of the list and loses its
@@ -120,26 +120,37 @@ def _strings(drawing):
 
 # ── The district against its zone and the mission ─────────────────────────────
 
-def test_a_district_is_printed_beside_its_zone_and_the_mission(district, peers):
+def test_a_district_is_printed_beside_its_zone_and_the_mission(district):
     """The audit's own sentence: a district leader has no way to know whether
     73% is good until they can see the zone at 78 and the mission at 76."""
     spec = PP.RankedSpec(width=520.0, cells=("Nuevas", "Sacr.", "Baut."))
-    rows = PK.peer_rows(district, peers, spec)
+    rows = PK.ladder_rows(district, spec)
     said = " ".join(t for row in rows for t in _strings(row))
     assert "D1" in said and "Norte" in said and "Misión de Prueba" in said
     assert "este distrito" in said and "su zona" in said and "la misión" in said
 
 
-def test_the_ladder_is_read_off_the_models_already_built(district, peers):
-    """`build_all` returns all 63; nothing here re-queries and no peer-series
-    field was added to the model for one page's sake."""
-    assert PK._parent_key(district.scope) == "zone:Norte"
-    assert PK._parent_key(peers["zone:Norte"].scope) == S.MISSION
-    assert PK._parent_key(peers["mission"].scope) == ""
+def test_a_zone_is_printed_beside_the_mission(zone):
+    """Zackary, 2026-09-23 — the zone pages carry the same comparison the
+    district pages always had, one rung up."""
+    spec = PP.RankedSpec(width=520.0, cells=("Nuevas", "Sacr.", "Baut."))
+    said = " ".join(t for row in PK.ladder_rows(zone, spec)
+                    for t in _strings(row))
+    assert "esta zona" in said and "la misión" in said
+    assert "su zona" not in said          # nothing between a zone and the top
 
 
-def test_a_district_with_no_peers_to_hand_prints_no_comparison(district):
-    assert PK.peer_rows(district, {}, PP.RankedSpec(width=520.0)) == []
+def test_the_ladder_is_read_off_the_model(district):
+    """`ReportModel.ladder` is the contract; the page draws it and computes
+    nothing (decision 30)."""
+    assert [r.role for r in district.ladder] == [
+        "este distrito", "su zona", "la misión"]
+
+
+def test_a_unit_at_the_top_prints_no_comparison(peers):
+    """The mission has no ladder, so the section simply is not there."""
+    assert PK.ladder_rows(peers["mission"], PP.RankedSpec(width=520.0)) == []
+    assert PK.ladder_block(peers["mission"]) == []
 
 
 def test_every_rung_of_the_ladder_is_measured_the_same_way(district, peers):
@@ -147,11 +158,20 @@ def test_every_rung_of_the_ladder_is_measured_the_same_way(district, peers):
     Three rows on three different bases would be three numbers that cannot be
     compared, printed in a table whose whole purpose is comparison."""
     for unit in (district, peers["zone:Norte"], peers["mission"]):
-        mean = PK._mean_of(unit)
         by_hand = [r.attainment_per_active_area for r in unit.key_indicators
                    if r.attainment_per_active_area is not None
                    and not r.grade.flag]
-        assert mean == pytest.approx(sum(by_hand) / len(by_hand))
+        assert unit.mean_attainment == pytest.approx(
+            sum(by_hand) / len(by_hand))
+
+
+def test_a_units_rung_and_its_row_in_its_parents_table_agree(district, peers):
+    """One rule for the headline, in the model. A district reading 61 on its
+    own page and 58 in its zone's table would be the same unit measured two
+    ways, three pages apart."""
+    row = next(c for c in peers["zone:Norte"].children
+               if c.scope.key == district.scope.key)
+    assert row.mean_attainment == pytest.approx(district.mean_attainment)
 
 
 def test_a_flagged_goal_is_left_out_of_the_mean(district):
@@ -159,9 +179,9 @@ def test_a_flagged_goal_is_left_out_of_the_mean(district):
     rows = list(district.key_indicators)
     from app.reports import grading as G
     rows[0] = replace(rows[0], grade=G.Grade(pct=2.0, flag=G.GOAL_TOO_HIGH))
-    with_flag = PK._mean_of(replace(district, key_indicators=tuple(rows)))
-    assert with_flag == pytest.approx(PK._mean_of(replace(
-        district, key_indicators=tuple(rows[1:]))))
+    with_flag = replace(district, key_indicators=tuple(rows)).mean_attainment
+    assert with_flag == pytest.approx(replace(
+        district, key_indicators=tuple(rows[1:])).mean_attainment)
 
 
 # ── A ranked table and what it refuses to claim ───────────────────────────────

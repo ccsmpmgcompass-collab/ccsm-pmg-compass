@@ -1,4 +1,5 @@
-"""The printed page's furniture and its five vector charts — PLAN step P1.
+"""The printed page's furniture and its vector charts — PLAN step P1, and
+the diverging gap chart Phase V added to it.
 
 Three properties this file is really about.
 
@@ -142,6 +143,11 @@ def _every_primitive():
                                             ("Bautizadas", 33)]),
         "share_bar": PP.share_bar(400.0, [("Misioneros", 230),
                                           ("Miembros", 95), ("Medios", 6)]),
+        "gap_bars": PP.gap_bars(PP.CONTENT_WIDTH,
+                                [("Nuevas Personas", 12.4),
+                                 ("Bautizados", -7.8),
+                                 ("Amigos en la Reunión", None)],
+                                note="contra Angol"),
         "ranked_row": PP.ranked_row(
             PP.RankedSpec(width=PP.CONTENT_WIDTH, cells=("NUEVAS", "BAUT.")),
             rank=1, name="Los Angeles Norte", sub="12 áreas · 50% informaron",
@@ -171,6 +177,8 @@ def test_the_three_growing_primitives_size_themselves_to_their_content():
     five = PP.stage_bars(400.0, [("a", 5), ("b", 4), ("c", 3), ("d", 2),
                                  ("e", 1)])
     assert five.height > three.height
+    assert (PP.gap_bars(400.0, [("a", 1)] * 4).height
+            > PP.gap_bars(400.0, [("a", 1)]).height)
     one_row = PP.share_bar(300.0, [("a", 1), ("b", 1)])
     two_rows = PP.share_bar(300.0, [("a", 1)] * 4)
     assert two_rows.height > one_row.height
@@ -496,3 +504,42 @@ def test_the_metric_table_leaves_its_notes_room_on_the_same_page():
     table = PP.metric_table(lines)
     _, height = table.wrap(PP.CONTENT_WIDTH, PP.CONTENT_HEIGHT)
     assert height <= PP.CONTENT_HEIGHT - 60, "no room left for the notes"
+
+
+# ── 5 · The gap against the unit above (Phase V) ──────────────────────────────
+
+def test_the_gap_axis_is_symmetric_so_neither_side_flatters():
+    """An axis whose right arm is longer would make a unit ahead of its parent
+    look further ahead than an equally-behind unit looks behind."""
+    assert PP.gap_span([12.0, -3.0]) == 15.0
+    assert PP.gap_span([-31.0, 4.0]) == 35.0
+
+
+def test_a_small_gap_does_not_fill_the_column():
+    """Two points is two points. Scaled to its own maximum it would draw as a
+    full-width bar and read as a crisis."""
+    assert PP.gap_span([2.0, -1.0]) == PP.GAP_MIN_SPAN
+
+
+def test_a_gap_nobody_can_measure_draws_no_bar():
+    """A bar of zero length at the centre line reads as "exactly level", which
+    is the one thing an ungraded indicator does not say."""
+    only_none = PP.gap_bars(400.0, [("a", None), ("b", None)])
+    assert not [s for s in _shapes(only_none) if isinstance(s, Rect)]
+    assert any(isinstance(s, Rect)
+               for s in _shapes(PP.gap_bars(400.0, [("a", 5.0)])))
+
+
+def test_the_side_a_bar_leaves_on_is_the_message():
+    """Behind goes left of the centre line, ahead goes right."""
+    def x_of(value):
+        d = PP.gap_bars(400.0, [("a", value)])
+        rect = next(s for s in _shapes(d) if isinstance(s, Rect))
+        return rect.x
+
+    assert x_of(-9.0) < x_of(9.0)
+
+
+def test_an_empty_gap_chart_is_a_drawing_and_not_a_hole():
+    assert PP.gap_bars(400.0, []).width == 400.0
+    assert not list(_shapes(PP.gap_bars(400.0, [])))

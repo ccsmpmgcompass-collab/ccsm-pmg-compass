@@ -756,67 +756,89 @@ def score_tiles(model) -> list:
             for label, value in pairs if value is not None]
 
 
-def peer_rows(model, peers, spec: PP.RankedSpec) -> list:
+def ladder_rows(model, spec: PP.RankedSpec) -> list:
     """This unit against the unit above it and against the mission.
 
-    The district page's reason for existing. A district leader has no way to
-    know whether 73% is good until they can see the zone at 78 and the mission
-    at 76 — Provo draws it as a three-way line; here it is three rows of the
-    same shape as every other ranked table in the packet, which prints legibly
-    at 7,5pt and photocopies.
+    Zackary, 2026-09-23: every zone reads against the mission's averages and
+    every district against its own zone's. It is also the reason a unit page
+    exists at all — a district leader has no way to know whether 73% is good
+    until they can see the zone at 78 and the mission at 76.
 
-    ``peers`` is `{Scope.key: ReportModel}` from `build_all`, so nothing has to
-    be recomputed and no peer-series field has to be added to the model that
-    only one page would read.
+    The arithmetic is `ReportModel.ladder`, computed in the model for both
+    renderers (decision 30). Drawn as three rows of the same shape as every
+    other ranked table in the packet, which prints legibly at 7,5pt and
+    photocopies.
     """
     keys = [k for k, _ in _child_keys(model)]
-    ladder = [(model, "este " + _level_noun(model.scope.level))]
-    parent = peers.get(_parent_key(model.scope))
-    if parent is not None:
-        ladder.append((parent, "su " + _level_noun(parent.scope.level)))
-    mission = peers.get(S.MISSION)
-    if mission is not None and mission.scope.key != model.scope.key:
-        ladder.append((mission, "la misión"))
-    if len(ladder) < 2:
+    if len(model.ladder) < 2:
         return []
     out = [PP.ranked_row(spec, name="unidad", header=True)]
-    for unit, role in ladder:
-        cells = [_pct(next((r.attainment_per_active_area
-                            for r in unit.key_indicators if r.key == key), None))
-                 for key in keys]
-        mean = _mean_of(unit)
+    for rung in model.ladder:
+        by_key = {r.key: r.attainment_per_active_area for r in rung.metrics}
         out.append(PP.ranked_row(
-            spec, rank=None, name=unit.scope.name, sub=role,
-            status=_attainment_status(mean), cells=cells, value=_pct(mean),
-            bar=mean, bar_max=100))
+            spec, rank=None, name=rung.scope.name, sub=rung.role,
+            status=_attainment_status(rung.mean_attainment),
+            cells=[_pct(by_key.get(key)) for key in keys],
+            value=_pct(rung.mean_attainment), bar=rung.mean_attainment,
+            bar_max=100))
     return out
 
 
-def _level_noun(level: str) -> str:
-    return {S.MISSION: "misión", S.ZONE: "zona", S.DISTRICT: "distrito",
-            S.AREA: "área"}.get(level, "unidad")
+def gap_rows(model) -> list:
+    """The per-indicator gap to the unit one rung up, as diverging bars.
 
-
-def _parent_key(scope) -> str:
-    if scope.level == S.AREA and scope.district:
-        return f"{S.DISTRICT}:{scope.zone or ''}/{scope.district}"
-    if scope.level == S.DISTRICT:
-        return f"{S.ZONE}:{scope.zone or ''}"
-    if scope.level == S.ZONE:
-        return S.MISSION
-    return ""
-
-
-def _mean_of(model) -> float | None:
-    """The unit's mean Key Indicator attainment per ACTIVE area.
-
-    The same figure `ChildRow.mean_attainment` carries, recomputed here for a
-    unit that is nobody's child on this page — the mission has no parent to be
-    ranked under, and a district comparing itself upward needs its own.
+    The ranked table above says where the three scales sit; this says which of
+    the seven is carrying the difference, which is the thing a council can act
+    on. Against the PARENT rather than the mission: a district is run by its
+    zone, and "you are eleven points under your own zone" is a conversation
+    two people in the room can have.
     """
-    values = [r.attainment_per_active_area for r in model.key_indicators
-              if r.attainment_per_active_area is not None and not r.grade.flag]
-    return sum(values) / len(values) if values else None
+    parent = next((r for r in model.ladder[1:] if not r.is_self), None)
+    if parent is None or not any(v is not None for v in parent.deltas):
+        return []
+    rows = [(r.label, d) for r, d in zip(parent.metrics, parent.deltas)]
+    return [PP.gap_bars(PP.CONTENT_WIDTH, rows,
+                        note=f"contra {parent.scope.name}")]
+
+
+def ladder_block(model) -> list:
+    """The whole comparison section: the three scales, then the seven gaps.
+
+    One block so every level that carries it carries the same thing — a zone
+    against the mission, a district against its zone, an area against its
+    district — and a reader who has read one has read them all.
+    """
+    st = PP.styles()
+    W = PP.CONTENT_WIDTH
+    spec = PP.RankedSpec(width=W, cells=_child_cells(model))
+    rows = ladder_rows(model, spec)
+    if not rows:
+        return []
+    above = next((r.scope.name for r in model.ladder[1:] if not r.is_self), "")
+    flow = [Spacer(0, 10),
+            PP.SectionHead(_ladder_title(model),
+                           "cada celda por área activa")]
+    flow.extend(rows)
+    gaps = gap_rows(model)
+    if gaps:
+        flow.append(Spacer(0, 6))
+        flow.extend(gaps)
+    flow.append(Spacer(0, 4))
+    flow.append(Paragraph(PP.text(
+        f"Un porcentaje no dice nada por sí solo. Arriba está la misma medida "
+        f"en cada escala a la que se puede leer; abajo, cuánto separa a esta "
+        f"unidad de {above} en cada Indicador Clave, en puntos porcentuales."
+        if gaps else
+        "Un porcentaje no dice nada por sí solo. Estas filas son la misma "
+        "medida en cada escala a la que se puede leer, para que el número de "
+        "arriba tenga contra qué leerse."), st["note"]))
+    return flow
+
+
+def _ladder_title(model) -> str:
+    """What the comparison section is called, named for the rungs it holds."""
+    names = [r.role for r in model.ladder[1:] if not r.is_self]
+    return "Contra " + (" y ".join(names) if names else "las demás escalas")
 
 
 def at_a_glance(model, *, weekly_ok: bool, weekly_sure: bool) -> list:
@@ -853,6 +875,11 @@ def at_a_glance(model, *, weekly_ok: bool, weekly_sure: bool) -> list:
                     f"revisarla."), st["note_lead"]))
     flow.append(Spacer(0, 8))
     flow.append(PP.stat_tiles(W, _headline_tiles(model)))
+    # A zone reads against the mission, an area against its district — the
+    # same section the district page has carried since P4, now at every level
+    # that has something above it (Zackary, 2026-09-23). The mission's ladder
+    # is empty and the block is simply absent.
+    flow.extend(ladder_block(model))
     behind = furthest_behind(model)
     if behind:
         flow.append(Spacer(0, 10))
@@ -1538,20 +1565,7 @@ def district_pages(model, goals, peers=None) -> list:
     flow.append(Spacer(0, 6))
     flow.append(PP.stat_tiles(W, _headline_tiles(model)))
 
-    peers = peers or {}
-    spec = PP.RankedSpec(width=W, cells=_child_cells(model))
-    rows = peer_rows(model, peers, spec)
-    if rows:
-        flow.append(Spacer(0, 10))
-        flow.append(PP.SectionHead("Contra su zona y la misión",
-                                   "cada celda por área activa"))
-        flow.extend(rows)
-        flow.append(Spacer(0, 4))
-        flow.append(Paragraph(PP.text(
-            "Un 73% no dice nada por sí solo. Estas tres filas son la misma "
-            "medida en las tres escalas, para que el número de arriba tenga "
-            "contra qué leerse."), st["note"]))
-
+    flow.extend(ladder_block(model))
     flow.append(Spacer(0, 10))
     flow.extend(children_page(model))
     flow.append(PageBreak())

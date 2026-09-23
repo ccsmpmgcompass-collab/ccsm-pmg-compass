@@ -276,6 +276,34 @@ class Series:
 
 
 @dataclass(frozen=True)
+class LadderRow:
+    """One rung of the comparison ladder: this unit, the unit above it, the
+    mission — the same measure on every scale it can be read at.
+
+    The whole point of a unit's page. A zone at 54% is a fact about nothing
+    until the mission's 61% is printed beside it, and a district leader has no
+    way to know whether 73% is good until the zone reads 78 and the mission 76.
+
+    ``delta`` and ``deltas`` are THIS UNIT minus this rung, in percentage
+    points — computed here rather than in a renderer, so the screen and the
+    printed page cannot disagree about the sign of a gap (decision 30). Both
+    are None on the unit's own rung, which is nothing minus itself.
+    """
+
+    scope: S.Scope
+    role: str
+    is_self: bool = False
+    mean_attainment: float | None = None
+    metrics: tuple[MetricRow, ...] = ()
+    delta: float | None = None
+    deltas: tuple[float | None, ...] = ()
+
+    @property
+    def name(self) -> str:
+        return self.scope.name
+
+
+@dataclass(frozen=True)
 class ChildRow:
     """One unit a level down, ranked and named (decisions 14, 15, 16).
 
@@ -344,6 +372,10 @@ class ReportModel:
     #: The units one level down, weakest first (decisions 14, 15).
     children: tuple = ()
 
+    #: This unit, the unit above it and the mission, in that order — the
+    #: comparison ladder. Empty at mission level, which has nothing above it.
+    ladder: tuple[LadderRow, ...] = ()
+
     #: Every AREA inside the unit, weakest first. Mission and zone only — at
     #: district level the areas are already `children`.
     areas_ranked: tuple = ()
@@ -392,6 +424,17 @@ class ReportModel:
             bits.append(self.period.progress_label)
         bits.append(self.compliance_label)
         return " · ".join(bits)
+
+    @property
+    def mean_attainment(self) -> float | None:
+        """The unit's own mean Key Indicator attainment per ACTIVE area.
+
+        The figure `ChildRow.mean_attainment` carries, for a unit that is
+        nobody's child on the page it is being drawn on — the mission has no
+        parent to be ranked under, and a unit comparing itself upward needs
+        its own.
+        """
+        return _mean_attainment(self.key_indicators)
 
     def ki(self, key: str) -> MetricRow | None:
         return next((r for r in self.key_indicators if r.key == key), None)
@@ -1124,10 +1167,93 @@ def _mean_attainment(rows) -> float | None:
     Only indicators that HAVE a percentage count. Treating an ungraded one as a
     zero would rank a unit down for a goal its companionships never set, which
     is a statement about the form and not about the work.
+
+    A FLAGGED goal is left out for the same reason one rung further on
+    (decision 22): `ki_friends_first_week_real` asks for 81 over a fortnight
+    against 12 achieved mission-wide, and a unit's headline should not be
+    dragged down for a goal nobody could have met. The rule lives here rather
+    than in a renderer so a unit's own headline and its row in its parent's
+    table cannot be two different numbers.
     """
-    pcts = [p for p in (r.attainment_per_active_area for r in rows)
-            if p is not None]
+    pcts = [r.attainment_per_active_area for r in rows
+            if r.attainment_per_active_area is not None and not r.grade.flag]
     return sum(pcts) / len(pcts) if pcts else None
+
+
+#: What the ladder calls each rung. Only "distrito" is masculine, so the
+#: demonstrative is carried per level rather than assembled from a noun.
+LADDER_SELF = {S.MISSION: "la misión", S.ZONE: "esta zona",
+               S.DISTRICT: "este distrito", S.AREA: "esta área"}
+LADDER_ABOVE = {S.MISSION: "la misión", S.ZONE: "su zona",
+                S.DISTRICT: "su distrito"}
+
+
+def _ki_rows_for(data: ReportData, scope: S.Scope, period: P.Period,
+                 comparison: P.Comparison | None, flags: dict) -> tuple:
+    """`_ki_rows`, memoised on the scope and the period.
+
+    Without it the ladder is the most expensive thing in the packet: 63 units
+    each ask their ancestors for Key Indicators that 63 other builds have
+    already computed — 122 extra passes over WEEKLY_KI for answers that exist.
+    With it a zone's rung is computed once, by whichever unit asks first.
+    """
+    cache_key = ("ki_rows", scope.key, period.key,
+                 comparison.period.key
+                 if comparison is not None and comparison.period is not None
+                 else None)
+    if cache_key not in data._flags:
+        data._flags[cache_key] = tuple(_ki_rows(
+            data, scope, period, comparison=comparison, flags=flags))
+    return data._flags[cache_key]
+
+
+def _ladder(data: ReportData, scope: S.Scope, period: P.Period,
+            comparison: P.Comparison | None, flags: dict) -> tuple:
+    """This unit against every scale above it, coarsest last.
+
+    Every figure on it is attainment per ACTIVE area (rule 2 of §1's three):
+    the cross-unit basis, so a zone whose areas went quiet does not outrank one
+    whose areas all filed. Reading a zone against the mission on the reporting
+    basis would compare two different populations and call the difference
+    performance.
+
+    Empty at mission level — the mission is the top of the ladder and a rung
+    against itself is a row of zeroes pretending to be a comparison.
+    """
+    chain, node = [scope], scope
+    while True:
+        up = S.parent(data.roster, node, data.mission_name)
+        if up is None or up.key == node.key or up.key in {s.key for s in chain}:
+            break
+        chain.append(up)
+        node = up
+    if len(chain) < 2:
+        return ()
+
+    own_metrics = _ki_rows_for(data, scope, period, comparison, flags)
+    own_mean = _mean_attainment(own_metrics)
+    own_by_key = {r.key: r.attainment_per_active_area for r in own_metrics}
+
+    rows = []
+    for rung in chain:
+        is_self = rung.key == scope.key
+        metrics = (own_metrics if is_self
+                   else _ki_rows_for(data, rung, period, comparison, flags))
+        mean = _mean_attainment(metrics)
+        role = (LADDER_SELF.get(rung.level, "esta unidad") if is_self
+                else LADDER_ABOVE.get(rung.level, "la misión"))
+        rows.append(LadderRow(
+            scope=rung, role=role, is_self=is_self, mean_attainment=mean,
+            metrics=metrics,
+            delta=(None if is_self or mean is None or own_mean is None
+                   else own_mean - mean),
+            deltas=() if is_self else tuple(
+                None if (own_by_key.get(r.key) is None
+                         or r.attainment_per_active_area is None)
+                else own_by_key[r.key] - r.attainment_per_active_area
+                for r in metrics),
+        ))
+    return tuple(rows)
 
 
 def _rank_scopes(data: ReportData, scopes: list, period: P.Period,
@@ -1141,12 +1267,12 @@ def _rank_scopes(data: ReportData, scopes: list, period: P.Period,
     """
     out = []
     for child in scopes:
-        rows = _ki_rows(data, child, period, comparison=comparison, flags=flags)
+        rows = _ki_rows_for(data, child, period, comparison, flags)
         child_rows = _weekly_rows(data, child, period)
         reported = set(child_rows["_area"]) if not child_rows.empty else set()
         out.append(ChildRow(
             scope=child, rank=0, mean_attainment=_mean_attainment(rows),
-            metrics=tuple(rows),
+            metrics=rows,
             coverage=P.week_coverage(period, _reported_by_week(child_rows),
                                      child.area_count),
             areas_silent=tuple(sorted(set(child.areas) - reported)),
@@ -1313,8 +1439,7 @@ def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
             if comparison and comparison.period is not None else None),
         areas_reporting=tuple(sorted(reporting & in_scope)),
         areas_silent=tuple(sorted(in_scope - reporting)),
-        key_indicators=tuple(_ki_rows(data, scope, period,
-                                      comparison=comparison, flags=ki_flags)),
+        key_indicators=_ki_rows_for(data, scope, period, comparison, ki_flags),
         nightly_metrics=tuple(_nightly_rows(
             data, scope, period, comparison=comparison,
             flags=data.nightly_goal_flags(period))),
@@ -1322,6 +1447,7 @@ def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
         rates=_rates(data, scope, period, comparison),
         children=_rank_scopes(data, S.children(data.roster, scope), period,
                               comparison, ki_flags),
+        ladder=_ladder(data, scope, period, comparison, ki_flags),
         areas_ranked=_areas_ranked(data, scope, period, comparison, ki_flags),
         series=_series(data, scope, period),
         strengths=strengths,

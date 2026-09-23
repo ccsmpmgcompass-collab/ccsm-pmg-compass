@@ -42,6 +42,7 @@ import. See PLAN-2026-09-21-informes.md §4 step P1.
 
 from __future__ import annotations
 
+import math
 import unicodedata
 from dataclasses import dataclass
 
@@ -815,7 +816,86 @@ def share_bar(width: float, parts, *, value_fmt=None,
     return d
 
 
-# ── 5 · A ranked row ──────────────────────────────────────────────────────────
+# ── 5 · The gap against the unit above ────────────────────────────────────────
+
+GAP_ROW_HEIGHT = 12.5
+GAP_HEAD_HEIGHT = 11.0
+
+#: The smallest half-span the axis will draw. Under it a two-point gap would
+#: fill the column and read as a crisis.
+GAP_MIN_SPAN = 10.0
+
+
+def gap_span(values, *, minimum: float = GAP_MIN_SPAN) -> float:
+    """The symmetric half-width the axis is drawn to, rounded up to 5 points.
+
+    Symmetric on purpose: an axis whose right arm is longer than its left makes
+    a unit ahead of its parent look further ahead than a unit equally behind
+    looks behind, which is the one thing a diverging chart must not do.
+    """
+    biggest = max([abs(v) for v in values if v is not None], default=0.0)
+    return max(minimum, 5.0 * math.ceil(biggest / 5.0))
+
+
+def gap_bars(width: float, rows, *, span: float | None = None,
+             label_width: float = 168.0, value_width: float = 62.0,
+             note: str = "") -> Drawing:
+    """One diverging bar per metric: how far this unit is above or below the
+    unit it is being read against, in percentage points.
+
+    The answer to "is 73% good". A column of percentages cannot be compared by
+    eye — a reader has to subtract seven pairs in their head and remember the
+    signs. A bar leaving a centre line does the subtraction on the page, and
+    the side it leaves on is the whole message.
+
+    A row whose gap is None keeps its label and prints a dash: a metric nobody
+    could grade at one of the two scales has no gap, and a bar of zero length
+    at the centre line would read as "exactly level".
+    """
+    rows = list(rows)
+    height = GAP_HEAD_HEIGHT + len(rows) * GAP_ROW_HEIGHT
+    d = Drawing(width, max(height, 1.0))
+    if not rows:
+        return d
+    span = span or gap_span([v for _, v in rows])
+    axis_x = label_width
+    axis_w = max(40.0, width - label_width - value_width)
+    centre = axis_x + axis_w / 2
+    half = axis_w / 2 - 2
+
+    top = height - GAP_HEAD_HEIGHT
+    g = Group()
+    _tracked(g, axis_x, top + 3, "detrás", CELL_HEAD, INK_3)
+    _tracked(g, axis_x + axis_w, top + 3, "delante", CELL_HEAD, INK_3,
+             anchor="end")
+    if note:
+        _tracked(g, 0, top + 3, fit(note, CELL_HEAD, label_width - 6),
+                 CELL_HEAD, INK_3, upper=True)
+    d.add(g)
+    d.add(Line(centre, 0, centre, top + 1, strokeColor=RULE, strokeWidth=0.5))
+
+    for i, (label, value) in enumerate(rows):
+        y = top - (i + 1) * GAP_ROW_HEIGHT
+        d.add(_string(0, y + 3, fit(str(label), CELL, label_width - 6), CELL,
+                      INK_2))
+        if value is None:
+            d.add(_string(width, y + 3, text(es_display.NA), CELL, INK_3,
+                          anchor="end"))
+            continue
+        length = min(1.0, abs(value) / span) * half
+        ahead = value >= 0
+        x = centre if ahead else centre - length
+        d.add(Rect(x, y + 1.5, max(length, 0.6), 6.0,
+                   fillColor=STATUS["good" if ahead else "bad"],
+                   strokeColor=None, strokeWidth=0, rx=1, ry=1))
+        sign = "+" if ahead else "-"
+        d.add(_string(width, y + 3,
+                      f"{sign}{es_display.number(abs(value), 0)} pts",
+                      CELL, INK, anchor="end"))
+    return d
+
+
+# ── 6 · A ranked row ──────────────────────────────────────────────────────────
 
 RANK_ROW_HEIGHT = 17.0
 RANK_HEAD_HEIGHT = 12.0

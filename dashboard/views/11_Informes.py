@@ -300,6 +300,63 @@ def _ranked_units(units) -> str:
     )
 
 
+def _ladder_rows() -> str:
+    """The unit against every scale above it — Zackary, 2026-09-23.
+
+    A zone reads against the mission's averages, a district against its own
+    zone's, an area against its district's. The arithmetic is
+    `ReportModel.ladder`: the model works it out once so this page and the
+    printed packet cannot disagree about the sign of a gap (decisión 30).
+    """
+    return ranked_list([{
+        "name": r.scope.name,
+        "rank": "",
+        "sub": r.role,
+        "value": r.mean_attainment,
+        "bar": r.mean_attainment,
+        "change": (None if r.delta is None
+                   else f"{'+' if r.delta >= 0 else '−'}"
+                        f"{fmt_number(abs(r.delta), 0)} pts"),
+        "change_color": (None if r.delta is None
+                         else "good" if r.delta >= 0 else "bad"),
+        "cells": [_pct(next((m.attainment_per_active_area
+                             for m in r.metrics if m.key == k.key), None))
+                  for k in _model.key_indicators],
+    } for r in _model.ladder],
+        bar_max=100,
+        value_fmt=lambda v: NA if v is None else fmt_percent(v),
+        columns=[(r.label[:14], r.label) for r in _model.key_indicators],
+    )
+
+
+def _gap_rows() -> str:
+    """Which of the seven is carrying the difference with the unit above.
+
+    The table above says where the scales sit; this says where the gap comes
+    from, which is the part a council can act on. Against the PARENT rather
+    than the mission: a district is run by its zone, and "eleven points under
+    your own zone" is a conversation two people in the room can have.
+    """
+    parent = next((r for r in _model.ladder[1:] if not r.is_self), None)
+    if parent is None or not any(d is not None for d in parent.deltas):
+        return ""
+    pairs = sorted(zip(parent.metrics, parent.deltas),
+                   key=lambda pair: (pair[1] is None, pair[1] or 0))
+    return ranked_list([{
+        "name": row.label,
+        "rank": "",
+        "sub": (f"{_pct(row.attainment_per_active_area)} en "
+                f"{parent.scope.name}"),
+        "value": delta,
+        "bar": None if delta is None else abs(delta),
+        "status": None if delta is None else "good" if delta >= 0 else "bad",
+    } for row, delta in pairs],
+        value_fmt=lambda v: (NA if v is None else
+                             f"{'+' if v >= 0 else '−'}"
+                             f"{fmt_number(abs(v), 0)} pts"),
+    )
+
+
 def _nightly_rows(rows) -> str:
     """Every tracked nightly metric as ranked rows, furthest behind first.
 
@@ -369,6 +426,32 @@ else:
 # own scope. It owns the metric; this page owns which areas.
 render_ki_drilldown("scope", _model.scope.name, _model.scope.areas,
                     key="rep_ki")
+
+
+# ── 1b · Contra la escala de arriba ──────────────────────────────────────────
+#
+# Zackary, 2026-09-23: cada zona contra el promedio de la misión y cada
+# distrito contra el promedio de su zona. El modelo arma la escalera
+# (`ReportModel.ladder`) y aquí sólo se dibuja.
+
+if _model.ladder:
+    _above = [r.role for r in _model.ladder[1:] if not r.is_self]
+    render_section_label(
+        "Contra " + " y ".join(_above), right="cada celda por área activa",
+        info=("Un porcentaje no dice nada por sí solo: un 73% es bueno si la "
+              "zona va en 60 y malo si va en 85. Estas filas son la misma "
+              "medida en cada escala a la que se puede leer — por ÁREA "
+              "ACTIVA, la única base en la que dos unidades de distinto "
+              "tamaño se pueden comparar. Una unidad que no informó no tiene "
+              "lectura y no tiene diferencia: restarle su propio silencio "
+              "sería hablar del formulario, no del trabajo."),
+    )
+    st.markdown(_ladder_rows(), unsafe_allow_html=True)
+    _gaps = _gap_rows()
+    if _gaps:
+        st.caption(f"Dónde está la diferencia con "
+                   f"{_model.ladder[1].scope.name}, en puntos porcentuales")
+        st.markdown(_gaps, unsafe_allow_html=True)
 
 
 # ── 2 · Semana a semana ───────────────────────────────────────────────────────
