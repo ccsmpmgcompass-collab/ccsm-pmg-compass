@@ -625,12 +625,23 @@ def _attainment_status(pct) -> str | None:
 
 # ── The mission's pages ───────────────────────────────────────────────────────
 
-#: The sentence under every graded table. Provo's, in intent: it says what the
-#: percentage is AND what it is not, because "74%" beside another unit's "89%"
-#: reads as a league table whether or not one was meant.
+#: The sentence under every unit's opening grades. Provo's, in intent: it says
+#: what the percentage is AND what it is not, because "74%" beside another
+#: unit's "89%" reads as a league table whether or not one was meant.
 GRADED_NOTE = ("Cada porcentaje es esta unidad contra su propia meta — al ritmo "
-               "es 90% o más, atrasado 60-89%, muy atrasado por debajo. Nada "
-               "aquí compara un área, distrito o zona con otra.")
+               "es 90% o más, atrasado 60-89%, muy atrasado por debajo.")
+
+#: What it adds when the page above it DOES compare (finding A3). It used to
+#: end "Nada aquí compara un área, distrito o zona con otra" — true when it was
+#: written, and false from Phase V on, printed directly under the section that
+#: holds a zone against the mission and an area against its district.
+COMPARED_NOTE = " La sección de arriba es la única que la compara con otra."
+
+
+def graded_note(*, compared: bool) -> str:
+    """`GRADED_NOTE`, and — when the ladder printed above it — which part of
+    the page is the exception."""
+    return GRADED_NOTE + (COMPARED_NOTE if compared else "")
 
 BASIS_NOTE = ("Real es la suma del período. El relleno de la barra es esa suma "
               "contra la meta que las compañerías se pusieron, por área que "
@@ -977,7 +988,8 @@ def at_a_glance(model, *, weekly_ok: bool, weekly_sure: bool) -> list:
     # same section the district page has carried since P4, now at every level
     # that has something above it (Zackary, 2026-09-23). The mission's ladder
     # is empty and the block is simply absent.
-    flow.extend(ladder_block(model))
+    ladder = ladder_block(model)
+    flow.extend(ladder)
     behind = furthest_behind(model)
     if behind:
         # A sentence, not the three-row table this used to be. The full seven
@@ -991,7 +1003,8 @@ def at_a_glance(model, *, weekly_ok: bool, weekly_sure: bool) -> list:
             "bautismos tienen su propia página, con la cifra certificada."),
             st["note_lead"]))
     flow.append(Spacer(0, 4))
-    flow.append(Paragraph(PP.text(GRADED_NOTE), st["note"]))
+    flow.append(Paragraph(PP.text(graded_note(compared=bool(ladder))),
+                          st["note"]))
     return flow
 
 

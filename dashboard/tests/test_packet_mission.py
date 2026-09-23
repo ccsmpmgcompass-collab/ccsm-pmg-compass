@@ -414,3 +414,23 @@ def test_every_string_the_mission_pages_print_survives_the_encoding(mission):
 
     walk(PK.mission_pages(mission, _data().nightly_goals))
     assert seen > 20
+
+
+# ── A3: the note under the grades no longer denies the section above it ─────
+
+def test_the_graded_note_never_says_nothing_compares():
+    for compared in (True, False):
+        assert "Nada aquí compara" not in PK.graded_note(compared=compared)
+
+
+def test_under_a_ladder_it_names_the_exception():
+    assert PK.graded_note(compared=True).endswith(
+        "La sección de arriba es la única que la compara con otra.")
+    assert "sección de arriba" not in PK.graded_note(compared=False)
+
+
+def test_the_mission_has_no_ladder_so_its_note_does_not_point_at_one(mission):
+    text = " ".join(p.text for p in PK.at_a_glance(
+        mission, weekly_ok=False, weekly_sure=False)
+        if hasattr(p, "text") and isinstance(p.text, str))
+    assert "sección de arriba" not in text

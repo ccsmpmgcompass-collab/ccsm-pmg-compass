@@ -466,3 +466,14 @@ cards read through the DOM. Still 106 pages.
 where the packet prints 81% / 123% for the same two Key Indicators — the card
 divides the totals, the packet divides per reporting area-week. That is the
 "four percentages meaning four things" finding, not something R1.2 changed.
+
+### 2026-09-23 — R1.3 (A3): the note under the grades stops denying the section above it
+
+`GRADED_NOTE` lost "Nada aquí compara un área, distrito o zona con otra";
+`graded_note(compared=)` adds "La sección de arriba es la única que la compara
+con otra." exactly when `ladder_block` printed above it. Checked on the live
+models: the mission (no ladder) gets the bare sentence; Angol, El Mirador and
+Alemania 1 — under "Contra la misión", "Contra su zona y la misión", "Contra su
+distrito, su zona y la misión" — get the pointer. The grading bands stay in the
+sentence until R3.2 moves them to the "Cómo leer" page. Packet only; the screen
+never carried the sentence.
