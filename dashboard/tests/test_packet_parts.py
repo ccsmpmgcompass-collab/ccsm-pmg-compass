@@ -148,6 +148,11 @@ def _every_primitive():
                                  ("Bautizados", -7.8),
                                  ("Amigos en la Reunión", None)],
                                 note="contra Angol"),
+        "strip_plot": PP.strip_plot(PP.CONTENT_WIDTH,
+                                    [("Angol", 34.0), ("San Pedro", 61.0),
+                                     ("Arauco", None)],
+                                    highlight="Angol",
+                                    caption="3 zonas · 1 sin lectura"),
         "ranked_row": PP.ranked_row(
             PP.RankedSpec(width=PP.CONTENT_WIDTH, cells=("NUEVAS", "BAUT.")),
             rank=1, name="Los Angeles Norte", sub="12 áreas · 50% informaron",
@@ -543,3 +548,42 @@ def test_the_side_a_bar_leaves_on_is_the_message():
 def test_an_empty_gap_chart_is_a_drawing_and_not_a_hole():
     assert PP.gap_bars(400.0, []).width == 400.0
     assert not list(_shapes(PP.gap_bars(400.0, [])))
+
+
+# ── 6 · Where one unit sits among all of them (Phase V) ───────────────────────
+
+def test_a_unit_with_no_reading_gets_no_dot():
+    """A dot at zero is a unit doing badly. A unit nobody filed a form for is
+    not doing badly; it is not being measured."""
+    two = PP.strip_plot(400.0, [("a", 10.0), ("b", 40.0)], highlight="a")
+    plus_silent = PP.strip_plot(400.0, [("a", 10.0), ("b", 40.0), ("c", None)],
+                                highlight="a")
+    circles = lambda d: [s for s in _shapes(d) if isinstance(s, Circle)]
+    assert len(circles(two)) == len(circles(plus_silent)) == 2
+
+
+def test_the_highlighted_dot_is_drawn_differently():
+    """It is the one the page is about, and a reader has to find it without
+    reading the label first."""
+    d = PP.strip_plot(400.0, [("a", 10.0), ("b", 40.0)], highlight="a")
+    radii = sorted(s.r for s in _shapes(d) if isinstance(s, Circle))
+    assert radii[0] < radii[-1]
+
+
+def test_a_strip_with_nothing_measured_draws_nothing():
+    assert not list(_shapes(PP.strip_plot(400.0, [("a", None)], highlight="a")))
+    assert PP.strip_plot(400.0, []).height == PP.STRIP_HEIGHT
+
+
+def test_a_dot_at_either_end_keeps_its_label_on_the_page():
+    """The label is centred on its dot, so a unit at 0% or at 100% would set
+    half of its name off the edge of the frame."""
+    def label_x(value):
+        d = PP.strip_plot(400.0, [("Los Angeles Norte", value), ("b", 50.0)],
+                          highlight="Los Angeles Norte")
+        return next(s for s in _shapes(d)
+                    if isinstance(s, String) and "Los Angeles" in s.text)
+
+    left, right = label_x(0.0), label_x(100.0)
+    assert left.textAnchor == "start" and left.x == 0
+    assert right.textAnchor == "end" and right.x == 400.0

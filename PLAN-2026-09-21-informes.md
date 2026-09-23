@@ -260,13 +260,33 @@ Reuse `analytics/finding_funnel.py` (`window_buckets:249`, `previous_window:238`
 *Acceptance:* no Tableau figure ever appears in the same total or table as a
 form figure (decision 34).
 
-### Phase V — verification
+### Phase V — verification, and the two things Zackary added to it
 
-**V1** — the suite against baseline (**11 failed / 1186 passed** as of 2026-09-19;
+**Zackary, 2026-09-23**, opening the phase: *"put special emphasis on using all
+of the space you've got. I don't want to have much or any white space at all.
+If you have to shrink things a little bit, shrink them to have it fit better,
+or give me more ideas of different graphics and things to use extra space we
+have. I also want for every zone to show how the zone is doing in comparison to
+the mission averages, and for every district showing them how the district is
+doing in comparison to the zone that they're in's average."*
+
+Two of those are new work, and the first **revises decision 25**: "no
+compression, take the pages the content needs" was written against a packet
+that had not been laid out yet. Measured on the 134-page packet of 2026-09-23,
+one section to a page left **36,6% of the average page blank at the foot** —
+that is not content taking the room it needs, it is a page break per section.
+Decision 25 stands for the CONTENT (nothing is cut, no top-N, all seven
+indicators, all 22 nightly metrics); the page breaks go.
+
+**V1** — the suite against baseline (**11 failed / 1624 passed** after Phase T;
 compare FAILURES, and stash-and-rerun before blaming a change).
-**V2** — the screen at 1400px and 375px, both measured.
-**V3** — the packet printed to paper at "Actual size" and read.
-**V4** — a checklist commit, as Phase F did.
+**V2** — the comparison ladder: every unit against the scale above it, in the
+model, drawn by both renderers. `gap_bars` is the sixth vector primitive.
+**V3** — the density pass: `run_on` instead of a `PageBreak` per section.
+**V4** — the space that is left, filled with graphics rather than air.
+**V5** — the screen at 1400px and 375px, both measured.
+**V6** — the packet printed to paper at "Actual size" and read.
+**V7** — a checklist commit, as Phase F did.
 
 ---
 

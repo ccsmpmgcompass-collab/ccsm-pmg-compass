@@ -295,3 +295,47 @@ def test_every_unit_page_names_its_unit_in_the_running_head(pdf):
         tail = " ".join(page.strip().splitlines()[-3:]).upper()
         assert ("MISIÓN DE PRUEBA" in tail or "ZONA ·" in tail
                 or "DISTRITO ·" in tail or "ÁREA ·" in tail), tail
+
+
+# ── Sections run on instead of taking a page each (Phase V) ───────────────────
+
+def test_run_on_puts_no_page_break_between_sections():
+    """The density change itself. Before Phase V every section was preceded by
+    a `PageBreak`, and the packet measured 36,6% blank at the foot of the
+    average page over 134 of them."""
+    from reportlab.platypus import CondPageBreak, PageBreak, Spacer
+    out = PK.run_on([["a"], ["b"], ["c"]])
+    assert not any(isinstance(f, PageBreak) for f in out)
+    assert [f for f in out if isinstance(f, str)] == ["a", "b", "c"]
+    assert sum(isinstance(f, CondPageBreak) for f in out) == 2
+    # `CondPageBreak` IS a `Spacer` in ReportLab, so the gaps are counted by
+    # exclusion rather than by type.
+    assert sum(isinstance(f, Spacer) and not isinstance(f, CondPageBreak)
+               for f in out) == 2
+
+
+def test_a_section_does_not_start_where_it_cannot_get_a_few_rows():
+    """A section head with nothing under it is worse than the space it was
+    trying to fill: the reader turns the page looking for its table."""
+    from reportlab.platypus import CondPageBreak
+    breaks = [f for f in PK.run_on([["a"], ["b"]])
+              if isinstance(f, CondPageBreak)]
+    assert breaks[0].height == PK.SECTION_FLOOR
+
+
+def test_an_empty_section_adds_neither_a_gap_nor_a_break():
+    """A unit with no finding data must not print a blank band where its
+    finding section would have been."""
+    from reportlab.platypus import CondPageBreak
+    out = PK.run_on([[], ["a"], [], []])
+    assert out == ["a"]
+    assert not any(isinstance(f, CondPageBreak) for f in out)
+
+
+def test_a_district_now_shares_its_pages(district):
+    """Five sections, and no `PageBreak` of its own anywhere in them — the
+    unit's own page break is `_body`'s, so a district leader still gets a
+    clean sheet to be handed."""
+    from reportlab.platypus import PageBreak
+    assert not any(isinstance(f, PageBreak)
+                   for f in PK.district_pages(district, _data().nightly_goals))

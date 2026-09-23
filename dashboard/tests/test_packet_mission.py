@@ -290,13 +290,18 @@ def test_the_week_columns_give_way_to_the_line_when_there_are_too_many():
 
 # ── The pages themselves ──────────────────────────────────────────────────────
 
-def test_the_missions_pages_run_in_order_one_section_to_a_page(models):
-    """M1-M5 and the scores, in order, one to a page.
+def test_the_missions_sections_run_in_order_down_the_pages(models):
+    """M1-M5 and the scores, in order — outcomes, then activity, then process.
 
     Scanned forward rather than searched: "Indicadores Clave" also appears in
     M1's own section note ("de los Indicadores Clave con una meta utilizable"),
     and "zonas" appears on the cover's contents. A plain substring search finds
     those first and reports the packet as out of order when it is not.
+
+    Phase V stopped giving each section a page of its own — seven Key
+    Indicators took a whole sheet and left two thirds of it blank — so this
+    asserts the ORDER and no longer that consecutive heads land on
+    consecutive pages.
     """
     import io
 
@@ -308,13 +313,13 @@ def test_the_missions_pages_run_in_order_one_section_to_a_page(models):
              "TODO EL TRABAJO NOCTURNO", "PUNTAJES"]
     at, found = 0, []
     for head in heads:
-        at = next(i for i in range(at, len(pages)) if head in pages[i])
+        at = next((i for i in range(at, len(pages)) if head in pages[i]), None)
+        assert at is not None, f"{head} never appears after page {found[-1:]}"
         found.append(at)
-        at += 1
-    # Strictly increasing and one to a page. Outcomes, then activity, then
-    # process: the scores are last because they judge how the work was done.
-    assert found == sorted(set(found))
-    assert found[-1] - found[0] == len(heads) - 1
+    assert found == sorted(found)
+    # And they now share pages: six sections inside four sheets, where before
+    # Phase V there were six sheets with a section on each.
+    assert found[-1] - found[0] < len(heads) - 1
 
 
 def test_every_string_the_mission_pages_print_survives_the_encoding(mission):

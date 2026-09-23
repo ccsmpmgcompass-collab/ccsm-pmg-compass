@@ -30,8 +30,8 @@ import io
 import math
 from dataclasses import dataclass, field, replace
 
-from reportlab.platypus import (BaseDocTemplate, Flowable, Frame,
-                                KeepTogether, PageBreak, PageTemplate,
+from reportlab.platypus import (BaseDocTemplate, CondPageBreak, Flowable,
+                                Frame, KeepTogether, PageBreak, PageTemplate,
                                 Paragraph, Spacer)
 
 from app.config import es_display
@@ -426,7 +426,7 @@ def front_matter(mission, sections, units, roster, *, total_pages: int) -> list:
         + [PageBreak(),
            PP.SetFurniture(PP.Furniture(
                eyebrow=mission.mission_name, period=period.window_label,
-               mission=mission.mission_name))]
+               mission=mission.mission_name, key=False))]
         + PP.print_guide(
             heading_note=f"Paquete del consejo · {total_pages or 0} páginas",
             intro=(
@@ -784,7 +784,8 @@ def ladder_rows(model, spec: PP.RankedSpec) -> list:
     return out
 
 
-def gap_rows(model) -> list:
+def gap_rows(model, *, limit: int | None = None,
+             label_width: float = 168.0) -> list:
     """The per-indicator gap to the unit one rung up, as diverging bars.
 
     The ranked table above says where the three scales sit; this says which of
@@ -797,7 +798,14 @@ def gap_rows(model) -> list:
     if parent is None or not any(v is not None for v in parent.deltas):
         return []
     rows = [(r.label, d) for r, d in zip(parent.metrics, parent.deltas)]
-    return [PP.gap_bars(PP.CONTENT_WIDTH, rows,
+    if limit is not None:
+        # Widest gap first, and an ungraded indicator is not a gap of zero —
+        # it goes to the end and falls off the short list rather than
+        # displacing a real one.
+        rows = sorted(rows, key=lambda row: (row[1] is None,
+                                             row[1] if row[1] is not None
+                                             else 0))[:limit]
+    return [PP.gap_bars(PP.CONTENT_WIDTH, rows, label_width=label_width,
                         note=f"contra {parent.scope.name}")]
 
 
@@ -823,6 +831,10 @@ def ladder_block(model) -> list:
     if gaps:
         flow.append(Spacer(0, 6))
         flow.extend(gaps)
+    strip = sibling_strip(model)
+    if strip:
+        flow.append(Spacer(0, 6))
+        flow.extend(strip)
     flow.append(Spacer(0, 4))
     flow.append(Paragraph(PP.text(
         f"Un porcentaje no dice nada por sí solo. Arriba está la misma medida "
@@ -833,6 +845,39 @@ def ladder_block(model) -> list:
         "medida en cada escala a la que se puede leer, para que el número de "
         "arriba tenga contra qué leerse."), st["note"]))
     return flow
+
+
+def sibling_strip(model) -> list:
+    """Where the unit sits among the units beside it, as one axis of dots.
+
+    The other half of "is 73% good". The ladder answers it upward — against
+    the zone, against the mission; this answers it sideways, and a leader can
+    do more about sideways: the unit two dots along is run by somebody in the
+    same room.
+
+    A district at 34% among districts running 31 to 38 has a mission problem.
+    The same 34% among districts running 16 to 63 has a district problem. No
+    table of percentages shows the difference and this does it in 44 points.
+    """
+    peers = [(c.name, c.mean_attainment) for c in model.siblings]
+    if len([1 for _, v in peers if v is not None]) < 2:
+        return []
+    noun = _level_plural(model.scope.level)
+    silent = sum(1 for _, v in peers if v is None)
+    caption = (f"{es_display.integer(len(peers))} {noun} de "
+               f"{model.siblings[0].scope.trail[0] if model.siblings[0].scope.trail else 'la misión'}"
+               if model.scope.level != S.ZONE
+               else f"las {es_display.integer(len(peers))} {noun} de la misión")
+    if silent:
+        caption += (f" · {es_display.integer(silent)} sin lectura, "
+                    f"sin punto en la línea")
+    return [PP.strip_plot(PP.CONTENT_WIDTH, peers, highlight=model.scope.name,
+                          value_fmt=lambda v: _pct(v), caption=caption)]
+
+
+def _level_plural(level: str) -> str:
+    return {S.ZONE: "zonas", S.DISTRICT: "distritos",
+            S.AREA: "áreas"}.get(level, "unidades")
 
 
 def _ladder_title(model) -> str:
@@ -882,17 +927,17 @@ def at_a_glance(model, *, weekly_ok: bool, weekly_sure: bool) -> list:
     flow.extend(ladder_block(model))
     behind = furthest_behind(model)
     if behind:
-        flow.append(Spacer(0, 10))
-        wanted = {r.label for r in behind}
-        flow.append(PP.SectionHead(
-            "Los tres más atrasados",
-            "de los Indicadores Clave con una meta utilizable"))
-        flow.append(PP.metric_table(
-            [line for line in ki_lines(model, comparable=weekly_ok,
-                                       confident=weekly_sure)
-             if line.label in wanted]))
-    flow.append(Spacer(0, 8))
-    flow.append(PP.legend(W, GRADED_NOTE))
+        # A sentence, not the three-row table this used to be. The full seven
+        # are now a few centimetres below on the same page (Phase V), so the
+        # table was the same rows printed twice for 85pt — and the ORDER was
+        # the only thing it added, which a sentence carries.
+        flow.append(Paragraph(PP.text(
+            "Los más atrasados, en orden: "
+            + " · ".join(f"{r.label} {_pct(r.grade.pct)}" for r in behind)
+            + ". De los Indicadores Clave con una meta utilizable."),
+            st["note_lead"]))
+    flow.append(Spacer(0, 4))
+    flow.append(Paragraph(PP.text(GRADED_NOTE), st["note"]))
     return flow
 
 
@@ -906,8 +951,6 @@ def key_indicator_page(model, *, weekly_ok: bool, weekly_sure: bool) -> list:
         Spacer(0, 6),
         Paragraph(PP.text(BASIS_NOTE), st["note"]),
         Paragraph(PP.text(_comparison_note(model)), st["note"]),
-        Spacer(0, 4),
-        PP.legend(PP.CONTENT_WIDTH, GRADED_NOTE),
     ]
 
 
@@ -960,8 +1003,6 @@ def children_page(model) -> list:
         "Clave de esa unidad contra sus propias metas, por área activa — un "
         "área que no informó cuenta, porque el trabajo que nadie anotó no es "
         "trabajo que no se hizo ni trabajo que sí."), st["note"]))
-    flow.append(Spacer(0, 4))
-    flow.append(PP.legend(W, GRADED_NOTE))
     return flow
 
 
@@ -1032,8 +1073,6 @@ def areas_page(model) -> list:
     flow.append(Paragraph(PP.text(
         "Cada área tiene además su propia página más adelante en el "
         "paquete, con los nombres de la compañería."), st["note"]))
-    flow.append(Spacer(0, 4))
-    flow.append(PP.legend(W, GRADED_NOTE))
     return flow
 
 
@@ -1268,10 +1307,28 @@ def finding_units_block(model) -> list:
     # it a district's page ended with "SUS ÁREAS" and an empty column header
     # at the foot and every row on the next sheet. Three rows rather than all
     # of them, so a ten-zone table can still break where it has to.
-    opening, flow = [PP.SectionHead(title, sub),
-                     PP.ranked_row(spec,
-                                   name=block.unit_noun.rstrip("s") or "unidad",
-                                   header=True)], []
+    # The notes sit ABOVE the rows rather than under them. Measured after the
+    # density pass: a closing paragraph left alone at the top of a sheet made
+    # eight pages of 116 that were 98% blank, and tying it to the last two
+    # rows with `KeepTogether` cost five whole pages — 60pt that jumps takes
+    # a page with it. Above the table it explains the bar before the reader
+    # meets it and can never be widowed, because the head is already keeping
+    # the first rows company.
+    notes = [Paragraph(PP.text(
+        "La barra es la proporción de las personas encontradas que los "
+        "misioneros lograron contactar. Encontradas es un tamaño — una zona "
+        "grande encuentra más — así que el orden va por la tasa, no por el "
+        "total."), st["note"])]
+    if block.whole_mission:
+        notes.append(Paragraph(PP.text(
+            "Las seis zonas sin formularios de Compass no aparecen en "
+            "ninguna otra página de este paquete. Aquí sí, porque Tableau las "
+            "cubre y el consejo dirige a toda la misión."), st["note"]))
+    opening, flow = ([PP.SectionHead(title, sub)] + notes
+                     + [Spacer(0, 2),
+                        PP.ranked_row(spec,
+                                      name=block.unit_noun.rstrip("s") or "unidad",
+                                      header=True)]), []
     for i, unit in enumerate(block.units, start=1):
         marks = []
         if block.whole_mission:
@@ -1287,21 +1344,7 @@ def finding_units_block(model) -> list:
             value=(_pct(unit.contact_rate) if unit.contact_rate is not None
                    else es_display.NA),
             bar=unit.contact_rate, bar_max=100))
-    flow = [KeepTogether(opening + flow[:3])] + flow[3:]
-    flow += [
-        Spacer(0, 6),
-        Paragraph(PP.text(
-            "La barra es la proporción de las personas encontradas que los "
-            "misioneros lograron contactar. Encontradas es un tamaño — una "
-            "zona grande encuentra más — así que el orden va por la tasa, no "
-            "por el total."), st["note"]),
-    ]
-    if block.whole_mission:
-        flow.append(Paragraph(PP.text(
-            "Las seis zonas sin formularios de Compass no aparecen en "
-            "ninguna otra página de este paquete. Aquí sí, porque Tableau las "
-            "cubre y el consejo dirige a toda la misión."), st["note"]))
-    return flow
+    return [KeepTogether(opening + flow[:3])] + flow[3:]
 
 
 def finding_page(model) -> list:
@@ -1472,6 +1515,45 @@ def baptism_page(model) -> list:
 
 # ── The pages of one unit ────────────────────────────────────
 
+#: How much room a section needs before it is allowed to start.
+#:
+#: A section head with nothing under it is worse than the blank space it was
+#: trying to use: the reader turns the page looking for the table it promised.
+#: 140pt is the head, its rule, a table header and about four rows — measured
+#: against `metric_table` at 3,5pt padding, whose rows run 17-21pt.
+SECTION_FLOOR = 140.0
+
+
+def run_on(blocks, *, gap: float = 10.0, floor: float | None = None) -> list:
+    """Sections one after another down the page, breaking only when they must.
+
+    Phase V's whole density change, in one function. Every unit's page used to
+    be built as `PageBreak()` between every section, which is why the packet
+    measured **36,6% blank at the foot of the average page** over 134 pages —
+    a Key Indicator table is seven rows and took a sheet, a week-by-week strip
+    is seven more and took another.
+
+    Zackary, 2026-09-23: "I don't want to have much or any white space at
+    all." So sections run on, and a `CondPageBreak` keeps one from starting
+    where it cannot get four rows in. A table longer than the room left still
+    splits — `packet_parts.table` repeats its header row, so the half on the
+    second page is not a stack of unlabelled figures.
+
+    This is decision 25 read the way he meant it: take the pages the content
+    needs, and not one more.
+    """
+    floor = SECTION_FLOOR if floor is None else floor
+    out = []
+    for block in blocks:
+        if not block:
+            continue
+        if out:
+            out.append(Spacer(0, gap))
+            out.append(CondPageBreak(floor))
+        out.extend(block)
+    return out
+
+
 def mission_pages(model, goals, peers=None) -> list:
     """M1-M7: where we stand, the seven, the weeks, the zones, the nights, the
     year's baptisms, the finding.
@@ -1487,16 +1569,13 @@ def mission_pages(model, goals, peers=None) -> list:
     # and the reason the scores come last rather than first: they are a
     # judgement about how the work was done, and a council reads them after it
     # knows what the work was.
-    flow = at_a_glance(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure)
-    for block in (key_indicator_page(model, weekly_ok=weekly_ok,
-                                     weekly_sure=weekly_sure),
-                  week_page(model), children_page(model),
-                  nightly_page(model, goals), baptism_page(model),
-                  finding_page(model), rates_and_scores(model)):
-        if block:
-            flow.append(PageBreak())
-            flow.extend(block)
-    return flow
+    return run_on([
+        at_a_glance(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
+        key_indicator_page(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
+        week_page(model), children_page(model),
+        nightly_page(model, goals), baptism_page(model),
+        finding_page(model), rates_and_scores(model),
+    ])
 
 
 def zone_pages(model, goals, peers=None) -> list:
@@ -1517,69 +1596,50 @@ def zone_pages(model, goals, peers=None) -> list:
     """
     weekly_ok = _weekly_comparable(model)
     weekly_sure = _weekly_confident(model)
-    flow = at_a_glance(model, weekly_ok=weekly_ok,
-                       weekly_sure=weekly_sure)
-    for block in (key_indicator_page(model, weekly_ok=weekly_ok,
-                                     weekly_sure=weekly_sure),
-                  week_page(model),
-                  children_page(model) + areas_page(model),
-                  nightly_page(model, goals), finding_page(model),
-                  rates_and_scores(model)):
-        if block:
-            flow.append(PageBreak())
-            flow.extend(block)
-    return flow
+    # §3.2's order, unchanged. The district's tail had to be rearranged to
+    # save a sheet; measured, the same move here saved nothing and put two of
+    # the four zones at 51% blank instead of 41.
+    return run_on([
+        at_a_glance(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
+        key_indicator_page(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
+        week_page(model), children_page(model), areas_page(model),
+        nightly_page(model, goals), finding_page(model),
+        rates_and_scores(model),
+    ])
 
 
 def district_pages(model, goals, peers=None) -> list:
-    """One page, as §3.2 budgets: the headlines, where the district sits
-    against its zone and the mission, its areas, and its seven.
+    """The same shape as the zone's, one rung down.
 
     The comparison is the whole reason this page exists. A district leader has
     no way to know whether 73% is good until they can see the zone at 78 and
     the mission at 76 — the audit's own words, and the thing nothing in
-    Compass did before.
+    Compass did before. Since Phase V it is `at_a_glance`'s own ladder block,
+    so it is the same section a zone reads against the mission.
 
-    It is allowed to run onto a second page rather than being squeezed
-    (decision 25); the pagination is generated, so nothing downstream cares.
-
-    The finding section closes it, roster-scoped and ranking the district's
-    own areas — §3.2's "top finding sources", which turned out to be worth a
-    section rather than a line once decision 24 had one shape for all of them.
+    It has no "todas las áreas" section: at district level the areas ARE the
+    children, and the same list under two headings is noise.
     """
-    st = PP.styles()
-    W = PP.CONTENT_WIDTH
     weekly_ok = _weekly_comparable(model)
     weekly_sure = _weekly_confident(model)
-    flow = _heading(model)
-    best, worst = _best_and_worst(model)
-    if worst is not None:
-        flow.append(PP.SectionHead("Dónde estamos", model.period.window_label))
-        flow.append(Paragraph(
-            PP.text(f"Lo que hay que mover: {worst.label} es lo más atrasado, "
-                    f"en {_pct(worst.grade.pct)} — {_count(worst.actual)} "
-                    f"contra {_count(worst.meta)}."
-                    + (f" Lo más fuerte: {best.label} en "
-                       f"{_pct(best.grade.pct)}." if best is not None else "")),
-            st["body"]))
-    flow.append(Spacer(0, 6))
-    flow.append(PP.stat_tiles(W, _headline_tiles(model)))
-
-    flow.extend(ladder_block(model))
-    flow.append(Spacer(0, 10))
-    flow.extend(children_page(model))
-    flow.append(PageBreak())
-    flow.extend(key_indicator_page(model, weekly_ok=weekly_ok,
-                                   weekly_sure=weekly_sure))
-    flow.append(PageBreak())
-    flow.extend(week_page(model))
-    flow.append(PageBreak())
-    flow.extend(nightly_page(model, goals))
-    finding = finding_page(model)
-    if finding:
-        flow.append(PageBreak())
-        flow.extend(finding)
-    return flow
+    # The scores ride with the children rather than closing the unit. §3.2
+    # put them last so a council reads a judgement about HOW the work was done
+    # after it knows what the work was — which held while every section had a
+    # page of its own. Now they are all one document four sheets long, and
+    # measured on the live packet the four score tiles alone were taking a
+    # fifth sheet that was 84% blank in all thirteen districts.
+    # The nightly table closes the district, and the finding section comes
+    # before it — §3.2's own order (outcomes, finding, nightly work), and the
+    # only block long enough to SPLIT across the last page boundary rather
+    # than jumping it. Measured: the finding section closing the unit put
+    # seven of thirteen districts on a fifth sheet that was 84% blank.
+    return run_on([
+        at_a_glance(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
+        children_page(model), rates_and_scores(model),
+        key_indicator_page(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
+        week_page(model),
+        finding_page(model), nightly_page(model, goals),
+    ])
 
 
 def _children_title(model) -> str:
@@ -1715,7 +1775,33 @@ def area_block(model) -> list:
                      f"{es_display.integer(scores.of)} en su distrito, por "
                      f"efectividad")
         flow.append(Paragraph(PP.text(line), st["note"]))
+    ladder = area_ladder_line(model)
+    if ladder:
+        flow.append(Paragraph(PP.text(ladder), st["note_lead"]))
+    # The half page had 68pt of air under it, measured. This is what goes
+    # there: where the companionship sits among the other areas of their own
+    # district, which is the comparison they can actually see happening.
+    flow.extend(sibling_strip(model))
     return flow
+
+
+def area_ladder_line(model) -> str:
+    """The area against its district, its zone and the mission, in one line.
+
+    The half page has no room for the ranked table a zone or a district gets,
+    and a companionship's question is smaller anyway: are we ahead of or
+    behind the people around us. Three signed figures answer it in the space
+    a sentence takes.
+    """
+    bits = [f"{r.role} {_signed(r.delta)}" for r in model.ladder[1:]
+            if not r.is_self and r.delta is not None]
+    return ("Contra " + " · ".join(bits)) if bits else ""
+
+
+def _signed(points: float) -> str:
+    """A gap in percentage points, with the sign a reader needs to see."""
+    sign = "+" if points >= 0 else "-"
+    return f"{sign}{es_display.number(abs(points), 0)} pts"
 
 
 # ── The body ──────────────────────────────────────────────
@@ -1964,10 +2050,12 @@ def _body(models, goals, pagination: Pagination) -> list:
     # explaining every source in the packet is headed "Áreas".
     mission = next((m for m in models if m.scope.level == S.MISSION), None)
     if mission is not None:
+        # No key: the data note grades nothing, and the three states in its
+        # footer would be a key to a page with no colour on it.
         flow.append(PP.SetFurniture(PP.Furniture(
             eyebrow="Nota de datos",
             period=mission.period.window_label,
-            mission=mission.mission_name)))
+            mission=mission.mission_name, key=False)))
     flow.append(SectionStart(DATA_NOTE, pagination))
     flow.extend(data_note(models, goals))
     return flow

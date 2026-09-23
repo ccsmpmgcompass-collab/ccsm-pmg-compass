@@ -205,6 +205,42 @@ def test_an_indicator_nobody_can_grade_gets_no_delta(data, period):
     assert m.ladder[1].delta is None
 
 
+# ── Sideways: the units beside this one ──────────────────────────────────────
+
+def test_a_district_is_given_the_other_districts_of_its_zone(data, period):
+    """The other half of "is 73% good". The ladder answers it upward; this
+    answers it sideways, and sideways is the half a leader can act on."""
+    m = _report(data, period, S.DISTRICT, zone="Norte", district="D1")
+    assert sorted(c.name for c in m.siblings) == ["D1", "D2"]
+
+
+def test_a_unit_is_among_its_own_siblings(data, period):
+    """It has to be: the strip plot marks one dot, and a unit missing from its
+    own distribution would be marking somebody else."""
+    m = _report(data, period, S.ZONE, zone="Norte")
+    assert [c.name for c in m.siblings] == ["Sur", "Norte"]   # weakest first
+    assert any(c.name == m.scope.name for c in m.siblings)
+
+
+def test_an_only_child_gets_no_siblings(data, period):
+    """A strip of one dot is a picture of nothing."""
+    m = _report(data, period, S.AREA, zone="Sur", district="D3", area="B1")
+    assert m.siblings == ()
+
+
+def test_the_mission_has_no_siblings(data, period):
+    assert _report(data, period).siblings == ()
+
+
+def test_a_sibling_carries_the_same_figure_as_its_own_page(data, period):
+    """One rule for the headline. A district reading 61 on the strip and 58 on
+    its own page would be the same unit measured two ways."""
+    zone = _report(data, period, S.ZONE, zone="Norte")
+    for child in zone.siblings:
+        own = _report(data, period, S.ZONE, zone=child.name)
+        assert child.mean_attainment == own.mean_attainment
+
+
 # ── What it costs ────────────────────────────────────────────────────────────
 
 def _ki_calls(data) -> list:
@@ -239,6 +275,30 @@ def test_the_ladder_costs_no_extra_pass_over_the_weekly_form(monkeypatch):
     monkeypatch.setattr(M, "_ladder", lambda *a, **kw: ())
     without = _ki_calls(_data())
     assert with_ladder == without
+
+
+def _ranking_calls(data) -> int:
+    """How many times `build_all` ranks a list of units."""
+    calls, real = [], M._rank_scopes
+
+    def counted(*a, **kw):
+        calls.append(len(a[1]))
+        return real(*a, **kw)
+
+    M._rank_scopes = counted
+    try:
+        M.build_all(P.THIS_TRANSFER, P.COMPARE_PRECEDING, data=data)
+    finally:
+        M._rank_scopes = real
+    return len(calls)
+
+
+def test_siblings_cost_no_second_ranking(monkeypatch):
+    """Every unit wants the same list twice — once as its own children and
+    once as each child's siblings. Ranked once, it is free both times."""
+    with_siblings = _ranking_calls(_data())
+    monkeypatch.setattr(M, "_siblings", lambda *a, **kw: ())
+    assert _ranking_calls(_data()) == with_siblings
 
 
 def test_a_scope_is_reduced_once_per_build():

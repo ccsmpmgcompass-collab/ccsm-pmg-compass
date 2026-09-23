@@ -357,6 +357,34 @@ def _gap_rows() -> str:
     )
 
 
+def _sibling_line() -> str:
+    """Where the unit sits among the units beside it, in one sentence.
+
+    The packet draws this as a strip of dots; on screen the ranked table of
+    every sibling is one click away in the parent's own view, so the sentence
+    carries what the strip is for — the position and the SPREAD. A unit at 34%
+    among peers running 31 to 38 has a mission problem; the same 34% among
+    peers running 16 to 63 has a problem of its own.
+    """
+    peers = [c for c in _model.siblings if c.mean_attainment is not None]
+    if len(peers) < 2:
+        return ""
+    mine = next((c for c in peers if c.name == _model.scope.name), None)
+    if mine is None:
+        return ""
+    noun = {"zone": "zonas", "district": "distritos",
+            "area": "áreas"}.get(_model.scope.level, "unidades")
+    place = sorted(peers, key=lambda c: -(c.mean_attainment or 0)).index(mine) + 1
+    low = min(c.mean_attainment for c in peers)
+    high = max(c.mean_attainment for c in peers)
+    silent = len(_model.siblings) - len(peers)
+    line = (f"{fmt_int(place)}º de {fmt_int(len(peers))} {noun} — las demás "
+            f"van de {fmt_percent(low)} a {fmt_percent(high)}")
+    if silent:
+        line += f" · {fmt_int(silent)} sin lectura"
+    return line
+
+
 def _nightly_rows(rows) -> str:
     """Every tracked nightly metric as ranked rows, furthest behind first.
 
@@ -452,6 +480,9 @@ if _model.ladder:
         st.caption(f"Dónde está la diferencia con "
                    f"{_model.ladder[1].scope.name}, en puntos porcentuales")
         st.markdown(_gaps, unsafe_allow_html=True)
+    _beside = _sibling_line()
+    if _beside:
+        st.caption(f"Y de lado: {_beside}")
 
 
 # ── 2 · Semana a semana ───────────────────────────────────────────────────────

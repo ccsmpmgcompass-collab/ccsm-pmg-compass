@@ -364,6 +364,9 @@ class Furniture:
     period: str = ""
     trail: str = ""
     mission: str = ""
+    #: Whether the three-state key rides in the footer. On every unit page and
+    #: on none of the front matter, which grades nothing.
+    key: bool = True
 
     def draw(self, canvas, page_number: int) -> None:
         plain = Type(FURNITURE.size, FURNITURE.leading, FURNITURE.font)
@@ -377,11 +380,42 @@ class Furniture:
         canvas.line(MARGIN_X, HEAD_RULE_Y, PAGE_WIDTH - MARGIN_X, HEAD_RULE_Y)
 
         canvas.line(MARGIN_X, FOOT_RULE_Y, PAGE_WIDTH - MARGIN_X, FOOT_RULE_Y)
-        foot = " · ".join(p for p in ("PMG Compass", self.mission, self.trail) if p)
-        draw_tracked(canvas, MARGIN_X, FOOT_BASELINE, foot, plain, INK_3)
-        draw_tracked(canvas, PAGE_WIDTH - MARGIN_X, FOOT_BASELINE,
-                     f"Página {page_number}", plain, INK_3, anchor="end")
+        number = f"Página {page_number}"
+        right = PAGE_WIDTH - MARGIN_X
+        draw_tracked(canvas, right, FOOT_BASELINE, number, plain, INK_3,
+                     anchor="end")
+        used = width_of(number, plain) + 16
+        if self.key:
+            used += self._draw_key(canvas, right - used)
+        foot = " · ".join(p for p in ("PMG Compass", self.mission, self.trail)
+                          if p)
+        draw_tracked(canvas, MARGIN_X, FOOT_BASELINE,
+                     fit(foot, plain, CONTENT_WIDTH - used - 12), plain, INK_3)
         canvas.restoreState()
+
+    def _draw_key(self, canvas, right: float) -> float:
+        """The three states, in the footer, on every page that has one.
+
+        They used to be a flowable printed under every section that graded
+        anything — which was right when a section had a page to itself and
+        wrong the moment Phase V let sections share one: four identical keys
+        appeared on the same sheet, costing 80pt of the room they were trying
+        to justify. In the footer the key is on every page, once, and takes no
+        content height at all.
+        """
+        words = [(STATUS[state], STATUS_WORD[state])
+                 for state in ("good", "warn", "bad")]
+        widths = [9 + width_of(word, NOTE) + 14 for _, word in words]
+        x = right - sum(widths)
+        for (color, word), step in zip(words, widths):
+            canvas.setFillColor(color)
+            canvas.rect(x, FOOT_BASELINE - 0.5, 5.5, 5.5, fill=1, stroke=0)
+            # `draw_tracked` and never `drawString`: Tc is text state and
+            # survives ET, so a run that does not set its own inherits the
+            # tracked one before it.
+            draw_tracked(canvas, x + 8, FOOT_BASELINE, word, NOTE, INK_3)
+            x += step
+        return sum(widths)
 
 
 #: Where the current furniture is parked between the flowable that sets it and
@@ -895,7 +929,73 @@ def gap_bars(width: float, rows, *, span: float | None = None,
     return d
 
 
-# ── 6 · A ranked row ──────────────────────────────────────────────────────────
+# ── 6 · Where one unit sits among all of them ─────────────────────────────────
+
+STRIP_HEIGHT = 44.0
+
+
+def strip_plot(width: float, points, *, highlight: str = "",
+               axis_max: float = 100.0, value_fmt=None,
+               caption: str = "") -> Drawing:
+    """Every peer as a dot on one axis, with this unit's dot named.
+
+    The packet's only picture of a DISTRIBUTION, and the thing neither a bar
+    nor a ranked table can show: whether the unit is in a crowd or on its own.
+    A district at 34% in a mission whose districts run 31 to 38 has a mission
+    problem; the same 34% among districts running 16 to 63 has a district
+    problem, and the two ask for opposite conversations.
+
+    ``points`` is `[(name, value)]`; a value of None is a unit with no
+    reading, which is counted in the caption and drawn nowhere — a dot at zero
+    would be a unit doing badly rather than a unit nobody filed a form for.
+    """
+    fmt = value_fmt or (lambda v: f"{round(v)}%")
+    rows = list(points)
+    d = Drawing(width, STRIP_HEIGHT)
+    measured = [(n, v) for n, v in rows if v is not None]
+    if not measured:
+        return d
+
+    axis_y = STRIP_HEIGHT - 26
+    d.add(Line(0, axis_y, width, axis_y, strokeColor=RULE, strokeWidth=0.5))
+    for tick in (0, 25, 50, 75, 100):
+        x = width * min(1.0, tick / axis_max)
+        d.add(Line(x, axis_y - 2.5, x, axis_y + 2.5, strokeColor=RULE_SOFT,
+                   strokeWidth=0.5))
+        d.add(_string(x, axis_y - 11, f"{tick}%", NOTE, INK_3,
+                      anchor="middle" if 0 < tick < 100
+                      else ("start" if tick == 0 else "end")))
+
+    mine = None
+    for name, value in measured:
+        x = width * max(0.0, min(1.0, value / axis_max))
+        if name == highlight:
+            mine = (x, value)
+            continue
+        d.add(Circle(x, axis_y, 2.6, fillColor=UNGRADED, strokeColor=PAPER,
+                     strokeWidth=0.8))
+    if mine is not None:
+        x, value = mine
+        d.add(Circle(x, axis_y, 4.0, fillColor=ACCENT, strokeColor=PAPER,
+                     strokeWidth=0.9))
+        label = fit(f"{highlight} {fmt(value)}", Type(NOTE.size, NOTE.leading,
+                                                     FONT_BOLD), width)
+        anchor = "middle"
+        if x < width_of(label, NOTE) / 2:
+            anchor = "start"
+            x = 0
+        elif x > width - width_of(label, NOTE) / 2:
+            anchor = "end"
+            x = width
+        d.add(_string(x, axis_y + 8, label,
+                      Type(NOTE.size, NOTE.leading, FONT_BOLD), INK,
+                      anchor=anchor))
+    if caption:
+        d.add(_string(0, 0, fit(caption, NOTE, width), NOTE, INK_3))
+    return d
+
+
+# ── 7 · A ranked row ──────────────────────────────────────────────────────────
 
 RANK_ROW_HEIGHT = 17.0
 RANK_HEAD_HEIGHT = 12.0

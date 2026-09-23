@@ -376,6 +376,10 @@ class ReportModel:
     #: comparison ladder. Empty at mission level, which has nothing above it.
     ladder: tuple[LadderRow, ...] = ()
 
+    #: Every unit at this level under the same parent, weakest first, this one
+    #: among them. Where the unit SITS, as against what it is worth.
+    siblings: tuple = ()
+
     #: Every AREA inside the unit, weakest first. Mission and zone only — at
     #: district level the areas are already `children`.
     areas_ranked: tuple = ()
@@ -1284,6 +1288,44 @@ def _rank_scopes(data: ReportData, scopes: list, period: P.Period,
     return tuple(replace(c, rank=i + 1) for i, c in enumerate(out))
 
 
+def _ranked_children_of(data: ReportData, parent: S.Scope, period: P.Period,
+                        comparison: P.Comparison | None, flags: dict) -> tuple:
+    """`_rank_scopes` over a unit's children, memoised on the PARENT.
+
+    Every unit wants the same list twice over: once as its own `children`, and
+    once as the `siblings` of each of those children. Ranked once, it is free
+    both times — 18 rankings for CCSM's 63 scopes instead of 80.
+    """
+    cache_key = ("children", parent.key, period.key,
+                 comparison.period.key
+                 if comparison is not None and comparison.period is not None
+                 else None)
+    if cache_key not in data._flags:
+        data._flags[cache_key] = _rank_scopes(
+            data, S.children(data.roster, parent), period, comparison, flags)
+    return data._flags[cache_key]
+
+
+def _siblings(data: ReportData, scope: S.Scope, period: P.Period,
+              comparison: P.Comparison | None, flags: dict) -> tuple:
+    """Every unit at this level under the same parent, this one included.
+
+    What turns a percentage into a position. The ladder says how the unit
+    compares with the scale above it; this says how it compares with the units
+    beside it, which is the other half of "is 73% good" — and the half a
+    leader can do something about, because the unit two rows up is run by
+    somebody in the same room.
+
+    Empty at mission level, which has no siblings, and empty where a unit is
+    an only child: a strip of one dot is a picture of nothing.
+    """
+    parent = S.parent(data.roster, scope, data.mission_name)
+    if parent is None:
+        return ()
+    rows = _ranked_children_of(data, parent, period, comparison, flags)
+    return rows if len(rows) > 1 else ()
+
+
 def _areas_ranked(data: ReportData, scope: S.Scope, period: P.Period,
                   comparison: P.Comparison | None, flags: dict) -> tuple:
     """Every AREA inside the unit, weakest first — §3.2's Z3, and the drawer
@@ -1445,9 +1487,10 @@ def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
             flags=data.nightly_goal_flags(period))),
         scores=_scores(data, scope, period),
         rates=_rates(data, scope, period, comparison),
-        children=_rank_scopes(data, S.children(data.roster, scope), period,
-                              comparison, ki_flags),
+        children=_ranked_children_of(data, scope, period, comparison,
+                                     ki_flags),
         ladder=_ladder(data, scope, period, comparison, ki_flags),
+        siblings=_siblings(data, scope, period, comparison, ki_flags),
         areas_ranked=_areas_ranked(data, scope, period, comparison, ki_flags),
         series=_series(data, scope, period),
         strengths=strengths,
