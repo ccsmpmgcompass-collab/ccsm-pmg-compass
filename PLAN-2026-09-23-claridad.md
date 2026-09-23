@@ -34,6 +34,7 @@ Recorded here so no step below re-opens them.
 | 40 | **A third front-matter page**, "Cómo leer este paquete". | The run sheet keeps its NOTAS column. 106 → 107 pages before Round 3's savings. |
 | 41 | **The baptism block follows the selected period.** | New requirement, §4 Round 0. See §2 for why it is not simply a filter. |
 | 42 | **Every period prints the CERTIFIED figure — the nightly sync captures the windows that are not months.** (2026-09-23, after R0.1) | No detail-export baptism count is printed anywhere, labelled or not. The four periods that are not whole months get their certified figure from TABLEAU_BAPTISM_WINDOWS, which the nightly job fills; a period with no capture yet prints `—` and says why. Chosen over "detail, labelled" and over "both, in order". |
+| 43 | **Page 3 goes in the full copies only** (2026-09-23, after R3.1 measured it). | Not in the zone or district leaders' stacks: there it cost fifteen sheets a run (151 -> 166), a district's four pages becoming five. A leader's own pages carry the one-line version of each rule (R3.2) and never point at a page the leader was not handed. |
 
 ### 1.1 — Zackary's own words on decision 41
 
@@ -587,3 +588,40 @@ pages, that cost disappears; it is re-measured there before it is kept.
 
 Also fixed: the data note said a thin period shows "las cifras … las flechas
 no", which decision 38 made untrue.
+
+### 2026-09-23 — decision 43, and R3.2 (C11): one line per rule in a unit, its own facts darker
+
+**Decision 43 (Zackary):** page 3 goes in the two full copies only. Asked
+with the measurement: every leader's stack 166 sheets, zone leaders only
+~155, full copies only 151. He chose 151. The run sheet is back to "La misión
+y su zona" / "Su distrito"; a zone that follows the mission directly prints as
+one range ("4–13").
+
+**R3.2, measured first.** Not three paragraphs repeating but **fifteen**, word
+for word in all 18 unit sections — about 4.000pt, close to six pages of grey.
+The rule applied: a how-to-read line stays in every unit, because a leader
+holding only their own pages has to be able to read them (the Phase V comment
+in `funnel_block` already said so), but it shrinks to the one sentence the
+block cannot be read without, and the full reasoning lives once on page 3.
+
+| Where | Was | Now |
+|---|---|---|
+| under the grades | bands 90 / 60-89 / below | "Cada porcentaje es esta unidad contra su propia meta." — bands on page 3 and in every footer's key |
+| Key Indicator table | 2 lines | "La marca violeta es la meta de traslado del liderazgo; la línea bajo cada nombre dice cuánto es." |
+| the ladder | 2 lines | "Abajo, cuánto separa a esta unidad de … en puntos porcentuales." |
+| week table | 2 paragraphs, 4 lines | 1 line; "sumas sin dividir" is now the table's own bold last row (R2.3) and rule 2 |
+| children table | 2 lines | 1 line |
+| nightly table | 2 lines | 1 line |
+| rates, scores, funnel, sources, finding units | 2 lines each | 1 line each |
+| channel mix | 1,5 lines | removed — page 3 rule 5 |
+| unit scope note | a line on the join rule | "Sólo las áreas de esta unidad en MISSION_ORG." (decision 34 keeps it; the data note has the rule) |
+| maturity note | pointed every unit at "la página de bautismos" | only the mission, the one unit that has one |
+
+**What is true of THIS unit now prints darker** (`note_lead`) than how to read
+it (`note`): the comparison note ("Sin base para el cambio: …"), the nightly
+reporting line, the export's freshness, the finding comparison window, and the
+mission's ten-zone sentence. C11's harm was a reader learning that grey
+repeats and skipping the grey that did not.
+
+**Measured: 107 → 105 pages** (one under Phase V's 106), **151 sheets a run**
+(Phase V: 153). Districts stay at four pages each (4,1 on average).

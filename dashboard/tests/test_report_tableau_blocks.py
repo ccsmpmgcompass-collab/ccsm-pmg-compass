@@ -112,7 +112,12 @@ def test_the_maturity_note_names_the_stages_it_is_about():
                           period("2026-09-07", "2026-09-17"),
                           maturity={"Baptized": 133.0})
     assert "Bautizados tardan más que la ventana" in block.maturity_note
-    assert "página de bautismos" in block.maturity_note
+    # Only the mission has a baptism page to send a reader to (R3.2).
+    assert "página de bautismos" not in block.maturity_note
+    mission = T.build_block(det, T.read_export(span("2024-01-01", "2026-09-17")),
+                            period("2026-09-07", "2026-09-17"),
+                            maturity={"Baptized": 133.0}, whole_mission=True)
+    assert "página de bautismos" in mission.maturity_note
 
 
 def test_a_funnel_with_nothing_slow_in_it_says_nothing_about_maturity():

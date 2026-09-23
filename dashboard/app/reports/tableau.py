@@ -1044,9 +1044,9 @@ class Block:
             return ("Esta sección cubre las 10 zonas de la misión, no sólo "
                     "las 4 del piloto de Compass. Ninguna cifra de Tableau se "
                     "suma con una cifra de los formularios.")
-        return ("Áreas del roster de MISSION_ORG, emparejadas por nombre de "
-                "área; la zona y el distrito son los del roster, no los de "
-                "Tableau.")
+        # Half a line since R3.2 (C11): it prints under all 17 unit finding
+        # sections, and the join rule it used to spell out is in the data note.
+        return "Sólo las áreas de esta unidad en MISSION_ORG."
 
     @property
     def maturity_note(self) -> str:
@@ -1055,10 +1055,15 @@ class Block:
         if not young:
             return ""
         names = " · ".join(s.label.lower() for s in young)
-        return (f"{names.capitalize()} tardan más que la ventana en ocurrir, "
-                f"así que van sin porcentaje ni dirección: esa cohorte aún no "
-                f"ha tenido tiempo. Los bautismos reales del período están en "
-                f"la página de bautismos, no aquí.")
+        out = (f"{names.capitalize()} tardan más que la ventana en ocurrir, "
+               f"así que van sin porcentaje ni dirección: esa cohorte aún no "
+               f"ha tenido tiempo.")
+        # Only the mission HAS a baptism page; a zone leader holding their
+        # own pages would be sent looking for one (R3.2).
+        if self.whole_mission:
+            out += (" Los bautismos reales del período están en la página "
+                    "de bautismos, no aquí.")
+        return out
 
 
 def build_block(det: pd.DataFrame, export: Export, period, *,

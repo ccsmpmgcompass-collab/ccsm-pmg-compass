@@ -253,46 +253,44 @@ def hand_outs(sections, units, roster) -> list:
             HandOut("Asistentes", whole, max(1, lead.assistants),
                     "El paquete completo", total)]
 
-    # Every leader's stack opens with "Cómo leer" (decisions 36, 40): a
-    # district leader handed five loose pages is the second first-pass reader,
-    # and the rules page is the one they would otherwise never see. The mission
-    # follows it directly, so for a zone leader it only widens a range.
-    how = by_key.get(HOW_TO_READ)
-    how_count = how.page_count if how is not None else 0
+    # Page 3 ("Cómo leer") goes in the two full copies only — decision 43:
+    # in every leader's stack it cost fifteen sheets a run (151 -> 166), a
+    # district's four pages becoming five. A leader's own pages carry the
+    # one-line version of every rule instead (R3.2), and never point at a page
+    # the leader was not handed.
     mission_section = by_key.get(MISSION)
+    mission_label = mission_section.page_label if mission_section else "—"
     mission_count = mission_section.page_count if mission_section else 0
-    opening = _joined(how, mission_section)
     for scope, (first, last) in units:
         pages = str(first) if first == last else f"{first}–{last}"
         count = last - first + 1
         if scope.level == S.ZONE:
             copies = lead.zone_leaders.get(scope.key, 0)
+            # A zone that follows the mission directly is one range, not two
+            # joined by "+" that a printer would have to read twice.
             together = (mission_section is not None and mission_section.present
                         and mission_section.last_page + 1 == first)
             rows.append(HandOut(
                 f"Líderes de zona · {scope.name}",
-                (_joined(how, mission_section,
-                         replace(mission_section, first_page=first,
-                                 last_page=last))
-                 if together else f"{opening} + {pages}"), copies,
-                "Cómo leer, la misión y su zona" if copies
+                (_joined(mission_section, replace(
+                    mission_section, first_page=first, last_page=last))
+                 if together else f"{mission_label} + {pages}"), copies,
+                "La misión y su zona" if copies
                 else "Sin líder de zona en MISSION_ORG",
-                how_count + mission_count + count))
+                mission_count + count))
         elif scope.level == S.DISTRICT:
             copies = lead.district_leaders.get(scope.key, 0)
-            lead_in = f"{how.page_label} + " if how is not None and how.present else ""
             rows.append(HandOut(
-                f"Líderes de distrito · {scope.name}", f"{lead_in}{pages}",
-                copies,
-                ("Cómo leer y su distrito" if lead_in else "Su distrito")
-                if copies else "Sin líder de distrito en MISSION_ORG",
-                how_count + count))
+                f"Líderes de distrito · {scope.name}", pages, copies,
+                "Su distrito" if copies
+                else "Sin líder de distrito en MISSION_ORG",
+                count))
     return rows
 
 
 def _joined(*sections) -> str:
-    """Consecutive sections' pages as one range — "3–8" for the rules page and
-    the mission — or "—" when none of them has been measured yet."""
+    """Consecutive sections' pages as one range — "4–13" for the mission and
+    the zone that follows it — or "—" when none has been measured yet."""
     present = [s for s in sections if s is not None and s.present]
     if not present:
         return "—"
@@ -885,8 +883,11 @@ def _attainment_status(pct) -> str | None:
 #: The sentence under every unit's opening grades. Provo's, in intent: it says
 #: what the percentage is AND what it is not, because "74%" beside another
 #: unit's "89%" reads as a league table whether or not one was meant.
-GRADED_NOTE = ("Cada porcentaje es esta unidad contra su propia meta — al ritmo "
-               "es 90% o más, atrasado 60-89%, muy atrasado por debajo.")
+#:
+#: R3.2 (C11): the bands' thresholds went to page 3, once; every page's footer
+#: already names the three colours. What stays here is the one sentence a
+#: leader holding only their own pages cannot read the percentages without.
+GRADED_NOTE = "Cada porcentaje es esta unidad contra su propia meta."
 
 #: What it adds when the page above it DOES compare (finding A3). It used to
 #: end "Nada aquí compara un área, distrito o zona con otra" — true when it was
@@ -900,9 +901,8 @@ def graded_note(*, compared: bool) -> str:
     the page is the exception."""
     return GRADED_NOTE + (COMPARED_NOTE if compared else "")
 
-BASIS_NOTE = ("Real es la suma del período. El relleno de la barra es esa suma "
-              "contra la meta que las compañerías se pusieron, por área que "
-              "informó; la marca violeta es la meta de traslado del liderazgo.")
+BASIS_NOTE = ("La marca violeta es la meta de traslado del liderazgo; la línea "
+              "bajo cada nombre dice cuánto es.")
 
 
 def _heading(model) -> list:
@@ -1145,13 +1145,11 @@ def ladder_block(model) -> list:
         flow.extend(strip)
     flow.append(Spacer(0, 4))
     flow.append(Paragraph(PP.text(
-        f"Un porcentaje no dice nada por sí solo. Arriba está la misma medida "
-        f"en cada escala a la que se puede leer; abajo, cuánto separa a esta "
-        f"unidad de {above} en cada Indicador Clave, en puntos porcentuales."
+        f"Abajo, cuánto separa a esta unidad de {above} en cada Indicador "
+        f"Clave, en puntos porcentuales."
         if gaps else
-        "Un porcentaje no dice nada por sí solo. Estas filas son la misma "
-        "medida en cada escala a la que se puede leer, para que el número de "
-        "arriba tenga contra qué leerse."), st["note"]))
+        "La misma medida en cada escala, para que el número de arriba tenga "
+        "contra qué leerse."), st["note"]))
     return flow
 
 
@@ -1277,7 +1275,7 @@ def key_indicator_page(model, *, weekly_ok: bool, weekly_sure: bool) -> list:
                             against=_against_label(model))),
         Spacer(0, 6),
         Paragraph(PP.text(BASIS_NOTE), st["note"]),
-        Paragraph(PP.text(_comparison_note(model)), st["note"]),
+        Paragraph(PP.text(_comparison_note(model)), st["note_lead"]),
     ]
 
 
@@ -1297,14 +1295,8 @@ def week_page(model) -> list:
                               reporting, "")),
         Spacer(0, 6),
         Paragraph(PP.text(
-            "Cada línea tiene su propia escala — la forma es la noticia y las "
-            "cifras son el tamaño. La regla punteada es el día de traslado. "
-            "Una semana que nadie informó corta la línea en vez de "
-            "atravesarla, y su columna va en raya."), st["note"]),
-        Paragraph(PP.text(
-            "Estas son sumas sin dividir. La fila de abajo dice cuántas áreas "
-            "informaron cada semana, porque una semana con menos formularios "
-            "se lee igual que una semana con menos trabajo y no es lo mismo."),
+            "Cada línea tiene su propia escala; la regla punteada es el día "
+            "de traslado, y una semana que nadie informó corta la línea."),
             st["note"]),
     ]
     if len(weeks) > PP.WEEK_COLUMN_LIMIT:
@@ -1326,10 +1318,8 @@ def children_page(model) -> list:
     flow.extend(child_rows(model, spec))
     flow.append(Spacer(0, 6))
     flow.append(Paragraph(PP.text(
-        "El porcentaje de la derecha es el promedio de los siete Indicadores "
-        "Clave de esa unidad contra sus propias metas, por área activa — un "
-        "área que no informó cuenta, porque el trabajo que nadie anotó no es "
-        "trabajo que no se hizo ni trabajo que sí."), st["note"]))
+        "A la derecha, el promedio de los siete contra sus propias metas, "
+        "por área activa: un área que no informó cuenta."), st["note"]))
     return flow
 
 
@@ -1430,11 +1420,9 @@ def nightly_page(model, goals) -> list:
                                     meta=NIGHTLY_META_HEAD)),
         Spacer(0, 6),
         Paragraph(PP.text(
-            "El relleno es la suma del período contra la meta configurada por "
-            "área activa por semana. El color está en el CAMBIO, no en la "
-            "barra: estas metas están puestas cerca del doble de lo que la "
-            "misión hace hoy, así que pintarlas de rojo cada semana no diría "
-            "nada de la semana."), st["note"]),
+            "La barra va en un solo azul: estas metas están cerca del doble "
+            "de lo que se hace hoy, así que el color va en el cambio."),
+            st["note"]),
     ]
     nightly = model.nightly_coverage
     if nightly is not None:
@@ -1443,7 +1431,7 @@ def nightly_page(model, goals) -> list:
             f"({_pct((nightly.rate or 0) * 100)}), "
             f"{es_display.integer(nightly.areas_reporting)} de "
             f"{es_display.integer(nightly.areas_in_scope)} áreas informaron "
-            f"al menos una noche."), st["note"]))
+            f"al menos una noche."), st["note_lead"]))
     # No "sin cambio comparable" note: the column head says "sin base este
     # período" now (decision 38), where the eye already is.
     return flow
@@ -1466,11 +1454,9 @@ def rates_and_scores(model) -> list:
             headers=("Tasa", "Real", "Meta", "", "Contra la meta", "")))
         flow.append(Spacer(0, 4))
         flow.append(Paragraph(PP.text(
-            "La razón de los totales de la unidad, no el promedio de las "
-            "razones de sus áreas: promediar cuarenta áreas deja que un "
-            "puñado con pocos contactos y buena suerte levante el número. Un "
-            "denominador en cero no es cero por ciento — es que no hubo "
-            "lecciones que medir."), st["note"]))
+            "La razón de los totales de la unidad, no el promedio de las de "
+            "sus áreas. Un denominador en cero no es 0%: no hubo qué medir."),
+            st["note"]))
     tiles = score_tiles(model)
     if tiles:
         flow.append(Spacer(0, 10))
@@ -1480,11 +1466,9 @@ def rates_and_scores(model) -> list:
             f"{es_display.integer(scores.areas_scored)} áreas calificadas en "
             f"{es_display.integer(scores.weeks)} semanas"))
         flow.append(PP.stat_tiles(W, tiles))
-        note = ("Los cuatro puntajes que escribe el agente, promediados sobre "
-                "las semanas del período. Un área que todavía no calificó no "
-                "cuenta como cero: no calificada y calificada en cero son "
-                "cosas distintas. Van sin color — son una escala de 0 a 100, "
-                "no un porcentaje de una meta.")
+        note = ("Promedio de las semanas del período, sin color: una escala "
+                "de 0 a 100, no una meta. Un área sin calificar no cuenta "
+                "como cero.")
         if scores.rank:
             note = (f"{model.scope.name} va {es_display.integer(scores.rank)} "
                     f"de {es_display.integer(scores.of)} en su distrito, por "
@@ -1556,10 +1540,9 @@ def funnel_block(model) -> list:
                       changes=[_stage_change(s) for s in stages]),
         Spacer(0, 6),
         Paragraph(PP.text(
-            "Cada barra son las personas encontradas en esta ventana que han "
-            "llegado al menos hasta ahí: una cohorte seguida hacia adelante, "
-            "no lo que ocurrió en la ventana. El porcentaje entre barras es "
-            "cuántas del paso anterior siguieron."), st["note"]),
+            "Una cohorte: las personas encontradas en esta ventana, y hasta "
+            "dónde han llegado desde entonces. Entre barras, cuántas del "
+            "paso anterior siguieron."), st["note"]),
     ]
     # One note, not two. The pair said "el embudo sigue a las personas
     # encontradas en esta ventana" twice, and these seven lines print on all
@@ -1574,7 +1557,7 @@ def funnel_block(model) -> list:
             f"La columna de la derecha compara con los mismos "
             f"{es_display.integer(block.window.days)} días justo antes "
             f"({block.before.label}), para que las dos ventanas midan lo "
-            f"mismo."), st["note"]))
+            f"mismo."), st["note_lead"]))
     return flow
 
 
@@ -1589,11 +1572,6 @@ def mix_block(model) -> list:
             KeepTogether([
                 PP.SectionHead("Quién las encontró", "categoría de hallazgo"),
                 PP.share_bar(W, [(m.label, m.count) for m in block.mix])]),
-            Spacer(0, 4),
-            Paragraph(PP.text(
-                "Las cuatro categorías de Tableau. Un obrero, un miembro, un "
-                "anuncio o un centro de visitantes: la mezcla dice de dónde "
-                "viene el trabajo, no si fue bueno."), st["note"]),
         ]
     if block.sources:
         total = block.found or 1
@@ -1614,9 +1592,8 @@ def mix_block(model) -> list:
                          align=("l", "r", "r", "l"))]),
             Spacer(0, 4),
             Paragraph(PP.text(
-                "El porcentaje es sobre las personas encontradas en esta "
-                "ventana, no sobre el año. Una fuente que no aparece no "
-                "produjo a nadie en estos días."), st["note"]),
+                "Sobre las personas encontradas en esta ventana, no sobre el "
+                "año."), st["note"]),
         ]
     return flow
 
@@ -1654,10 +1631,8 @@ def finding_units_block(model) -> list:
     # meets it and can never be widowed, because the head is already keeping
     # the first rows company.
     notes = [Paragraph(PP.text(
-        "La barra es la proporción de las personas encontradas que los "
-        "misioneros lograron contactar. Encontradas es un tamaño — una zona "
-        "grande encuentra más — así que el orden va por la tasa, no por el "
-        "total."), st["note"])]
+        "La barra es la tasa de contacto, y el orden va por ella, no por "
+        "cuántas se encontraron."), st["note"])]
     if block.whole_mission:
         notes.append(Paragraph(PP.text(
             "Las seis zonas sin formularios de Compass no aparecen en "
@@ -1702,8 +1677,11 @@ def finding_page(model) -> list:
 
     flow = [
         PP.SectionHead(title, block.window.caption),
-        Paragraph(PP.text(_freshness(model)), st["note"]),
-        Paragraph(PP.text(block.scope_note), st["note"]),
+        Paragraph(PP.text(_freshness(model)), st["note_lead"]),
+        # Decision 34: every finding page says which population it counts.
+        # The mission's is the one that differs, so it prints darker.
+        Paragraph(PP.text(block.scope_note),
+                  st["note_lead" if block.whole_mission else "note"]),
         Spacer(0, 8),
     ]
     flow.extend(funnel_block(model))

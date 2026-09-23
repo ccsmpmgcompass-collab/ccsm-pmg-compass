@@ -153,9 +153,9 @@ def test_the_contents_names_the_pages_the_sections_really_start_on(models, pdf):
 
 
 def test_the_run_sheet_sends_a_zone_leader_to_their_own_zones_pages(models, pdf):
-    """Their row reads "the rules, the mission and their zone" — one range
-    when the zone follows the mission directly, two joined by "+" when it does
-    not — and every page it names has to carry what the row promises."""
+    """Their row reads "the mission and their zone" — one range when the zone
+    follows the mission directly, two joined by "+" when it does not — and
+    every page it names has to carry what the row promises."""
     pages = _pages(pdf)
     guide = pages[1]
     row = re.search(r"Líderes de zona · Norte\s+([\d–+ ]+?)\s+\d+\s", guide)
@@ -164,10 +164,9 @@ def test_the_run_sheet_sends_a_zone_leader_to_their_own_zones_pages(models, pdf)
     for part in row.group(1).split("+"):
         bounds = [int(x) for x in part.strip().split("–")]
         named += list(range(bounds[0], bounds[-1] + 1))
-    assert named[0] == 3
-    assert "CÓMO LEER" in pages[2].upper()
-    assert any(p.startswith("Misión de Prueba") or "Misión de Prueba\n" in p
-               for p in (pages[n - 1] for n in named[1:]))
+    claimed = re.search(r"La misión\s+(\d+)", pages[0])
+    assert named[0] == int(claimed.group(1))
+    assert "CÓMO LEER" not in pages[named[0] - 1].upper()
     assert any("Norte" in pages[n - 1] for n in named[1:])
 
 
@@ -334,14 +333,22 @@ def test_the_mission_now_opens_on_page_four(pdf):
     assert claimed and claimed.group(1).startswith("4")
 
 
-def test_every_leaders_stack_opens_with_the_rules(models, pdf):
-    """Decision 36: a leader handed five loose pages is a first-pass reader
-    too, and page 3 is the page they would otherwise never see."""
-    guide = _pages(pdf)[1]
-    rows = re.findall(r"Líderes de (?:zona|distrito) · [^\n]+?\s+(3[–+\d ]*)",
-                      guide)
-    assert rows, guide
-    assert all(r.startswith("3") for r in rows)
+def test_the_rules_page_goes_in_the_full_copies_only(models):
+    """Decision 43: in every leader's stack page 3 cost fifteen sheets a run.
+    The president and the assistants get it with the whole packet; a leader's
+    own pages carry the one-line version of each rule."""
+    starts = dict(zip([s.key for s in PK.sections_for(models)],
+                      (3, 4, 7, 8, 9, 10)))
+    sections = [PK.replace(s, first_page=starts[s.key],
+                           last_page=starts[s.key] + (2 if s.key == PK.MISSION
+                                                      else 0))
+                for s in PK.sections_for(models)]
+    zones = [(m.scope, (7, 7)) for m in models if m.scope.level == S.ZONE]
+    rows = PK.hand_outs(sections, zones, ROSTER)
+    leaders = [r for r in rows if r.who.startswith("Líderes")]
+    assert leaders
+    assert all(not r.pages.startswith("3") for r in leaders)
+    assert all(r.pages.startswith("1–") for r in rows[:2])
 
 
 def test_six_numbered_rules_built_from_this_packet(models):

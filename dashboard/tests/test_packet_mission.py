@@ -575,3 +575,37 @@ def test_without_week_columns_the_row_gives_the_weekly_range():
                               [1] + [30] * (len(weeks) - 2) + [36], ""))
     texts = [s.text for s in _footer_strings(d)]
     assert "Áreas que informaron, de 45: entre 1 y 36 por semana" in texts
+
+
+# ── C11: a unit's how-to-read lines are one line each, and its own facts darker
+
+def _notes(flow, style):
+    from reportlab.platypus import Paragraph
+    return [f.text for f in flow if isinstance(f, Paragraph)
+            and f.style.name == style]
+
+
+def test_the_grades_note_no_longer_carries_the_bands():
+    """They are on page 3 once, and in every page's footer as colours."""
+    assert "90%" not in PK.GRADED_NOTE and "60" not in PK.GRADED_NOTE
+
+
+def test_the_week_table_explains_itself_in_one_line_not_two(mission):
+    notes = _notes(PK.week_page(mission), "note")
+    assert len(notes) == 1
+    assert "sumas sin dividir" not in notes[0]
+
+
+def test_no_how_to_read_note_runs_past_two_lines():
+    """Measured in points at the content width, the note style's leading."""
+    from reportlab.platypus import Paragraph
+    st = PP.styles()
+    for text in (PK.GRADED_NOTE, PK.BASIS_NOTE):
+        _, h = Paragraph(text, st["note"]).wrap(PP.CONTENT_WIDTH, 1000)
+        assert h <= 2 * st["note"].leading, text
+
+
+def test_what_is_true_of_this_unit_prints_darker_than_how_to_read_it(mission):
+    flow = PK.key_indicator_page(mission, weekly_ok=False, weekly_sure=False)
+    assert PK._comparison_note(mission) in _notes(flow, "note_lead")
+    assert PK.BASIS_NOTE in _notes(flow, "note")
