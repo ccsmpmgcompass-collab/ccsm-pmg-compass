@@ -1457,6 +1457,12 @@ def change_chip(width: float, change, *, height: float = 9.0) -> Drawing:
 #: on one does not fit the column's 89.
 OWN_GOAL_HEAD = "Contra su\npropia meta"
 
+#: A metric table's cell padding. 3,5pt until the clarity pass: its two-line
+#: heads (A2, A4, B7) made every table about 9pt taller, and on 2026-09-23 that
+#: pushed Catrihuala 2's last nightly row onto a page of its own — 94% blank.
+#: Half a point off each edge gives a 22-row table back about 22pt.
+METRIC_PAD = 3.0
+
 
 def metric_table(lines, *, widths=METRIC_COLUMNS, headers=None) -> Table:
     """Every metric of a unit, one row each — the packet's workhorse table.
@@ -1490,7 +1496,7 @@ def metric_table(lines, *, widths=METRIC_COLUMNS, headers=None) -> Table:
             line.spark if line.spark is not None
             else change_chip(widths[5] - 8, line.change),
         ])
-    return table(rows, widths, headers=headers, pad=3.5,
+    return table(rows, widths, headers=headers, pad=METRIC_PAD,
                  align=["l", "r", "r", "l", "l", "l"])
 
 

@@ -1405,24 +1405,22 @@ NIGHTLY_META_HEAD = ("Meta", "área/sem")
 
 
 def nightly_page(model, goals) -> list:
+    """Every nightly metric, with its two notes ABOVE the table.
+
+    Round 4 found Catrihuala 2's reporting line printed alone on page 73 — the
+    22-row table had split and taken the page down to its last row, and the
+    two notes under it went over. Phase V met the same widow and learnt the
+    fix: tying a note to the table's tail costs whole pages, and a note above
+    the table can never be widowed because the head is already keeping the
+    first rows company. It is also the better order: how many areas reported
+    is read before the sums it qualifies (finding B8).
+    """
     st = PP.styles()
-    W = PP.CONTENT_WIDTH
     flow = [
         PP.SectionHead(
             "Todo el trabajo nocturno",
             f"más atrasado primero · "
             f"{es_display.integer(len(model.nightly_metrics))} medidas"),
-        PP.metric_table(nightly_lines(
-            model, goals, comparable=_nightly_comparable(model)),
-            headers=_metric_headers(based=_nightly_comparable(model),
-                                    against=_against_label(model),
-                                    real=NIGHTLY_REAL_HEAD,
-                                    meta=NIGHTLY_META_HEAD)),
-        Spacer(0, 6),
-        Paragraph(PP.text(
-            "La barra va en un solo azul: estas metas están cerca del doble "
-            "de lo que se hace hoy, así que el color va en el cambio."),
-            st["note"]),
     ]
     nightly = model.nightly_coverage
     if nightly is not None:
@@ -1434,6 +1432,19 @@ def nightly_page(model, goals) -> list:
             f"al menos una noche."), st["note_lead"]))
     # No "sin cambio comparable" note: the column head says "sin base este
     # período" now (decision 38), where the eye already is.
+    flow += [
+        Paragraph(PP.text(
+            "La barra va en un solo azul: estas metas están cerca del doble "
+            "de lo que se hace hoy, así que el color va en el cambio."),
+            st["note"]),
+        Spacer(0, 4),
+        PP.metric_table(nightly_lines(
+            model, goals, comparable=_nightly_comparable(model)),
+            headers=_metric_headers(based=_nightly_comparable(model),
+                                    against=_against_label(model),
+                                    real=NIGHTLY_REAL_HEAD,
+                                    meta=NIGHTLY_META_HEAD)),
+    ]
     return flow
 
 

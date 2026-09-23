@@ -625,3 +625,33 @@ repeats and skipping the grey that did not.
 
 **Measured: 107 → 105 pages** (one under Phase V's 106), **151 sheets a run**
 (Phase V: 153). Districts stay at four pages each (4,1 on average).
+
+### 2026-09-23 — V.1 and V.4: the suite, and a page that held one line
+
+**V.1** — **11 failed / 1738 passed**: the same eleven as baseline
+(`test_effort_reporting_scope` 3, `test_goals_duplicate_metric_keys` 2,
+`test_renders_ccsm_with_data` 6), and 74 tests added by this plan.
+
+**V.4 found a widow.** Page 73 was 99% blank: Catrihuala 2's nightly
+reporting line, alone. Moving the nightly notes ABOVE the table (Phase V's
+own lesson — a note under a table's tail is the thing that widows; above it,
+the head keeps it company) then left the table's last row alone there
+instead, 94% blank. The cause was this plan's: the two-line heads of A2 / A4 /
+B7 made every metric table about 9pt taller. **`PP.METRIC_PAD` 3,5 → 3,0pt**
+gives a 22-row table back ~22pt; read at 100 dpi, it still reads.
+
+**Measured on the same live data, the same script** (rasterise at 72 dpi,
+lowest ink row above the footer):
+
+| | pages | sheets a run | blank at the foot, avg | … without the cover |
+|---|---|---|---|---|
+| before this plan (`f58067e`) | 106 | 153 | 10,9% | 10,5% |
+| after | **104** | **148** | 11,9% | 11,6% |
+
+Phase V's 10,3% was measured on an earlier build of the data; 10,9% is the
+like-for-like figure. **The average rose while the pages fell**, and it is
+structural rather than a new gap: every unit starts on a fresh page, every
+zone's last page is ~37% full (63% blank, before and after), and there are
+now fewer pages to spread those fixed gaps across. No page is emptier than
+63% except the data note's last (52%). Getting a zone from 4,4 pages to 4 is a
+layout project of its own, not a clarity step, and is left alone.
