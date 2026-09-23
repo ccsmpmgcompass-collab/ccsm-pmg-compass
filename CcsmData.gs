@@ -112,7 +112,13 @@ var CCSM_FORM_STRUCTURAL = {
 // daily metric; blank until the user/GOALS_CONFIG populates them).
 // ==================================================================
 var CCSM_AGENT_CONFIG_ROWS = [
-  ['MISSION_NAME', 'Chile Concepción South Mission'],
+  // Spanish, because everything that prints it is Spanish: the council
+  // packet's cover and all 106 of its running heads, the app's own page
+  // headers, and every reminder the agents email a companionship. The English
+  // name is the mission's legal one and belongs in correspondence with Salt
+  // Lake, not on a page a Chilean district leader reads. Changed on the sheet
+  // 2026-09-23; changed here so a re-run of setup cannot put it back.
+  ['MISSION_NAME', 'Misión Chile Concepción Sur'],
   ['MISSION_LANGUAGE', 'ES'],
   ['MISSION_TIMEZONE', 'America/Santiago'],
   ['MISSION_LOCALE', 'es_CL'],
