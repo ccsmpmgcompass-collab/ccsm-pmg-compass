@@ -546,3 +546,44 @@ figures exactly; a range beyond six weeks.
 
 Verified: page 3 of the transfer and the year packets read at 150 dpi; the
 screen read through the DOM, no exceptions, zero sideways scroll at 375px.
+
+### 2026-09-23 — R3.1 (C9): page 3, "Cómo leer este paquete"
+
+`packet.how_to_read(mission, sections)`, a real `Section` (`HOW_TO_READ`), so
+the cover's contents and the guide list it first — **"Cómo leer este paquete
+· 3"** — and the pagination measures it like any other. Six numbered rules,
+every one written from this packet's own model:
+
+1. what each percentage is against — the bands from `theme.GOAL_BAR_TIERS`,
+   so the page cannot drift from the colours it explains; the violet mark;
+   "sin base este período"; per active area;
+2. who reported — the compliance label and, live, **"5 de 45 áreas no
+   entregaron ninguna semana completa: Cabrero 2, El Mirador, Laja 2, Los
+   Confines, Vilcun"**;
+3. why the nightly table has no colour — live, **"15 de 20 medidas nocturnas
+   … por debajo del 60%"**;
+4. the two baptism figures — live, "Tableau certifica 343 en lo que va de
+   2026. Para 2026-6 todavía no hay cifra certificada…", and the form's 5;
+5. what the finding section covers — the export window, 10 zones vs the
+   roster, the cohort, maturity;
+6. where the rest is — the data note, **"en la página 107"**.
+
+Below them, **"Las columnas de una tabla de indicadores"**: Real, Meta, the
+bar, Contra su propia meta, Cambio, Áreas que informaron — B7's four
+percentages named at one place. Added because the six rules filled 55% of
+the sheet and Phase V's instruction was no white space; decision 39's
+exception is the cover only.
+
+**Every leader's stack now opens with page 3** (decision 36: the district
+leader with loose pages is the other first-pass reader). Zone leaders read
+"3–8 + 14–18" (Angol, whose zone follows the mission, "3–13"); district
+leaders "3 + 29–32".
+
+**Measured: 106 → 107 pages** (decision 40's prediction), and the run's paper
+**153 → 168 sheets**. Two of the fifteen are page 3 in the two full copies;
+**thirteen are page 3 in the leaders' stacks** — a district's section is four
+pages today, so a fifth costs a sheet. If R3.2 brings a district to three
+pages, that cost disappears; it is re-measured there before it is kept.
+
+Also fixed: the data note said a thin period shows "las cifras … las flechas
+no", which decision 38 made untrue.

@@ -43,6 +43,7 @@ from app.reports import scope as S
 #: stable; the titles and audiences are what the print guide prints.
 #: Namespaced, because `Scope.key` for the whole mission is also "mission" and
 #: both live in the same `Pagination.starts`.
+HOW_TO_READ = "sec:how_to_read"
 MISSION = "sec:mission"
 ZONES = "sec:zones"
 DISTRICTS = "sec:districts"
@@ -252,28 +253,52 @@ def hand_outs(sections, units, roster) -> list:
             HandOut("Asistentes", whole, max(1, lead.assistants),
                     "El paquete completo", total)]
 
+    # Every leader's stack opens with "Cómo leer" (decisions 36, 40): a
+    # district leader handed five loose pages is the second first-pass reader,
+    # and the rules page is the one they would otherwise never see. The mission
+    # follows it directly, so for a zone leader it only widens a range.
+    how = by_key.get(HOW_TO_READ)
+    how_count = how.page_count if how is not None else 0
     mission_section = by_key.get(MISSION)
-    mission_label = mission_section.page_label if mission_section else "—"
     mission_count = mission_section.page_count if mission_section else 0
+    opening = _joined(how, mission_section)
     for scope, (first, last) in units:
         pages = str(first) if first == last else f"{first}–{last}"
         count = last - first + 1
         if scope.level == S.ZONE:
             copies = lead.zone_leaders.get(scope.key, 0)
+            together = (mission_section is not None and mission_section.present
+                        and mission_section.last_page + 1 == first)
             rows.append(HandOut(
                 f"Líderes de zona · {scope.name}",
-                f"{mission_label} + {pages}", copies,
-                "La misión y su zona" if copies
+                (_joined(how, mission_section,
+                         replace(mission_section, first_page=first,
+                                 last_page=last))
+                 if together else f"{opening} + {pages}"), copies,
+                "Cómo leer, la misión y su zona" if copies
                 else "Sin líder de zona en MISSION_ORG",
-                mission_count + count))
+                how_count + mission_count + count))
         elif scope.level == S.DISTRICT:
             copies = lead.district_leaders.get(scope.key, 0)
+            lead_in = f"{how.page_label} + " if how is not None and how.present else ""
             rows.append(HandOut(
-                f"Líderes de distrito · {scope.name}", pages, copies,
-                "Su distrito" if copies
-                else "Sin líder de distrito en MISSION_ORG",
-                count))
+                f"Líderes de distrito · {scope.name}", f"{lead_in}{pages}",
+                copies,
+                ("Cómo leer y su distrito" if lead_in else "Su distrito")
+                if copies else "Sin líder de distrito en MISSION_ORG",
+                how_count + count))
     return rows
+
+
+def _joined(*sections) -> str:
+    """Consecutive sections' pages as one range — "3–8" for the rules page and
+    the mission — or "—" when none of them has been measured yet."""
+    present = [s for s in sections if s is not None and s.present]
+    if not present:
+        return "—"
+    first = min(s.first_page for s in present)
+    last = max(s.last_page for s in present)
+    return str(first) if first == last else f"{first}–{last}"
 
 
 def sheets(rows) -> int:
@@ -328,6 +353,8 @@ def sections_for(models) -> list:
     counts = {level: sum(1 for m in models if m.scope.level == level)
               for level in (S.ZONE, S.DISTRICT, S.AREA)}
     return [
+        Section(HOW_TO_READ, "Cómo leer este paquete",
+                "Quien lo lea por primera vez"),
         Section(MISSION, "La misión", "Todos en el consejo", units=1),
         Section(ZONES, f"Cada zona — {counts[S.ZONE]} zonas",
                 "Se discute zona por zona", units=counts[S.ZONE],
@@ -380,8 +407,10 @@ def _titled(section) -> str:
     return f"{section.title}, {es_display.number(each, 1)} páginas {agree}"
 
 
-def front_matter(mission, sections, units, roster, *, total_pages: int) -> list:
-    """The cover and the print guide — pages 1 and 2 (decision 4).
+def front_matter(mission, sections, units, roster, *, total_pages: int,
+                 pagination: "Pagination | None" = None) -> list:
+    """The cover, the print guide and "Cómo leer" — pages 1 to 3 (decisions 4,
+    40).
 
     On the first pass every range is a dash and the total is zero; the guide
     still lays out at very nearly its true length, which is what lets the next
@@ -440,7 +469,186 @@ def front_matter(mission, sections, units, roster, *, total_pages: int) -> list:
                       for s in sections],
             handouts=[[r.who, r.pages, str(r.copies), r.note] for r in rows],
             closing=closing)
+        + [PageBreak(),
+           PP.SetFurniture(PP.Furniture(
+               eyebrow=mission.mission_name, period=period.window_label,
+               mission=mission.mission_name, key=True))]
+        + ([SectionStart(HOW_TO_READ, pagination)] if pagination else [])
+        + how_to_read(mission, sections)
     )
+
+
+# ── Page 3: how to read the packet (C9, decision 40) ─────────────────────────
+
+def _band_sentence() -> str:
+    """The three grades in words, from the thresholds `theme` grades with — so
+    this page cannot drift from the colours it explains."""
+    from app.config.theme import GOAL_BAR_TIERS
+    good, warn = GOAL_BAR_TIERS[0][0], GOAL_BAR_TIERS[1][0]
+    return (f"{good}% o más es al ritmo, {warn}-{good - 1}% atrasado y menos "
+            f"de {warn}% muy atrasado — los tres colores del pie de cada "
+            f"página")
+
+
+def how_to_read(mission, sections) -> list:
+    """The six rules a first-pass reader needs, before the first number.
+
+    Finding C9: the packet's rules were on its last page, behind 103 pages of
+    figures that follow them. Every sentence here is built from the mission's
+    own model — who did not report, how many nightly rows sit under 60%, the
+    two baptism figures, how far Tableau reaches — so the page says what is
+    true of THIS packet rather than what is true of packets in general. The
+    full data note stays at the back as the reference.
+    """
+    st = PP.styles()
+    period = mission.period
+    rules = []
+
+    rules.append((
+        "Contra qué se mide cada porcentaje",
+        f"«Contra su propia meta» es la unidad contra la meta que sus propias "
+        f"compañerías se pusieron en el formulario: {_band_sentence()}. La "
+        f"marca violeta en la barra es otra meta, la de traslado del "
+        f"liderazgo, prorrateada a las semanas del período. «Cambio» compara "
+        f"con otro período y su encabezado dice con cuál; una raya bajo «sin "
+        f"base este período» quiere decir que no hay con qué comparar, no que "
+        f"nada cambió. Las tablas que ponen unidades lado a lado cuentan por "
+        f"área activa: un área que no informó cuenta."))
+
+    silent = sorted(mission.areas_silent)
+    who = f"Cumplimiento del período: {mission.compliance_label}. "
+    if silent:
+        who += (f"{es_display.integer(len(silent))} de "
+                f"{es_display.integer(mission.scope.area_count)} áreas no "
+                f"entregaron ninguna semana completa: {', '.join(silent)}. ")
+    who += ("Las sumas van sin dividir, y una semana con menos formularios se "
+            "lee igual que una semana con menos trabajo: por eso cada tabla "
+            "semanal termina con cuántas áreas informaron. Léala antes que las "
+            "cifras de encima.")
+    rules.append(("Quién informó, y quién no", who))
+
+    graded = [r for r in mission.nightly_metrics if r.grade.pct is not None]
+    from app.config.theme import GOAL_BAR_TIERS
+    warn = GOAL_BAR_TIERS[1][0]
+    low = sum(1 for r in graded if r.grade.pct < warn)
+    night = ""
+    if graded:
+        night = (f"{es_display.integer(low)} de "
+                 f"{es_display.integer(len(graded))} medidas nocturnas de la "
+                 f"misión están por debajo del {warn}% de su meta. ")
+    night += ("Las metas de AGENT_CONFIG están puestas cerca del doble de lo "
+              "que la misión hace hoy, así que pintarlas de rojo no diría nada "
+              "de la semana: la barra va en un solo azul y el color va en el "
+              "cambio. Una medida nocturna se califica por su movimiento, no "
+              "por su distancia a la meta.")
+    rules.append(("Por qué el trabajo nocturno va sin color", night))
+
+    rules.append(("Dos cifras de bautismos", _two_baptism_figures(mission)))
+
+    block = getattr(mission, "tableau", None)
+    if block is not None and block.present:
+        finding = (
+            f"Sale de Tableau, {block.window.label}. La página de la misión "
+            f"cuenta las 10 zonas; cada zona, distrito y área cuenta sólo sus "
+            f"áreas del roster. Cada embudo sigue a las personas encontradas "
+            f"en la ventana y dice hasta dónde han llegado desde entonces — "
+            f"una cohorte, no lo que pasó en la ventana —, así que los pasos "
+            f"que tardan más que la ventana van sin porcentaje. La mezcla de "
+            f"categorías y de fuentes dice de dónde viene el trabajo, no si "
+            f"fue bueno.")
+    elif block is not None:
+        finding = (f"Este paquete no tiene sección de hallazgo: "
+                   f"{block.reason}. No se estima ni se rellena con el "
+                   f"período anterior.")
+    else:
+        finding = ("Este paquete no tiene sección de hallazgo: se generó sin "
+                   "acceso a la exportación de Tableau.")
+    rules.append(("Qué cubre la sección de hallazgo", finding))
+
+    note = next((s for s in sections if s.key == DATA_NOTE), None)
+    where = (f"en la página {note.page_label}" if note is not None
+             and note.present else "al final")
+    rules.append((
+        "Dónde está el resto",
+        f"La nota de datos, {where}, dice de qué pestaña sale cada cifra, qué "
+        f"metas no sirven para medir y qué nombres de Tableau no están en el "
+        f"roster. Quien quiera discutir un número encuentra ahí de qué está "
+        f"hecho."))
+
+    flow = [PP.SectionHead("Cómo leer este paquete",
+                           f"{period.label} · seis reglas"),
+            Paragraph(PP.text(
+                "Seis reglas, antes de la primera cifra. Cada una está escrita "
+                "con las cifras de este paquete, no con las de un paquete "
+                "cualquiera."), st["body"]),
+            Spacer(0, 6)]
+    for n, (title, body) in enumerate(rules, start=1):
+        flow.append(Paragraph(PP.text(f"{n}. {title}"), st["cell_bold"]))
+        flow.append(Paragraph(PP.text(body), st["body"]))
+        flow.append(Spacer(0, 6))
+    flow += [Spacer(0, 4),
+             PP.SectionHead("Las columnas de una tabla de indicadores",
+                            "de izquierda a derecha"),
+             PP.table(COLUMN_GLOSSARY, (150.0, PP.CONTENT_WIDTH - 150.0),
+                      headers=("Columna", "Qué es"))]
+    return flow
+
+
+#: The metric table's columns, named as its heads print them (finding B7: four
+#: percentages on one row, and nothing at the point of use saying which is
+#: which). Vocabulary, not figures — the only thing on page 3 that is not
+#: generated, because it describes the table rather than this period.
+COLUMN_GLOSSARY = (
+    ("Real", "Lo que las compañerías informaron en el período, sumado."),
+    ("Meta", "La suma de las metas que las compañerías se pusieron. En el "
+             "trabajo nocturno es otra cosa: la meta de UN área para UNA "
+             "semana, y por eso su encabezado dice «área/sem»."),
+    ("La barra", "Real contra meta. La marca violeta es la meta de traslado "
+                 "del liderazgo, y la línea bajo el nombre dice cuánto es."),
+    ("Contra su propia meta", "El porcentaje de la barra y su calificación. "
+                              "«Meta no utilizable» cuando la meta está tan "
+                              "lejos de lo real que no sirve para medir: la "
+                              "cifra es real, la meta hay que revisarla."),
+    ("Cambio", "Contra el período que nombra su encabezado, por área que "
+               "informó. Una raya bajo «sin base este período»: no hay con "
+               "qué comparar."),
+    ("Áreas que informaron", "La última fila de cada tabla semanal: cuántas "
+                             "áreas entregaron el formulario esa semana."),
+)
+
+
+def _two_baptism_figures(mission) -> str:
+    """Rule 4: the certified figure and the form's, both for this period, and
+    why only one of them opens a page (decisions 21, 37, 42)."""
+    period = mission.period
+    block = getattr(mission, "tableau", None)
+    bap = block.baptisms if block is not None else None
+    ki = mission.ki("ki_baptized_confirmed_real")
+    parts = []
+    if bap is not None:
+        ytd = bap.year_to_date
+        fig = bap.period
+        certified = []
+        if ytd is not None and ytd.present:
+            certified.append(f"{es_display.integer(ytd.count)} en lo que va "
+                             f"de {bap.year}")
+        if fig is not None and fig.present and period.key != P.YEAR:
+            certified.append(f"{es_display.integer(fig.count)} en "
+                             f"{period.label}")
+        if certified:
+            parts.append("Tableau certifica " + " y ".join(certified) + ".")
+        if fig is not None and not fig.present:
+            parts.append(f"Para {period.label} todavía no hay cifra "
+                         f"certificada, y no se imprime otra en su lugar.")
+    if ki is not None and ki.actual is not None:
+        parts.append(f"El formulario semanal de las compañerías informó "
+                     f"{_count(ki.actual)} en {period.label}.")
+    parts.append(
+        "La página de bautismos usa la certificada; la del formulario va en "
+        "los Indicadores Clave con su propio nombre, porque no siempre se "
+        "anota. Nunca se suman, y la del formulario no abre ninguna página: "
+        "ni «lo más fuerte» ni «lo que hay que mover».")
+    return " ".join(parts)
 
 
 # ── Reading a metric onto paper ───────────────────────────────────────────────
@@ -2102,7 +2310,8 @@ def data_note(models, goals=None) -> list:
     if cov is not None and cov.thin:
         sentences.append(
             "La cobertura de este período es demasiado delgada para sostener "
-            "una comparación: las cifras se muestran, las flechas no.")
+            "una comparación: la columna de cambio va en raya, con la razón "
+            "en su encabezado (decisión 38).")
     silent = mission.areas_silent
     if silent:
         sentences.append(
@@ -2314,7 +2523,7 @@ def build_packet(models, roster, goals=None) -> bytes:
                  and m.scope.level in (S.ZONE, S.DISTRICT)]
         total = max((s.last_page for s in resolved if s.present), default=0)
         flow = (front_matter(mission, resolved, units, roster,
-                             total_pages=total)
+                             total_pages=total, pagination=measured)
                 + _body(models, goals, measured))
         pdf, measured.total = _render(flow)
         if measured.same_as(given):

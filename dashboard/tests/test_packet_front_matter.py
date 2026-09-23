@@ -153,15 +153,22 @@ def test_the_contents_names_the_pages_the_sections_really_start_on(models, pdf):
 
 
 def test_the_run_sheet_sends_a_zone_leader_to_their_own_zones_pages(models, pdf):
-    """Their row reads "the mission's pages + their zone's", and both halves
-    have to land on the pages that really carry them."""
+    """Their row reads "the rules, the mission and their zone" — one range
+    when the zone follows the mission directly, two joined by "+" when it does
+    not — and every page it names has to carry what the row promises."""
     pages = _pages(pdf)
     guide = pages[1]
-    row = re.search(r"Líderes de zona · Norte\s+(\d+)[–\d]*\s*\+\s*(\d+)", guide)
+    row = re.search(r"Líderes de zona · Norte\s+([\d–+ ]+?)\s+\d+\s", guide)
     assert row, guide
-    mission_page, zone_page = int(row.group(1)), int(row.group(2))
-    assert "Misión de Prueba" in pages[mission_page - 1]
-    assert "Norte" in pages[zone_page - 1]
+    named = []
+    for part in row.group(1).split("+"):
+        bounds = [int(x) for x in part.strip().split("–")]
+        named += list(range(bounds[0], bounds[-1] + 1))
+    assert named[0] == 3
+    assert "CÓMO LEER" in pages[2].upper()
+    assert any(p.startswith("Misión de Prueba") or "Misión de Prueba\n" in p
+               for p in (pages[n - 1] for n in named[1:]))
+    assert any("Norte" in pages[n - 1] for n in named[1:])
 
 
 def test_the_last_page_number_the_guide_promises_is_the_last_page(pdf):
@@ -306,3 +313,64 @@ def test_the_whole_packet_builds_without_streamlit():
     """Decision 30's boundary, checked on the import graph rather than on what
     this session happens to have loaded."""
     assert not _imports_streamlit("app.reports.packet")
+
+
+# ── Page 3: "Cómo leer este paquete" (C9, decision 40) ────────────────────────
+
+def test_page_three_is_the_rules_page(pdf):
+    assert "CÓMO LEER ESTE PAQUETE" in _pages(pdf)[2].upper()
+
+
+def test_the_contents_sends_the_reader_to_it_first(pdf):
+    cover = _pages(pdf)[0]
+    found = re.search(r"Cómo leer este paquete\s+(\d+)", cover)
+    assert found and found.group(1) == "3", cover
+    assert cover.index("Cómo leer este paquete") < cover.index("La misión")
+
+
+def test_the_mission_now_opens_on_page_four(pdf):
+    pages = _pages(pdf)
+    claimed = re.search(r"La misión\s+(\d+)", pages[0])
+    assert claimed and claimed.group(1).startswith("4")
+
+
+def test_every_leaders_stack_opens_with_the_rules(models, pdf):
+    """Decision 36: a leader handed five loose pages is a first-pass reader
+    too, and page 3 is the page they would otherwise never see."""
+    guide = _pages(pdf)[1]
+    rows = re.findall(r"Líderes de (?:zona|distrito) · [^\n]+?\s+(3[–+\d ]*)",
+                      guide)
+    assert rows, guide
+    assert all(r.startswith("3") for r in rows)
+
+
+def test_six_numbered_rules_built_from_this_packet(models):
+    mission = models[0]
+    flow = PK.how_to_read(mission, PK.sections_for(models))
+    text = " ".join(_strings_of(flow))
+    for n in range(1, 7):
+        assert f"{n}. " in text
+    assert "7. " not in text
+    assert mission.compliance_label in text
+    for area in mission.areas_silent:
+        assert area in text
+
+
+def test_the_grades_are_the_thresholds_the_packet_grades_with():
+    from app.config.theme import GOAL_BAR_TIERS
+    good, warn = GOAL_BAR_TIERS[0][0], GOAL_BAR_TIERS[1][0]
+    sentence = PK._band_sentence()
+    assert f"{good}% o más es al ritmo" in sentence
+    assert f"{warn}-{good - 1}% atrasado" in sentence
+
+
+def test_the_column_glossary_names_the_heads_the_tables_print():
+    names = [row[0] for row in PK.COLUMN_GLOSSARY]
+    assert names[:2] == ["Real", "Meta"]
+    assert "Contra su propia meta" in names and "Cambio" in names
+    assert PP.OWN_GOAL_HEAD.replace("\n", " ").lower() == "contra su propia meta"
+
+
+def _strings_of(flow):
+    for f in flow:
+        yield from _strings(f)
