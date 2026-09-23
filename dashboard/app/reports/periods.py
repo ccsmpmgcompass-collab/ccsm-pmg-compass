@@ -74,6 +74,19 @@ PERIOD_LABELS = {
     YEAR: "Año",
 }
 
+#: "In this period", for a figure's label when the period's own name is
+#: already the section head above it — "Bautismos · 2026-6" over a tile
+#: reading "Bautismos · 2026-6" says the same thing twice and nothing about
+#: which kind of window 2026-6 is.
+WITHIN_LABELS = {
+    LAST_WEEK: "En la semana pasada",
+    THIS_TRANSFER: "En este traslado",
+    LAST_TRANSFER: "En el traslado pasado",
+    LAST_6_WEEKS: "En las últimas 6 semanas",
+    CALENDAR_MONTH: "En este mes",
+    YEAR: "En lo que va del año",
+}
+
 #: The transfer is the unit the mission plans and is judged in — a week is a
 #: reporting rhythm and a month is an accident of the calendar. Same reasoning
 #: that put the transfer first in `breakdowns_engine._KPI_PERIODS`.

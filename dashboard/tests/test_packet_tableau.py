@@ -46,7 +46,8 @@ DETAIL = people(
     + [person("2026-08-30", area="El Mirador")] * 5)
 
 
-def models(*, export=None, detail=None, baptisms=CERTIFIED):
+def models(*, export=None, detail=None, baptisms=CERTIFIED, windows=(),
+           period_key=P.DEFAULT_PERIOD):
     data = M.ReportData(
         roster=ROSTER, today=date(2026, 9, 21), cycles=[CYCLE],
         tableau_detail=DETAIL if detail is None else detail,
@@ -56,8 +57,9 @@ def models(*, export=None, detail=None, baptisms=CERTIFIED):
                           "Baptized": 133.0},
         tableau_reconciliation=T.reconcile(DETAIL, S._clean(ROSTER)),
         baptisms_by_month=baptisms, annual_goal=527,
-        baptisms_open=("2026-09", 19, date(2026, 9, 21)))
-    return M.build_all(data=data), data
+        baptisms_open=("2026-09", 19, date(2026, 9, 21)),
+        baptism_windows=windows)
+    return M.build_all(period_key, data=data), data
 
 
 def shapes(node) -> str:
@@ -200,7 +202,70 @@ def test_the_open_month_is_kept_out_of_the_year_s_total_on_the_page():
     text = words(PK.baptism_page(of(S.MISSION)))
     assert "319 bautismos certificados hasta agosto" in text
     assert "sin cerrar" in text
-    assert "No entra en la barra" in text
+    assert "no en esta barra ni en el ritmo" in text
+
+
+# ── M6 · the period leads (decisions 41, 42) ──────────────────────────────────
+
+#: What the nightly job would have stored for "Este traslado" on 2026-09-21.
+TRANSFER_WINDOW = ((date(2026, 9, 7), date(2026, 9, 21), 17),)
+
+
+def _mission(**kw):
+    built, _ = models(**kw)
+    return next(m for m in built if m.scope.level == S.MISSION)
+
+
+def test_the_page_leads_with_the_period_s_own_certified_figure():
+    flow = PK.baptism_page(_mission(windows=TRANSFER_WINDOW))
+    assert isinstance(flow[0], PP.SectionHead)
+    assert flow[0].label == "Bautismos · 2026-6"
+    lead = words(flow[:4])
+    assert "17" in lead
+    assert "7 de sep - 21 de sep de 2026" in lead
+    # The year to date beside it: the closed months and September so far.
+    assert "338" in lead
+    m = _mission(windows=TRANSFER_WINDOW)
+    tiles = PK._period_tiles(m.tableau.baptisms, m.period)
+    assert [(t.label, t.value) for t in tiles] == [
+        ("En este traslado", "17"), ("En lo que va de 2026", "338")]
+
+
+def test_the_year_follows_as_context_under_its_own_head():
+    flow = PK.baptism_page(_mission(windows=TRANSFER_WINDOW))
+    heads = [f.label for f in flow if isinstance(f, PP.SectionHead)]
+    assert heads[:2] == ["Bautismos · 2026-6", "El año 2026 contra su meta"]
+
+
+def test_a_period_with_no_capture_prints_a_dash_and_says_why():
+    flow = PK.baptism_page(_mission(windows=()))
+    lead = words(flow[:4])
+    assert "sin cifra certificada" in lead
+    assert "No hay cifra certificada de bautismos para 2026-6" in lead
+    assert "decisión 42" in lead
+
+
+def test_a_capture_a_night_behind_says_how_many_days_it_covers():
+    behind = ((date(2026, 9, 7), date(2026, 9, 20), 16),)
+    lead = words(PK.baptism_page(_mission(windows=behind))[:4])
+    assert "14 de 15 días del período" in lead
+
+
+def test_the_year_period_splits_into_closed_and_open_months():
+    flow = PK.baptism_page(_mission(period_key=P.YEAR))
+    lead = words(flow[:4])
+    assert "338" in lead          # 319 closed + 19 September
+    assert "319" in lead and "19" in lead
+    assert "septiembre, todavía sin cerrar" in lead
+    assert "Son 319 de meses cerrados y 19 de septiembre" in lead
+
+
+def test_the_data_note_says_where_the_period_s_baptisms_came_from():
+    built, _ = models(windows=TRANSFER_WINDOW)
+    text = words(PK.data_note(built))
+    assert "Bautismos de 2026-6: 17 certificados por Tableau" in text
+    assert "TABLEAU_BAPTISM_WINDOWS" in text
+    assert "decisión 42" in text
 
 
 @pytest.mark.parametrize("gap,expected", [

@@ -743,6 +743,10 @@ class Baptisms:
     #: year above it is context: the pace, the projection and the month table
     #: stay on closed months exactly as before.
     period: "PeriodBaptisms" = None
+    #: The year to today, certified: the closed months and the open one. The
+    #: context tile beside a transfer's figure. None when the period is in a
+    #: different year from today, where "so far this year" is not its year.
+    year_to_date: "PeriodBaptisms" = None
 
     def __post_init__(self):
         object.__setattr__(self, "certified", dict(self.certified or {}))
@@ -861,6 +865,35 @@ class PeriodBaptisms:
         if not self.present:
             return "cifra certificada · fuente: Tableau"
         return "cifra certificada · " + self.window.caption
+
+    def sentence(self, period_label: str) -> str:
+        """What the figure covers, in words — or why there is none.
+
+        Both renderers print this under the headline, so the page and the
+        packet cannot explain the same figure two ways. A period with no
+        certified capture prints no figure at all rather than a different one
+        (decision 42), and says so, so the dash is not read as a period with
+        no baptisms.
+        """
+        if not self.present:
+            why = self.reason
+            return (f"No hay cifra certificada de bautismos para "
+                    f"{period_label}{': ' + why if why else ''}. No se "
+                    f"imprime otra en su lugar: los registros de Tableau "
+                    f"quedan por debajo de la cifra certificada y el "
+                    f"formulario semanal no siempre se anota (decisión 42).")
+        days = self.window
+        cross = days.start.year != days.end.year
+        out = (f"Bautismos certificados por Tableau entre el "
+               f"{es_display.day_month(days.start, with_year=cross)} y el "
+               f"{es_display.day_month(days.end, with_year=True)}")
+        if days.clipped:
+            out += (f": {days.shortfall_label}, porque la última captura "
+                    f"certificada llega hasta ahí")
+        out += "."
+        if self.composition:
+            out += f" Son {self.composition}."
+        return out
 
     @property
     def composition(self) -> str:

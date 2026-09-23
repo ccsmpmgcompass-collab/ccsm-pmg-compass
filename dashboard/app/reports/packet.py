@@ -36,6 +36,7 @@ from reportlab.platypus import (BaseDocTemplate, CondPageBreak, Flowable,
 
 from app.config import es_display
 from app.reports import packet_parts as PP
+from app.reports import periods as P
 from app.reports import scope as S
 
 #: How the packet is ordered and what each block of pages is for. The keys are
@@ -1444,8 +1445,61 @@ def _baptism_tiles(bap) -> list:
     return tiles
 
 
+def _period_tiles(bap, period) -> list:
+    """The band that leads M6: the selected period's own certified figure
+    (decisions 41, 42), and beside it what it is part of.
+
+    For "Año" the figure IS the year to date, so the two tiles beside it split
+    it into the months that have closed and the one that has not. For every
+    other period the tile beside it is the year to date — the context the
+    period's figure sits in, not a second headline.
+    """
+    fig = bap.period
+    tiles = [PP.Tile(
+        label=P.WITHIN_LABELS.get(period.key, period.label),
+        value=(es_display.integer(fig.count) if fig is not None and fig.present
+               else es_display.NA),
+        note=(fig.window.label if fig is not None and fig.present
+              else "sin cifra certificada"))]
+    if fig is not None and fig.present and fig.open_count is not None:
+        month = es_display.MONTHS[int(fig.open_month[5:7]) - 1]
+        if fig.closed is not None:
+            last = es_display.MONTHS[fig.closed_months - 1]
+            tiles.append(PP.Tile(label="De meses cerrados",
+                                 value=es_display.integer(fig.closed),
+                                 note=f"enero a {last}"
+                                 if fig.closed_months > 1 else "enero"))
+        tiles.append(PP.Tile(label="Del mes en curso",
+                             value=es_display.integer(fig.open_count),
+                             note=f"{month}, todavía sin cerrar"))
+    elif period.key != P.YEAR:
+        ytd = bap.year_to_date
+        if ytd is not None and ytd.present:
+            tiles.append(PP.Tile(
+                label=f"En lo que va de {bap.year}",
+                value=es_display.integer(ytd.count),
+                note=f"hasta el {es_display.day_month(ytd.window.end)}"))
+    return tiles
+
+
+def _period_sentence(bap, period) -> str:
+    """What the headline figure covers — `PeriodBaptisms.sentence`, shared with
+    the screen so the two cannot word it differently."""
+    fig = bap.period
+    if fig is None:
+        return (f"No hay cifra certificada de bautismos para {period.label} "
+                f"(decisión 42).")
+    return fig.sentence(period.label)
+
+
 def baptism_page(model) -> list:
-    """M6 — the mission's year of baptisms against the one annual goal it has.
+    """M6 — the period's baptisms, then the year against its one annual goal.
+
+    The period leads (decisions 41, 42): switch the period and the headline
+    changes with it, and it is the CERTIFIED figure for exactly those days or
+    no figure. The year below is context and is unchanged: its pace, its
+    projection and its month table stay on closed months, because a month half
+    counted drawn as a point makes the year look like it is collapsing.
 
     Certified figures only (decision 21). The weekly form's own baptism Key
     Indicator is on M2 and does not agree with this; both are named here
@@ -1458,8 +1512,14 @@ def baptism_page(model) -> list:
     if bap is None:
         return []
 
-    flow = [PP.SectionHead(f"Bautismos {bap.year}",
+    flow = [PP.SectionHead(f"Bautismos · {model.period.label}",
                            "cifra certificada · fuente: Tableau"),
+            PP.stat_tiles(W, _period_tiles(bap, model.period)),
+            Spacer(0, 4),
+            Paragraph(PP.text(_period_sentence(bap, model.period)),
+                      st["note_lead"]),
+            PP.SectionHead(f"El año {bap.year} contra su meta",
+                           "meses cerrados · fuente: Tableau"),
             PP.stat_tiles(W, _baptism_tiles(bap)), Spacer(0, 10)]
 
     if bap.goal and bap.attainment is not None:
@@ -1485,9 +1545,10 @@ def baptism_page(model) -> list:
             st["note"]))
     if bap.provisional_label:
         flow.append(Paragraph(PP.text(
-            f"{bap.provisional_label}. No entra en la barra ni en la suma de "
-            f"arriba: un mes a medio contar dibujado como punto hace que el "
-            f"año parezca desplomarse cada vez que se genera el paquete."),
+            f"{bap.provisional_label}. Está en lo que va del año, arriba, pero "
+            f"no en esta barra ni en el ritmo: un mes a medio contar dibujado "
+            f"como punto hace que el año parezca desplomarse cada vez que se "
+            f"genera el paquete."),
             st["note"]))
 
     months = [(es_display.MONTHS_ABBR[i], bap.certified.get(
@@ -1984,7 +2045,7 @@ def _tableau_sentences(mission) -> list:
         out.append(f"Sin sección de hallazgo en este paquete: {block.reason}. "
                    f"Las cifras de Tableau no se estiman ni se rellenan con "
                    f"el período anterior.")
-        return out
+        return out + _baptism_sentences(mission, block.baptisms)
 
     window = block.window
     out.append(
@@ -2007,12 +2068,42 @@ def _tableau_sentences(mission) -> list:
         "área. La zona y el distrito de cada cifra son los del roster, no los "
         "de Tableau, que registra dónde estaba un área cuando se escribió la "
         "fila.")
-    baptisms = block.baptisms
-    if baptisms is not None and baptisms.provisional_label:
-        out.append(f"Bautismos: {baptisms.certified_label}. "
+    return out + _baptism_sentences(mission, block.baptisms)
+
+
+def _baptism_sentences(mission, baptisms) -> list:
+    """Where the baptism figures come from (decisions 21, 41, 42).
+
+    Said whether or not the finding section printed: the baptism page does not
+    rest on the Detail export, so a refused finding section is no reason to
+    leave its source unexplained.
+    """
+    if baptisms is None:
+        return []
+    out = []
+    fig = baptisms.period
+    label = mission.period.label
+    if fig is not None and fig.present:
+        days = fig.window
+        out.append(
+            f"Bautismos de {label}: {es_display.integer(fig.count)} "
+            f"certificados por Tableau, del {days.label}"
+            + (f" ({days.shortfall_label})" if days.clipped else "") + ".")
+    elif fig is not None:
+        out.append(f"Bautismos de {label}: sin cifra certificada — "
+                   f"{fig.reason}.")
+    out.append(
+        "Cada período lee la captura certificada de sus propios días: el mes "
+        "y el año, de TABLEAU_BAPTISMS; la semana, los traslados y las "
+        "últimas seis semanas, de TABLEAU_BAPTISM_WINDOWS, que la "
+        "sincronización nocturna llena. Nunca los registros de Tableau por "
+        "persona, que quedan por debajo de la certificada, ni el formulario "
+        "semanal (decisión 42).")
+    if baptisms.provisional_label:
+        out.append(f"Bautismos del año: {baptisms.certified_label}. "
                    f"{baptisms.provisional_label[0].upper()}"
-                   f"{baptisms.provisional_label[1:]}, así que no entra en el "
-                   f"total del año.")
+                   f"{baptisms.provisional_label[1:]}, así que entra en lo que "
+                   f"va del año pero no en el ritmo ni en la proyección.")
     return out
 
 

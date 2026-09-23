@@ -578,11 +578,17 @@ class ReportData:
         selected period's own certified figure first (decisions 41, 42), then
         the year it sits in."""
         month, count, through = (self.baptisms_open or (None, None, None))
-        return TB.Baptisms(
-            period=TB.period_baptisms(period,
-                                      certified=self.baptisms_by_month,
+
+        def certified_for(p):
+            return TB.period_baptisms(p, certified=self.baptisms_by_month,
                                       open_month=self.baptisms_open,
-                                      windows=self.baptism_windows),
+                                      windows=self.baptism_windows)
+
+        this_year = P.resolve(P.YEAR, self.today, self.cycles)
+        return TB.Baptisms(
+            period=certified_for(period),
+            year_to_date=(certified_for(this_year)
+                          if this_year.end.year == period.end.year else None),
             year=period.end.year,
             goal=self.annual_goal,
             certified={k: v for k, v in self.baptisms_by_month.items()

@@ -375,3 +375,42 @@ Año **343** (319 closed + 24 September), and the other four refused — "la
 sincronización nocturna todavía no ha capturado la cifra certificada de estos
 días" — because TABLEAU_BAPTISM_WINDOWS does not exist until the sync's first
 run with R0.2 in it.
+
+### 2026-09-23 — R0.4: both renderers lead with the period
+
+**The packet (M6).** Two heads where there was one:
+
+1. **`Bautismos · <period>`** — `cifra certificada · fuente: Tableau`. A tile
+   labelled by `periods.WITHIN_LABELS` ("En este traslado", not the head's
+   own words repeated), and beside it either the year to date ("En lo que va
+   de 2026 · 343 · hasta el 23 de sep") or, for "Año", the split into closed
+   months (319) and the open month (24, "todavía sin cerrar"). Under it,
+   `PeriodBaptisms.sentence`: the days the figure covers, the shortfall when
+   the capture stops short, or — with no capture — "No hay cifra certificada
+   … No se imprime otra en su lugar … (decisión 42)".
+2. **`El año 2026 contra su meta`** — `meses cerrados · fuente: Tableau`. The
+   old block unchanged: 319, 527, −32, 478, the bar, the month table. Its
+   open-month note now says the month IS in the figure above and only kept
+   out of the bar and the pace.
+
+The data note's baptism sentences moved into `_baptism_sentences` and now
+print **whether or not the finding section printed** — the baptism page does
+not rest on the Detail export, so a refused finding section is no reason to
+leave its source unexplained. They name the period's figure, and say which
+tab each period reads from.
+
+**The screen** mirrors it: two section labels, a card row per band, the same
+`sentence` as caption. A refused period shows `—`, never 0 — and the year
+block's three cards stopped printing 0 when a figure is missing, too.
+
+**Verified.** Packet built from the live `ReportData` for three cases and
+read at 150 dpi: "Este traslado" (refused — dash and reason), "Año" (343 =
+319 + 24), and a SYNTHETIC one-night-behind capture for the transfer, used
+only to see the layout of a present, clipped figure ("16 de 17 días del
+período"). Page count unchanged: **106** for Este traslado. Screen driven at
+1400px and 375px: both bands render, **zero sideways scroll** at 375.
+Suite: **11 failed / 1698 passed** — the same 11 as baseline, +34 new tests.
+
+**Round 0 is built.** What it cannot show until the sync runs: a real window
+figure on the page. Every one of the four window periods prints its refusal
+until TABLEAU_BAPTISM_WINDOWS exists.

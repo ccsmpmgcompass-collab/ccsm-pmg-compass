@@ -715,39 +715,75 @@ if _BLOCK is not None:
                    if _BLOCK.whole_mission else ""))
 
 
-# ── 4c · Bautismos del año (M6, decisión 21) ─────────────────────────────────
+# ── 4c · Bautismos del período, y el año (M6, decisiones 21, 41, 42) ─────────
 
 if _BLOCK is not None and _BLOCK.baptisms is not None:
     _BAP = _BLOCK.baptisms
+    _FIG = _BAP.period
+    _HAS = _FIG is not None and _FIG.present
     render_section_label(
-        "Bautismos del año", right="cifra certificada · fuente: Tableau",
-        info=("La cifra certificada de TABLEAU_BAPTISMS, que es la que "
-              "cuenta. El formulario semanal pregunta lo mismo y no coincide "
-              "— los misioneros no siempre anotan el campo — así que aparece "
-              "aparte, en Indicadores Clave, bajo su propio nombre. El mes en "
-              "curso se informa por separado: un mes a medio contar sumado al "
-              "total hace que el año parezca desplomarse."),
+        f"Bautismos · {_model.period.label}",
+        right="cifra certificada · fuente: Tableau",
+        info=("La cifra CERTIFICADA de Tableau para los días de este período. "
+              "El mes y el año salen de TABLEAU_BAPTISMS; la semana, los "
+              "traslados y las últimas seis semanas, de "
+              "TABLEAU_BAPTISM_WINDOWS, que la sincronización nocturna llena. "
+              "Si no hay captura de estos días no se muestra otra cifra en su "
+              "lugar (decisión 42). El formulario semanal pregunta lo mismo y "
+              "no coincide, así que aparece aparte, en Indicadores Clave, bajo "
+              "su propio nombre."),
+    )
+    # A refused period shows a dash, never 0: "no certified figure" and "no
+    # baptisms" are different facts.
+    _cards = [{"label": P.WITHIN_LABELS.get(_model.period.key,
+                                            _model.period.label),
+               "value": _FIG.count if _HAS else NA,
+               "note": (_FIG.window.label if _HAS
+                        else "sin cifra certificada")}]
+    if _HAS and _FIG.open_count is not None:
+        if _FIG.closed is not None:
+            _cards.append({"label": "De meses cerrados",
+                           "value": _FIG.closed,
+                           "note": f"{fmt_int(_FIG.closed_months)} meses"})
+        _cards.append({"label": "Del mes en curso", "value": _FIG.open_count,
+                       "note": "todavía sin cerrar"})
+    elif (_model.period.key != P.YEAR and _BAP.year_to_date is not None
+          and _BAP.year_to_date.present):
+        _cards.append({"label": f"En lo que va de {_BAP.year}",
+                       "value": _BAP.year_to_date.count,
+                       "note": _BAP.year_to_date.window.label})
+    render_kpi_row(_cards)
+    st.caption(_FIG.sentence(_model.period.label) if _FIG is not None
+               else "Sin cifra certificada de bautismos (decisión 42).")
+
+    render_section_label(
+        f"El año {_BAP.year} contra su meta",
+        right="meses cerrados · fuente: Tableau",
+        info=("El ritmo y la proyección se miden sobre los meses cerrados. Un "
+              "mes a medio contar sumado al ritmo hace que el año parezca "
+              "desplomarse cada vez que se abre la página; por eso el mes en "
+              "curso está en la cifra de arriba y no aquí."),
     )
     render_kpi_row([
         {"label": f"Bautismos certificados {_BAP.year}",
-         "value": _BAP.total if _BAP.total is not None else 0,
+         "value": _BAP.total if _BAP.total is not None else NA,
          "goal": _BAP.goal,
          "note": (f"{fmt_int(_BAP.months)} meses cerrados"
                   if _BAP.months else "sin meses cerrados")},
         {"label": "Contra el ritmo de la meta",
-         "value": round(_BAP.gap, 1) if _BAP.gap is not None else 0,
+         "value": round(_BAP.gap, 1) if _BAP.gap is not None else NA,
          "decimals": 1,
          "note": "a esta altura del año"},
         {"label": "Si el año sigue así",
          "value": (round(_BAP.landing["value"])
-                   if _BAP.landing else 0),
+                   if _BAP.landing else NA),
          "goal": _BAP.goal,
          "note": (f"proyección sobre {fmt_int(_BAP.landing['months'])} meses"
                   if _BAP.landing else "sin proyección")},
     ])
     if _BAP.provisional_label:
-        st.caption(f"{_BAP.provisional_label}. No entra en el total de "
-                   f"arriba.")
+        st.caption(f"{_BAP.provisional_label}. Está en la cifra de arriba, "
+                   f"no en el ritmo ni en la proyección.")
 
 
 # ── 5 · Tasas de conversión ───────────────────────────────────────────────────
