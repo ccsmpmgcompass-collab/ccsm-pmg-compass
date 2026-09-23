@@ -434,3 +434,31 @@ def test_the_mission_has_no_ladder_so_its_note_does_not_point_at_one(mission):
         mission, weekly_ok=False, weekly_sure=False)
         if hasattr(p, "text") and isinstance(p.text, str))
     assert "sección de arriba" not in text
+
+
+# ── A4: the nightly table says its two figures are not on the same footing ────
+
+def _heads(flow):
+    table = next(f for f in flow if isinstance(f, PP.Table))
+    return table._cellvalues[0]
+
+
+def test_the_nightly_heads_say_what_each_figure_is_measured_in(mission):
+    heads = _heads(PK.nightly_page(mission, _data().nightly_goals))
+    real, meta = heads[1], heads[2]
+    assert real[0].label == "Real" and "período" in real[1].text
+    assert meta[0].label == "Meta" and "área/sem" in meta[1].text
+
+
+def test_the_key_indicator_heads_are_left_as_they_were(mission):
+    """Both of its figures ARE period totals — only the nightly table needed
+    its own heads."""
+    heads = _heads(PK.key_indicator_page(mission, weekly_ok=True,
+                                         weekly_sure=True))
+    assert heads[1].label == "Real" and heads[2].label == "Meta"
+
+
+def test_the_unit_lines_fit_their_columns():
+    room = PP.METRIC_COLUMNS[1] - 2 * 3.5
+    for _, sub in (PK.NIGHTLY_REAL_HEAD, PK.NIGHTLY_META_HEAD):
+        assert PP.width_of(sub, PP.NOTE) <= room

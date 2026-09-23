@@ -477,3 +477,17 @@ Alemania 1 — under "Contra la misión", "Contra su zona y la misión", "Contra
 distrito, su zona y la misión" — get the pointer. The grading bands stay in the
 sentence until R3.2 moves them to the "Cómo leer" page. Packet only; the screen
 never carried the sentence.
+
+### 2026-09-23 — R1.4 (A4): the nightly table says what its two figures are
+
+`NIGHTLY_REAL_HEAD = ("Real", "período")`, `NIGHTLY_META_HEAD = ("Meta",
+"área/sem")`, through R1.2's two-line heads. **"área/sem", not "área/semana"**:
+the latter is 37,4pt in a 37,0pt column and wrapped; "área/sem" is the
+vocabulary the rows' own notes already print ("meta 75/área/sem"). The Key
+Indicator table keeps plain REAL / META — both of its figures are period
+totals, which is the whole contrast. Read on page 4 of the live packet.
+
+**Round 1 is built.** Page 8 (Angol) shows all four at once: "Lo más fuerte"
+is Nuevas Personas, CAMBIO reads "sin base este período" over a column of
+dashes, the grades' note points at "Contra la misión" above it, and the
+nightly table's heads carry their units. Still 106 pages.

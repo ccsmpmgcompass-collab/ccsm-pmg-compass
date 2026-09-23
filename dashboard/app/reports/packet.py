@@ -1145,6 +1145,17 @@ def areas_page(model) -> list:
     return flow
 
 
+#: The nightly table's two figure heads (finding A4). Its REAL is the period's
+#: total and its META is ONE area's goal for ONE week — "4.408 contra 75" —
+#: while the Key Indicator table above it uses the same two words for two
+#: period totals. A reader who has just learnt what the columns mean there
+#: reads 4.408 against 75 as fifty-eight times the goal. "área/sem" is the
+#: vocabulary the rows' own notes already use ("meta 75/área/sem"), and fits
+#: the 37pt the column has where "área/semana" is 0,4pt too wide.
+NIGHTLY_REAL_HEAD = ("Real", "período")
+NIGHTLY_META_HEAD = ("Meta", "área/sem")
+
+
 def nightly_page(model, goals) -> list:
     st = PP.styles()
     W = PP.CONTENT_WIDTH
@@ -1155,7 +1166,9 @@ def nightly_page(model, goals) -> list:
             f"{es_display.integer(len(model.nightly_metrics))} medidas"),
         PP.metric_table(nightly_lines(
             model, goals, comparable=_nightly_comparable(model)),
-            headers=_metric_headers(based=_nightly_comparable(model))),
+            headers=_metric_headers(based=_nightly_comparable(model),
+                                    real=NIGHTLY_REAL_HEAD,
+                                    meta=NIGHTLY_META_HEAD)),
         Spacer(0, 6),
         Paragraph(PP.text(
             "El relleno es la suma del período contra la meta configurada por "
