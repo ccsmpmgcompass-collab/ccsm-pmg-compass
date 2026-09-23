@@ -3597,6 +3597,19 @@ def get_mission_baptisms_by_month(include_provisional: bool = False) -> dict[str
     return out
 
 
+def get_baptism_windows() -> list[tuple[date, date, int]]:
+    """Certified baptisms for the report periods that are not whole months, as
+    ``(start, end, count)`` — TABLEAU_BAPTISM_WINDOWS, which the nightly Tableau
+    job fills (decision 42, PLAN-2026-09-23-claridad.md).
+
+    An empty list, not an error, until the first run that writes the tab: the
+    packet then prints each of those periods' refusal instead of a figure.
+    """
+    from app.ingestion.tableau_upload import stored_window_rows
+    return [(date.fromisoformat(r[1]), date.fromisoformat(r[2]), int(r[3]))
+            for r in stored_window_rows(read_tab("TABLEAU_BAPTISM_WINDOWS"))]
+
+
 def get_baptisms_actual_for_range(start_date, end_date) -> int | None:
     """Certified mission-wide baptisms for an arbitrary [start_date, end_date],
     summed from TABLEAU_BAPTISMS one whole calendar month at a time.

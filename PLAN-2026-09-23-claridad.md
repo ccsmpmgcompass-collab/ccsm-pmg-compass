@@ -350,3 +350,28 @@ the month captures, which has run nightly since #17 — but a window crossing a
 month boundary has never been asked of the Summary. The first run that writes
 TABLEAU_BAPTISM_WINDOWS is the test, and until one does, every one of the four
 periods prints its refusal instead of a figure.
+
+### 2026-09-23 — R0.3: the model carries the period's own figure
+
+- `tableau.PeriodBaptisms` + `tableau.period_baptisms(period, certified=,
+  open_month=, windows=)`. Pure. **It takes no detail export at all** — a test
+  asserts its signature, so decision 42 is structural rather than a habit.
+- Lookup is by DAYS: a capture answers when it starts on the period's first
+  day and ends on or before its last; the latest such capture wins. A capture a
+  night behind answers with its own window and its shortfall ("16 de 17 días
+  del período"); under the 25% floor, or with nothing captured, it is refused
+  with its reason.
+- **"Año" is the closed months plus the open month's capture** when that is
+  the month right after them — both TABLEAU_BAPTISMS rows over adjoining days,
+  so this is one source counted once, not the sum decision 21 forbids. It
+  carries its `composition` so the page can say which part is still open. A
+  missing month in the middle stops the year there, as `AB.cumulative` does.
+- `Baptisms.period` holds it; `ReportData.baptism_windows` is read once in
+  `load_data` from `queries.get_baptism_windows()`.
+- `tests/test_report_period_baptisms.py`, 14 tests.
+
+**Against the live sheet (2026-09-23):** Mes calendario **24** (1–23 sep),
+Año **343** (319 closed + 24 September), and the other four refused — "la
+sincronización nocturna todavía no ha capturado la cifra certificada de estos
+días" — because TABLEAU_BAPTISM_WINDOWS does not exist until the sync's first
+run with R0.2 in it.

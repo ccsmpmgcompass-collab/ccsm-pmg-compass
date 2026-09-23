@@ -512,6 +512,9 @@ class ReportData:
     #: from them (decision 21).
     baptisms_by_month: dict = field(default_factory=dict)
     baptisms_open: tuple = ()
+    #: TABLEAU_BAPTISM_WINDOWS as `(start, end, count)`: the certified figure
+    #: for each report period that is not a month (decision 42).
+    baptism_windows: tuple = ()
     annual_goal: float | None = None
     #: `queries.get_ki_goals_for_week`, injected rather than imported so a test
     #: can hand in a week's goals without a sheet. The W-7 rule it implements —
@@ -571,9 +574,15 @@ class ReportData:
         return self._flags[cache_key]
 
     def baptism_year(self, period: P.Period) -> object:
-        """The annual baptism block (decision 21), for the mission's page only."""
+        """The baptism block (decision 21), for the mission's page only: the
+        selected period's own certified figure first (decisions 41, 42), then
+        the year it sits in."""
         month, count, through = (self.baptisms_open or (None, None, None))
         return TB.Baptisms(
+            period=TB.period_baptisms(period,
+                                      certified=self.baptisms_by_month,
+                                      open_month=self.baptisms_open,
+                                      windows=self.baptism_windows),
             year=period.end.year,
             goal=self.annual_goal,
             certified={k: v for k, v in self.baptisms_by_month.items()
@@ -713,8 +722,8 @@ def load_data(today: date | None = None) -> ReportData:
     )
     from app.db.goals_queries import all_area_transfer_goals
     from app.db.queries import (
-        get_agent_config, get_area_weekly_goals, get_baptisms_capture,
-        get_config_value, get_daily_log, get_ki_goals_for_week,
+        get_agent_config, get_area_weekly_goals, get_baptism_windows,
+        get_baptisms_capture, get_config_value, get_daily_log, get_ki_goals_for_week,
         get_mission_baptisms_by_month, get_scores, get_tableau_detail,
         get_weekly_ki,
     )
@@ -781,6 +790,7 @@ def load_data(today: date | None = None) -> ReportData:
         tableau_reconciliation=TB.reconcile(detail, S._clean(roster)),
         baptisms_by_month=certified,
         baptisms_open=open_month,
+        baptism_windows=tuple(get_baptism_windows()),
         annual_goal=_annual_goal(get_config_value),
         today=today,
         anchor=compliance_anchor_date(),

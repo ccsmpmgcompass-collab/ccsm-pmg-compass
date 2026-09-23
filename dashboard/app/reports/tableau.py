@@ -33,6 +33,7 @@ import pandas as pd
 from app.analytics import annual_baptisms as AB
 from app.analytics import finding_funnel as FF
 from app.config import es_display
+from app.reports import periods as P
 
 #: A window resting on less than this fraction of the period's elapsed days is
 #: refused rather than clipped. The same floor as `periods.THIN_REPORTING_RATE`
@@ -738,6 +739,10 @@ class Baptisms:
     certified: dict = None
     provisional: int | None = None
     provisional_through: date | None = None
+    #: The selected period's own figure (decisions 41, 42) — the headline. The
+    #: year above it is context: the pace, the projection and the month table
+    #: stay on closed months exactly as before.
+    period: "PeriodBaptisms" = None
 
     def __post_init__(self):
         object.__setattr__(self, "certified", dict(self.certified or {}))
@@ -802,6 +807,156 @@ class Baptisms:
                    if self.provisional_through else "")
         return (f"{es_display.integer(self.provisional)} más en el mes en "
                 f"curso{through}, sin cerrar")
+
+
+# ── The period's own baptisms (decisions 41, 42) ──────────────────────────────
+#
+# Zackary, 2026-09-23: "if it's for transfer up to date, put all of them, if
+# it's for the month, just include the baptisms up to the close of the month."
+#
+# Every answer here is CERTIFIED — TABLEAU_BAPTISMS for the month periods,
+# TABLEAU_BAPTISM_WINDOWS (which the nightly job fills, decision 42) for the
+# rest. The detail export's confirmation dates are never counted: R0.1 measured
+# them 0-11% under the certified figure once a month closes, and decision 42
+# chose a certified figure or none.
+
+@dataclass(frozen=True)
+class PeriodBaptisms:
+    """The certified baptisms for exactly the days of the selected period, or
+    the reason there is no such figure.
+
+    `window` is the days the figure covers, measured against the period's
+    elapsed days, so a capture one night behind reads "16 de 17 días del
+    período" beside its number rather than passing for the whole period.
+
+    `closed` and `open_count` are filled for "Año" only, which is the one figure
+    built from two captures: the closed months, and the open month to date.
+    Both are TABLEAU_BAPTISMS rows covering adjoining days, so adding them is
+    counting one source's days once each — not the certified-plus-something-
+    else sum decision 21 forbids.
+    """
+
+    count: int | None = None
+    window: Window = None
+    closed: int | None = None
+    closed_months: int = 0
+    open_count: int | None = None
+    open_month: str = ""
+
+    @property
+    def present(self) -> bool:
+        return (self.count is not None and self.window is not None
+                and self.window.usable)
+
+    @property
+    def reason(self) -> str:
+        if self.present:
+            return ""
+        return self.window.reason if self.window is not None else ""
+
+    @property
+    def caption(self) -> str:
+        """`cifra certificada · fuente: Tableau · 7 de sep - 23 de sep de 2026`,
+        then the shortfall when the capture stops short of the period."""
+        if not self.present:
+            return "cifra certificada · fuente: Tableau"
+        return "cifra certificada · " + self.window.caption
+
+    @property
+    def composition(self) -> str:
+        """For "Año": which part is closed and which is still open, or ""."""
+        if not self.present or self.open_count is None or self.closed is None:
+            return ""
+        month = es_display.MONTHS[int(self.open_month[5:7]) - 1]
+        return (f"{es_display.integer(self.closed)} de meses cerrados y "
+                f"{es_display.integer(self.open_count)} de {month}, que todavía "
+                f"no cierra")
+
+
+def _month_bounds(key: str) -> tuple[date, date] | None:
+    try:
+        first = date(int(key[:4]), int(key[5:7]), 1)
+    except (ValueError, TypeError):
+        return None
+    nxt = date(first.year + first.month // 12, first.month % 12 + 1, 1)
+    return first, date.fromordinal(nxt.toordinal() - 1)
+
+
+def _captures(certified: dict, open_month: tuple, windows) -> list:
+    """Every certified figure there is, as `(start, end, count)`."""
+    out = [(s, e, int(n)) for s, e, n in (windows or ())]
+    for key, n in (certified or {}).items():
+        bounds = _month_bounds(key)
+        if bounds and n is not None:
+            out.append((bounds[0], bounds[1], int(n)))
+    month, n, through = (tuple(open_month) + (None, None, None))[:3]
+    bounds = _month_bounds(month) if month else None
+    if bounds and n is not None and through is not None:
+        out.append((bounds[0], through, int(n)))
+    return out
+
+
+def _refused(period, reason: str) -> PeriodBaptisms:
+    return PeriodBaptisms(window=Window(period_days=period.days, reason=reason))
+
+
+def _year_to_date(period, certified: dict, open_month: tuple,
+                  floor: float) -> PeriodBaptisms:
+    """"Año": the closed months, plus the open month's capture when it is the
+    month right after them."""
+    year = period.start.year
+    series = AB.cumulative({k: v for k, v in (certified or {}).items()
+                            if str(k).startswith(f"{year:04d}-")}, year)
+    n = AB.months_covered(series)
+    closed = int(series[n - 1]) if n else None
+    end = _month_bounds(f"{year:04d}-{n:02d}")[1] if n else None
+
+    month, count, through = (tuple(open_month or ()) + (None, None, None))[:3]
+    open_count, open_key = None, ""
+    if (n < 12 and month == f"{year:04d}-{n + 1:02d}" and count is not None
+            and through is not None):
+        open_count, open_key, end = int(count), month, through
+
+    if closed is None and open_count is None:
+        return _refused(period, f"TABLEAU_BAPTISMS no tiene ninguna captura "
+                                f"de {year}")
+    window = Window(start=period.start, end=min(end, period.end),
+                    period_days=period.days)
+    if window.coverage is not None and window.coverage < floor:
+        return _refused(period, f"la captura certificada cubre sólo "
+                                f"{window.shortfall_label}")
+    return PeriodBaptisms(count=(closed or 0) + (open_count or 0),
+                          window=window, closed=closed, closed_months=n,
+                          open_count=open_count, open_month=open_key)
+
+
+def period_baptisms(period, *, certified: dict, open_month: tuple = (),
+                    windows=(), floor: float = MIN_WINDOW_COVERAGE
+                    ) -> PeriodBaptisms:
+    """The certified figure for `period`'s own days, or its refusal.
+
+    Looked up by DAYS, not by period name: a capture answers when it starts on
+    the period's first day and ends on or before its last, and the latest such
+    capture wins. So "Mes calendario" is answered by the month's own capture,
+    a transfer by its window capture, and a capture one night behind answers
+    with its own shorter window and says so. Below `floor` of the period — the
+    same 25% the finding section uses — the figure would be some other, much
+    shorter window wearing the period's name, and it is refused.
+    """
+    if period.key == P.YEAR:
+        return _year_to_date(period, certified, open_month, floor)
+
+    fits = [c for c in _captures(certified, open_month, windows)
+            if c[0] == period.start and c[1] <= period.end]
+    if not fits:
+        return _refused(period, "la sincronización nocturna todavía no ha "
+                                "capturado la cifra certificada de estos días")
+    start, end, count = max(fits, key=lambda c: c[1])
+    window = Window(start=start, end=end, period_days=period.days)
+    if window.coverage is not None and window.coverage < floor:
+        return _refused(period, f"la última captura certificada cubre sólo "
+                                f"{window.shortfall_label}")
+    return PeriodBaptisms(count=count, window=window)
 
 
 # ── One unit's finding section ────────────────────────────────────────────────
