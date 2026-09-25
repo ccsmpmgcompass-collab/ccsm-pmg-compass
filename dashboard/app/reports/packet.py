@@ -2283,8 +2283,12 @@ def data_note(models, goals=None) -> list:
         ["Bautismos del año", "TABLEAU_BAPTISMS",
          "La cifra certificada por mes. No es la que informa el formulario "
          "semanal, y las dos no se suman."],
+        ["Bautismos del período", "TABLEAU_BAPTISM_WINDOWS",
+         "La misma cifra certificada, para los días exactos de la semana, "
+         "los traslados y las últimas seis semanas. La llena la "
+         "sincronización nocturna (decisión 42)."],
     ]
-    flow.append(PP.table(rows, [128, 118, W - 246],
+    flow.append(PP.table(rows, [108, 124, W - 232],
                          headers=["Cifra", "Fuente", "Qué es"]))
     flow.append(Spacer(0, 10))
     flow.append(PP.SectionHead("Lo que este paquete no dice", rule=False))

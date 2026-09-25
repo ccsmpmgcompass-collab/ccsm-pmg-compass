@@ -655,3 +655,64 @@ zone's last page is ~37% full (63% blank, before and after), and there are
 now fewer pages to spread those fixed gaps across. No page is emptier than
 63% except the data note's last (52%). Getting a zone from 4,4 pages to 4 is a
 layout project of its own, not a clarity step, and is left alone.
+
+### 2026-09-25 — the sync ran; V.2 and V.3; the plan is built
+
+**R0.2 proven live.** The nightly job of 2026-09-24 (`nightly-36009933245`,
+SUCCESS, 3 min 45 s) created **TABLEAU_BAPTISM_WINDOWS** and wrote all four
+windows, each through `verify_window`:
+
+| Period | Window | Certified | R0.1's detail count |
+|---|---|---|---|
+| Semana pasada | 14–20 sep | **5** | 5 |
+| Este traslado | 7–24 sep | **12** | 12 (to the 23rd) |
+| Últimas 6 semanas | 10 ago – 20 sep | **48** | 47 |
+| Traslado pasado | 27 jul – 6 sep | **48** | 44 |
+
+The detail export ran low exactly where R0.1 said it would — on the window
+crossing closed months (−4) — and matched in the open one. Decision 42 was
+the right call. A window crossing a month boundary is exported by the Summary
+without complaint.
+
+**Round 0's acceptance, on screen, live (2026-09-25):** each of the six pills
+changes the headline — Semana pasada 5 · Este traslado 12 ("18 de 19 días del
+período": today's run had not happened yet, and the caption says so) ·
+Traslado pasado 48 · Últimas 6 semanas 48 · Mes calendario 24 · Año 343 (319
++ 24, split into its two tiles). Page 3's rule 4 now reads "Tableau certifica
+343 en lo que va de 2026 y 12 en 2026-6. El formulario semanal … informó 5" —
+the reporting gap of §6.1, side by side.
+
+**V.2** — the screen at 1400px and 375px, mission and Angol: no exceptions,
+**zero sideways scroll**, both baptism bands, the KI cards reading "sin base
+este período", the reporting line under the sparks ("de 45 — 13 de sep: 36 ·
+20 de sep: 31"; Angol "de 9 — 7 · 6"), the finding captions ("Sólo las áreas
+de esta unidad en MISSION_ORG." on Angol, the ten-zone sentence on the
+mission).
+
+**V.3** — read at 100–150 dpi from the final build: the cover (contents
+opens "Cómo leer este paquete 3"), the guide, page 3, the mission's first
+page, its nightly table and baptism page, its finding page, Angol's first
+page, El Mirador's four, an area spread and the data note. The data note's
+source table gained its missing row — **"Bautismos del período ·
+TABLEAU_BAPTISM_WINDOWS"** — and its source column 118 → 124pt so the tab's
+name no longer breaks mid-word.
+
+**The packet as it now stands (live data, 2026-09-25): 104 pages, 52 sheets a
+copy, 148 sheets a run; districts four pages each.**
+
+## THE PLAN IS BUILT
+
+Rounds 0–4 complete, twelve findings handled (nine built, B6 / C10 / C12 left
+alone by decision), decisions 36–43 recorded. Still open, none of them this
+plan's:
+
+1. **§6.2 — `AREA_TRANSFER_GOALS` for 2026-7 before 2026-10-19**, on the
+   Metas page, or the next packet prints "sin meta" for leadership's mark.
+2. **§6.1 — the weekly form's baptism field**: 5 reported against 12
+   certified this transfer. The packet no longer lets the 5 lead a page, but
+   the field is still under-filled.
+3. **§6.3 — the goals workstream** (nightly goals at ~2× current
+   performance), deferred since the Informes plan.
+4. **Per-zone white space** — every zone's last page is ~63% blank because a
+   zone is ~4,4 pages and each unit starts a fresh sheet. A layout project, not
+   a clarity step.
