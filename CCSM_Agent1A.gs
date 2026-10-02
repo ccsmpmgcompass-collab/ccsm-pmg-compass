@@ -116,6 +116,19 @@ function runAgent1A() {
     var weekStart = a1a_getWeekStart(weekEnd);
     Logger.log('Agent1A: Week ' + weekStart + ' to ' + weekEnd);
 
+    // Each sector's own nightly goals (PLAN-2026-10-02-goals.md, G11). The
+    // week being graded is held to the goals that were in force FOR that
+    // week -- AREA_WEEKLY_GOALS' row for its Monday -- and the email also
+    // carries the goals the weekly job set this morning for the week ahead.
+    // GOALS_CONFIG already holds the NEW week's goals by now, so reading it
+    // for the graded week would grade last week against this week's bar.
+    var nextMonday   = a1a_toDateString(new Date(_loc.getFullYear(), _loc.getMonth(), _loc.getDate() + 1));
+    var weekGoals    = a1a_loadWeeklyGoals_(weekStart);
+    var nextGoals    = a1a_loadWeeklyGoals_(nextMonday);
+    Logger.log('Agent1A: AREA_WEEKLY_GOALS rows -- graded week ' + weekStart + ': ' +
+               (weekGoals ? Object.keys(weekGoals).length : 'none') + ', next week ' + nextMonday + ': ' +
+               (nextGoals ? Object.keys(nextGoals).length : 'none'));
+
     var dailyTotals = a1a_aggregateDailyLog(weekStart, weekEnd);
     var effortMap   = a1a_readEffortScores(weekStart, weekEnd);
 
@@ -167,7 +180,8 @@ function runAgent1A() {
     missionOrg.forEach(function(areaObj) {
       var name   = areaObj['Area_Name'];
       var stats  = a1a_buildStats(dailyTotals[name] || {}, effortMap[name] || {});
-      var ranked = a1a_rankMetrics(stats, goals[name] || goalDefaults, rateTargets, (feedback[name] || {}).lastGrowthMetric);
+      var areaGoals = a1a_goalsFor_(name, weekGoals, goals, goalDefaults);
+      var ranked = a1a_rankMetrics(stats, areaGoals, rateTargets, (feedback[name] || {}).lastGrowthMetric);
       var growth = ranked[ranked.length - 1] || null;
 
       areaData[name] = {
@@ -192,6 +206,10 @@ function runAgent1A() {
         // never silent.
         kiMetaPrev: weeklyKiPrev === null ? null : a1a_kiMetaMap_(weeklyKiPrev[name]),
         ranked:    ranked, // full ranked metric list -- the scoreboard needs every goaled metric, not just the 3 picks below
+        // This sector's goals for the week that starts today, { key: goal },
+        // or null when the weekly job has not written them. The scoreboard
+        // prints them beside last week's goal ("58 · próx. 60").
+        nextGoals: nextGoals ? (nextGoals[name] || null) : null,
         strength1: ranked[0] || null,
         strength2: ranked[1] || null,
         growth:    growth,
@@ -315,6 +333,56 @@ function a1a_loadCountMetrics() {
     metrics.push({ key: key, display: name, type: 'count', goalsKey: key, pmg: null, scripture: null });
   }
   return metrics;
+}
+
+/**
+ * One week's per-sector nightly goals from AREA_WEEKLY_GOALS, written every
+ * Monday morning by the dashboard's weekly job (app/ingestion/
+ * area_goals_runner.py): { areaName: { metric_key: goal } } for the rows whose
+ * Week_Start is `weekStartStr`, or null when the tab does not exist yet or holds
+ * no row for that week -- the caller then falls back to GOALS_CONFIG and the
+ * AGENT_CONFIG defaults, exactly as before this tab existed.
+ */
+function a1a_loadWeeklyGoals_(weekStartStr) {
+  var data;
+  try { data = a1a_getSheetData('AREA_WEEKLY_GOALS'); }
+  catch (e) { return null; }   // tab not created yet
+  if (!data || data.length < 2) return null;
+  var h = data[0].map(function(c) { return String(c).trim(); });
+  var wIdx = h.indexOf('Week_Start'), aIdx = h.indexOf('Area');
+  if (wIdx < 0 || aIdx < 0) return null;
+  var out = {}, found = false;
+  for (var i = 1; i < data.length; i++) {
+    if (a1a_toDateString(data[i][wIdx]) !== weekStartStr) continue;
+    var area = String(data[i][aIdx] || '').trim();
+    if (!area) continue;
+    var row = {};
+    for (var j = 0; j < h.length; j++) {
+      if (j === wIdx || j === aIdx || h[j] === 'Overridden' || !h[j]) continue;
+      var v = parseFloat(data[i][j]);
+      if (!isNaN(v) && v > 0) row[h[j]] = v;
+    }
+    out[area] = row;
+    found = true;
+  }
+  return found ? out : null;
+}
+
+/**
+ * The goals one sector is graded against, metric by metric: that week's
+ * AREA_WEEKLY_GOALS row, else its GOALS_CONFIG row, else the mission default.
+ * Per metric, not per row -- a row missing one metric must not zero it, which
+ * is what `goals[name] || goalDefaults` did for any metric a GOALS_CONFIG row
+ * left blank.
+ */
+function a1a_goalsFor_(name, weekGoals, goals, goalDefaults) {
+  var week = (weekGoals && weekGoals[name]) || {};
+  var cfg  = goals[name] || {};
+  var out  = {};
+  Object.keys(goalDefaults).forEach(function(k) {
+    out[k] = week[k] || cfg[k] || goalDefaults[k] || 0;
+  });
+  return out;
 }
 
 function a1a_loadGoals() {

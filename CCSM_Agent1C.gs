@@ -269,6 +269,7 @@ var A1C_GLOSSARY = [
   // entries below, and overloading it here reads as "change vs last transfer".
   ['Δ',              'diferencia con la semana pasada'],
   ['% Meta',         'lo logrado esta semana dividido por la meta — verde 90% o más, azul 50–89%, amarillo 1–49%, rojo cuando aún no se registra nada'],
+  ['Meta · próx.',   'la meta de cada indicador es la de su propio sector: su ritmo de las últimas seis semanas más un 10%, y se ajusta un poco cada semana; «próx.» es la meta para la semana que empieza'],
   ['Prom. del Cambio', 'promedio durante este cambio'],
   ['Tasa de Contacto',                'Contactos ÷ Intentos de Contacto'],
   ['Tasa de Conversaciones Significativas', 'Conversaciones Significativas ÷ Contactos'],
@@ -1726,7 +1727,7 @@ function a1c_buildAreaSection(areaName, area, weekEnd, C) {
 
   html += a1c_buildYouVsYou_(g, der, C);
   html += a1c_buildTrendChart_(der && der.trend, C);
-  html += a1c_buildScoreboard_(area.stats, area.ranked, der, C, weekEnd);
+  html += a1c_buildScoreboard_(area.stats, area.ranked, der, C, weekEnd, area.nextGoals);
   html += a1c_buildFunnelStrip_(der && der.funnel, C, weekEnd);
   html += a1c_buildConsistencyBlock_(der && der.consistency, C, weekEnd);
 
@@ -1986,7 +1987,7 @@ function a1c_buildMessageBlock(label, msg, C, accentColor, numbersHtml) {
  * docs/Agent1C.gs a1c_buildScoreboard_ — see A1C_SCOREBOARD_GROUPS above for
  * the CCSM-specific grouping and metric set.
  */
-function a1c_buildScoreboard_(stats, ranked, der, C, weekEnd) {
+function a1c_buildScoreboard_(stats, ranked, der, C, weekEnd, nextGoals) {
   if (!der || !stats) return '';
 
   // Goal lookup, folded in from what used to be a separate "Tu Progreso Hacia
@@ -2023,14 +2024,23 @@ function a1c_buildScoreboard_(stats, ranked, der, C, weekEnd) {
   // Meta + "% Meta", carried over from the retired goal-grid section.
   // Reached goals go green so the table can be skimmed for wins the same way
   // the old bars could.
+  // Next week's goal for this sector (PLAN-2026-10-02-goals.md, G11): the
+  // weekly job moves it a little each week with the sector's own numbers, and
+  // the companionship sees where the bar went beside how it did.
+  function nextTxt(key) {
+    var n = nextGoals ? parseFloat(nextGoals[key]) : NaN;
+    if (isNaN(n) || n <= 0) return '';
+    return '<div style="font-size:9px;color:' + C.muted + ';white-space:nowrap;">próx. ' +
+           a1c_esc(a1c_fmtMetricVal_(key, n)) + '</div>';
+  }
   function goalCells(key) {
     var goal = goalByKey[key];
     if (goal === undefined) {
-      return cell('<span style="color:' + C.muted + ';">—</span>') +
+      return cell('<span style="color:' + C.muted + ';">—</span>' + nextTxt(key)) +
              cell('<span style="color:' + C.muted + ';">—</span>');
     }
     var actual = stats[key];
-    var metaTxt = a1c_esc(a1c_fmtMetricVal_(key, goal));
+    var metaTxt = a1c_esc(a1c_fmtMetricVal_(key, goal)) + nextTxt(key);
     if (typeof actual !== 'number' || isNaN(actual)) {
       return cell(metaTxt) + cell('<span style="color:' + C.muted + ';">—</span>');
     }
