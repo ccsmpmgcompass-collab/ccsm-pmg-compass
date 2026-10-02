@@ -308,6 +308,14 @@ model, drawn by both renderers. `gap_bars` is the sixth vector primitive.
 
 ## §6 — AFTER this project: the goals workstream
 
+> **Taken up 2026-10-02 in `PLAN-2026-10-02-goals.md`**, which supersedes this
+> section: (1) stays Zackary's dated step G0; (2) is fixed by measuring nightly
+> goals per reported night (G1) and re-basing them (G2/G3); (3) turned out to be
+> covered already — the Metas REC recalibrates the Key Indicator goals every
+> cycle and landed 2026-6 at 69–93% — and Agent2 is retired (G4). The "weekly
+> form under-reports baptisms" finding of Phase V was pilot-vs-mission and is
+> retracted there (§2.5).
+
 **Zackary, 2026-09-21: "flag the goals as something we need to work on after
 this project is finished."** Not in scope for any step above. Nothing here
 blocks the build — the report renders honestly against the goals as they stand,

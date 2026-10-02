@@ -711,6 +711,11 @@ not a code change.
 
 ## §2 — Not scheduled (carried forward, deliberately)
 
+> **2026-10-02:** the goals items carried here and in the STATUS table below
+> (GOALS_CONFIG, the nightly goals, Agent2) are now `PLAN-2026-10-02-goals.md`.
+> Step 6 (automation) was done by `PLAN-2026-09-19-tableau-autosync.md`; this
+> file's STATUS table predates both and is not updated row by row.
+
 - **14 pre-existing test failures** — the standing baseline. **Corrected
   2026-09-05: it is 14, not the 13 carried in the notes.** Measured by stashing
   the working change and re-running: identical 14 either way. They cluster in

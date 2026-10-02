@@ -11,7 +11,7 @@ this file is the version that travels with the repo.
 | Branch | `main` | Deploy from a stable branch, not a feature branch. |
 | Main file path | `dashboard/Home.py` | The app is a subdirectory of the CCSM repo. |
 | Dependencies | `dashboard/requirements.txt` | Found automatically — Streamlit Cloud looks in the repo root **or** the entrypoint's own directory. Nothing to configure. |
-| Python version | Highest offered in the dropdown | Local dev runs 3.14.4. `streamlit==1.40.0` declares `>=3.8`, so any offered version satisfies it; if the build fails installing wheels, drop one version and redeploy. |
+| Python version | Highest offered in the dropdown | Production runs 3.14; local dev (`dashboard/venv`) runs 3.12 — the two differ, so a dependency theory that holds on one need not hold on the other. `streamlit==1.40.0` declares `>=3.8`, so any offered version satisfies it; if the build fails installing wheels, drop one version and redeploy. |
 | Sharing | **Only specific people can view this app** | Not cosmetic — see below. |
 
 ## Why the app must be private
