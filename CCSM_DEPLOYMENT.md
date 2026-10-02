@@ -205,7 +205,7 @@ The very first one replaces the starter `Code.gs`: paste `CcsmData.gs` into it a
 | 9 | `CCSM_Agent1A.gs` | `CCSM_Agent1A` | Monday coaching — metrics |
 | 10 | `CCSM_Agent1B.gs` | `CCSM_Agent1B` | Monday coaching — message selection |
 | 11 | `CCSM_Agent1C.gs` | `CCSM_Agent1C` | Monday coaching — sends the emails |
-| 12 | `CCSM_Agent2.gs` | `CCSM_Agent2` | Per-transfer goal recalibration (manual) |
+| 12 | `CCSM_Agent2.gs` | `CCSM_Agent2` | **Retired 2026-10-02** — per-transfer goal recalibration, now on the dashboard (Metas → Configuración de Metas) |
 | 13 | `CCSM_Agent4.gs` | `CCSM_Agent4` | Weekly system health check + self-heal |
 | 14 | `CCSM_AgentScores.gs` | `CCSM_AgentScores` | Weekly area scores + `SCORE_CONFIG` setup |
 | 15 | `CCSM_AgentReminder.gs` | `CCSM_AgentReminder` | NOTES reminders (+ optional weekly compliance) |
@@ -425,7 +425,7 @@ Each is zero-argument and safe under `TEST_MODE`:
 | `runAgentScores()` | Fills `SCORES` for the last completed week |
 | `runAgent4()` | Full health check → emails a Spanish system report |
 | `verifyTestModeSetup()` | Prints `TEST_MODE` / `TEST_INBOX_EMAIL` for a quick confirmation |
-| `runAgent2()` | Goal recalibration — writes `GOAL_RECALIBRATION`. Never scheduled; run once per transfer by hand. |
+| `runAgent2()` | **Retired 2026-10-02 — do not run.** Recalibrate the nightly goals on the dashboard instead (Metas → Configuración de Metas). See `PLAN-2026-10-02-goals.md`. |
 
 ### 7.8 Clean up the test data
 
@@ -574,7 +574,7 @@ It installs 10 scheduled triggers plus the 2 form-submit triggers:
 | `onNightlyFormSubmit` | on submit | Validation + duplicate detection |
 | `onQAFormSubmit` | on submit | Question / suggestion handling |
 
-`runAgent2` (goal recalibration) is intentionally **not** scheduled — it is a per-transfer judgement call the mission president signs off on, run by hand once per transfer.
+`runAgent2` (goal recalibration) is **retired** (2026-10-02). Once per transfer, on transfer day, leadership recalibrates the nightly goals on the dashboard: Metas → Configuración de Metas → "Metas nocturnas — recalibrar" shows each goal beside the mission's measured pace and writes the approved numbers into `AGENT_CONFIG`.
 
 ### 9.2 Never run the other installers
 
@@ -725,7 +725,7 @@ All of these take **no arguments**, because the Apps Script Run button cannot pa
 | `KNOWLEDGE_BASE` | `seedCcsmKnowledgeBase()` | 10 Q&A rows |
 | `SCORE_CONFIG` | `setupCcsmScoreConfig()` | Weights — mission-tunable in the sheet |
 | `GOALS_CONFIG` | You (optional) | Per-area goals |
-| `TRANSFER_SCHEDULE` | You | Transfer dates; needed by `runAgent2` |
+| `TRANSFER_SCHEDULE` | You | Transfer dates; every transfer-scoped page reads it |
 | `NIGHTLY_FORM_RAW` | Google Forms | Created on attach; you rename it (Step 2.3) |
 | `WEEKLY_FORM_RAW` | Google Forms | Created on attach; you rename it |
 | `DAILY_LOG` | Agent3 | Headers written by the agent on first run |
@@ -734,7 +734,7 @@ All of these take **no arguments**, because the Apps Script Run button cannot pa
 | `DASHBOARD_SUMMARY` | Agent5A | |
 | `WEEKLY_BREAKDOWNS` | Agent1C | |
 | `SCORES` | AgentScores | |
-| `GOAL_RECALIBRATION` | Agent2 | |
+| `GOAL_RECALIBRATION` | Agent2 (retired) | Historical only; nothing reads it |
 | `FEEDBACK_HISTORY` | Agent1C | Which message went to which area — prevents repeats |
 | `ENCOURAGEMENT_HISTORY` | Agent5B / Agent6 | |
 | `AGENT_RUN_LOG` | All agents | **First place to look when something is wrong** |

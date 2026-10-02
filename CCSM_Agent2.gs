@@ -8,8 +8,17 @@
  * names are kept identical to the Provo original so future diffs stay
  * readable.
  *
- * WHEN TO RUN: Once per transfer (every 6 weeks), manually or via one-time trigger.
- *              Run setupAgent2OnceTrigger() to fire it in ~2 minutes.
+ * RETIRED 2026-10-02 — DO NOT RUN. PLAN-2026-10-02-goals.md (decision G-D4).
+ * Run on transfer day, as the runbook said, its "current" window was empty and
+ * its oldest predated DAILY_LOG, so every suggestion it wrote on 2026-09-08 was
+ * the old goal plus 10%; and no screen ever read GOAL_RECALIBRATION. The
+ * nightly goals are recalibrated in the dashboard instead: Metas ->
+ * Configuración de Metas -> "Metas nocturnas — recalibrar", which measures the
+ * mission's pace per reported night and writes AGENT_CONFIG's GOAL_* rows.
+ * The code is left in place, unscheduled, so its history stays readable.
+ *
+ * WHEN TO RUN (historical): Once per transfer (every 6 weeks), manually or via
+ *              one-time trigger. Run setupAgent2OnceTrigger() to fire it in ~2 minutes.
  *
  * WHAT IT DOES:
  *   1. Reads up to 3 transfers of DAILY_LOG history (current + 2 prior)

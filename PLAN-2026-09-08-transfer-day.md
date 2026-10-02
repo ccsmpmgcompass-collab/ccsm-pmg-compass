@@ -349,6 +349,15 @@ header reads "Transfer 2026-6 · Week 1 · 7 sep to 18 oct".
 
 ### Step 6 — Recalibrate the nightly goals
 
+> **CHANGED 2026-10-02 (`PLAN-2026-10-02-goals.md`, decision G-D4): `runAgent2`
+> is retired.** From transfer 2026-7 on, this step is: in the dashboard, Metas →
+> Configuración de Metas → "Metas nocturnas — recalibrar", read the table, tick
+> the confirmation and press "Aplicar". The window is the last six complete
+> weeks, which on transfer day is exactly the transfer that just closed. The
+> text below is how it was done for 2026-6 and is kept as history — the run it
+> describes produced the old goal plus 10% for every metric, because the
+> "current" window it read was empty on transfer day.
+
 6.1 Open the COMPASS_CCSM Apps Script editor and run **`runAgent2`** once.
 
 This is deliberate design, not an oversight: `CCSM_Setup.gs:40,52` document

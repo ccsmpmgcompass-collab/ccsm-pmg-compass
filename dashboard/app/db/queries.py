@@ -1546,39 +1546,11 @@ def get_district_goals(district: str) -> dict:
     return sub[metric_cols].sum().to_dict()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# GOAL_RECALIBRATION (written by Agent2.gs, once per ~6-week transfer)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def get_goal_recalibration() -> pd.DataFrame:
-    """
-    Per-area per-metric trend analysis + suggested next-transfer goal, written
-    by Agent2.gs once per ~6-week transfer. Row 1 of the tab is a stale legacy
-    header duplicated as a data row in row 2 (a2_writeGoalRecalibration quirk)
-    — read_tab's header_marker scan finds the real header and drops the repeat.
-    """
-    df = read_tab("GOAL_RECALIBRATION", header_marker="Metric_Key")
-    if df.empty or "Metric_Key" not in df.columns:
-        return pd.DataFrame()
-
-    rename = {}
-    for c in df.columns:
-        if c.startswith("Avg_Week_T1"):
-            rename[c] = "avg_week_t1"
-        elif c.startswith("Avg_Week_T2"):
-            rename[c] = "avg_week_t2"
-        elif c.startswith("Avg_Week_T3"):
-            rename[c] = "avg_week_t3"
-    df = df.rename(columns=rename)
-
-    return _num(df, ["Current_Goal", "avg_week_t1", "avg_week_t2", "avg_week_t3", "Suggested_Goal"])
-
-
-def apply_goal_recalibration_suggestion(area: str, metric_key: str, suggested_goal: float) -> None:
-    """Write one GOAL_RECALIBRATION suggestion into GOALS_CONFIG for one area+metric."""
-    current = get_area_goals(area)
-    current[metric_key] = suggested_goal
-    save_area_goals(area, current)
+# GOAL_RECALIBRATION — get_goal_recalibration / apply_goal_recalibration_suggestion
+# lived here and had no caller. The tab was Agent2.gs's output, and Agent2 is
+# retired (PLAN-2026-10-02-goals.md, G-D4): the nightly goals are recalibrated
+# by app/analytics/goal_recalibration.py and written by
+# goals_queries.set_nightly_goals, from Metas -> Configuración de Metas.
 
 
 # ══════════════════════════════════════════════════════════════════════════════

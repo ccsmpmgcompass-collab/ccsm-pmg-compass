@@ -37,7 +37,7 @@
  *   runAgent4            Monday    7:00 AM   system health check + self-heal
  *   runAgentScores       Monday   12:05 AM   weekly area scores
  *   runAgentMissionReport Monday  10:00 PM   mission-wide numbers for AP/MP
- *   runAgent2            (none)              MANUAL — run once per transfer
+ *   runAgent2            (none)              RETIRED 2026-10-02 — never run
  *
  * Plus TWO installable form-submit triggers, which are NOT time-based and so
  * are not part of the table above (they fire when a missionary presses Submit,
@@ -49,9 +49,9 @@
  * setupAllCcsmTriggers() installs those two as well, and deliberately leaves
  * any already-installed form-submit trigger alone.
  *
- * runAgent2 is deliberately NOT scheduled: goal recalibration is a per-transfer
- * judgement call the mission president signs off on, not an automatic weekly
- * rewrite of every area's goals.
+ * runAgent2 is RETIRED (PLAN-2026-10-02-goals.md, G-D4): the nightly goals are
+ * recalibrated once per transfer in the dashboard (Metas -> Configuración de
+ * Metas), where leadership sees the numbers before they are written.
  *
  * ─────────────────────────────────────────────────────────────────────────
  * DEPLOYMENT DECISION THE MISSION MUST CONFIRM — WEEKLY_REMINDER_OWNER
@@ -391,8 +391,8 @@ function setupAllCcsmTriggers() {
 
   Logger.log('CCSM_Setup: ' + CCSM_TRIGGER_SCHEDULE.length +
     ' scheduled trigger(s) + ' + CCSM_FORM_SUBMIT_TRIGGERS.length +
-    ' form-submit trigger(s) in place. runAgent2 is intentionally NOT scheduled — ' +
-    'run it manually once per transfer.');
+    ' form-submit trigger(s) in place. runAgent2 is retired — recalibrate the ' +
+    'nightly goals on the dashboard (Metas -> Configuración de Metas).');
 }
 
 /**
@@ -754,7 +754,7 @@ function smokeTestPipeline() {
     if (known.indexOf(fn) === -1) warn('Unrecognized trigger handler installed: ' + fn + '.');
   });
   if (counts['runAgent2']) {
-    warn('runAgent2 is scheduled. It is meant to be run MANUALLY once per transfer.');
+    warn('runAgent2 is scheduled. It is RETIRED (2026-10-02) — delete this trigger.');
   }
 
   // ── 6b. Every handler this project schedules actually EXISTS ─────────────
