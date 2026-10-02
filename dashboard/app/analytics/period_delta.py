@@ -178,6 +178,47 @@ def window_areas(daily_log: pd.DataFrame, start: date, end: date) -> int:
     return int(window["Area"].nunique()) if not window.empty else 0
 
 
+def area_nights(daily_log: pd.DataFrame, start: date | None = None,
+                end: date | None = None) -> int:
+    """Distinct (area, date) pairs in ``daily_log`` — the nights actually filed.
+
+    Bounded to ``start``..``end`` inclusive when both are given; the whole
+    frame otherwise. An area that files twice on one date counts once, which
+    is the same deduplication DAILY_LOG's own (Date, Area) key promises.
+    """
+    if daily_log is None or daily_log.empty:
+        return 0
+    if "Date" not in daily_log.columns or "Area" not in daily_log.columns:
+        return 0
+    frame = daily_log.assign(__d=_dates(daily_log)).dropna(subset=["__d"])
+    if start is not None and end is not None:
+        if end < start:
+            return 0
+        frame = frame[(frame["__d"] >= start) & (frame["__d"] <= end)]
+    if frame.empty:
+        return 0
+    return int(frame[["Area", "__d"]].drop_duplicates().shape[0])
+
+
+def reporting_equivalents(nights: int, days: int) -> float | None:
+    """How many full-time areas ``nights`` filed nights amount to over ``days``.
+
+    The value basis that makes a nightly goal mean PER REPORTED NIGHT
+    (PLAN-2026-10-02-goals.md, decision G-D5). A goal is one number per area
+    per week; a total resting on 687 filed nights over a 21-day window is the
+    work of 687 / 21 = 32.7 areas reporting every night, so it is divided by
+    32.7, not by the 45 on the roster (which counts every unfiled night as a
+    zero) nor by the 45 that filed at least once (which holds an area that
+    filed one night to a whole week's goal). How many nights went unfiled is
+    then its own number, printed beside the figure, never inside it.
+
+    None when either side is empty — a caller must not draw a bar on it.
+    """
+    if not nights or not days or days <= 0:
+        return None
+    return float(nights) / float(days)
+
+
 def days_in_window(dates, start: date, end: date) -> int:
     """How many of ``dates`` (from ``reporting_dates``) fall in the window."""
     if not dates or start is None or end is None:

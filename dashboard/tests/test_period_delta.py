@@ -225,3 +225,48 @@ def test_a_rise_from_zero_is_reported_as_an_absolute():
 
 def test_zero_against_zero_says_nothing():
     assert period_delta(0, 0, current_basis=7, prior_basis=7) is None
+
+
+# ── Per reported night (PLAN-2026-10-02-goals.md, G1.1) ────────────────────────
+
+from app.analytics.period_delta import area_nights, reporting_equivalents
+
+
+def test_area_nights_counts_each_area_once_per_date():
+    log = _log([
+        (date(2026, 9, 7), "A", 10), (date(2026, 9, 7), "A", 3),  # filed twice
+        (date(2026, 9, 7), "B", 5), (date(2026, 9, 8), "A", 1),
+    ])
+    assert area_nights(log) == 3
+
+
+def test_area_nights_respects_the_window():
+    log = _log([(date(2026, 9, d), "A", 1) for d in range(1, 11)])
+    assert area_nights(log, date(2026, 9, 3), date(2026, 9, 5)) == 3
+    assert area_nights(log, date(2026, 9, 5), date(2026, 9, 3)) == 0
+
+
+def test_area_nights_empty_and_malformed():
+    assert area_nights(pd.DataFrame()) == 0
+    assert area_nights(pd.DataFrame({"Date": [date(2026, 9, 1)]})) == 0
+
+
+def test_reporting_equivalents_is_full_time_areas():
+    # The audit's own window: 687 nights filed over 21 days.
+    assert reporting_equivalents(687, 21) == pytest.approx(32.714, abs=1e-3)
+    # Every area every night is exactly the roster.
+    assert reporting_equivalents(45 * 7, 7) == 45
+
+
+def test_reporting_equivalents_refuses_an_empty_side():
+    assert reporting_equivalents(0, 7) is None
+    assert reporting_equivalents(10, 0) is None
+
+
+def test_per_reported_night_does_not_punish_a_missed_night():
+    """An area that does 20 a night and files 5 of 7 nights is exactly at a
+    140-a-week goal per reported night — the basis G-D5 adopts."""
+    log = _log([(date(2026, 9, d), "A", 20) for d in range(7, 12)])  # 5 nights
+    total = sum(window_totals(log, date(2026, 9, 7), date(2026, 9, 13)).values())
+    basis = reporting_equivalents(area_nights(log), 7)
+    assert total / basis == pytest.approx(140)
