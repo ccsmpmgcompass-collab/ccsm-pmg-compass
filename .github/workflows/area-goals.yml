@@ -1,0 +1,72 @@
+name: Sector Nightly Goals
+
+# Every Monday morning, each sector's nightly goals for the week: its own pace
+# on the nights it reported over the last six weeks, plus 10%, moved at most
+# 10% from last week's (PLAN-2026-10-02-goals.md, G-D7..G-D12).
+#
+# 12:00 UTC is 8-9 AM in Chile: after Agent3's 6 AM DAILY_LOG refresh has
+# brought in Sunday's reports, and long before Agent1A's 9:15 PM email reads
+# GOALS_CONFIG. Safe to re-run: a second run replaces that week's rows.
+#
+# The repository is public — the job prints counts only, never a sector's name
+# or figures.
+
+on:
+  schedule:
+    - cron: "0 12 * * 1"
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: "CLOUD_JOB_STATUS row to report into (the app supplies this)"
+        required: false
+        type: string
+      week_start:
+        description: "The Monday to compute for (YYYY-MM-DD); blank = this week"
+        required: false
+        type: string
+      dry_run:
+        description: "Compute and report counts only; write nothing"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: area-goals
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      JOB_ID: ${{ inputs.job_id || format('weekly-{0}', github.run_id) }}
+      COMPASS_SHEET_NAME: COMPASS_CCSM
+      GOOGLE_SHEETS_CREDENTIALS_JSON: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # No browser here, so not requirements_cloud.txt (it pins Playwright).
+      - name: Install dependencies
+        run: pip install --no-cache-dir "gspread>=6.1.2" "google-auth>=2.40.2" "pandas>=2.0.0"
+
+      - name: Seed the status row (scheduled runs only)
+        if: github.event_name == 'schedule'
+        working-directory: dashboard
+        run: >
+          python -c "from app.integrations import cloud_job_status as c;
+          c.create_job('${{ env.JOB_ID }}', 'area_goals')"
+
+      - name: Set the sector goals (tracked)
+        working-directory: dashboard
+        run: >
+          python -m app.ingestion.cloud_job_wrapper
+          --job-id "${{ env.JOB_ID }}" --job-type area_goals
+          -- python -m app.ingestion.area_goals_runner
+          ${{ (inputs.week_start && format('--week-start {0}', inputs.week_start)) || '' }}
+          ${{ (inputs.dry_run && '--dry-run') || '' }}
