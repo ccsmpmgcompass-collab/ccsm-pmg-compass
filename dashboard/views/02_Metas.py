@@ -90,6 +90,8 @@ from app.db.queries import (
     get_rec_stretch_pct,
     exclude_current_week,
     roster_ceiling,
+    get_agent_config,
+    get_daily_log,
 )
 from app.db.queries import _AREA_TYPE_LABELS
 from app.db.goals_queries import (
@@ -102,6 +104,7 @@ from app.db.goals_queries import (
     areas_with_goals,
     get_app_setting,
     set_app_setting,
+    set_nightly_goals,
 )
 # Goals are set per TRANSFER CYCLE, not per calendar month (PLAN §7.2). The
 # monthly path — MISSION_GOALS and AREA_MONTHLY_GOALS — is gone, tabs and
@@ -112,6 +115,7 @@ from app.db.goals_queries import (
 # with it, along with `get_recommended_monthly_goals` and
 # `get_mission_monthly_expectation_total` in queries.py.
 from app.analytics import transfer_year as ty
+from app.analytics import goal_recalibration as GR
 from app.utils.transfer_helpers import transfer_cycles, transfer_window
 
 # Page chrome (set_page_config / inject_global_css / render_sidebar) is
@@ -1656,6 +1660,103 @@ if selected_section == "Area Goal Customization":
 # ══════════════════════════════════════════════════════════════════════════════
 
 if selected_section == "Goal Settings":
+
+    # ── Nightly goals: recalibrate (PLAN-2026-10-02-goals.md, step G2) ────────
+    # The one place the nightly GOAL_* rows in AGENT_CONFIG are set from. It
+    # replaces CCSM_Agent2.gs (decision G-D4), whose suggestions went into a
+    # tab no screen read and, run on transfer day, were the old goal plus 10%
+    # for every metric. The arithmetic is app/analytics/goal_recalibration.py:
+    # the mission's pace on the nights actually reported over the last six
+    # complete weeks, plus the same nudge every REC badge uses, never below 1.
+    render_section_label(
+        t("Nightly goals — recalibrate"),
+        info=t("Each nightly goal is one number per area per week. Every page "
+               "grades against it per reported night, and the coaching letters "
+               "and effort scores read the same number. Run this once per "
+               "transfer, on transfer day: the window is then exactly the "
+               "transfer that just closed."))
+    _recal_cfg = get_agent_config()
+    _recal_current: dict = {}
+    for _k, _v in _recal_cfg.items():
+        if not str(_k).startswith("GOAL_") or str(_k).startswith("GOAL_ANNUAL"):
+            continue
+        try:
+            _recal_current[str(_k)[5:]] = float(str(_v).strip())
+        except (TypeError, ValueError):
+            _recal_current[str(_k)[5:]] = None
+    _recal_roster = get_submitting_areas()
+    _recal_areas = (set(_recal_roster["Area_Name"].astype(str).str.strip())
+                    if not _recal_roster.empty and "Area_Name" in _recal_roster.columns
+                    else set())
+    _recal_daily = get_daily_log(120)
+    _recal_keys = [k for k in _recal_current
+                   if not _recal_daily.empty and k in _recal_daily.columns]
+    _recal_nudge = get_rec_stretch_pct()
+    _recal_window, _recal_props = GR.propose(
+        _recal_daily, _recal_areas, _recal_current, _recal_keys,
+        today=mission_today(), stretch=1 + _recal_nudge / 100.0,
+        cycles=transfer_cycles())
+
+    st.caption(t(
+        "Proposed = the mission's pace from {start} to {end} on the nights "
+        "actually reported ({filed}% of possible nights were filed), plus "
+        "{nudge}%, rounded up and never below 1.",
+        start=fmt_day_month(_recal_window.start),
+        end=fmt_day_month(_recal_window.end),
+        filed=fmt_int(round(100 * (_recal_window.filed_share or 0))),
+        nudge=fmt_int(_recal_nudge)))
+
+    _trend_word = {GR.UP: t("up"), GR.DOWN: t("down"), GR.FLAT: t("steady")}
+
+    def _recal_trend(p) -> str:
+        if not p.trend:
+            return NA
+        # One decimal under 10: "1 vs 1" would print beside a "down" that
+        # really is 0,6 against 0,8.
+        _places = 1 if max(p.this_cycle, p.last_cycle) < 10 else 0
+        return t("{trend}: {now} vs {before}", trend=_trend_word[p.trend],
+                 now=fmt_number(p.this_cycle, _places),
+                 before=fmt_number(p.last_cycle, _places))
+
+    _recal_rows = sorted(_recal_props, key=lambda p: (p.attainment is None,
+                                                      p.attainment or 0))
+    render_table(pd.DataFrame([{
+        t("Indicator"): METRIC_LABELS.get(p.key, p.key),
+        t("Current goal"): fmt_number(p.current, 0) if p.current is not None else NA,
+        t("Pace per reported night x7"): (fmt_number(p.pace, 1)
+                                          if p.pace is not None else NA),
+        t("% of current goal"): (f"{fmt_int(round(p.attainment))}%"
+                                 if p.attainment is not None else NA),
+        t("Proposed"): fmt_int(p.proposed) if p.proposed is not None else NA,
+        t("Change"): (f"{p.change:+.0f}" if p.change else
+                      ("=" if p.change == 0 else NA)),
+        t("This transfer vs last"): _recal_trend(p),
+    } for p in _recal_rows]))
+
+    _recal_changes = {f"GOAL_{p.key}": int(p.proposed) for p in _recal_props
+                      if p.proposed is not None and p.proposed != p.current}
+    if st.session_state.pop("_recal_saved", None):
+        st.success(t("The nightly goals were updated. Every page reads them "
+                     "from now on, and the coaching letters from their next run."))
+    if not _recal_changes:
+        st.caption(t("Every nightly goal already matches its proposal."))
+    elif not _can_edit_goals(user):
+        st.caption(t("Only the Mission President or Assistants can apply these."))
+    else:
+        _recal_ok = st.checkbox(
+            t("I have read the table. Write these {n} goals to AGENT_CONFIG.",
+              n=fmt_int(len(_recal_changes))),
+            key="recal_confirm")
+        if st.button(t("Apply the {n} proposed goals", n=fmt_int(len(_recal_changes))),
+                     key="recal_apply", disabled=not _recal_ok, type="primary"):
+            _recal_err = set_nightly_goals(_recal_changes, user.get("email", ""))
+            if _recal_err:
+                st.error(t("Nothing was written: {e}", e=_recal_err))
+            else:
+                st.session_state["_recal_saved"] = True
+                st.session_state.pop("recal_confirm", None)
+                get_daily_log.clear()
+                st.rerun()
 
     # ── Recommended Goal Nudge ─────────────────────────────────────────────────
     # Controls the "stretch" percentage every REC badge on this page (Area

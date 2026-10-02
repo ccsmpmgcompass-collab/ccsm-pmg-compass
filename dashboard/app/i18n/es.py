@@ -2990,6 +2990,47 @@ ES: dict[str, str] = {
     # Twenty cards became twenty rows, eight of them above the fold. The four
     # group titles are the mission's own division of the nightly form.
     "{n} reporting days": "{n} días con informe",
+    # ── Metas → Goal Settings: recalibrate the nightly goals (goals plan G2) ──
+    "Nightly goals — recalibrate": "Metas nocturnas — recalibrar",
+    "Each nightly goal is one number per area per week. Every page grades "
+    "against it per reported night, and the coaching letters and effort scores "
+    "read the same number. Run this once per transfer, on transfer day: the "
+    "window is then exactly the transfer that just closed.":
+        "Cada meta nocturna es una cifra por área por semana. Todas las páginas "
+        "la califican por noche informada, y las cartas de asesoramiento y los "
+        "puntajes de esfuerzo leen la misma cifra. Úselo una vez por traslado, "
+        "el día del traslado: la ventana es entonces justo el traslado que "
+        "acaba de cerrar.",
+    "Proposed = the mission's pace from {start} to {end} on the nights "
+    "actually reported ({filed}% of possible nights were filed), plus "
+    "{nudge}%, rounded up and never below 1.":
+        "Propuesta = el ritmo de la misión del {start} al {end} en las noches "
+        "que sí se informaron (se entregó el {filed}% de las noches posibles), "
+        "más un {nudge}%, redondeado hacia arriba y nunca menor que 1.",
+    "up": "sube",
+    "down": "baja",
+    "steady": "estable",
+    "{trend}: {now} vs {before}": "{trend}: {now} vs {before}",
+    "Current goal": "Meta actual",
+    "Pace per reported night x7": "Ritmo por noche informada x7",
+    "% of current goal": "% de la meta actual",
+    "Proposed": "Propuesta",
+    "Change": "Cambio",
+    "This transfer vs last": "Este traslado vs el anterior",
+    "The nightly goals were updated. Every page reads them from now on, and "
+    "the coaching letters from their next run.":
+        "Se actualizaron las metas nocturnas. Todas las páginas las leen desde "
+        "ahora, y las cartas de asesoramiento desde su próxima ejecución.",
+    "Every nightly goal already matches its proposal.":
+        "Cada meta nocturna ya coincide con su propuesta.",
+    "Only the Mission President or Assistants can apply these.":
+        "Sólo el Presidente de Misión o los Asistentes pueden aplicarlas.",
+    "I have read the table. Write these {n} goals to AGENT_CONFIG.":
+        "Leí la tabla. Escribir estas {n} metas en AGENT_CONFIG.",
+    "Apply the {n} proposed goals": "Aplicar las {n} metas propuestas",
+    "Nothing was written: {e}": "No se escribió nada: {e}",
+    "Failed to write the nightly goals: {e}":
+        "No se pudieron escribir las metas nocturnas: {e}",
     "{n} of {m} nights filed ({pct}%)":
         "{n} de {m} noches informadas ({pct}%)",
     "See every nightly indicator": "Ver todos los indicadores nocturnos",

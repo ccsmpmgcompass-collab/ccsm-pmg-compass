@@ -449,3 +449,75 @@ def set_app_setting(key: str, value: str, updated_by: str) -> str | None:
     except Exception as e:
         _logger.error(t('Failed to set app setting {key!r}: {e}', key=key, e=e))
         return str(e)
+
+
+# ── The nightly goals in AGENT_CONFIG (PLAN-2026-10-02-goals.md, G2) ──────────
+# The one place the dashboard writes a GOAL_* row. AGENT_CONFIG is read by the
+# live Apps Script agents too (coaching letters, recognition, effort scores), so
+# the write is all-or-nothing: every key must already exist exactly once, every
+# value must be a whole number of at least 1, and only the Value cell moves —
+# the same discipline Traslados' _set_transfer_start_date keeps.
+
+_CONFIG_TAB = "AGENT_CONFIG"
+
+
+def plan_config_updates(grid: list, values: dict) -> tuple[list, str | None]:
+    """``[(a1, value)]`` for ``values`` ({key: int}) against AGENT_CONFIG's raw
+    ``grid``, or ``([], reason)`` when any one of them may not be written."""
+    from app.db.tabular_io import col_letter
+
+    if not values:
+        return [], "nothing to write"
+    if not grid:
+        return [], f"{_CONFIG_TAB} could not be read"
+    headers = [str(h).strip() for h in grid[0]]
+    if "Key" not in headers or "Value" not in headers:
+        return [], f"{_CONFIG_TAB} has no Key/Value header"
+    key_i, val_i = headers.index("Key"), headers.index("Value")
+    rows_for: dict = {}
+    for r, row in enumerate(grid[1:], start=2):
+        k = str(row[key_i]).strip() if key_i < len(row) else ""
+        if k:
+            rows_for.setdefault(k, []).append(r)
+    updates = []
+    for key, value in values.items():
+        rows = rows_for.get(key, [])
+        if len(rows) != 1:
+            return [], (f"{key} appears {len(rows)} times in {_CONFIG_TAB}; "
+                        f"nothing was written")
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            return [], f"{key}: {value!r} is not a whole number of at least 1"
+        updates.append((f"{col_letter(val_i + 1)}{rows[0]}", value))
+    return updates, None
+
+
+def set_nightly_goals(values: dict, updated_by: str) -> str | None:
+    """Write ``{"GOAL_<metric>": int}`` into AGENT_CONFIG in one batch.
+
+    Returns None on success, the reason on refusal or failure. Reads the tab
+    fresh (not from the 5-minute cache) so the rows it targets are the rows
+    that are there now, and appends one AUDIT_LOG line naming every change.
+    """
+    from datetime import datetime as _dt
+
+    from app.db import sheets_client as sc
+
+    try:
+        sc.read_values.clear()
+        grid = sc.read_values(_CONFIG_TAB)
+        updates, err = plan_config_updates(grid, values)
+        if err:
+            return err
+        sc.update_cells(_CONFIG_TAB, updates)
+    except Exception as e:
+        _logger.error(t('Failed to write the nightly goals: {e}', e=e))
+        return str(e)
+    try:
+        detail = "; ".join(f"{k}={v}" for k, v in values.items())
+        sc.append_row("AUDIT_LOG", [
+            _dt.now().strftime("%Y-%m-%d %H:%M:%S"), "Dashboard",
+            "nightly goals recalibrated", str(len(values)), "MISSION",
+            f"by {updated_by}: {detail}"])
+    except Exception:
+        pass   # the goals saved; a missing audit line must not report failure
+    return None
