@@ -2993,6 +2993,36 @@ ES: dict[str, str] = {
     # group titles are the mission's own division of the nightly form.
     "{n} reporting days": "{n} días con informe",
     # ── Metas → Goal Settings: recalibrate the nightly goals (goals plan G2) ──
+    "Recommended goals computed for **{count} areas** — each area's own REC values for {cycle}. Review below, then **Save All Recommended** to write them. The nightly goals are not touched: the weekly job sets those every Monday.":
+        "Metas recomendadas calculadas para **{count} áreas** — los valores REC propios de cada área para {cycle}. Revíselas abajo y luego **Guardar Todo lo Recomendado** para escribirlas. Las metas nocturnas no se tocan: el proceso semanal las fija cada lunes.",
+    "The cambio goals failed: {err}":
+        "Fallaron las metas del cambio: {err}",
+    "Recommended goals saved for **{count} areas** — {cycle}.":
+        "Metas recomendadas guardadas para **{count} áreas** — {cycle}.",
+    "Leadership's goals for this sector: {names}.":
+        "Metas del liderazgo para este sector: {names}.",
+    "This removes leadership's goals for **{selected_area}**, and its computed goals return. Are you sure?":
+        "Esto quita las metas del liderazgo de **{selected_area}** y vuelven sus metas calculadas. ¿Está seguro?",
+    "Return to the computed goals":
+        "Volver a las metas calculadas",
+    "No leadership goals for this sector — every box is computed.":
+        "Este sector no tiene metas del liderazgo — cada casilla es calculada.",
+    "Each box is this sector's goal for the week of {monday}. Every Monday it is set from the sector's own last six weeks on the nights it reported, plus {nudge}% (the REC pill), and moves at most 10% from the week before. A different number saved here becomes leadership's goal and stays until it is reset. The \"/ N\" beside a box is the mission-wide expectation, for comparison.":
+        "Cada casilla es la meta de este sector para la semana del {monday}. Cada lunes se fija con las últimas seis semanas del propio sector en las noches que informó, más un {nudge}% (la pastilla REC), y se mueve a lo sumo un 10% respecto de la semana anterior. Un número distinto guardado aquí pasa a ser meta del liderazgo y se mantiene hasta que se restablezca. El «/ N» junto a una casilla es la expectativa de la misión, para comparar.",
+    "Nightly goals — this week":
+        "Metas nocturnas — esta semana",
+    "Every sector has its own nightly goals. Each Monday morning they are set from the sector's own last six weeks on the nights it reported, plus the nudge below, moving at most 10% a week; a goal leadership saves for a sector stays until it is reset. The Monday email shows each companionship last week's goal and the new one.":
+        "Cada sector tiene sus propias metas nocturnas. Cada lunes por la mañana se fijan con las últimas seis semanas del propio sector en las noches que informó, más el ajuste de abajo, moviéndose a lo sumo un 10% por semana; una meta que el liderazgo guarda para un sector se mantiene hasta que se restablezca. El correo del lunes muestra a cada compañerismo la meta de la semana pasada y la nueva.",
+    "Week of {monday}. The mission's pace is from {start} to {end} on the nights actually reported ({filed}% of possible nights were filed).":
+        "Semana del {monday}. El ritmo de la misión es del {start} al {end} en las noches que sí se informaron (se entregó el {filed}% de las noches posibles).",
+    "Mission pace per reported night x7":
+        "Ritmo de la misión por noche informada x7",
+    "Average sector goal":
+        "Meta media de los sectores",
+    "Lowest – highest":
+        "Menor – mayor",
+    "Set by leadership":
+        "Fijadas por el liderazgo",
     "Nightly goals — recalibrate": "Metas nocturnas — recalibrar",
     "Each nightly goal is one number per area per week. Every page grades "
     "against it per reported night, and the coaching letters and effort scores "

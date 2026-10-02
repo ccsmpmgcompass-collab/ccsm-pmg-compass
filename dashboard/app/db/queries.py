@@ -788,6 +788,86 @@ def get_sector_goal_lookup():
                     defaults=get_area_weekly_goals())
 
 
+NIGHTLY_OVERRIDES_TAB = "NIGHTLY_GOAL_OVERRIDES"
+
+
+def get_this_weeks_sector_goals() -> tuple:
+    """``(monday, {area: {key: AreaGoal}})``: what the weekly job computes for
+    this week, WITHOUT leadership's overrides — the number the Metas REC pill
+    offers and the one a saved goal is compared with to decide whether it is
+    leadership's (PLAN-2026-10-02-goals.md, G9).
+
+    The same inputs the job reads, through the same parsers
+    (`area_goals_runner`), so the pill and Monday's run cannot disagree.
+    """
+    from app.analytics import area_goals as AG
+    from app.db.sheets_client import read_values
+    from app.ingestion import area_goals_runner as R
+    from app.utils.area_helpers import mission_today
+
+    monday = AG.week_monday(mission_today())
+    prev, prev_over = R.history_week(read_values("AREA_WEEKLY_GOALS"),
+                                     monday - timedelta(days=7))
+    goals = AG.compute(
+        get_daily_log(60), R.roster(read_values("MISSION_ORG")),
+        R.nightly_keys(read_values("QUESTIONS_CONFIG")), week_start=monday,
+        stretch=1 + get_rec_stretch_pct() / 100.0, previous=prev,
+        previous_overridden=prev_over, configured=get_area_weekly_goals())
+    return monday, goals
+
+
+def get_nightly_overrides() -> dict:
+    """{area: {key: goal}} — leadership's standing nightly goals (G-D10)."""
+    from app.db.sheets_client import read_values
+    from app.ingestion import area_goals_runner as R
+    return R.overrides(read_values(NIGHTLY_OVERRIDES_TAB))
+
+
+def _write_overrides(area: str, values: dict) -> None:
+    from app.db.sheets_client import overwrite_tab, read_values
+    current = get_nightly_overrides()
+    if values:
+        current[area] = values
+    else:
+        current.pop(area, None)
+    keys = sorted({k for v in current.values() for k in v})
+    rows = [["Area"] + keys] + [[a] + [current[a].get(k, "") for k in keys]
+                                for a in sorted(current)]
+    read_values.clear()
+    overwrite_tab(NIGHTLY_OVERRIDES_TAB, rows if keys else [["Area"]])
+
+
+def save_nightly_overrides(area: str, typed: dict, computed: dict) -> None:
+    """Save one sector's nightly goals from the Metas grid (G9, G-D10).
+
+    A value that differs from this week's computed goal becomes leadership's
+    and stays until reset; one equal to it is the computed goal and is left to
+    the weekly job. GOALS_CONFIG's row takes every typed value at once, so the
+    email and the Friday encouragement see the change without waiting for
+    Monday.
+    """
+    overrides = {}
+    for k, v in typed.items():
+        try:
+            n = int(float(v or 0))
+        except (TypeError, ValueError):
+            continue
+        c = computed.get(k)
+        if n > 0 and c is not None and n != int(c):
+            overrides[k] = n
+    _write_overrides(area, overrides)
+    save_area_goals(area, typed)
+
+
+def clear_nightly_overrides(area: str, computed: dict) -> None:
+    """Drop every leadership goal for ``area`` and put this week's computed
+    goals back in its GOALS_CONFIG row."""
+    _write_overrides(area, {})
+    current = get_area_goals(area)
+    current.update({k: v for k, v in computed.items() if v})
+    save_area_goals(area, current)
+
+
 def get_ki_goals_for_week(week_end, areas: set | None = None) -> tuple:
     """Key Indicator goals for the week ending ``week_end``, mission-wide by
     default or restricted to ``areas`` (a set of area names) when given.

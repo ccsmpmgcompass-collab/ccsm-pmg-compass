@@ -92,6 +92,10 @@ from app.db.queries import (
     roster_ceiling,
     get_agent_config,
     get_daily_log,
+    get_this_weeks_sector_goals,
+    get_nightly_overrides,
+    save_nightly_overrides,
+    clear_nightly_overrides,
 )
 from app.db.queries import _AREA_TYPE_LABELS
 from app.db.goals_queries import (
@@ -104,7 +108,6 @@ from app.db.goals_queries import (
     areas_with_goals,
     get_app_setting,
     set_app_setting,
-    set_nightly_goals,
 )
 # Goals are set per TRANSFER CYCLE, not per calendar month (PLAN §7.2). The
 # monthly path — MISSION_GOALS and AREA_MONTHLY_GOALS — is gone, tabs and
@@ -1015,13 +1018,9 @@ if selected_section == "Area Goal Customization":
     if _may_bulk and "bulk_rec_preview" in st.session_state:
         _preview = st.session_state["bulk_rec_preview"]
         st.caption(
-            t("Recommended goals computed for **{count} areas** — each area's own REC values, exactly what the per-metric REC pills show. Review below, then **Save All Recommended** to write every area's weekly goals and its goals for {cycle}. This overwrites any custom goals already saved.", count=len(_preview['weekly']), cycle=_bulk_cycle_label)
+            t("Recommended goals computed for **{count} areas** — each area's own REC values for {cycle}. Review below, then **Save All Recommended** to write them. The nightly goals are not touched: the weekly job sets those every Monday.", count=len(_preview['transfer']), cycle=_bulk_cycle_label)
         )
         _wk_labels = {k: _LABEL_OVERRIDES.get(k, lbl) for k, lbl, _f in metric_defs}
-        with st.expander(t('Preview — weekly goals ({count} areas)', count=len(_preview['weekly']))):
-            _wk_df = pd.DataFrame.from_dict(_preview["weekly"], orient="index")
-            _wk_df.index.name = "Area"
-            st.dataframe(_wk_df.rename(columns=_wk_labels), height=420)
         # Column headers for the transfer preview table. Was a fixed
         # Gate/Date/New/Pew/Renew/Mate map — Provo's six abbreviations. None
         # matched a CCSM key, so .rename() silently left every column as a raw
@@ -1038,11 +1037,11 @@ if selected_section == "Area Goal Customization":
         _col_bulk_save, _col_bulk_cancel = st.columns([1, 1])
         with _col_bulk_save:
             if st.button(t("Save All Recommended"), type="primary", key="bulk_rec_save"):
-                try:
-                    save_all_area_goals(_preview["weekly"])
-                except Exception as e:
-                    st.error(t('Failed to save weekly goals: {e}', e=e))
-                else:
+                # The weekly half of the preview is no longer written
+                # (PLAN-2026-10-02-goals.md, G9): saving it would have made
+                # every sector's nightly goal leadership's, freezing the
+                # weekly job out of all of them.
+                if True:
                     _n_tr, _t_err = bulk_upsert_area_transfer_goals(
                         _bulk_cycle["start"].isoformat(),
                         _preview["transfer"],
@@ -1059,11 +1058,11 @@ if selected_section == "Area Goal Customization":
                     del st.session_state["bulk_rec_preview"]
                     if _t_err:
                         st.error(
-                            t('Weekly goals saved for {count} areas, but the cambio goals failed: {err}', count=len(_preview['weekly']), err=_t_err)
+                            t('The cambio goals failed: {err}', err=_t_err)
                         )
                     else:
                         st.success(
-                            t('Recommended goals saved for **{count} areas** — weekly, plus {cycle}.', count=len(_preview['weekly']), cycle=_bulk_cycle_label)
+                            t('Recommended goals saved for **{count} areas** — {cycle}.', count=len(_preview['transfer']), cycle=_bulk_cycle_label)
                         )
         with _col_bulk_cancel:
             if st.button(t("Cancel"), key="bulk_rec_cancel"):
@@ -1140,12 +1139,22 @@ if selected_section == "Area Goal Customization":
     # (metric_defs and _LABEL_OVERRIDES are defined at the top of this tab,
     # above the Recommend All Areas block.)
 
+    # Each sector's own goals (PLAN-2026-10-02-goals.md, G9). The weekly job
+    # sets them every Monday; the REC pill is what it computes for this week,
+    # and a saved value that differs from it is leadership's (G-D10).
     current_goals = get_area_goals(selected_area)
-    area_has_custom = bool(current_goals)
-    if not area_has_custom:
-        st.caption(t("No custom goals saved for this area yet — enter values and save."))
+    _sector_monday, _sector_goals = get_this_weeks_sector_goals()
+    _computed = {k: g.goal for k, g in _sector_goals.get(selected_area, {}).items()
+                 if g.goal}
+    if not current_goals:
+        current_goals = dict(_computed)
+    _led = get_nightly_overrides().get(selected_area, {})
+    area_has_custom = bool(_led)
+    if _led:
+        st.caption(t("Leadership's goals for this sector: {names}.",
+                     names=", ".join(METRIC_LABELS.get(k, k) for k in sorted(_led))))
 
-    recommended_goals = get_recommended_goals(selected_area)
+    recommended_goals = {**get_recommended_goals(selected_area), **_computed}
 
     def _current(key: str) -> int:
         try:
@@ -1222,7 +1231,7 @@ if selected_section == "Area Goal Customization":
 
     render_section_label(t("Nightly Form Goals (weekly totals)"))
     st.caption(
-        t("REC is a light stretch goal — about {get_rec_stretch_pct}% above this area's all-time weekly average — to nudge the area to do slightly better. Any metric with an expectation saved in Area Expectation Settings shows goal / this area's weekly expectation — add or change one there and the fraction follows the moment it's saved.", get_rec_stretch_pct=get_rec_stretch_pct())
+        t("Each box is this sector's goal for the week of {monday}. Every Monday it is set from the sector's own last six weeks on the nights it reported, plus {nudge}% (the REC pill), and moves at most 10% from the week before. A different number saved here becomes leadership's goal and stays until it is reset. The \"/ N\" beside a box is the mission-wide expectation, for comparison.", monday=fmt_day_month(_sector_monday), nudge=get_rec_stretch_pct())
     )
 
     # Denominators are DYNAMIC, not a fixed metric list (Carson, 2026-07-19:
@@ -1273,7 +1282,7 @@ if selected_section == "Area Goal Customization":
     with col_save:
         if st.button(t("Save Goals"), type="primary", key="area_goal_save"):
             try:
-                save_area_goals(selected_area, new_goals)
+                save_nightly_overrides(selected_area, new_goals, _computed)
                 st.success(t('Goals saved for **{selected_area}**.', selected_area=selected_area))
             except Exception as e:
                 st.error(t('Failed to save goals: {e}', e=e))
@@ -1283,13 +1292,13 @@ if selected_section == "Area Goal Customization":
             reset_key = f"area_goal_confirm_reset_{selected_area}"
             if st.session_state.get(reset_key, False):
                 st.warning(
-                    t('This will remove the custom goals row for **{selected_area}** and revert to mission-wide defaults. Are you sure?', selected_area=selected_area)
+                    t("This removes leadership's goals for **{selected_area}**, and its computed goals return. Are you sure?", selected_area=selected_area)
                 )
                 col_yes, col_no = st.columns(2)
                 with col_yes:
                     if st.button(t("Yes, reset"), key="area_goal_reset_yes"):
                         try:
-                            delete_area_goals(selected_area)
+                            clear_nightly_overrides(selected_area, _computed)
                             st.success(t('Custom goals removed for **{selected_area}**.', selected_area=selected_area))
                             st.session_state[reset_key] = False
                         except Exception as e:
@@ -1300,14 +1309,14 @@ if selected_section == "Area Goal Customization":
                         st.rerun()
             else:
                 if st.button(
-                    t("Reset to Mission Defaults"),
+                    t("Return to the computed goals"),
                     key="area_goal_reset_btn",
                     type="secondary",
                 ):
                     st.session_state[reset_key] = True
                     st.rerun()
         else:
-            st.caption(t("No custom goals to reset for this area."))
+            st.caption(t("No leadership goals for this sector — every box is computed."))
 
     st.divider()
 
@@ -1661,55 +1670,47 @@ if selected_section == "Area Goal Customization":
 
 if selected_section == "Goal Settings":
 
-    # ── Nightly goals: recalibrate (PLAN-2026-10-02-goals.md, step G2) ────────
-    # The one place the nightly GOAL_* rows in AGENT_CONFIG are set from. It
-    # replaces CCSM_Agent2.gs (decision G-D4), whose suggestions went into a
-    # tab no screen read and, run on transfer day, were the old goal plus 10%
-    # for every metric. The arithmetic is app/analytics/goal_recalibration.py:
-    # the mission's pace on the nights actually reported over the last six
-    # complete weeks, plus the same nudge every REC badge uses, never below 1.
+    # ── Nightly goals: this week (PLAN-2026-10-02-goals.md, G2 then G9) ───────
+    # Read-only. G2 built this as a button that wrote ONE mission-wide number
+    # per metric into AGENT_CONFIG; decision G-D7 replaced that with every
+    # sector's own goal, set each Monday by the weekly job
+    # (app/ingestion/area_goals_runner.py). What stays is the overview: the
+    # mission's pace beside what its sectors are being asked for this week,
+    # and the trend Agent2 used to carry. A sector's goals are changed on the
+    # first tab, "Personalización de Metas por Área".
     render_section_label(
-        t("Nightly goals — recalibrate"),
-        info=t("Each nightly goal is one number per area per week. Every page "
-               "grades against it per reported night, and the coaching letters "
-               "and effort scores read the same number. Run this once per "
-               "transfer, on transfer day: the window is then exactly the "
-               "transfer that just closed."))
-    _recal_cfg = get_agent_config()
-    _recal_current: dict = {}
-    for _k, _v in _recal_cfg.items():
-        if not str(_k).startswith("GOAL_") or str(_k).startswith("GOAL_ANNUAL"):
-            continue
-        try:
-            _recal_current[str(_k)[5:]] = float(str(_v).strip())
-        except (TypeError, ValueError):
-            _recal_current[str(_k)[5:]] = None
+        t("Nightly goals — this week"),
+        info=t("Every sector has its own nightly goals. Each Monday morning they "
+               "are set from the sector's own last six weeks on the nights it "
+               "reported, plus the nudge below, moving at most 10% a week; a goal "
+               "leadership saves for a sector stays until it is reset. The "
+               "Monday email shows each companionship last week's goal and the "
+               "new one."))
+    _sg_monday, _sg_computed = get_this_weeks_sector_goals()
+    _sg_led = get_nightly_overrides()
+    _sg_keys = sorted({k for per in _sg_computed.values() for k in per})
     _recal_roster = get_submitting_areas()
     _recal_areas = (set(_recal_roster["Area_Name"].astype(str).str.strip())
                     if not _recal_roster.empty and "Area_Name" in _recal_roster.columns
                     else set())
     _recal_daily = get_daily_log(120)
-    _recal_keys = [k for k in _recal_current
-                   if not _recal_daily.empty and k in _recal_daily.columns]
-    _recal_nudge = get_rec_stretch_pct()
     _recal_window, _recal_props = GR.propose(
-        _recal_daily, _recal_areas, _recal_current, _recal_keys,
-        today=mission_today(), stretch=1 + _recal_nudge / 100.0,
+        _recal_daily, _recal_areas, {}, _sg_keys, today=mission_today(),
         cycles=transfer_cycles())
+    _recal_pace = {p.key: p for p in _recal_props}
 
     st.caption(t(
-        "Proposed = the mission's pace from {start} to {end} on the nights "
-        "actually reported ({filed}% of possible nights were filed), plus "
-        "{nudge}%, rounded up and never below 1.",
+        "Week of {monday}. The mission's pace is from {start} to {end} on the "
+        "nights actually reported ({filed}% of possible nights were filed).",
+        monday=fmt_day_month(_sg_monday),
         start=fmt_day_month(_recal_window.start),
         end=fmt_day_month(_recal_window.end),
-        filed=fmt_int(round(100 * (_recal_window.filed_share or 0))),
-        nudge=fmt_int(_recal_nudge)))
+        filed=fmt_int(round(100 * (_recal_window.filed_share or 0)))))
 
     _trend_word = {GR.UP: t("up"), GR.DOWN: t("down"), GR.FLAT: t("steady")}
 
     def _recal_trend(p) -> str:
-        if not p.trend:
+        if p is None or not p.trend:
             return NA
         # One decimal under 10: "1 vs 1" would print beside a "down" that
         # really is 0,6 against 0,8.
@@ -1718,45 +1719,30 @@ if selected_section == "Goal Settings":
                  now=fmt_number(p.this_cycle, _places),
                  before=fmt_number(p.last_cycle, _places))
 
-    _recal_rows = sorted(_recal_props, key=lambda p: (p.attainment is None,
-                                                      p.attainment or 0))
-    render_table(pd.DataFrame([{
-        t("Indicator"): METRIC_LABELS.get(p.key, p.key),
-        t("Current goal"): fmt_number(p.current, 0) if p.current is not None else NA,
-        t("Pace per reported night x7"): (fmt_number(p.pace, 1)
-                                          if p.pace is not None else NA),
-        t("% of current goal"): (f"{fmt_int(round(p.attainment))}%"
-                                 if p.attainment is not None else NA),
-        t("Proposed"): fmt_int(p.proposed) if p.proposed is not None else NA,
-        t("Change"): (f"{p.change:+.0f}" if p.change else
-                      ("=" if p.change == 0 else NA)),
-        t("This transfer vs last"): _recal_trend(p),
-    } for p in _recal_rows]))
+    def _sector_goal(area: str, key: str):
+        led = (_sg_led.get(area) or {}).get(key)
+        if led:
+            return led
+        g = (_sg_computed.get(area) or {}).get(key)
+        return g.goal if g is not None else None
 
-    _recal_changes = {f"GOAL_{p.key}": int(p.proposed) for p in _recal_props
-                      if p.proposed is not None and p.proposed != p.current}
-    if st.session_state.pop("_recal_saved", None):
-        st.success(t("The nightly goals were updated. Every page reads them "
-                     "from now on, and the coaching letters from their next run."))
-    if not _recal_changes:
-        st.caption(t("Every nightly goal already matches its proposal."))
-    elif not _can_edit_goals(user):
-        st.caption(t("Only the Mission President or Assistants can apply these."))
-    else:
-        _recal_ok = st.checkbox(
-            t("I have read the table. Write these {n} goals to AGENT_CONFIG.",
-              n=fmt_int(len(_recal_changes))),
-            key="recal_confirm")
-        if st.button(t("Apply the {n} proposed goals", n=fmt_int(len(_recal_changes))),
-                     key="recal_apply", disabled=not _recal_ok, type="primary"):
-            _recal_err = set_nightly_goals(_recal_changes, user.get("email", ""))
-            if _recal_err:
-                st.error(t("Nothing was written: {e}", e=_recal_err))
-            else:
-                st.session_state["_recal_saved"] = True
-                st.session_state.pop("recal_confirm", None)
-                get_daily_log.clear()
-                st.rerun()
+    _sg_rows = []
+    for _k in _sg_keys:
+        _vals = [v for v in (_sector_goal(a, _k) for a in _sg_computed) if v]
+        _p = _recal_pace.get(_k)
+        _sg_rows.append({
+            t("Indicator"): METRIC_LABELS.get(_k, _k),
+            t("Mission pace per reported night x7"): (
+                fmt_number(_p.pace, 1) if _p is not None and _p.pace is not None else NA),
+            t("Average sector goal"): (fmt_number(sum(_vals) / len(_vals), 1)
+                                       if _vals else NA),
+            t("Lowest – highest"): (f"{fmt_int(min(_vals))} – {fmt_int(max(_vals))}"
+                                    if _vals else NA),
+            t("Set by leadership"): fmt_int(sum(1 for a in _sg_led
+                                                if (_sg_led[a] or {}).get(_k))),
+            t("This transfer vs last"): _recal_trend(_p),
+        })
+    render_table(pd.DataFrame(_sg_rows))
 
     # ── Recommended Goal Nudge ─────────────────────────────────────────────────
     # Controls the "stretch" percentage every REC badge on this page (Area
