@@ -156,3 +156,29 @@ pointing here; `dashboard/DEPLOYING.md`'s "Local dev runs 3.14.4" corrected.
 ## STATUS
 
 - **2026-10-02** — Plan written from the audit; decisions G-D1..G-D6 recorded.
+- **G1.1** `bb32e4a` — `period_delta.area_nights` / `reporting_equivalents`.
+- **G1.2** `61045c2` — Desgloses nightly rows per reported night; heading
+  reads "804 de 1.170 noches informadas (69%)" for 2026-6 to 10-02.
+- **G1.3** `ded4bb9` — drill-down: `_load_daily` carries nights per area-week
+  (`__nights`, distinct dates); goal = per-area × nights / 7.
+- **G1.4** `bfa8312` — Panel activity cards carry `value_basis` = nights as
+  full-time areas; heading counts nights filed. Book of Mormon shared read 42%
+  (was 28% on the active basis) for 25 Sep–1 Oct.
+- **G1.5** `fefdf65` — packet/Informes grade and flag on `now_rate`. Verified
+  live: Desgloses and Informes both put contact attempts at 127,7 per reporting
+  area-week (85% of 150) for 2026-6 to 10-02. Mid-build: with the launch goals
+  still in place, `rc_lessons_mcp` is the one nightly goal the flag still
+  catches (8%); `baptismal_calendars` no longer flags (28% per reported night).
+- **G2** `4c99180` — `app/analytics/goal_recalibration.py`,
+  `goals_queries.plan_config_updates` / `set_nightly_goals`, the Metas table.
+  Verified live at 1400px and 375px (no page scroll; the table scrolls in its
+  own box like Metas' other tables): window 17 Aug–27 Sep, 69% of nights filed,
+  19 of 20 goals would change. Mid-build: trend values under 10 print one
+  decimal ("baja: 0,3 vs 0,8"), since "1 vs 1" beside "baja" read as a bug.
+- **G4** `985cd8d` — Agent2 retired in the runbook, CCSM_Setup.gs comments,
+  CCSM_DEPLOYMENT.md; dead `queries` readers deleted. Comment-only `.gs`
+  edits: no Apps Script redeploy needed.
+- **G5** `9ee655c` — pointers from the backlog and Informes plans; DEPLOYING.md.
+- Suite **11 failed / 1771 passed** — the same 11 baseline failures.
+- **Open:** G0 (Zackary, before 2026-10-19) and G3 (the first write, waiting on
+  his yes to the table's 19 numbers). Nothing pushed yet.
