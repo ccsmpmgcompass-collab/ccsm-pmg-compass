@@ -534,11 +534,12 @@ def how_to_read(mission, sections) -> list:
         night = (f"{es_display.integer(low)} de "
                  f"{es_display.integer(len(graded))} medidas nocturnas de la "
                  f"misión están por debajo del {warn}% de su meta. ")
-    night += ("Las metas de AGENT_CONFIG están puestas cerca del doble de lo "
-              "que la misión hace hoy, así que pintarlas de rojo no diría nada "
-              "de la semana: la barra va en un solo azul y el color va en el "
-              "cambio. Una medida nocturna se califica por su movimiento, no "
-              "por su distancia a la meta.")
+    night += ("Una meta nocturna es una cifra por área por semana, y el "
+              "porcentaje se toma sobre las noches informadas: una noche sin "
+              "informe va en «Quién informó», no como un cero en la barra. La "
+              "barra va en un solo azul y el color va en el cambio: una medida "
+              "nocturna se califica por su movimiento, no por su distancia a "
+              "la meta.")
     rules.append(("Por qué el trabajo nocturno va sin color", night))
 
     rules.append(("Dos cifras de bautismos", _two_baptism_figures(mission)))
@@ -815,10 +816,11 @@ def nightly_lines(model, goals, *, comparable: bool) -> list:
     two goals on one line.
 
     ``status`` is deliberately left off the bar: decision 31 puts a nightly
-    row's colour on its MOVEMENT, and the bar here is its distance from a goal
-    set at roughly twice what the mission does. Seventeen of twenty bars
-    painted red every week is the wall of colour decision 10 exists to prevent,
-    so the bar is the single magnitude blue and the colour lives in the change.
+    row's colour on its MOVEMENT. Under the launch goals (roughly twice what
+    the mission did) seventeen of twenty bars painted red every week, the wall
+    of colour decision 10 exists to prevent, so the bar is the single
+    magnitude blue and the colour lives in the change. Decision G-D6 of
+    PLAN-2026-10-02-goals.md revisits this after a transfer of re-based goals.
     """
     lines = []
     for row in model.nightly_weakest_first:
@@ -1434,8 +1436,8 @@ def nightly_page(model, goals) -> list:
     # período" now (decision 38), where the eye already is.
     flow += [
         Paragraph(PP.text(
-            "La barra va en un solo azul: estas metas están cerca del doble "
-            "de lo que se hace hoy, así que el color va en el cambio."),
+            "El porcentaje es contra la meta por noche informada. La barra va "
+            "en un solo azul y el color va en el cambio."),
             st["note"]),
         Spacer(0, 4),
         PP.metric_table(nightly_lines(
@@ -2267,7 +2269,8 @@ def data_note(models, goals=None) -> list:
          "del traslado que cubre este período."],
         ["Trabajo nocturno", "DAILY_LOG",
          "Un informe por área por noche. La meta por métrica sale de "
-         "AGENT_CONFIG y es una sola cifra para toda la misión."],
+         "AGENT_CONFIG, es una sola cifra para toda la misión y se mide por "
+         "noche informada."],
         ["Fortaleza y crecimiento", "WEEKLY_BREAKDOWNS",
          "Elegidas por los agentes, no recalculadas aquí. Esa pestaña va una "
          "semana atrás de WEEKLY_KI."],
@@ -2326,9 +2329,9 @@ def data_note(models, goals=None) -> list:
         sentences.append(
             f"Lo mismo en el trabajo nocturno: {names}.")
     sentences.append(
-        "Las metas nocturnas de AGENT_CONFIG están puestas cerca del doble de "
-        "lo que la misión hace hoy. Por eso esas filas se califican por su "
-        "movimiento y no por su distancia a la meta.")
+        "El trabajo nocturno se mide contra su meta por noche informada, y "
+        "sus filas se califican por su movimiento, no por su distancia a la "
+        "meta.")
     sentences.extend(_tableau_sentences(mission))
     for line in sentences:
         flow.append(Paragraph(PP.text(line), st["note_lead"]))

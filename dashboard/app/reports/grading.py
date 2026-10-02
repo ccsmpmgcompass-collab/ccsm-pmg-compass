@@ -253,20 +253,20 @@ def grade_nightly(actual, goal, before=None, *, now=None, flag=None) -> Grade:
     """A nightly metric: graded on movement, never on the goal (decision 31).
 
     ``actual`` is judged against ``goal``; ``now`` and ``before`` are what the
-    STATUS is taken from, and ``now`` defaults to ``actual``. On a nightly row
-    they are deliberately different figures. The goal is one mission-wide
-    number per area per week, so attainment divides by every ACTIVE area — an
-    unreported night is work nobody recorded, and counting it as work would
-    flatter. The change divides by the area-days that actually filed, because
-    nine more areas reporting is not nine more areas working.
+    STATUS is taken from, and ``now`` defaults to ``actual``. Since
+    PLAN-2026-10-02-goals.md (decision G-D5) the model passes the rate per
+    REPORTED night for both, so the percentage and the change rest on the
+    same nights; nine more areas reporting is not nine more areas working.
 
     The goal still rides along in ``pct`` and can still carry a flag — the mark
     is drawn beside the row and a reader is owed the truth about it — but it
     never becomes the colour, so a flag here does not silence the status the
     way it does on a Key Indicator. This is the difference between a report
     that says "meaningful conversations fell a fifth this week" and one that
-    says all twenty metrics are red, again, as it has every week since the
-    goals were set at roughly twice what the mission does.
+    says all twenty metrics are red, again — which is what the goals set at
+    launch, roughly twice what the mission did, produced every week. Those
+    goals are being re-based (PLAN-2026-10-02-goals.md); whether the colour
+    returns to the goal is decision G-D6, judged after one transfer of them.
     """
     now = actual if now is None else now
     return Grade(status=change_status(now, before),

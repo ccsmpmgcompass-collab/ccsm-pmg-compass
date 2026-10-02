@@ -619,17 +619,16 @@ class ReportData:
     def nightly_goal_flags(self, period: P.Period) -> dict:
         """The same verdict for the nightly `GOAL_*` numbers.
 
-        Judged on attainment per ACTIVE area-week, which is the basis §1.1
-        measured and the basis decision 22's 25% floor was calibrated against:
-        it catches `rc_lessons_mcp` at 6.4% and `baptismal_calendars` at 21.7%
-        and nothing else. On the reporting basis every figure rises by about
-        forty per cent and only one of the two would flag.
+        Judged on the same basis the row's percentage now uses — per REPORTED
+        night (PLAN-2026-10-02-goals.md, decision G-D5). It was per active
+        area-week, where an unfiled night counted as a zero and a goal could
+        be called unusable for want of reports rather than of work.
         """
         cache_key = ("nightly", period.key)
         if cache_key not in self._flags:
             mission = S.mission_scope(self.roster, self.mission_name)
             self._flags[cache_key] = {
-                r.key: goal_is_unusable(r.per_active_area_week,
+                r.key: goal_is_unusable(r.per_reporting_area_week,
                                         self.nightly_goals.get(r.key))
                 for r in _nightly_rows(self, mission, period)
             }
@@ -1029,12 +1028,14 @@ def _nightly_rows(data: ReportData, scope: S.Scope, period: P.Period, *,
                   flags: dict | None = None) -> list[MetricRow]:
     """Every tracked nightly metric for the unit — decision 17's whole table.
 
-    **Two bases, each matched to what it is being compared with.** Attainment
-    divides by every ACTIVE area-week, because the goal is one mission-wide
-    `GOAL_*` number per area per week and an unreported night is work nobody
-    recorded. That is the basis §1.1 measured on, the basis decision 22's 25%
-    floor was calibrated against, and it reads `contacts_attempted` at 65% of
-    goal rather than the 90% the reporting basis would flatter it to.
+    **Attainment and change both rest on the nights actually filed**
+    (PLAN-2026-10-02-goals.md, decision G-D5). The goal is one mission-wide
+    `GOAL_*` number per area per week, so the row's figure is the total over
+    the nights filed, times seven, against it. It used to divide by every
+    ACTIVE area-week, which counted an unfiled night as a zero and so mixed
+    how much was reported into how much was done; how many nights went
+    unfiled is printed above the table instead, as its own number.
+    `per_active_area_week` is still carried for the tables that rank units.
 
     The CHANGE divides by the area-DAYS that actually filed. Nightly reporting
     rose from 35 of 45 areas to 45 of 45 over six weeks; on the active basis
@@ -1088,7 +1089,7 @@ def _nightly_rows(data: ReportData, scope: S.Scope, period: P.Period, *,
             per_active_area_week=per_active,
             per_reporting_area_week=now_rate,
             before_per_reporting_area_week=before_rate,
-            grade=grade_nightly(per_active, goal, before=before_rate,
+            grade=grade_nightly(now_rate, goal, before=before_rate,
                                 now=now_rate, flag=(flags or {}).get(key)),
         ))
     return out

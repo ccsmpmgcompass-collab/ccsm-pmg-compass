@@ -439,7 +439,7 @@ def _nightly_rows(rows) -> str:
         value_fmt=lambda v: (NA if v is None else
                              fmt_int(v) if float(v) == int(v)
                              else fmt_number(v, 1)),
-        columns=[("% meta", "% de la meta configurada"),
+        columns=[("% meta", "% de la meta, por noche informada"),
                  ("/activa", "por área activa por semana"),
                  ("/informó", "por área que informó por semana"),
                  ("cambio", "contra el período de comparación")],

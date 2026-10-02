@@ -149,14 +149,15 @@ def test_the_raw_total_is_the_headline(data, period):
     assert _row(_report(data, period), ATTEMPTS).actual == 2000
 
 
-def test_attainment_divides_by_every_active_area_week(data, period):
-    """The goal is one mission-wide number per area per week, so the divisor is
-    every roster area — an unreported night is work nobody recorded, and
-    counting it as work would flatter the mission. 2000 over five areas and two
-    weeks is 200 a week against a goal of 150."""
+def test_attainment_is_per_reported_night(data, period):
+    """PLAN-2026-10-02-goals.md, decision G-D5. 2000 attempts over the twenty
+    nights filed is 700 a week per reporting area, against a goal of 150 — not
+    the 200 a week the five-area roster would give, which counted thirty
+    unfiled nights as zeros. The active-area figure is still carried for the
+    tables that rank units."""
     row = _row(_report(data, period), ATTEMPTS)
     assert row.per_active_area_week == pytest.approx(200)
-    assert row.grade.pct == pytest.approx(200 / 150 * 100)
+    assert row.grade.pct == pytest.approx(700 / 150 * 100)
 
 
 def test_the_change_divides_by_the_area_days_that_filed(data, period):
@@ -178,9 +179,11 @@ def test_a_real_movement_still_reads_as_one(data, period):
     assert row.grade.status == "good"
 
 
-def test_a_nightly_row_is_never_graded_on_its_goal(data, period):
+def test_a_nightly_row_is_never_graded_on_its_goal(period):
     """Decision 31. Lessons sit at 40% of goal — "bad" on the Key Indicator
-    bands — and the row reads "good", because the work doubled."""
+    bands — and the row reads "good", because the work doubled. (140 a week
+    per reported night against 350.)"""
+    data = _data(nightly_goals={ATTEMPTS: 150, MADE: 75, LESSONS: 350})
     row = _row(_report(data, period), LESSONS)
     assert row.grade.pct == pytest.approx(40)
     assert row.grade.change_pct == pytest.approx(100)
@@ -202,13 +205,21 @@ def test_the_effort_choice_is_averaged_not_summed(data, period):
     assert row.actual_area_weeks == 3
 
 
-def test_the_nightly_flag_is_the_missions_verdict(data, period):
-    """Judged on attainment per active area-week — the basis decision 22's 25%
-    floor was calibrated against. Nothing here is below it."""
+def test_the_nightly_flag_is_the_missions_verdict(period):
+    """Judged per reported night, the basis the row's percentage uses
+    (decision G-D5). Goals near the work — 700, 350 and 140 a week against
+    exactly that — are all yardsticks."""
+    data = _data(nightly_goals={ATTEMPTS: 700, MADE: 350, LESSONS: 140})
     assert data.nightly_goal_flags(period) == {
         ATTEMPTS: None, MADE: None, LESSONS: None,
         M.EXCHANGES: None, M.EFFORT_SCORE: None,
     }
+
+
+def test_a_goal_far_below_the_work_per_reported_night_is_flagged(data, period):
+    """The fixture's 150 attempts a week is 4.7 times under the 700 a
+    reporting area does: too low to measure by."""
+    assert data.nightly_goal_flags(period)[ATTEMPTS] == "goal_too_low"
 
 
 def test_a_goal_the_work_barely_touches_is_flagged(period):
