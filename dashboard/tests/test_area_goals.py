@@ -117,3 +117,36 @@ def test_after_leadership_clears_its_goal_the_cap_does_not_anchor_on_it():
 def test_a_goal_is_never_below_one():
     goals = AG.compute(_log(_nights("A", 30, 0)), {"A": "Z"}, [KEY], week_start=WEEK)
     assert goals["A"][KEY].goal == 1
+
+
+def test_the_weighted_goal_is_each_nights_own_sectors_goal():
+    """A filed three nights in the week of 09-28 (goal 10) and one in the week
+    of 10-05 (goal 14); B one night (goal 30). Average over five nights: 16."""
+    goals = {("A", date(2026, 9, 28)): 10, ("A", date(2026, 10, 5)): 14,
+             ("B", date(2026, 9, 28)): 30}
+    rows = _log([(date(2026, 9, 28), "A", 1), (date(2026, 9, 29), "A", 1),
+                 (date(2026, 9, 30), "A", 1), (date(2026, 10, 5), "A", 1),
+                 (date(2026, 9, 28), "B", 1),
+                 (date(2026, 9, 28), "B", 9)])        # filed twice: one night
+    got = AG.weighted_goal(rows, KEY, lambda a, m, k: goals.get((a, m)))
+    assert got == pytest.approx((10 * 3 + 14 + 30) / 5)
+
+
+def test_no_goal_anywhere_is_none():
+    rows = _log([(date(2026, 9, 28), "A", 1)])
+    assert AG.weighted_goal(rows, KEY, lambda a, m, k: None) is None
+    assert AG.weighted_goal(_log([]), KEY, lambda a, m, k: 5) is None
+
+
+def test_the_goal_book_reads_history_then_current_then_default():
+    import pickle
+    book = AG.GoalBook(
+        by_week={("A", "2026-09-28"): {KEY: 120}},
+        newest="2026-09-28",
+        current={"A": {KEY: 130}},
+        defaults={KEY: 150})
+    assert book("A", date(2026, 9, 28), KEY) == 120      # the week's own row
+    assert book("A", date(2026, 10, 5), KEY) == 130      # now: GOALS_CONFIG
+    assert book("A", date(2026, 9, 7), KEY) == 150       # before history: default
+    assert book("B", date(2026, 9, 28), KEY) == 150
+    assert pickle.loads(pickle.dumps(book))("A", date(2026, 9, 28), KEY) == 120

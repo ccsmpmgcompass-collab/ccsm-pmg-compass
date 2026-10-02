@@ -412,3 +412,21 @@ def test_a_mission_with_no_nightly_data_still_builds(period):
 def test_a_mission_that_has_never_run_the_scoring_agent_still_builds(period):
     m = _report(_data(scores=pd.DataFrame()), period)
     assert not m.scores.measured
+
+
+def test_each_sector_is_held_to_its_own_goal(period):
+    """PLAN-2026-10-02-goals.md, G10. A1's goal is 1400 attempts a week, A2's
+    700; both filed the same ten nights at 100 a night. The unit's goal per
+    sector-week is their nights-weighted average, 1050, and 700 a week per
+    reporting sector is two-thirds of it."""
+    goals = {"A1": 1400.0, "A2": 700.0}
+    data = _data(nightly_goal_for=lambda area, monday, key:
+                 goals.get(area) if key == ATTEMPTS else None)
+    row = _row(_report(data, period), ATTEMPTS)
+    assert row.goal_per_area_week == pytest.approx(1050)
+    assert row.grade.pct == pytest.approx(700 / 1050 * 100)
+
+
+def test_without_sector_goals_the_mission_figure_stands(data, period):
+    row = _row(_report(data, period), ATTEMPTS)
+    assert row.goal_per_area_week == 150

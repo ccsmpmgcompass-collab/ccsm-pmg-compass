@@ -45,7 +45,8 @@ from app.config.metric_catalog import (
     key_indicator_metrics, ki_short_label, nightly_metrics,
 )
 from app.db.goals_queries import group_goal_totals
-from app.db.queries import get_area_weekly_goals, get_daily_log
+from app.db.queries import (get_area_weekly_goals, get_daily_log,
+                             get_sector_goal_lookup)
 from app.i18n import t
 from app.i18n.formats import fmt_day_month, fmt_int
 from app.utils.area_helpers import mission_today
@@ -164,13 +165,17 @@ class _Ctx:
     #: caption and ranking underneath is the same one (plan step D3).
     nightly: bool = False
     goal_per_area: float | None = None
+    #: Each sector's own goal per week (PLAN-2026-10-02-goals.md, G10);
+    #: ``goal_per_area`` is the fallback when it is None.
+    goal_for: object = None
 
 
 def _points(ctx: _Ctx) -> list[kh.WeekPoint]:
     """The cycle's weeks for this metric, whichever form it is asked on."""
     if ctx.nightly:
         return kh.daily_series(ctx.areas, ctx.metric, ctx.cycle,
-                               goal_per_area=ctx.goal_per_area, today=ctx.today)
+                               goal_per_area=ctx.goal_per_area,
+                               goal_for=ctx.goal_for, today=ctx.today)
     return kh.weekly_series(ctx.areas, ctx.metric, ctx.cycle, today=ctx.today)
 
 
@@ -186,6 +191,7 @@ def _cycle_points(ctx: _Ctx) -> list[kh.CyclePoint]:
     if ctx.nightly:
         return kh.daily_cycle_series(ctx.areas, ctx.metric,
                                      goal_per_area=ctx.goal_per_area,
+                                     goal_for=ctx.goal_for,
                                      today=ctx.today)
     return kh.cycle_series(ctx.areas, ctx.metric, today=ctx.today)
 
@@ -277,7 +283,8 @@ def render_ki_drilldown(scope_kind: str, scope_value: str, scope_areas,
                # each week, which is what _resolve_group_goal's third tier does
                # for the rows on Desgloses — one goal, two places.
                goal_per_area=(float(get_area_weekly_goals().get(current, 0) or 0)
-                              or None) if nightly else None)
+                              or None) if nightly else None,
+               goal_for=get_sector_goal_lookup() if nightly else None)
     if tab == TAB_CYCLE:
         _render_cycle(ctx)
     elif tab == TAB_AREA:
@@ -411,6 +418,7 @@ def _render_area(ctx: _Ctx) -> None:
     daily = get_daily_log((ctx.today - ctx.cycle["start"]).days + 7)
     rows = (kh.daily_area_rows(ctx.areas, ctx.metric, window, twin_window,
                                daily=daily, goal_per_area=ctx.goal_per_area,
+                               goal_for=ctx.goal_for,
                                today=ctx.today)
             if ctx.nightly else
             kh.area_rows(ctx.areas, ctx.metric, window, twin_window,

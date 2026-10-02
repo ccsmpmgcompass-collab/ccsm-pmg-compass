@@ -824,7 +824,11 @@ def nightly_lines(model, goals, *, comparable: bool) -> list:
     """
     lines = []
     for row in model.nightly_weakest_first:
-        goal = goals.get(row.key)
+        # The row's own goal per sector-week (G10) — the sectors' goals for
+        # the nights they filed, averaged — so the note and the percentage
+        # beside it rest on one figure.
+        goal = (row.goal_per_area_week if row.goal_per_area_week is not None
+                else goals.get(row.key))
         note = (f"meta {es_display.number(goal, 0)}/área/sem" if goal
                 else "sin meta configurada")
         if row.grade.flag:

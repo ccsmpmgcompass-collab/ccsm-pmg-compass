@@ -121,6 +121,9 @@ def stubbed(monkeypatch):
     monkeypatch.setattr(dd, "key_indicator_metrics", lambda: dict(KIS))
     monkeypatch.setattr(dd, "nightly_metrics", lambda: dict(NIGHTLY))
     monkeypatch.setattr(dd, "get_area_weekly_goals", lambda: {NIGHT: 30.0})
+    # No sector goals yet: every sector, every week, the mission's 30.
+    monkeypatch.setattr(dd, "get_sector_goal_lookup",
+                        lambda: (lambda area, monday, key: 30.0 if key == NIGHT else None))
     monkeypatch.setattr(dd, "mission_today", lambda: TODAY)
     monkeypatch.setattr(dd, "transfer_window",
                         lambda offset=0, today=None: {0: CUR, 1: PREV}.get(offset))
@@ -344,3 +347,16 @@ def test_the_nightly_area_ranking_stops_at_the_last_complete_week(stubbed):
     # A: three nights at 10 in that week against a 30 goal; B: one at 6.
     assert html.index(">A<") < html.index(">B<")
     assert "1 semana" in html
+
+
+def test_each_sector_is_held_to_its_own_goal(stubbed, monkeypatch):
+    """PLAN-2026-10-02-goals.md G10: A's goal is 70 a week and B's 14. Week 1
+    of 2026-6 has A on three nights and B on one: 70x3/7 + 14x1/7 = 32."""
+    monkeypatch.setattr(dd, "get_sector_goal_lookup",
+                        lambda: (lambda area, monday, key:
+                                 {"A": 70.0, "B": 14.0}.get(area) if key == NIGHT else None))
+    st = stubbed({KI_PARAM: NIGHT}, {"ki_dd_tab": TAB_WEEK})
+    _render(st)
+    fig = st.named("plotly_chart")[0][1][0]
+    goals = [s.y0 for s in fig.layout.shapes if s.type == "line"]
+    assert any(abs(g - 32.0) < 1e-6 for g in goals), goals

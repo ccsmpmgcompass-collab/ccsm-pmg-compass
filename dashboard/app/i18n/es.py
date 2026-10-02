@@ -175,6 +175,8 @@ ES: dict[str, str] = {
         "semana transcurrida.",
     "{n} of {total} areas set a goal":
         "{n} de {total} áreas fijaron meta",
+    "each sector's own goal — {avg} a week on average":
+        "la meta propia de cada sector — {avg} por semana en promedio",
     "{per_area} per area x {n}":
         "{per_area} por área × {n}",
     "Goal: {goal}": "Meta: {goal}",

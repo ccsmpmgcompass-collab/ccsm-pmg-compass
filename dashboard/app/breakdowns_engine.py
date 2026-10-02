@@ -45,7 +45,9 @@ from app.components.ki_drilldown import (
 )
 from app.config.theme import series_style, STATUS
 from app.i18n.formats import fmt_day_month, fmt_int, fmt_number
+from app.analytics.area_goals import weighted_goal
 from app.db.queries import (
+    get_sector_goal_lookup,
     get_area_expectation_entry,
     get_area_weekly_goals,
     get_area_type_category_labels,
@@ -1548,6 +1550,10 @@ def render_group_breakdown(
     # set. Every one of them is a NIGHTLY metric, so this tier fires for the grid
     # below and never for the Key Indicators row. Read once per render.
     _per_area_goals = get_area_weekly_goals()
+    # Each sector's own goal for each week (PLAN-2026-10-02-goals.md, G10):
+    # the nightly rows below hold the period to the goals that were in force,
+    # sector by sector and week by week.
+    _sector_goal_for = get_sector_goal_lookup()
 
     # How much of the period has actually run, and when it ends. Both are None on
     # a completed period and on All Time, which is what turns the pace tick off:
@@ -1924,6 +1930,17 @@ def render_group_breakdown(
             # the two KI tiers are empty here by construction.
             _weekly_goal, _derived_note, _goal_basis, _goal_src = _resolve_group_goal(
                 _key, goals, _per_area_goals, len(group_areas))
+            # The sectors' own goals, weighted by the nights each filed: the
+            # average goal per sector-week this period's work was held to.
+            # Times the group's sectors, it enters goal_bar_state exactly as
+            # the one mission-wide number did, so the per-reported-night
+            # arithmetic above is unchanged.
+            _avg_goal = weighted_goal(rows, _key, _sector_goal_for)
+            if _avg_goal and group_areas:
+                _weekly_goal = _avg_goal * len(group_areas)
+                _goal_basis = len(group_areas)
+                _derived_note = t("each sector's own goal — {avg} a week on average",
+                                  avg=fmt_number(_avg_goal, 1))
             if _goal_factor and _weekly_goal > 0:
                 _night_any_goal = True
                 _goal = _weekly_goal * _goal_factor

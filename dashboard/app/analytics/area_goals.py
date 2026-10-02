@@ -158,3 +158,58 @@ def compute(daily: pd.DataFrame, roster: dict, keys, *, week_start: date,
             out.setdefault(area, {})[key] = AreaGoal(
                 goal=to_goal(raw), source=source, pace=measured)
     return out
+
+
+def weighted_goal(rows: pd.DataFrame, key: str, goal_for) -> float | None:
+    """The goal per sector-week that ``rows``' filed nights were held to.
+
+    Each (sector, date) night carries the goal its sector had for that night's
+    week — ``goal_for(area, monday, key)`` — and the result is their average,
+    weighted by nights (PLAN-2026-10-02-goals.md, G10). Every screen divides
+    by this exactly as it used to divide by the one mission-wide number, so
+    ``actual / reporting_equivalents`` against it is the same as the actual
+    against the sum of every sector's own goal for the nights it filed — and
+    the screens cannot drift apart, because there is one copy of this.
+
+    None when no filed night has a goal.
+    """
+    if rows is None or rows.empty or "Date" not in rows.columns or "Area" not in rows.columns:
+        return None
+    d = pd.to_datetime(rows["Date"], errors="coerce").dt.date
+    nights = (pd.DataFrame({"Area": rows["Area"].astype(str).str.strip(), "d": d})
+                .dropna().drop_duplicates())
+    total, n = 0.0, 0
+    for area, day in zip(nights["Area"], nights["d"]):
+        g = goal_for(area, week_monday(day), key)
+        if g is None or g <= 0:
+            continue
+        total += float(g)
+        n += 1
+    return total / n if n else None
+
+
+@dataclass
+class GoalBook:
+    """``goal_for(area, monday, key)`` as a picklable object (a packet's
+    ReportData is pickled to measure layouts; a closure would not be).
+
+    ``by_week`` — {(area, "YYYY-MM-DD"): {key: goal}} from AREA_WEEKLY_GOALS;
+    ``newest`` — the newest week in it; ``current`` — {area: {key: goal}} from
+    GOALS_CONFIG, read only for weeks at or after ``newest``; ``defaults`` —
+    {key: goal} from AGENT_CONFIG. See `queries.get_sector_goal_lookup`.
+    """
+    by_week: dict
+    newest: str | None
+    current: dict
+    defaults: dict
+
+    def __call__(self, area, monday, key):
+        week = monday.isoformat() if hasattr(monday, "isoformat") else str(monday)
+        g = self.by_week.get((area, week), {}).get(key)
+        if g:
+            return g
+        if self.newest is None or week >= self.newest:
+            g = self.current.get(area, {}).get(key)
+            if g:
+                return g
+        return self.defaults.get(key)

@@ -54,6 +54,8 @@ from datetime import date, timedelta
 
 import pandas as pd
 
+from app.analytics.area_goals import weighted_goal
+
 from app.reports import periods as P
 from app.reports import tableau as TB
 from app.reports import scope as S
@@ -177,6 +179,9 @@ class MetricRow:
     per_active_area_week: float | None = None
     per_reporting_area_week: float | None = None
     before_per_reporting_area_week: float | None = None
+    #: A nightly row's goal per sector-week: the unit's sectors' own goals for
+    #: the nights they filed, averaged (G10), or the mission-wide figure.
+    goal_per_area_week: float | None = None
 
     grade: Grade = field(default_factory=Grade)
 
@@ -490,6 +495,10 @@ class ReportData:
     ki_keys: tuple[str, ...] = ()
     nightly_keys: tuple[str, ...] = ()
     nightly_goals: dict = field(default_factory=dict)
+    #: Each sector's own nightly goal for each week — `area_goals.GoalBook`,
+    #: called as (area, monday, key) (PLAN-2026-10-02-goals.md, G10). None
+    #: leaves every row on `nightly_goals`' one mission-wide figure.
+    nightly_goal_for: object = None
     agent_config: dict = field(default_factory=dict)
     labels: dict[str, str] = field(default_factory=dict)
     mission_name: str = S.DEFAULT_MISSION_NAME
@@ -629,7 +638,7 @@ class ReportData:
             mission = S.mission_scope(self.roster, self.mission_name)
             self._flags[cache_key] = {
                 r.key: goal_is_unusable(r.per_reporting_area_week,
-                                        self.nightly_goals.get(r.key))
+                                        r.goal_per_area_week)
                 for r in _nightly_rows(self, mission, period)
             }
         return self._flags[cache_key]
@@ -728,6 +737,7 @@ def load_data(today: date | None = None) -> ReportData:
     from app.db.goals_queries import all_area_transfer_goals
     from app.db.queries import (
         get_agent_config, get_area_weekly_goals, get_baptism_windows,
+        get_sector_goal_lookup,
         get_baptisms_capture, get_config_value, get_daily_log, get_ki_goals_for_week,
         get_mission_baptisms_by_month, get_scores, get_tableau_detail,
         get_weekly_ki,
@@ -784,6 +794,7 @@ def load_data(today: date | None = None) -> ReportData:
         ki_keys=ki_keys,
         nightly_keys=nightly_keys,
         nightly_goals=get_area_weekly_goals(),
+        nightly_goal_for=get_sector_goal_lookup(),
         agent_config=get_agent_config(),
         # The mission's own Spanish names, from QUESTIONS_CONFIG, without the
         # form's "(Real)" tail. Spanish literals, no t() — decision 3.
@@ -1075,6 +1086,12 @@ def _nightly_rows(data: ReportData, scope: S.Scope, period: P.Period, *,
             ))
             continue
 
+        # Each sector's own goal for the nights it filed (G10), averaged; the
+        # mission-wide figure when there is no lookup or no filed night.
+        if data.nightly_goal_for is not None and not rows.empty:
+            goal = weighted_goal(
+                pd.DataFrame({"Date": rows["_day"], "Area": rows["_area"]}),
+                key, data.nightly_goal_for) or goal
         actual = _nightly_totals(rows, key)
         before = _nightly_totals(before_rows, key)
         per_active = (actual / active_area_weeks
@@ -1089,6 +1106,7 @@ def _nightly_rows(data: ReportData, scope: S.Scope, period: P.Period, *,
             per_active_area_week=per_active,
             per_reporting_area_week=now_rate,
             before_per_reporting_area_week=before_rate,
+            goal_per_area_week=goal,
             grade=grade_nightly(now_rate, goal, before=before_rate,
                                 now=now_rate, flag=(flags or {}).get(key)),
         ))

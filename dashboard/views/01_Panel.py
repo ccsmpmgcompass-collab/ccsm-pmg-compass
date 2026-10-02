@@ -48,6 +48,7 @@ from app.db.queries import (
     get_alltime_compliance,
     get_mission_goals,
     get_area_weekly_goals,
+    get_sector_goal_lookup,
     get_ki_goals_for_week,
     get_week_to_date_totals,
     get_week_to_date_areas,
@@ -69,6 +70,7 @@ from app.analytics.period_delta import (
     period_delta, point_delta, MIN_COMPARABLE_DAYS, WINDOW_DAYS,
     area_nights, reporting_equivalents,
 )
+from app.analytics.area_goals import weighted_goal
 from app.analytics.rate_metrics import rate_rows
 from app.utils.transfer_helpers import (
     transfer_cycles, transfer_period_bounds, transfer_window,
@@ -289,11 +291,17 @@ if _night_anchor is not None:
     # nightly card's bar is measured on (PLAN-2026-10-02-goals.md, G-D5).
     _cur_nights = area_nights(_daily_log, _cur_start, _cur_end)
     _cur_equiv = reporting_equivalents(_cur_nights, WINDOW_DAYS)
+    _cur_rows = _daily_log[
+        (pd.to_datetime(_daily_log["Date"], errors="coerce").dt.date >= _cur_start)
+        & (pd.to_datetime(_daily_log["Date"], errors="coerce").dt.date <= _cur_end)
+    ] if not _daily_log.empty and "Date" in _daily_log.columns else pd.DataFrame()
 else:
     _cur_start = _cur_end = _prev_start = _prev_end = None
     _cur_days = _prev_days = 0
     _cur_totals = _prev_totals = {}
     _cur_nights, _cur_equiv = 0, None
+    _cur_rows = pd.DataFrame()
+_sector_goal_for = get_sector_goal_lookup()
 
 #: Label under every arrow on this page's rolling-7-day tiles.
 _VS_PRIOR_WEEK = t("vs prior 7 days")
@@ -1409,11 +1417,17 @@ else:
                 current_basis=_cur_days, prior_basis=_prev_days),
             "delta_label": _VS_PRIOR_WEEK,
         }
-        # A derived goal is the per-area figure times every active area, so
-        # the bar is read per reported night: the total over the nights filed
-        # (as full-time areas) against the goal per area. An unfiled night is
-        # in the heading's count, not a zero in the bar (G-D5).
-        if _card["goal_note"] and _cur_equiv:
+        # Each sector's own goal for the nights it filed, averaged
+        # (PLAN-2026-10-02-goals.md, G10), times every active sector — and the
+        # bar read per reported night: the total over the nights filed (as
+        # full-time sectors) against that goal. An unfiled night is in the
+        # heading's count, not a zero in the bar (G-D5).
+        _avg = weighted_goal(_cur_rows, _k, _sector_goal_for)
+        if _avg and _active_areas:
+            _card["goal"] = _avg * _active_areas
+            _card["goal_note"] = t("each sector's own goal — {avg} a week on average",
+                                   avg=fmt_number(_avg, 1))
+        if _card["goal"] and _cur_equiv and _active_areas:
             _card["value_basis"] = _cur_equiv
             _card["goal_basis"] = _active_areas
         _activity_cards.append(_night_card(_card))

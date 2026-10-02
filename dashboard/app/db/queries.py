@@ -737,6 +737,57 @@ def get_area_weekly_goals() -> dict:
     return out
 
 
+def get_sector_goal_lookup():
+    """``goal_for(area, monday, key)``: the nightly goal a sector had for the week
+    starting ``monday`` (PLAN-2026-10-02-goals.md, G10).
+
+    Three sources, most specific first:
+
+      1. ``AREA_WEEKLY_GOALS`` — the weekly job's row for that sector and week:
+         the goal that was actually in force, so a past week is graded against
+         the goal it had rather than today's.
+      2. ``GOALS_CONFIG`` — the current week's goals, used only for a week at or
+         after the newest week in the history (or for any week when there is no
+         history yet): it is NOW's goal, and must not be read back into August.
+      3. ``AGENT_CONFIG``'s mission-wide ``GOAL_*`` — what every week before the
+         sector goals began was held to.
+    """
+    hist = read_tab("AREA_WEEKLY_GOALS", header_marker="Week_Start")
+    by_week: dict = {}
+    newest = None
+    if not hist.empty and {"Week_Start", "Area"} <= set(hist.columns):
+        skip = {"Week_Start", "Area", "Overridden"}
+        for _, r in hist.iterrows():
+            week = str(r.get("Week_Start", "")).strip()[:10]
+            area = str(r.get("Area", "")).strip()
+            if not week or not area:
+                continue
+            vals = {}
+            for c in hist.columns:
+                if c in skip:
+                    continue
+                try:
+                    v = float(str(r.get(c, "")).replace(",", "."))
+                except (TypeError, ValueError):
+                    continue
+                if v > 0:
+                    vals[c] = v
+            by_week[(area, week)] = vals
+            newest = week if newest is None or week > newest else newest
+
+    current: dict = {}
+    cur_df = get_goals_df()
+    if not cur_df.empty and "Area" in cur_df.columns:
+        for _, r in cur_df.iterrows():
+            area = str(r.get("Area", "")).strip()
+            if area:
+                current[area] = {c: float(r[c]) for c in cur_df.columns
+                                 if c != "Area" and float(r.get(c, 0) or 0) > 0}
+    from app.analytics.area_goals import GoalBook
+    return GoalBook(by_week=by_week, newest=newest, current=current,
+                    defaults=get_area_weekly_goals())
+
+
 def get_ki_goals_for_week(week_end, areas: set | None = None) -> tuple:
     """Key Indicator goals for the week ending ``week_end``, mission-wide by
     default or restricted to ``areas`` (a set of area names) when given.

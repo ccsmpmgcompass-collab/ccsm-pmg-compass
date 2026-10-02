@@ -418,8 +418,8 @@ def _nightly_rows(rows) -> str:
     return ranked_list([{
         "name": r.label,
         "rank": i,
-        "sub": (f"meta {fmt_number(_data.nightly_goals.get(r.key), 0)}/área/sem"
-                if _data.nightly_goals.get(r.key)
+        "sub": (f"meta {fmt_number(r.goal_per_area_week, 1)}/área/sem"
+                if r.goal_per_area_week
                 else "sin meta configurada")
                + (f" · {r.grade.flag_label}" if r.grade.flag else ""),
         "value": r.actual,
