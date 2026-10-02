@@ -2990,6 +2990,8 @@ ES: dict[str, str] = {
     # Twenty cards became twenty rows, eight of them above the fold. The four
     # group titles are the mission's own division of the nightly form.
     "{n} reporting days": "{n} días con informe",
+    "{n} of {m} nights filed ({pct}%)":
+        "{n} de {m} noches informadas ({pct}%)",
     "See every nightly indicator": "Ver todos los indicadores nocturnos",
     "Contacting": "Contactar",
     "Teaching": "Enseñar",
@@ -3004,13 +3006,17 @@ ES: dict[str, str] = {
     "on each row is how far into the period's goal it is, so the rows are "
     "comparable down the column however different their sizes; its colour is "
     "graded against where the period should stand TODAY, not against the "
-    "whole goal. The line under each name is its last eight complete weeks. "
+    "whole goal. Both are measured on the nights that were actually reported: "
+    "a night with no report is counted in the heading, not as a zero in the "
+    "bar. The line under each name is its last eight complete weeks. "
     "Hover a row for what it is on track to land at.":
         "Todo lo que las compañerías informan cada noche, en este período. La "
         "barra de cada fila es cuánto lleva avanzado de la meta del período, "
         "así que las filas se comparan entre sí por más distintos que sean sus "
         "tamaños; su color se califica contra donde el período debería ir HOY, "
-        "no contra la meta completa. La línea bajo cada nombre son sus últimas "
+        "no contra la meta completa. Las dos se miden sobre las noches que sí "
+        "se informaron: una noche sin informe se cuenta en el encabezado, no "
+        "como un cero en la barra. La línea bajo cada nombre son sus últimas "
         "ocho semanas completas. Pase el cursor sobre una fila para ver a "
         "cuánto va camino de llegar.",
 

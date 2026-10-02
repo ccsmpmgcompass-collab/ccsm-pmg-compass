@@ -27,9 +27,11 @@ from app.analytics.period_delta import (
     NEUTRAL_BAND_PCT,
     REPORTING_MIN_SHARE,
     SMALL_COUNT_MAX,
+    area_nights,
     days_in_window,
     period_delta,
     reporting_dates,
+    reporting_equivalents,
 )
 from app.components.charts import (
     apply_layout, chart, change_text, ranked_list, stage_bars,
@@ -1871,10 +1873,19 @@ def render_group_breakdown(
         ]
         _expectation_totals = get_group_weekly_expectation_totals(group_areas)
 
-        # How many of the group's areas actually filed anything this period.
-        # The denominator behind every row's VALUE, as against the goal's own.
-        _value_basis = (int(rows["Area"].nunique())
-                        if "Area" in rows.columns else 0)
+        # What every row's VALUE rests on: the nights actually filed, as
+        # full-time areas (PLAN-2026-10-02-goals.md, decision G-D5). A goal is
+        # one number per area per WEEK, so the honest comparison is the pace on
+        # the nights an area reported. Counting the areas that filed at least
+        # once — what this was — held an area that filed one night to a whole
+        # week's goal; counting the roster would make every unfiled night a
+        # zero. How many nights went unfiled is printed in the heading instead,
+        # as its own number.
+        _span_days = _elapsed_days if _elapsed_days is not None else p_days
+        _nights = area_nights(rows)
+        _value_basis = reporting_equivalents(_nights, _span_days) or 0
+        _possible_nights = (len(group_areas) * _span_days
+                            if _span_days and group_areas else 0)
 
         # ── What each side of the comparison rests on ─────────────────────────
         # A date counts as a day of data for THIS GROUP only when at least half
@@ -1996,16 +2007,20 @@ def render_group_breakdown(
 
         # ── The heading ──────────────────────────────────────────────────────
         _night_right_parts = [span]
-        if _cur_days:
-            _night_right_parts.append(
-                t("{n} reporting days", n=fmt_int(_cur_days)))
+        if _possible_nights:
+            _night_right_parts.append(t(
+                "{n} of {m} nights filed ({pct}%)", n=fmt_int(_nights),
+                m=fmt_int(_possible_nights),
+                pct=fmt_int(round(100 * _nights / _possible_nights))))
         _night_info = t(
             "Everything the companionships report at night, for this period. "
             "The bar on each row is how far into the period's goal it is, so "
             "the rows are comparable down the column however different their "
             "sizes; its colour is graded against where the period should "
-            "stand TODAY, not against the whole goal. The line under each name "
-            "is its last eight complete weeks. Hover a row for what it is on "
+            "stand TODAY, not against the whole goal. Both are measured on the "
+            "nights that were actually reported: a night with no report is "
+            "counted in the heading, not as a zero in the bar. The line under "
+            "each name is its last eight complete weeks. Hover a row for what it is on "
             "track to land at.")
         if not _night_any_goal:
             _night_info += " " + t("No goals are set at this level, so the rows "
