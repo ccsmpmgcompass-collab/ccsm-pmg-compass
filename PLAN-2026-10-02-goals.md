@@ -265,3 +265,28 @@ pointing here; `dashboard/DEPLOYING.md`'s "Local dev runs 3.14.4" corrected.
 - Suite **11 failed / 1771 passed** — the same 11 baseline failures.
 - **Open:** G0 (Zackary, before 2026-10-19) and G3 (the first write, waiting on
   his yes to the table's 19 numbers). Nothing pushed yet.
+- **Pushed** `98f0db6..752aee9` (G1–G5) on Zackary's word, 2026-10-02.
+- **G6** `5db68a6` — `app/analytics/area_goals.py` (`compute`, the cap with a
+  minimum step of 1, zone → mission borrowing, leadership wins).
+- **G7** `6563dee` — `app/ingestion/area_goals_runner.py`. Live dry run for the
+  week of 09-28: 45 sectors × 20 metrics, 37 on their own pace, 8 borrowing
+  their zone's (the sectors created or renamed on 09-07). Contact attempts
+  range 15–283 against the old single 150.
+- **G8** `5f00633` — `.github/workflows/area-goals.yml`, Monday 12:00 UTC.
+- **G11** `33f8b62` — Agent1A grades against AREA_WEEKLY_GOALS for the graded
+  week (per metric, then GOALS_CONFIG, then default) and carries next week's;
+  Agent1C prints "20 · próx. 23". New `tests/test_agent1c_sector_goals.js`; the
+  5 JS suites that fail failed before (stash-verified).
+- **G10** `cb8283f` — `queries.get_sector_goal_lookup` → picklable
+  `area_goals.GoalBook`; `area_goals.weighted_goal` on Desgloses, Panel,
+  drill-down and packet.
+- **G9** `fb602ef` — Metas grid/override/reset, bulk = transfer goals only,
+  G2's table read-only. Mid-build: a repair script matched an older string and
+  deleted 561 lines of es.py; restored from HEAD before commit, caught by
+  `test_translation_coverage_is_complete`. `goal_recalibration.py` and
+  `goals_queries.set_nightly_goals` stay (tested; G2's table still uses
+  `propose` for the mission pace and trend) but nothing writes AGENT_CONFIG.
+- Suite **11 failed / 1808 passed** — the same 11.
+- **Open:** G12 (first live write — Zackary's OK; then push G6–G11, which also
+  turns on Monday's cron) · Zackary re-pastes `CCSM_Agent1A.gs` and
+  `CCSM_Agent1C.gs` · G0 (2026-7 KI goals before 10-19).
