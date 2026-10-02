@@ -290,15 +290,31 @@ def test_a_week_nobody_filed_is_none_not_zero():
     assert points[1].actual is None and points[1].reporting == 0
 
 
-def test_the_goal_is_the_per_area_figure_times_who_reported():
-    """AGENT_CONFIG holds one area's weekly target. A week two of the scope's
-    areas reported is held to two areas' worth of it — not to the whole
-    scope's, which would grade a thin week as a failure."""
+def test_the_goal_is_the_per_area_figure_per_reported_night():
+    """AGENT_CONFIG holds one area's weekly target. A week in which two areas
+    filed ONE night each is held to two nights' worth of it — not to two
+    whole weeks (which held a one-night area to a full week's goal), and not
+    to the whole scope's (PLAN-2026-10-02-goals.md, decision G-D5)."""
     daily = _nights([("2026-09-07", "A", 5), ("2026-09-08", "B", 4)])
     points = daily_series({"A", "B", "C"}, NIGHT, CUR, daily=daily,
                           goal_per_area=30.0, today=TODAY)
-    assert points[0].meta == 60.0
+    assert points[0].meta == pytest.approx(30.0 * 2 / 7)
     assert points[0].meta_set_by == 2
+
+
+def test_an_area_filing_every_night_is_held_to_the_whole_week():
+    daily = _nights([(f"2026-09-{d:02d}", "A", 5) for d in range(7, 14)])
+    points = daily_series({"A"}, NIGHT, CUR, daily=daily,
+                          goal_per_area=30.0, today=TODAY)
+    assert points[0].meta == pytest.approx(30.0)
+
+
+def test_a_night_filed_twice_is_one_night():
+    daily = _nights([("2026-09-07", "A", 5), ("2026-09-07", "A", 1)])
+    points = daily_series({"A"}, NIGHT, CUR, daily=daily,
+                          goal_per_area=7.0, today=TODAY)
+    assert points[0].meta == pytest.approx(1.0)
+    assert points[0].actual == 6
 
 
 def test_no_per_area_goal_means_no_goal_at_all():
@@ -334,7 +350,9 @@ def test_areas_are_ranked_by_percent_of_their_own_weekly_goal():
     rows = {r.area: r for r in daily_area_rows(
         {"A", "B", "C"}, NIGHT, (date(2026, 9, 7), date(2026, 9, 13)),
         daily=daily, goal_per_area=30.0, today=TODAY)}
-    assert rows["A"].actual == 40 and rows["A"].meta == 30 and rows["A"].pct > 100
+    # Two nights filed: two nights' worth of a 30-a-week goal (decision G-D5).
+    assert rows["A"].actual == 40 and rows["A"].meta == pytest.approx(60 / 7)
+    assert rows["A"].pct > rows["B"].pct > 100
     assert rows["B"].actual == 5
     assert rows["C"].reported is False and rows["C"].meta is None
     assert [r.area for r in daily_area_rows(

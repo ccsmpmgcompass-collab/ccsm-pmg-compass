@@ -300,15 +300,16 @@ def test_the_nightly_weeks_come_from_the_daily_log(stubbed):
     assert actual[0] == 36          # A's three nights at 10, B's one at 6
 
 
-def test_the_nightly_goal_is_the_per_area_figure_times_who_reported(stubbed):
-    """AGENT_CONFIG's GOAL_contacts_made is 30 per area per week, and two areas
-    reported — so the week's goal is 60, not 30 and not forty-five areas'
-    worth. The same arithmetic the row on Desgloses shows as "% de"."""
+def test_the_nightly_goal_is_the_per_area_figure_per_reported_night(stubbed):
+    """AGENT_CONFIG's GOAL_contacts_made is 30 per area per week. In week 1 of
+    2026-6 area A filed three nights and B one — four nights, so the week's
+    goal is 30 x 4/7, not two whole weeks (60) and not forty-five areas' worth
+    (decision G-D5). The same arithmetic the row on Desgloses shows as "% de"."""
     st = stubbed({KI_PARAM: NIGHT}, {"ki_dd_tab": TAB_WEEK})
     _render(st)
     fig = st.named("plotly_chart")[0][1][0]
     goals = [s.y0 for s in fig.layout.shapes if s.type == "line"]
-    assert 60.0 in goals
+    assert any(abs(g - 30 * 4 / 7) < 1e-6 for g in goals), goals
 
 
 def test_a_nightly_metric_asks_for_no_transfer_goal(stubbed, monkeypatch):

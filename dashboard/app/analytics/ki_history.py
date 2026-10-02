@@ -436,8 +436,29 @@ def _load_daily(daily: pd.DataFrame | None, scope_areas: Iterable[str]) -> pd.Da
         df[c] = pd.to_numeric(df[c], errors="coerce")
     if not value_cols:
         return pd.DataFrame()
-    return (df.groupby(["area", "week_end_date"], as_index=False)[value_cols]
-              .sum(min_count=1))
+    out = (df.groupby(["area", "week_end_date"], as_index=False)[value_cols]
+             .sum(min_count=1))
+    # The nights each area-week rests on: the basis a nightly goal is held to
+    # (PLAN-2026-10-02-goals.md, decision G-D5). Distinct dates, so a night
+    # filed twice is still one night.
+    nights = (df.assign(__d=parsed.dt.date)
+                .groupby(["area", "week_end_date"])["__d"].nunique()
+                .rename(NIGHTS_COL).reset_index())
+    return out.merge(nights, on=["area", "week_end_date"], how="left")
+
+
+#: The column `_load_daily` adds: nights filed in that area-week.
+NIGHTS_COL = "__nights"
+
+
+def _nights(df: pd.DataFrame) -> int:
+    """Nights filed across ``df``'s area-weeks; one per area-week when the
+    frame predates the column (a caller's own pre-bucketed frame)."""
+    if df.empty:
+        return 0
+    if NIGHTS_COL not in df.columns:
+        return len(df) * 7
+    return int(pd.to_numeric(df[NIGHTS_COL], errors="coerce").fillna(0).sum())
 
 
 def daily_series(scope_areas: Iterable[str], metric: str, cycle: dict, *,
@@ -447,11 +468,12 @@ def daily_series(scope_areas: Iterable[str], metric: str, cycle: dict, *,
     """``weekly_series`` for a NIGHTLY metric — one point per week of the
     cycle, from DAILY_LOG.
 
-    ``reporting`` counts the areas with at least one night in the week, and
-    the goal is ``goal_per_area`` times that count: a week's target belongs to
-    the areas that were there for it, so a week two areas reported is not held
-    to forty-five areas' goal. Without a ``goal_per_area`` the points carry no
-    goal at all, exactly as a Key Indicator week nobody wrote a meta for does.
+    ``reporting`` counts the areas with at least one night in the week. The
+    goal is ``goal_per_area`` times the NIGHTS filed, over seven — the goal per
+    reported night (PLAN-2026-10-02-goals.md, decision G-D5). It used to be
+    times ``reporting``, which held an area that filed one night to a whole
+    week's goal. Without a ``goal_per_area`` the points carry no goal at all,
+    exactly as a Key Indicator week nobody wrote a meta for does.
     """
     df = _load_daily(daily, scope_areas)
     today = _today(today)
@@ -460,7 +482,7 @@ def daily_series(scope_areas: Iterable[str], metric: str, cycle: dict, *,
         rows = _week_rows(df, sunday)
         reporting = _reporting(rows)
         actual = _sum(rows, metric) if reporting and metric in rows.columns else None
-        meta = (float(goal_per_area) * reporting
+        meta = (float(goal_per_area) * _nights(rows) / 7.0
                 if goal_per_area and reporting else None)
         out.append(WeekPoint(
             start=monday, end=sunday, actual=actual, meta=meta,
@@ -530,10 +552,11 @@ def daily_area_rows(scope_areas: Iterable[str], metric: str,
     """``area_rows`` for a nightly metric — every area of the scope over the
     window, ranked by % of its own weekly goal where there is one.
 
-    The window is measured in the WEEKS it covers, not in days, because that
-    is the grain the goal has: an area's target is per week, so its goal over
-    the window is that figure times the weeks it reported. An area that filed
-    nothing is still a row, with ``reported`` False.
+    An area's goal over the window is its weekly figure times the nights it
+    filed, over seven — the goal per reported night (decision G-D5) — so a
+    missed night lowers neither side and is counted in ``nights_missed``
+    instead. An area that filed nothing is still a row, with ``reported``
+    False.
     """
     areas = sorted({str(a).strip() for a in scope_areas if str(a).strip()})
     if daily is None:
@@ -552,13 +575,15 @@ def daily_area_rows(scope_areas: Iterable[str], metric: str,
                 else pd.DataFrame())
         actual = 0.0
         reported = 0
+        nights = 0
         for sunday in weeks:
             rows = _week_rows(mine, sunday)
             if not rows.empty:
                 reported += 1
+                nights += _nights(rows)
                 actual += _sum(rows, metric)
-        meta = (float(goal_per_area) * reported
-                if goal_per_area and reported else None)
+        meta = (float(goal_per_area) * nights / 7.0
+                if goal_per_area and nights else None)
         change = None
         if twin_window is not None:
             t_actual, t_weeks = 0.0, 0
