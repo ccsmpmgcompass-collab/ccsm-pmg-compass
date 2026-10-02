@@ -290,3 +290,12 @@ pointing here; `dashboard/DEPLOYING.md`'s "Local dev runs 3.14.4" corrected.
 - **Open:** G12 (first live write — Zackary's OK; then push G6–G11, which also
   turns on Monday's cron) · Zackary re-pastes `CCSM_Agent1A.gs` and
   `CCSM_Agent1C.gs` · G0 (2026-7 KI goals before 10-19).
+- **G12 DONE 2026-10-02** (`d99774a`, pushed `752aee9..d99774a`): the job
+  wrote the week of 09-28 to the live sheet — AREA_WEEKLY_GOALS 45 rows,
+  GOALS_CONFIG 45 sectors × 20 metrics, contact attempts 15–283. A dry-run
+  dispatch through GitHub Actions came back SUCCESS in CLOUD_JOB_STATUS, so the
+  Monday cron's path is proven. Zackary says the two `.gs` files are re-pasted.
+- **G0 correction:** "Recomendar todas las metas de área" saves for the CURRENT
+  cycle (`transfer_window(0)`), which is 2026-6 until 10-19 — pressed before
+  then it overwrites 2026-6. Press it ON transfer day, 2026-10-19. (Checked
+  10-02: AREA_TRANSFER_GOALS still has no 2026-7 row.)
