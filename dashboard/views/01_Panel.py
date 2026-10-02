@@ -67,6 +67,7 @@ from app.analytics.zone_comparison import (
 from app.analytics.period_delta import (
     reporting_dates, window_pair, window_totals, window_areas, days_in_window,
     period_delta, point_delta, MIN_COMPARABLE_DAYS, WINDOW_DAYS,
+    area_nights, reporting_equivalents,
 )
 from app.analytics.rate_metrics import rate_rows
 from app.utils.transfer_helpers import (
@@ -147,9 +148,10 @@ def _mission_goal(metric_key: str) -> float:
 
     AGENT_CONFIG's GOAL_* rows are the fallback that actually fires. They are
     PER AREA PER WEEK (get_area_weekly_goals), so a mission-wide bar is that
-    number times the active area count -- all 43 active teaching areas, not just
-    the ones that reported. A non-submitting area counts as a zero here on
-    purpose: this bar answers what the whole mission should have produced.
+    number times the active area count -- the whole mission's week. The card
+    then reads it per reported night (`value_basis` = the nights filed as
+    full-time areas, PLAN-2026-10-02-goals.md G-D5), so an unfiled night is
+    counted in the section heading rather than as a zero in the bar.
     """
     if not mission_df.empty and "metric_key" in mission_df.columns:
         row = mission_df[mission_df["metric_key"] == metric_key]
@@ -283,10 +285,15 @@ if _night_anchor is not None:
     _prev_days = days_in_window(_report_dates, _prev_start, _prev_end)
     _cur_totals = window_totals(_daily_log, _cur_start, _cur_end)
     _prev_totals = window_totals(_daily_log, _prev_start, _prev_end)
+    # The nights actually filed in the window, as full-time areas: what a
+    # nightly card's bar is measured on (PLAN-2026-10-02-goals.md, G-D5).
+    _cur_nights = area_nights(_daily_log, _cur_start, _cur_end)
+    _cur_equiv = reporting_equivalents(_cur_nights, WINDOW_DAYS)
 else:
     _cur_start = _cur_end = _prev_start = _prev_end = None
     _cur_days = _prev_days = 0
     _cur_totals = _prev_totals = {}
+    _cur_nights, _cur_equiv = 0, None
 
 #: Label under every arrow on this page's rolling-7-day tiles.
 _VS_PRIOR_WEEK = t("vs prior 7 days")
@@ -307,6 +314,12 @@ _night_window = (
       n=fmt_int(_cur_days))
     if _night_anchor is not None else ""
 )
+if _night_anchor is not None and _active_areas:
+    _possible_nights = _active_areas * WINDOW_DAYS
+    _night_window += " · " + t(
+        "{n} of {m} nights filed ({pct}%)", n=fmt_int(_cur_nights),
+        m=fmt_int(_possible_nights),
+        pct=fmt_int(round(100 * _cur_nights / _possible_nights)))
 _night_no_change = ""
 _night_scaled = ""
 if _night_anchor is not None:
@@ -1386,7 +1399,7 @@ else:
     # which was the same window both times.
     _activity_cards = []
     for _k in _PANEL_HIGHLIGHT_KEYS:
-        _activity_cards.append(_night_card({
+        _card = {
             "label": METRIC_LABELS.get(_k, _k),
             "value": int(_cur_totals.get(_k, 0)),
             "goal":  _mission_goal(_k),
@@ -1395,7 +1408,15 @@ else:
                 _cur_totals.get(_k, 0), _prev_totals.get(_k, 0),
                 current_basis=_cur_days, prior_basis=_prev_days),
             "delta_label": _VS_PRIOR_WEEK,
-        }))
+        }
+        # A derived goal is the per-area figure times every active area, so
+        # the bar is read per reported night: the total over the nights filed
+        # (as full-time areas) against the goal per area. An unfiled night is
+        # in the heading's count, not a zero in the bar (G-D5).
+        if _card["goal_note"] and _cur_equiv:
+            _card["value_basis"] = _cur_equiv
+            _card["goal_basis"] = _active_areas
+        _activity_cards.append(_night_card(_card))
     for _r in _rate_rows:
         _activity_cards.append({
             "label": t(_RATE_SHORT_LABELS.get(_r["key"], _r["key"])),
