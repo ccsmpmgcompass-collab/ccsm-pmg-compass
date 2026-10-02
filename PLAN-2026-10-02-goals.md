@@ -38,6 +38,39 @@ step as it lands.
   full transfer under the new goals. Revisit when 2026-7 closes (2026-11-29).
   Only the sentence that says the goals are "cerca del doble" changes.
 
+### §1b — Per-sector nightly goals (Zackary, 2026-10-02, later the same day)
+
+He asked: "not generalized for the whole mission, but individualized by sector
+based off of their previous numbers ... where they are at plus 10% ... and
+automatically adjusted slightly every week for the weekly emails." His four
+answers are G-D8, G-D10, G-D11 and the push of G1–G5 (`98f0db6..752aee9`).
+
+- **G-D7. Every sector gets its OWN nightly goal per metric**, recomputed every
+  Monday morning: its pace per reported night over the last six complete weeks
+  × 7, plus the `rec_stretch_pct` nudge (10%), rounded up, never below 1.
+  Supersedes G-D1's single mission-wide re-base; **G3 is dropped** — the
+  `AGENT_CONFIG.GOAL_*` rows stay as the last fallback only.
+- **G-D8. The goal follows the sector, capped.** In one week it moves at most
+  `max(1, 10% of last week's goal)` up or down. No cap when there is no
+  previous computed goal (the first run, or last week's was leadership's), so
+  the first run lands on each sector's own pace rather than crawling down from
+  the launch numbers.
+- **G-D9. A sector with too little history borrows.** Fewer than 14 reported
+  nights in the window (new, renamed or silent sectors) → its zone's median
+  pace among sectors that qualify → the mission's pooled pace.
+- **G-D10. Leadership's goal wins.** A goal typed on Metas for a sector stays
+  until cleared (`NIGHTLY_GOAL_OVERRIDES`); the weekly job sets only the rest.
+  Metas shows which are which.
+- **G-D11. The Monday email shows last week against the goal that was in force
+  for that week, and next week's goal beside it** ("58 · próx. 60"). It keeps
+  grading the week's TOTAL — for one companionship a missed report is its own,
+  and the email already shows the nights filed. The dashboard keeps G-D5.
+- **G-D12. Storage.** `AREA_WEEKLY_GOALS` (Week_Start | Area | Overridden |
+  one column per nightly metric) keeps every week's effective goals, so any
+  past week is graded against the goal it actually had. `GOALS_CONFIG` holds
+  the current week's — the tab every Apps Script reader (Agent1A, 5B, Scores)
+  already reads, so the Friday email and the scores need no change.
+
 ## §2 — What the audit measured (2026-10-02, live sheet)
 
 ### 2.1 Four goal systems
@@ -130,7 +163,7 @@ one row per key, update the Value cell only, refuse otherwise), gated on
 `auth.can_set_goals`, logged to `AUDIT_LOG` if the tab takes rows. Pure
 arithmetic in `app/analytics/goal_recalibration.py` with tests.
 
-### G3 — The first re-base *(sheet write — needs Zackary's yes on the numbers)*
+### G3 — ~~The first re-base~~ *(DROPPED by G-D7 — per-sector goals replace it)*
 
 Print G2's table from the live sheet, Zackary approves, then write — via the
 G2 function, so the first write proves the button. Before/after printed.
@@ -145,6 +178,56 @@ intended.
   (code left in place, never run; Apps Script redeploy not required).
 - `queries.get_goal_recalibration` / `apply_goal_recalibration_suggestion`
   deleted (no callers). `GOAL_RECALIBRATION` tab left alone.
+
+### G6 — The per-sector rule (pure)
+
+`app/analytics/area_goals.py`: given DAILY_LOG, the roster (area → zone), the
+metric keys, last week's `AREA_WEEKLY_GOALS` row per area and the overrides,
+return each area's goal and its source (`leadership` / `own` / `zone` /
+`mission`) for one week. G-D7..G-D10 exactly; tests for each branch.
+
+### G7 — The weekly job
+
+`app/ingestion/area_goals_runner.py` (no Streamlit, `gcp_creds` like the
+Tableau runner): read → compute for the week starting this Monday → upsert that
+week's rows in `AREA_WEEKLY_GOALS` (idempotent: a re-run replaces them) →
+rewrite `GOALS_CONFIG` (Area + every QUESTIONS_CONFIG key, the shape the agents
+read). `--dry-run` prints counts only — **the repo is public; no sector names
+or figures in logs.**
+
+### G8 — Schedule it
+
+`.github/workflows/area-goals.yml`: Monday 12:00 UTC (8–9 AM Chile, after
+Agent3's 6 AM DAILY_LOG refresh, before Agent1A's 9:15 PM email) and
+`workflow_dispatch`; reports into `CLOUD_JOB_STATUS` via `cloud_job_wrapper`.
+
+### G9 — Metas
+
+- The per-sector "Metas del formulario nocturno" grid saves to
+  `NIGHTLY_GOAL_OVERRIDES` (only values that differ from the computed goal;
+  equal = cleared) and updates that sector's `GOALS_CONFIG` row at once; each
+  box says whether its goal is leadership's or computed.
+- "Recomendar todas las metas de área" writes only the transfer KI goals — its
+  weekly half would have turned every sector's goal into an override.
+- G2's section becomes read-only: this week's sector goals, summed, beside the
+  mission's pace; the AGENT_CONFIG write button goes.
+
+### G10 — The dashboard reads sector goals
+
+Panel cards, Desgloses rows, the drill-down and the packet take each sector's
+goal for each week from `AREA_WEEKLY_GOALS` (current week: `GOALS_CONFIG`),
+falling back to `AGENT_CONFIG`; still per reported night (G-D5): the expected
+figure is Σ goal(sector, week) × nights filed / 7.
+
+### G11 — The email *(Apps Script — Zackary pastes two files)*
+
+`CCSM_Agent1A.gs`: grade the week against `AREA_WEEKLY_GOALS` for that week's
+Monday (fallback `GOALS_CONFIG`, then `AGENT_CONFIG`), and carry next week's.
+`CCSM_Agent1C.gs`: the scoreboard's Meta cell reads "58 · próx. 60". Until the
+paste, the old Agent1A grades last week against the new week's goal — off by
+one capped step, nothing breaks.
+
+### G12 — First live run *(sheet write — Zackary's OK on the dry run first)*
 
 ### G5 — Housekeeping
 
