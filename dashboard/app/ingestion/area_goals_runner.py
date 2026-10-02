@@ -244,7 +244,7 @@ def _overwrite(sh, tab: str, rows: list) -> None:
         ws.resize(rows=max(ws.row_count, len(rows) + 50),
                   cols=max(ws.col_count, n_cols))
     padded = [list(r) + [""] * (n_cols - len(r)) for r in rows]
-    ws.update("A1", padded, value_input_option="RAW")
+    ws.update(values=padded, range_name="A1", value_input_option="RAW")
     # Clear what an older, longer or wider version left behind.
     if ws.row_count > len(rows):
         ws.batch_clear([f"A{len(rows) + 1}:ZZ{ws.row_count}"])
