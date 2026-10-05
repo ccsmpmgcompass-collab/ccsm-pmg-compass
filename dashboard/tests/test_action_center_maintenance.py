@@ -40,12 +40,17 @@ def _empty_sheets(monkeypatch):
                          lambda tab_name, header_marker=None: pd.DataFrame())
 
 
-def _run_action_center(maintenance_issues):
+def _run_action_center(monkeypatch, maintenance_issues):
     import app.auth.auth as auth
     import app.db.action_center_queries as acq
 
-    auth.is_leadership = lambda email: True
-    acq.get_action_center_summary = lambda email: _stub_summary(maintenance_issues)
+    # monkeypatch, not plain assignment: assigning auth.is_leadership outright
+    # left it returning True for every later test in the session, which hid
+    # nothing until tests/test_mission_leadership.py asked it who is NOT
+    # leadership (2026-10-05).
+    monkeypatch.setattr(auth, "is_leadership", lambda email: True)
+    monkeypatch.setattr(acq, "get_action_center_summary",
+                        lambda email: _stub_summary(maintenance_issues))
 
     at = AppTest.from_file("views/17_Centro_de_Acción.py", default_timeout=60)
     at.run()
@@ -54,7 +59,7 @@ def _run_action_center(maintenance_issues):
 
 
 def test_needs_your_action_is_not_empty_when_only_maintenance_is_outstanding(monkeypatch):
-    at = _run_action_center(["6 agent run(s) failed in the last 14 days"])
+    at = _run_action_center(monkeypatch, ["6 agent run(s) failed in the last 14 days"])
     body = "\n".join(m.value for m in at.markdown) + "\n".join(s.value for s in at.success)
     assert "Nothing needs your action right now." not in body, (
         "Needs Your Action claimed nothing needed action while the bell's "
@@ -63,7 +68,7 @@ def test_needs_your_action_is_not_empty_when_only_maintenance_is_outstanding(mon
 
 
 def test_needs_your_action_still_says_nothing_when_truly_empty(monkeypatch):
-    at = _run_action_center([])
+    at = _run_action_center(monkeypatch, [])
     body = "\n".join(s.value for s in at.success)
     assert "Nothing needs your action right now." in body
 
