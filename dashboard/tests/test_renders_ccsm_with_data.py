@@ -403,6 +403,18 @@ def test_traslados_roster_update_tab_renders():
     assert leaked == [], f"Roster Update tab displays Provo vocabulary: {leaked}"
 
 
+def test_traslados_leadership_section_renders():
+    """MISSION_LEADERSHIP's editor (PLAN-2026-10-05 R4). This fixture has no
+    such tab, which is the state the live sheet starts in: the section must say
+    so and still offer the form to fill it."""
+    at = _run("views/12_Traslados.py", traslados_section_val="Leadership")
+    body = _text(at)
+    assert "LIDERAZGO DE LA MISIÓN" in body.upper()
+    assert "Todavía no hay nadie en la lista" in body
+    assert any(b.label == "Guardar liderazgo" for b in at.button)
+    assert any(w.key == "ld_email_0" for w in at.text_input)
+
+
 # ── Vocabulary, against a page with real data on it ───────────────────────────
 
 @pytest.mark.parametrize("page", PAGES)

@@ -104,6 +104,19 @@ def load_state() -> tuple[list[str], list[dict], list[dict], list[str]]:
 
 # ── preview ─────────────────────────────────────────────────────────────────────
 
+def _listed_assistants() -> list[str]:
+    """Active assistants' names in MISSION_LEADERSHIP; [] if the tab is absent
+    or unreadable — the check they feed is advice, never a blocker."""
+    try:
+        from app.db.queries import get_mission_leadership
+        df = get_mission_leadership()
+    except Exception:   # noqa: BLE001
+        return []
+    if df.empty:
+        return []
+    return df.loc[df["Role"] == "assistant", "Name"].tolist()
+
+
 def preview() -> dict:
     org_headers, org, roster, unknown = load_state()
     guard = te.run_guards(roster, org)
@@ -115,6 +128,10 @@ def preview() -> dict:
         "org_count": len(org),
         "pilot_zones": pilot_zones(),
         "unknown_zones": unknown,
+        # Names MISSION_LEADERSHIP lists as assistants whom the pulled roster
+        # no longer places in the assistants' area (R4).
+        "assistants_moved": te.assistants_missing_from_ap_area(
+            _listed_assistants(), roster),
     }
 
 

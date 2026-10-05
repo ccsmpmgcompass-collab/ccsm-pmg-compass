@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+import unicodedata
 
 # Same substring-match rules as AT_CALLING_FLAGS in docs/AgentTransfer.gs.
 CALLING_FLAGS = {
@@ -185,6 +186,55 @@ def filter_roster_to_zones(roster_rows: list[dict],
 
 def _roster_map(roster_rows: list[dict]) -> dict:
     return {r["Area_Name"].lower().strip(): r for r in roster_rows}
+
+
+# ── the assistants' area ────────────────────────────────────────────────────────
+
+#: Words a person types before a missionary's name that IMOS never carries.
+_HONORIFICS = {"elder", "elderes", "hermana", "sister", "presidente", "president",
+               "pres", "hno", "hna"}
+
+
+def _name_tokens(name: str) -> frozenset:
+    """A name as a set of lower-case, accent-free words, honorifics dropped —
+    so "Élder Phillips" and IMOS's "Anderson Phillips" can be compared."""
+    plain = unicodedata.normalize("NFKD", str(name or ""))
+    plain = "".join(c for c in plain if not unicodedata.combining(c)).casefold()
+    return frozenset(w for w in re.findall(r"[a-z0-9']+", plain)
+                     if w not in _HONORIFICS)
+
+
+def assistants_missing_from_ap_area(assistant_names, rows) -> list[str]:
+    """The names in `assistant_names` that no Is_AP row of `rows` lists.
+
+    `rows` is MISSION_ORG or a parsed roster (dicts with Is_AP, Active and
+    Companion1-4_Name). MISSION_LEADERSHIP is typed by hand, so on transfer day
+    nothing changes it when IMOS moves an assistant out — this is the check
+    that says so (PLAN-2026-10-05-roster-access.md R4). A typed name matches
+    when every word of it is in one companion's name, so "Elder Phillips"
+    matches "Anderson Phillips".
+
+    Returns [] when no row is flagged Is_AP: with nothing to compare against,
+    a warning would only be noise.
+    """
+    companions = []
+    for r in rows:
+        if not _is_true(r.get("Is_AP")):
+            continue
+        if "Active" in r and not _is_true(r.get("Active")):
+            continue
+        for col in _COMPANION_COLS:
+            toks = _name_tokens(r.get(col, ""))
+            if toks:
+                companions.append(toks)
+    if not companions:
+        return []
+    missing = []
+    for name in assistant_names:
+        toks = _name_tokens(name)
+        if toks and not any(toks <= c for c in companions):
+            missing.append(str(name).strip())
+    return missing
 
 
 # ── guards ──────────────────────────────────────────────────────────────────────

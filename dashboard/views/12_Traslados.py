@@ -21,7 +21,7 @@ Playwright job — see Task 6/7), PREVIEW the diff against MISSION_ORG, APPLY
 it, and SYNC the nightly/weekly form area dropdowns. No Drive automation —
 CCSM has none, and this build doesn't add any.
 
-Two sections, same st.radio()+CSS tab pattern as Provo's 12_Transfer_Flow.py
+Three sections, same st.radio()+CSS tab pattern as Provo's 12_Transfer_Flow.py
 (and CCSM's own 02_Metas.py/18_Mantenimiento.py) — st.tabs() renders every
 tab's body on every single script run regardless of which one is visually
 active, so a real tab widget would run the leadership-gated section's sheet
@@ -31,6 +31,9 @@ reads even for a viewer who can't see the results:
     who selects this tab sees a warning instead of the tools, same as
     Provo's _is_mp_or_ap() fallback — not st.stop(), so the tab picker
     itself always finishes rendering.
+  • Leadership — MISSION_LEADERSHIP, the President and the assistants under
+    the addresses they sign in with (PLAN-2026-10-05-roster-access.md R4).
+    Leadership-gated the same way.
 """
 
 from __future__ import annotations
@@ -49,13 +52,15 @@ from app.config.flavor_loader import METRIC_LABELS, flavor
 from app.config.metric_catalog import non_numeric_metrics, nightly_metrics
 from app.db import sheets_client as sc
 from app.db.queries import (
-    get_areas_df, get_config_value, get_live_snapshot,
+    LEADERSHIP_ROLES, get_areas_df, get_config_value, get_live_snapshot,
+    get_mission_leadership, save_mission_leadership,
 )
 from app.db.sheets_client import read_tab
 from app.i18n import t
 from app.i18n.formats import NA, fmt_date, fmt_int, fmt_number
 from app.components.cloud_job_ui import CloudJobFailed, CloudJobTimeout, run_cloud_job
 from app.ingestion import transfer_apply_service as tas
+from app.ingestion import transfer_engine as te
 from app.integrations.transfer_bridge import FormSyncError, form_sync
 from app.utils.area_helpers import mission_today
 from app.utils.transfer_helpers import transfer_rows, transfer_window
@@ -384,6 +389,15 @@ def _render_roster_tab() -> None:
             )
         if not guard["ok"]:
             st.error(guard["msg"])
+        if preview.get("assistants_moved"):
+            st.warning(
+                t("MISSION_LEADERSHIP lists {names} as assistant(s), but this "
+                  "roster no longer places them in the assistants' area. If the "
+                  "assistants changed this transfer, update the Leadership "
+                  "section — the new assistant cannot sign in with his own "
+                  "address until he is listed there.",
+                  names=", ".join(preview["assistants_moved"]))
+            )
         for label, key in [(t("New areas"), "added"), (t("Deactivating"), "deactivated"),
                             (t("Changed"), "changed"), (t("Reactivating"), "reactivated"),
                             (t("Email addresses"), "emails")]:
@@ -475,17 +489,104 @@ def _render_roster_tab() -> None:
                 st.session_state.pop("tf_preview", None)
 
 
+# ── Leadership tab ───────────────────────────────────────────────────────────
+
+def _render_leadership_tab() -> None:
+    """MISSION_LEADERSHIP, edited in place (PLAN-2026-10-05-roster-access.md).
+
+    Plain inputs in a form rather than st.data_editor: the data editor's canvas
+    cells render dark-on-dark in this theme (see 06_Puntajes.py's
+    _render_weight_inputs). One row per person plus one empty row to add
+    someone; untick Active rather than deleting, so the list keeps who held the
+    calling. Clearing both name and email removes a row.
+    """
+    if not is_leadership(user.get("email", "")):
+        st.warning(t("Editing the mission's leadership is available to mission "
+                     "leadership only."))
+        return
+
+    render_section_label(
+        t("Mission leadership"),
+        info=t("This list decides who may sign in with a personal address, who "
+               "opens the leadership pages (Traslados, Editar Envíos, "
+               "Mantenimiento, Centro de Acción, Sugerencias), who sets goals on "
+               "Metas, and who receives the Monday mission report and the "
+               "mission section of the weekly letter. Zone, district and sister "
+               "training leaders are not listed here: they lead from their "
+               "area's mailbox, and MISSION_ORG already knows them."),
+    )
+    st.caption(t("The President and the assistants, each under the address he "
+                 "signs in with. Update it on transfer day whenever an assistant "
+                 "changes."))
+
+    current = get_mission_leadership(active_only=False)
+    moved = te.assistants_missing_from_ap_area(
+        current.loc[(current["Role"] == "assistant") & (current["Active"] == "TRUE"),
+                    "Name"].tolist(),
+        get_areas_df(active_only=True).to_dict("records"))
+    if moved:
+        st.warning(t("{names}: listed as assistant(s) here, but MISSION_ORG no "
+                     "longer places them in the assistants' area. Untick Active "
+                     "for anyone released, and add the new assistant.",
+                     names=", ".join(moved)))
+    if current.empty:
+        st.info(t("No one is listed yet. Until someone is, the app knows the "
+                  "assistants only by their area's shared mailbox, and the "
+                  "President receives no email from it."))
+
+    role_label = {"president": t("President"), "assistant": t("Assistant")}
+    records = current.to_dict("records") + [
+        {"Name": "", "Email": "", "Role": "assistant", "Active": "TRUE", "Notes": ""}]
+    with st.form("leadership_form"):
+        edited = []
+        for i, r in enumerate(records):
+            vis = "visible" if i == 0 else "collapsed"
+            c_name, c_mail, c_role, c_act, c_note = st.columns([3, 4, 2, 1.3, 3])
+            name = c_name.text_input(t("Name"), r.get("Name", ""), key=f"ld_name_{i}",
+                                     label_visibility=vis, placeholder=t("Name"))
+            email = c_mail.text_input(t("Sign-in email"), r.get("Email", ""),
+                                      key=f"ld_email_{i}", label_visibility=vis,
+                                      placeholder="nombre.apellido@missionary.org")
+            role = c_role.selectbox(
+                t("Role"), list(LEADERSHIP_ROLES),
+                index=list(LEADERSHIP_ROLES).index(r.get("Role") or "assistant")
+                if (r.get("Role") or "assistant") in LEADERSHIP_ROLES else 1,
+                format_func=lambda k: role_label.get(k, k),
+                key=f"ld_role_{i}", label_visibility=vis)
+            active = c_act.checkbox(t("Active"), value=str(r.get("Active", "TRUE")).upper() == "TRUE",
+                                    key=f"ld_active_{i}")
+            notes = c_note.text_input(t("Notes"), r.get("Notes", ""), key=f"ld_notes_{i}",
+                                      label_visibility=vis, placeholder=t("Notes"))
+            edited.append({"Name": name, "Email": email, "Role": role,
+                           "Active": active, "Notes": notes})
+        submitted = st.form_submit_button(t("Save leadership"), type="primary")
+
+    if submitted:
+        try:
+            save_mission_leadership(edited)
+        except ValueError as e:
+            st.error(t("Not saved: {problems}", problems=str(e)))
+        else:
+            st.success(t("Saved. Sign-in and the leadership pages follow this "
+                         "list from the next page load."))
+            for k in [k for k in st.session_state if str(k).startswith("ld_")]:
+                del st.session_state[k]
+            st.rerun()
+
+
 # The app's one sub-navigation control (audit step 1.7). This was st.tabs(),
 # which renders every tab's body on every script run regardless of which is
 # visually active, then st.radio() repainted as a tab row by a block of CSS
 # copy-pasted verbatim from views/02_Metas.py. render_section_tabs' docstring
 # holds the full reasoning for all three forms; only the selected section's
 # render function runs, as before.
-_TRASLADOS_SECTIONS = {s: t(s) for s in ("Schedule", "Roster Update")}
+_TRASLADOS_SECTIONS = {s: t(s) for s in ("Schedule", "Roster Update", "Leadership")}
 _active_section = render_section_tabs(
-    _TRASLADOS_SECTIONS, key="traslados_section_val", per_row=2)
+    _TRASLADOS_SECTIONS, key="traslados_section_val", per_row=3)
 
 if _active_section == "Schedule":
     _render_schedule_tab()
+elif _active_section == "Leadership":
+    _render_leadership_tab()
 else:
     _render_roster_tab()

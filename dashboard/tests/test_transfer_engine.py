@@ -270,3 +270,44 @@ def test_next_schedule_update_appends_when_none_planned():
     assert len(out) == 2
     assert out[1]["Transfer_Number"] == "6"
     assert out[1]["Status"] == "Actual"
+
+
+# ── the assistants' area (PLAN-2026-10-05 R4) ─────────────────────────────────
+
+def _ap_row(*names, active="TRUE"):
+    row = _org_row("La Marina 1", zone="San Pedro", active=active, Is_AP="TRUE")
+    for i, n in enumerate(names, start=1):
+        row[f"Companion{i}_Name"] = n
+    return row
+
+
+def test_a_listed_assistant_still_in_the_ap_area_is_not_flagged():
+    rows = [_ap_row("Anderson Phillips", "Presley Egbers", "Bryson Heath", "James Blood")]
+    assert te.assistants_missing_from_ap_area(
+        ["Anderson Phillips", "Elder Egbers", "élder PHILLIPS"], rows) == []
+
+
+def test_an_assistant_moved_out_is_flagged():
+    rows = [_ap_row("Anderson Phillips", "Nuevo Asistente")]
+    assert te.assistants_missing_from_ap_area(
+        ["Anderson Phillips", "Presley Egbers"], rows) == ["Presley Egbers"]
+
+
+def test_no_ap_row_means_nothing_to_compare():
+    rows = [_org_row("Alemania 2", c1="Elder A")]
+    assert te.assistants_missing_from_ap_area(["Anyone"], rows) == []
+
+
+def test_an_inactive_ap_row_does_not_count():
+    rows = [_ap_row("Presley Egbers", active="FALSE"), _ap_row("Someone Else")]
+    assert te.assistants_missing_from_ap_area(["Presley Egbers"], rows) == ["Presley Egbers"]
+
+
+def test_the_roster_shape_works_too():
+    roster = te.parse_roster([{
+        "Area": "La Marina 1", "Zone": "San Pedro", "District": "La Marina 1",
+        "Companion1_Name": "Anderson Phillips", "Companion2_Name": "Presley Egbers",
+        "Companion3_Name": "Bryson Heath", "Companion4_Name": "James Blood",
+        "Calling": "AP", "Area_Email": "500407562@missionary.org"}])
+    assert te.assistants_missing_from_ap_area(["James Blood"], roster) == []
+    assert te.assistants_missing_from_ap_area(["Hyrum Turner"], roster) == ["Hyrum Turner"]

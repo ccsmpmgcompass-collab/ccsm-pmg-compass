@@ -2624,6 +2624,62 @@ ES: dict[str, str] = {
     # Emergency update (added 2026-08-06) ────────────────────────────────
     "Schedule": "Calendario de Traslados",
     "Roster Update": "Actualizar Nómina",
+    "Leadership": "Liderazgo",
+    # ── 12_Traslados.py — Leadership section (PLAN-2026-10-05 R4) ──────────
+    "Editing the mission's leadership is available to mission leadership only.":
+        "Editar el liderazgo de la misión está disponible solo para el "
+        "liderazgo de la misión.",
+    "Mission leadership": "Liderazgo de la misión",
+    "This list decides who may sign in with a personal address, who opens the "
+    "leadership pages (Traslados, Editar Envíos, Mantenimiento, Centro de "
+    "Acción, Sugerencias), who sets goals on Metas, and who receives the Monday "
+    "mission report and the mission section of the weekly letter. Zone, "
+    "district and sister training leaders are not listed here: they lead from "
+    "their area's mailbox, and MISSION_ORG already knows them.":
+        "Esta lista decide quién puede entrar con un correo personal, quién abre "
+        "las páginas de liderazgo (Traslados, Editar Envíos, Mantenimiento, "
+        "Centro de Acción, Sugerencias), quién fija metas en Metas y quién recibe "
+        "el informe de la misión del lunes y la sección de la misión de la carta "
+        "semanal. Los líderes de zona, de distrito y las hermanas líderes "
+        "capacitadoras no van aquí: dirigen desde el correo de su área, y "
+        "MISSION_ORG ya los conoce.",
+    "The President and the assistants, each under the address he signs in "
+    "with. Update it on transfer day whenever an assistant changes.":
+        "El Presidente y los asistentes, cada uno con el correo con que entra. "
+        "Actualícela el día de traslados cada vez que cambie un asistente.",
+    "{names}: listed as assistant(s) here, but MISSION_ORG no longer places "
+    "them in the assistants' area. Untick Active for anyone released, and add "
+    "the new assistant.":
+        "{names}: figura(n) aquí como asistente(s), pero MISSION_ORG ya no "
+        "lo(s) ubica en el área de los asistentes. Desmarque Activo para quien "
+        "haya sido relevado y agregue al nuevo asistente.",
+    "No one is listed yet. Until someone is, the app knows the assistants only "
+    "by their area's shared mailbox, and the President receives no email from "
+    "it.":
+        "Todavía no hay nadie en la lista. Mientras tanto, la aplicación conoce "
+        "a los asistentes solo por el correo compartido de su área, y el "
+        "Presidente no recibe ningún correo de ella.",
+    "President": "Presidente",
+    "Assistant": "Asistente",
+    "Sign-in email": "Correo de ingreso",
+    "Name": "Nombre",
+    "Active": "Activo",
+    "Role": "Rol",
+    "Save leadership": "Guardar liderazgo",
+    "Not saved: {problems}": "No se guardó: {problems}",
+    "Saved. Sign-in and the leadership pages follow this list from the next "
+    "page load.":
+        "Guardado. El ingreso y las páginas de liderazgo siguen esta lista desde "
+        "la próxima carga de página.",
+    "MISSION_LEADERSHIP lists {names} as assistant(s), but this roster no "
+    "longer places them in the assistants' area. If the assistants changed this "
+    "transfer, update the Leadership section — the new assistant cannot sign in "
+    "with his own address until he is listed there.":
+        "MISSION_LEADERSHIP tiene a {names} como asistente(s), pero esta "
+        "organización ya no lo(s) ubica en el área de los asistentes. Si los "
+        "asistentes cambiaron en este traslado, actualice la sección Liderazgo: "
+        "el nuevo asistente no puede entrar con su propio correo hasta que esté "
+        "en la lista.",
     "**Transfer day checklist**\n"
     "1. **Pull roster from IMOS** — wait for the success message.\n"
     "2. **Preview** — review New/Deactivating/Changed/Reactivating below; "
