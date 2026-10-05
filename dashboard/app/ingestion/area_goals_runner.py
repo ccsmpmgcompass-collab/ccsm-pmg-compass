@@ -165,15 +165,23 @@ def lineage(grid: list) -> dict:
     """``{new_area: [(old_area, transfer_date), ...]}`` from AREA_LINEAGE.
 
     The date is the transfer the new area began on: a predecessor's nights
-    BEFORE it are the new area's inherited history (PLAN-2026-10-05 D3). A row
-    without a readable date is skipped rather than guessed at.
+    BEFORE it are the new area's inherited history (PLAN-2026-10-05 D3). The
+    app writes it as ISO text; a date typed into the sheet by hand may read
+    back as the mission's dd-mm-yyyy, so that is accepted too. A row without a
+    readable date is skipped rather than guessed at.
     """
     out: dict = {}
     for r in _records(grid):
         new = r.get("New_Area", "")
-        try:
-            cutoff = date.fromisoformat(r.get("Transfer_Date", "")[:10])
-        except ValueError:
+        raw = r.get("Transfer_Date", "").strip()
+        cutoff = None
+        for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"):
+            try:
+                cutoff = datetime.strptime(raw[:10], fmt).date()
+                break
+            except ValueError:
+                continue
+        if cutoff is None:
             continue
         for old in (p.strip() for p in r.get("Old_Areas", "").split(";")):
             if new and old and old != new:

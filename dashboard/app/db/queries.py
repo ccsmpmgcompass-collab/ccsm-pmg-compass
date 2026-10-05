@@ -1570,7 +1570,7 @@ def save_mission_leadership(rows: list) -> None:
         body.append([name, email, str(r.get("Role", "")).strip().lower(),
                      "TRUE" if active else "FALSE",
                      str(r.get("Notes", "") or "").strip()])
-    overwrite_tab(LEADERSHIP_TAB, [LEADERSHIP_HEADERS] + body)
+    overwrite_tab(LEADERSHIP_TAB, [LEADERSHIP_HEADERS] + body, value_input_option="RAW")
 
 
 def get_user_role(email: str) -> str:
@@ -4468,9 +4468,11 @@ def save_area_lineage(rows: list) -> None:
                      str(old).strip(), new,
                      str(r.get("Recorded_By", "") or "").strip(),
                      str(r.get("Notes", "") or "").strip()])
-    # RAW-equivalent: a leading apostrophe would be wrong, and USER_ENTERED
-    # turns "2026-09-07" into a date cell, which reads back as the same text.
-    overwrite_tab(LINEAGE_TAB, [LINEAGE_HEADERS] + body)
+    # RAW: Transfer_Date must stay the text "2026-09-07". The Desgloses badge
+    # matches it as text against TRANSFER_SCHEDULE's Start_Date, and the goals
+    # parser reads it with date.fromisoformat — a USER_ENTERED date cell would
+    # read back in whatever format the sheet shows.
+    overwrite_tab(LINEAGE_TAB, [LINEAGE_HEADERS] + body, value_input_option="RAW")
 
 
 def add_area_lineage(rows: list) -> int:

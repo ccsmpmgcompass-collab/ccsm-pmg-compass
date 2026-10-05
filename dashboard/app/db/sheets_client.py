@@ -257,12 +257,18 @@ def delete_row(tab_name: str, row_number: int, scoped: bool = False) -> None:
     _clear_read_caches(tab_name if scoped else None)
 
 
-def overwrite_tab(tab_name: str, rows: list[list]) -> None:
+def overwrite_tab(tab_name: str, rows: list[list],
+                  value_input_option: str = "USER_ENTERED") -> None:
     """
     Clear a tab and write a 2D list of rows (header + data) in one batch.
     Creates the tab if it doesn't exist. Clears read cache after.
     Used for config tabs that must be rewritten cleanly (e.g. SCORE_CONFIG)
     rather than appended to.
+
+    ``value_input_option="RAW"`` keeps text as text. USER_ENTERED (the default)
+    lets Sheets coerce "2026-09-07" into a date cell, which then reads back in
+    whatever format the cell shows — TRANSFER_SCHEDULE's Transfer_Number
+    "2026-4" became the date 2026-04-01 exactly that way.
     """
     try:
         ws = _get_worksheet(tab_name)
@@ -270,7 +276,7 @@ def overwrite_tab(tab_name: str, rows: list[list]) -> None:
         ws = _get_spreadsheet().add_worksheet(title=tab_name, rows=max(1000, len(rows) + 50), cols=20)
     ws.clear()
     if rows:
-        ws.update(rows, value_input_option="USER_ENTERED")
+        ws.update(rows, value_input_option=value_input_option)
     read_tab.clear()
     read_values.clear()
 

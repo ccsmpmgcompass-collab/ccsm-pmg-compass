@@ -164,7 +164,7 @@ def test_validation_names_each_problem():
 def test_save_writes_the_header_and_normalised_rows(monkeypatch):
     written = {}
     monkeypatch.setattr("app.db.sheets_client.overwrite_tab",
-                        lambda tab, rows: written.update({tab: rows}))
+                        lambda tab, rows, **kw: written.update({tab: rows}))
     q.save_mission_leadership([
         {"Name": "Presley Egbers", "Email": " Presley.Egbers@missionary.org",
          "Role": "Assistant", "Active": True, "Notes": ""},
@@ -181,6 +181,6 @@ def test_save_writes_the_header_and_normalised_rows(monkeypatch):
 
 def test_save_refuses_a_bad_row(monkeypatch):
     monkeypatch.setattr("app.db.sheets_client.overwrite_tab",
-                        lambda tab, rows: pytest.fail("must not write"))
+                        lambda tab, rows, **kw: pytest.fail("must not write"))
     with pytest.raises(ValueError):
         q.save_mission_leadership([{"Name": "X", "Email": "nope", "Role": "assistant"}])

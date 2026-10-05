@@ -122,8 +122,9 @@ def tab(monkeypatch):
             return pd.DataFrame(state["rows"][1:], columns=state["rows"][0])
         return pd.DataFrame()
 
-    def fake_write(tab_name, rows):
+    def fake_write(tab_name, rows, value_input_option="USER_ENTERED"):
         assert tab_name == q.LINEAGE_TAB
+        assert value_input_option == "RAW"      # dates stay text
         state["rows"] = [list(r) for r in rows]
 
     monkeypatch.setattr("app.db.sheets_client._read_tab_cached", fake_read)
@@ -162,9 +163,11 @@ def test_the_shared_parser_gives_each_parent_and_its_cutoff():
     grid = [q.LINEAGE_HEADERS,
             ["x", "2026-09-07", "merge", "Norte;Sur", "Centro", "", ""],
             ["x", "not a date", "rename", "Viejo", "Nuevo", "", ""],
+            ["x", "07-09-2026", "rename", "A Mano", "Escrita", "", ""],
             ["x", "2026-09-07", "rename", "Mismo", "Mismo", "", ""]]
     assert R.lineage(grid) == {
-        "Centro": [("Norte", date(2026, 9, 7)), ("Sur", date(2026, 9, 7))]}
+        "Centro": [("Norte", date(2026, 9, 7)), ("Sur", date(2026, 9, 7))],
+        "Escrita": [("A Mano", date(2026, 9, 7))]}
 
 
 # ── the history a new area inherits (R7) ──────────────────────────────────────
