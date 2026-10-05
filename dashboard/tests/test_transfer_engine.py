@@ -173,12 +173,79 @@ def test_apply_transfer_deactivates_unmatched_active_area():
     assert "Gone (500002@missionary.org)" in summary["deactivated_with_email"]
 
 
-def test_apply_transfer_appends_new_area_blank_email():
+def test_apply_transfer_new_area_without_a_roster_email_is_flagged():
     roster = te.parse_roster([_roster_import("Brand New")])
     new_rows, summary = te.apply_transfer(roster, [], MISSION_ORG_HEADERS)
     row = next(r for r in new_rows if r["Area_Name"] == "Brand New")
     assert row["Companion1_Email"] == ""
     assert "Brand New" in summary["new_emails_needed"]
+    assert summary["emails_filled"] == []
+
+
+# ── email fill (PLAN-2026-10-05 R1) ─────────────────────────────────────────────
+
+def test_a_new_area_takes_its_mailbox_from_the_roster():
+    """The 2026-09-07 transfer opened seven areas with blank emails, and the
+    reminder agent mails only the email columns — so none of them was asked to
+    report until someone typed the addresses in by hand."""
+    roster = te.parse_roster([_roster_import(
+        "Collipulli 1", c1="Elder A", c2="Elder B", email="500111@missionary.org")])
+    new_rows, summary = te.apply_transfer(roster, [], MISSION_ORG_HEADERS)
+    row = next(r for r in new_rows if r["Area_Name"] == "Collipulli 1")
+    assert row["Companion1_Email"] == "500111@missionary.org"
+    assert row["Companion2_Email"] == "500111@missionary.org"
+    assert summary["emails_filled"] == ["Collipulli 1"]
+    assert summary["new_emails_needed"] == []
+
+
+def test_a_single_companion_gets_the_address_once():
+    roster = te.parse_roster([_roster_import(
+        "Collipulli 2", c1="Elder A", email="500222@missionary.org")])
+    new_rows, _ = te.apply_transfer(roster, [], MISSION_ORG_HEADERS)
+    row = next(r for r in new_rows if r["Area_Name"] == "Collipulli 2")
+    assert row["Companion1_Email"] == "500222@missionary.org"
+    assert row["Companion2_Email"] == ""
+
+
+def test_an_existing_blank_email_is_filled_and_a_set_one_is_kept():
+    org = [_org_row("Blank", c1="Elder A"),
+           _org_row("Set", c1="Elder C", email="hand@missionary.org")]
+    roster = te.parse_roster([
+        _roster_import("Blank", c1="Elder A", email="500333@missionary.org"),
+        _roster_import("Set", c1="Elder C", email="500444@missionary.org"),
+    ])
+    new_rows, summary = te.apply_transfer(roster, org, MISSION_ORG_HEADERS)
+    rows = {r["Area_Name"]: r for r in new_rows}
+    assert rows["Blank"]["Companion1_Email"] == "500333@missionary.org"
+    assert rows["Set"]["Companion1_Email"] == "hand@missionary.org"
+    assert summary["emails_filled"] == ["Blank"]
+    assert summary["email_mismatches"] == [
+        "Set: kept hand@missionary.org, roster has 500444@missionary.org"]
+
+
+def test_a_matching_email_is_neither_filled_nor_flagged():
+    org = [_org_row("Same", c1="Elder A", email="500555@missionary.org")]
+    roster = te.parse_roster([_roster_import("Same", c1="Elder A",
+                                             email="500555@MISSIONARY.org")])
+    _, summary = te.apply_transfer(roster, org, MISSION_ORG_HEADERS)
+    assert summary["emails_filled"] == []
+    assert summary["email_mismatches"] == []
+
+
+def test_the_preview_says_where_each_email_comes_from():
+    org = [_org_row("Blank", c1="Elder A"),
+           _org_row("Set", c1="Elder C", email="hand@missionary.org")]
+    roster = te.parse_roster([
+        _roster_import("Blank", c1="Elder A", email="500333@missionary.org"),
+        _roster_import("Set", c1="Elder C", email="500444@missionary.org"),
+        _roster_import("Opened", email="500666@missionary.org"),
+        _roster_import("No Mailbox"),
+    ])
+    diff = te.build_diff(roster, org)
+    assert "Opened (NEW — email 500666@missionary.org from the roster)" in diff["added"]
+    assert any(a.startswith("No Mailbox (NEW — no email") for a in diff["added"])
+    assert "Blank: 500333@missionary.org" in diff["emails"]
+    assert any(e.startswith("Set: kept hand@missionary.org") for e in diff["emails"])
 
 
 def test_apply_transfer_never_touches_leadership_rows():

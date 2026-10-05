@@ -263,6 +263,24 @@ def _render_schedule_tab() -> None:
 
 # ── Roster Update tab ────────────────────────────────────────────────────────
 
+def _report_emails(summary: dict) -> None:
+    """What Apply did with email addresses. A new area takes its mailbox from
+    the roster now (PLAN-2026-10-05 R1); only an area IMOS has no address for
+    still needs one typed in, and that is the line that has to be loud — an
+    area with no address is never reminded and never counted as missing."""
+    if summary.get("emails_filled"):
+        st.info(t("Email filled in from the roster for: {areas}",
+                  areas=", ".join(summary["emails_filled"])))
+    if summary.get("new_emails_needed"):
+        st.warning(t("No email address in the roster for: {areas}. Add one to "
+                     "MISSION_ORG by hand, or these areas get no reminders.",
+                     areas=", ".join(summary["new_emails_needed"])))
+    if summary.get("email_mismatches"):
+        st.warning(t("These areas kept an email that differs from the roster's: "
+                     "{items}",
+                     items="; ".join(summary["email_mismatches"])))
+
+
 def _render_roster_tab() -> None:
     # Mission-leadership-only, same gate as 19_Editar_Envíos.py — this
     # section pulls a real IMOS login and can mutate live MISSION_ORG.
@@ -360,8 +378,9 @@ def _render_roster_tab() -> None:
         if not guard["ok"]:
             st.error(guard["msg"])
         for label, key in [(t("New areas"), "added"), (t("Deactivating"), "deactivated"),
-                            (t("Changed"), "changed"), (t("Reactivating"), "reactivated")]:
-            items = diff[key]
+                            (t("Changed"), "changed"), (t("Reactivating"), "reactivated"),
+                            (t("Email addresses"), "emails")]:
+            items = diff.get(key) or []
             if items:
                 with st.expander(f"{label} ({fmt_int(len(items))})"):
                     for item in items:
@@ -384,12 +403,7 @@ def _render_roster_tab() -> None:
                     st.error(str(e))
                 else:
                     st.success(t("Applied."))
-                    if summary.get("new_emails_needed"):
-                        st.warning(
-                            t("New areas need an email address added by "
-                              "hand: {areas}",
-                              areas=", ".join(summary["new_emails_needed"]))
-                        )
+                    _report_emails(summary)
                     st.session_state.pop("tf_preview", None)
 
     st.divider()
@@ -450,11 +464,7 @@ def _render_roster_tab() -> None:
                                 error=str(e)))
             else:
                 status.success(t("Emergency update complete."))
-                if summary.get("new_emails_needed"):
-                    st.warning(
-                        t("New areas need an email address added by hand: "
-                          "{areas}", areas=", ".join(summary["new_emails_needed"]))
-                    )
+                _report_emails(summary)
                 st.session_state.pop("tf_preview", None)
 
 

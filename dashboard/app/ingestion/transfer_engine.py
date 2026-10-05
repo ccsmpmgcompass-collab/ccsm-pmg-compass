@@ -81,6 +81,44 @@ def _is_true(val) -> bool:
     return str(val or "").strip().upper() == "TRUE"
 
 
+_EMAIL_COLS = ("Companion1_Email", "Companion2_Email")
+
+
+def _fill_email(row: dict, roster_row: dict) -> tuple[bool, str | None]:
+    """Fill `row`'s BLANK email columns from the roster's `Area_Email`.
+
+    Returns ``(filled, mismatch)``. A new area used to arrive with both email
+    columns blank, and `CCSM_AgentReminder.gs` mails only those columns — so
+    the area was never asked to report and never showed as missing either
+    (PLAN-2026-09-08-transfer-day.md §3.6 F1). IMOS already carries one mailbox
+    per area, so the address is taken from there.
+
+    Companion1_Email always; Companion2_Email only when there is a second
+    companion, which is how 37 of the 45 active rows already read (one shared
+    mailbox in both columns) — PLAN-2026-10-05-roster-access.md D5.
+
+    A non-blank address is NEVER overwritten. When it differs from the roster's
+    it is reported as ``mismatch`` ("Area: kept X, roster has Y") for a human
+    to look at: a hand-set address may be deliberate.
+    """
+    roster_email = str(roster_row.get("Area_Email", "") or "").strip()
+    if not roster_email or "@" not in roster_email:
+        return False, None
+    filled = False
+    current = str(row.get("Companion1_Email", "") or "").strip()
+    if not current:
+        row["Companion1_Email"] = roster_email
+        filled = True
+    if (str(row.get("Companion2_Name", "") or "").strip()
+            and not str(row.get("Companion2_Email", "") or "").strip()):
+        row["Companion2_Email"] = roster_email
+        filled = True
+    mismatch = None
+    if current and current.casefold() != roster_email.casefold():
+        mismatch = f"{row.get('Area_Name', '')}: kept {current}, roster has {roster_email}"
+    return filled, mismatch
+
+
 # ── parse_roster ────────────────────────────────────────────────────────────────
 
 def parse_roster(import_rows: list[dict]) -> list[dict]:
@@ -187,6 +225,7 @@ def build_diff(roster_rows: list[dict], mission_org: list[dict]) -> dict:
     org_keys = {(r.get("Area_Name") or "").lower().strip() for r in mission_org}
 
     added, deactivated, changed, reactivated = [], [], [], []
+    emails: list[str] = []
 
     for existing in mission_org:
         if is_non_teaching_row(existing):
@@ -212,6 +251,13 @@ def build_diff(roster_rows: list[dict], mission_org: list[dict]) -> dict:
                     diffs.append(f"{flag}: {old} → {new}")
             if diffs:
                 changed.append(existing["Area_Name"] + ": " + "; ".join(diffs))
+            probe = {**existing, "Companion2_Name": r.get("Companion2_Name", "")}
+            before = str(existing.get("Companion1_Email", "") or "").strip()
+            filled, mismatch = _fill_email(probe, r)
+            if filled and not before:
+                emails.append(f'{existing["Area_Name"]}: {probe["Companion1_Email"]}')
+            if mismatch:
+                emails.append(mismatch)
         else:
             r = rmap.get(key)
             if r:
@@ -223,10 +269,15 @@ def build_diff(roster_rows: list[dict], mission_org: list[dict]) -> dict:
 
     for r in roster_rows:
         if r["Area_Name"].lower().strip() not in org_keys:
-            added.append(r["Area_Name"] + " (NEW — needs email address after apply)")
+            email = str(r.get("Area_Email", "") or "").strip()
+            if email and "@" in email:
+                added.append(f'{r["Area_Name"]} (NEW — email {email} from the roster)')
+            else:
+                added.append(r["Area_Name"] + " (NEW — no email in the roster; "
+                             "add one by hand after apply)")
 
     return {"added": added, "deactivated": deactivated,
-            "changed": changed, "reactivated": reactivated}
+            "changed": changed, "reactivated": reactivated, "emails": emails}
 
 
 # ── apply ───────────────────────────────────────────────────────────────────────
@@ -236,10 +287,12 @@ def apply_transfer(roster_rows: list[dict], mission_org: list[dict],
     """Mirror applyTransfer()'s MISSION_ORG merge. Returns (new_rows, summary).
 
     - Existing area in roster: Zone/District/Companions/flags updated, Active
-      TRUE, **email columns preserved**.
+      TRUE, **an existing email preserved**; a BLANK one filled from the
+      roster's `Area_Email` (`_fill_email`).
     - Existing area NOT in roster (and active): deactivated — Active FALSE,
       companions + Is_* flags cleared, email preserved (kept for history).
-    - Roster area not in MISSION_ORG: appended, email columns blank.
+    - Roster area not in MISSION_ORG: appended, email from the roster's
+      `Area_Email`; listed in `new_emails_needed` only when the roster has none.
     - Leadership + senior rows: never touched.
 
     `new_rows` preserves MISSION_ORG's own column order via `headers`; new
@@ -253,6 +306,8 @@ def apply_transfer(roster_rows: list[dict], mission_org: list[dict],
 
     new_emails_needed: list[str] = []
     deactivated_with_email: list[str] = []
+    emails_filled: list[str] = []
+    email_mismatches: list[str] = []
 
     for existing in mission_org:
         row = {h: existing.get(h, "") for h in headers}
@@ -277,6 +332,13 @@ def apply_transfer(roster_rows: list[dict], mission_org: list[dict],
             for flag in CALLING_FLAGS:
                 row[flag] = r.get(flag, "FALSE")
             row["Active"] = "TRUE"
+            filled, mismatch = _fill_email(row, r)
+            if filled:
+                emails_filled.append(name)
+            if mismatch:
+                email_mismatches.append(mismatch)
+            if not str(row.get("Companion1_Email", "") or "").strip():
+                new_emails_needed.append(name)
             processed.add(key)
         else:
             if _is_true(row.get("Active")):
@@ -302,8 +364,12 @@ def apply_transfer(roster_rows: list[dict], mission_org: list[dict],
         for flag in CALLING_FLAGS:
             nr[flag] = r.get(flag, "FALSE")
         nr["Active"] = "TRUE"
+        filled, _ = _fill_email(nr, r)
+        if filled:
+            emails_filled.append(r["Area_Name"])
+        else:
+            new_emails_needed.append(r["Area_Name"])
         new_rows.append(nr)
-        new_emails_needed.append(r["Area_Name"])
 
     insert_at = len(output) if first_leadership_idx is None else first_leadership_idx
     output[insert_at:insert_at] = new_rows
@@ -311,6 +377,8 @@ def apply_transfer(roster_rows: list[dict], mission_org: list[dict],
     summary = {
         "new_emails_needed": new_emails_needed,
         "deactivated_with_email": deactivated_with_email,
+        "emails_filled": emails_filled,
+        "email_mismatches": email_mismatches,
     }
     return output, summary
 

@@ -2591,8 +2591,16 @@ ES: dict[str, str] = {
     "2 · Apply": "2 · Aplicar",
     "Applying to MISSION_ORG...": "Aplicando a MISSION_ORG...",
     "Applied.": "Aplicado.",
-    "New areas need an email address added by hand: {areas}":
-        "Las áreas nuevas necesitan que se agregue un correo manualmente: {areas}",
+    "Email addresses": "Correos",
+    "Email filled in from the roster for: {areas}":
+        "Correo tomado de la organización de IMOS para: {areas}",
+    "No email address in the roster for: {areas}. Add one to MISSION_ORG by "
+    "hand, or these areas get no reminders.":
+        "La organización de IMOS no trae correo para: {areas}. Agréguelo a mano "
+        "en MISSION_ORG, o estas áreas no recibirán recordatorios.",
+    "These areas kept an email that differs from the roster's: {items}":
+        "Estas áreas conservaron un correo distinto al de la organización de "
+        "IMOS: {items}",
     "3 · Sync nightly + weekly form dropdowns":
         "3 · Sincronizar los menús de los formularios diario y semanal",
     "Syncing form dropdowns...": "Sincronizando los menús de los formularios...",

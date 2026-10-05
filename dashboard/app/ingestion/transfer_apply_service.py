@@ -293,8 +293,14 @@ def _log(summary: dict, schedule_updated: bool, config_updated: bool) -> None:
     parts = ["Applied via CCSM dashboard (Traslados)."]
     zones = pilot_zones()
     parts.append("PILOT_ZONES=" + (", ".join(zones) if zones else "(none — whole mission)"))
+    if summary.get("emails_filled"):
+        parts.append("Email filled from roster: " + ", ".join(summary["emails_filled"]))
     if summary.get("new_emails_needed"):
-        parts.append("NEW areas need email: " + ", ".join(summary["new_emails_needed"]))
+        parts.append("Areas with NO email (add by hand): "
+                     + ", ".join(summary["new_emails_needed"]))
+    if summary.get("email_mismatches"):
+        parts.append("Email differs from roster (kept): "
+                     + "; ".join(summary["email_mismatches"]))
     if summary.get("deactivated_with_email"):
         parts.append("Deactivated w/ email: " + ", ".join(summary["deactivated_with_email"]))
     parts.append(f"schedule_updated={schedule_updated} config_updated={config_updated}")
