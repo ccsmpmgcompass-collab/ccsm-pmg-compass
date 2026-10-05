@@ -139,3 +139,30 @@ const summaries = {
 });
 
 console.log('test_duplicate_leadership_section: OK');
+
+// ===========================================================================
+// MISSION_LEADERSHIP (PLAN-2026-10-05-roster-access.md D1): the President and
+// the assistants get the mission section under their own addresses, with no
+// area of their own; the AP area's shared mailbox keeps its letter; a person
+// already reached through MISSION_ORG gets the mission section once.
+// ===========================================================================
+const withLeaders = scope.a1c_buildPeopleMap(
+  [row({ Is_AP: 'TRUE' })],
+  [{ email: 'Presidente@ChurchOfJesusChrist.org', name: 'Presidente', role: 'president' },
+   { email: 'ap.uno@missionary.org', name: 'AP Uno', role: 'assistant' },
+   { email: SHARED, name: 'Elder Uno', role: 'assistant' }]);
+const pres = withLeaders['presidente@churchofjesuschrist.org'];
+assert.ok(pres, 'the President must receive a letter');
+assert.deepStrictEqual(pres.areas, []);
+assert.strictEqual(pres.roles.length, 1);
+assert.strictEqual(pres.roles[0].type, 'MP');
+assert.strictEqual(withLeaders['ap.uno@missionary.org'].roles[0].type, 'AP');
+assert.strictEqual(withLeaders[SHARED].roles.length, 1,
+  'the shared AP mailbox, also listed, must not get the mission section twice');
+assert.strictEqual(withLeaders[SHARED].areas.length, 1, 'and keeps its own area');
+
+// No tab in this stub spreadsheet: the one-argument call (as runAgent1C makes)
+// behaves exactly as before.
+assert.deepStrictEqual(scope.a1c_loadMissionLeadership_(), []);
+
+console.log('MISSION_LEADERSHIP people map OK');

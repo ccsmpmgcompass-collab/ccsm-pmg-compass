@@ -30,10 +30,14 @@
  *           letters (~9:00-9:30 PM), so AP/MP get their personal coaching
  *           email first and this mission-wide view right after.
  *
- * RECIPIENTS: every MISSION_ORG row with Is_AP=TRUE or Is_MP=TRUE, deduped
- * by Companion1_Email/Companion2_Email (same shared-mailbox handling as
- * CCSM_Agent1C.gs's people map — a companionship's area mailbox appears in
- * both slots when there are 2 companions).
+ * RECIPIENTS: every active row of MISSION_LEADERSHIP — the Mission President
+ * and the assistants under the addresses they actually use (since 2026-10-05,
+ * PLAN-2026-10-05-roster-access.md D1). Before that tab existed this went only
+ * to MISSION_ORG rows flagged Is_AP / Is_MP, which on CCSM's roster meant the
+ * one mailbox La Marina 1's four missionaries share — and never the President,
+ * whom no row is flagged for. Those flags remain the FALLBACK when the tab is
+ * missing or empty, deduped by Companion1_Email/Companion2_Email (same
+ * shared-mailbox handling as CCSM_Agent1C.gs's people map).
  *
  * CONTENT (all Spanish, all CCSM's own metrics):
  *   1. Mission-wide KPI tiles for the week (sums across every active area)
@@ -74,9 +78,14 @@ function runAgentMissionReport() {
     var summary      = amr_buildSummary(dailyTotals, missionOrg);
     var scores        = amr_loadScores();
 
-    var recipients = amr_collectApMpRecipients(missionOrg);
+    var recipients = amr_loadLeadershipEmails();
+    if (recipients.length) {
+      notes.push('Recipients: MISSION_LEADERSHIP (' + recipients.length + ')');
+    } else {
+      recipients = amr_collectApMpRecipients(missionOrg);
+    }
     if (recipients.length === 0) {
-      notes.push('No AP/MP recipients found (no MISSION_ORG row has Is_AP or Is_MP set)');
+      notes.push('No AP/MP recipients found (MISSION_LEADERSHIP is empty and no MISSION_ORG row has Is_AP or Is_MP set)');
       logRun('AgentMissionReport', 'SUCCESS', null, 0, null, notes.join(' | '));
       Logger.log('AgentMissionReport: ' + notes.join(' | '));
       return;
@@ -263,6 +272,33 @@ function amr_loadScores() {
   ranked.sort(function(a, b) { return b.effectiveness - a.effectiveness; });
 
   return { mission: mission, ranked: ranked };
+}
+
+/**
+ * Active MISSION_LEADERSHIP addresses, lower-cased and deduped. [] when the
+ * tab is missing (getTab throws) or holds no valid row, so the caller falls
+ * back to MISSION_ORG's flags. Same validity rule as the dashboard's
+ * queries._clean_leadership: an '@' in the email, role president or
+ * assistant, and Active anything but FALSE (blank counts as active).
+ */
+function amr_loadLeadershipEmails() {
+  var data;
+  try { data = amr_getSheetData('MISSION_LEADERSHIP'); } catch (e) { return []; }
+  if (!data || data.length < 2) return [];
+  var h = data[0].map(function(x) { return String(x).trim(); });
+  var iE = h.indexOf('Email'), iR = h.indexOf('Role'), iA = h.indexOf('Active');
+  if (iE < 0 || iR < 0) return [];
+  var out = {};
+  for (var i = 1; i < data.length; i++) {
+    var email = String(data[i][iE] || '').trim().toLowerCase();
+    var role  = String(data[i][iR] || '').trim().toLowerCase();
+    var act   = iA < 0 ? '' : String(data[i][iA]).trim().toUpperCase();
+    if (email.indexOf('@') < 0) continue;
+    if (role !== 'president' && role !== 'assistant') continue;
+    if (act === 'FALSE') continue;
+    out[email] = true;
+  }
+  return Object.keys(out);
 }
 
 function amr_collectApMpRecipients(missionOrg) {

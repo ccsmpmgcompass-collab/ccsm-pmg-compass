@@ -516,7 +516,7 @@ function a1c_loadFullMissionOrg() {
  * hypothetical future dedicated tracking row (mirrors a1a_isLeadershipRow /
  * a3_isLeadershipRow); it never fires on today's roster.
  */
-function a1c_buildPeopleMap(fullOrgData) {
+function a1c_buildPeopleMap(fullOrgData, leadership) {
   var people = {};
 
   function addCompanion(email, name, areaName, orgRow) {
@@ -556,7 +556,52 @@ function a1c_buildPeopleMap(fullOrgData) {
     addCompanion(row['Companion2_Email'], row['Companion2_Name'], areaName, row);
   });
 
+  // The President and the assistants under the addresses they actually use
+  // (MISSION_LEADERSHIP, PLAN-2026-10-05-roster-access.md D1). MISSION_ORG
+  // alone reached only the AP area's shared mailbox, and never the President:
+  // no row is flagged Is_MP. Each gets the mission section and no area of
+  // their own; the shared mailbox keeps its letter as before. The mission
+  // narrative is cached, so extra recipients cost no extra Gemini call.
+  (leadership === undefined ? a1c_loadMissionLeadership_() : leadership)
+    .forEach(function(p) {
+      var email = String(p.email || '').toLowerCase().trim();
+      if (!email || email.indexOf('@') < 0) return;
+      if (!people[email]) people[email] = { name: p.name || email, areas: [], roles: [] };
+      var role = { type: p.role === 'president' ? 'MP' : 'AP', zone: 'ALL', district: '' };
+      var key = a1c_roleSectionKey_(role);
+      var already = people[email].roles.some(function(existing) {
+        return a1c_roleSectionKey_(existing) === key;
+      });
+      if (!already) people[email].roles.push(role);
+    });
+
   return people;
+}
+
+/**
+ * Active MISSION_LEADERSHIP rows as [{ email, name, role }], role 'president'
+ * or 'assistant'. [] when the tab is missing (getTab throws) or empty — the
+ * letter then reaches leadership exactly as it did before the tab existed.
+ * Same validity rule as CCSM_AgentMissionReport.gs's amr_loadLeadershipEmails.
+ */
+function a1c_loadMissionLeadership_() {
+  var data;
+  try { data = a1c_getSheetData('MISSION_LEADERSHIP'); } catch (e) { return []; }
+  if (!data || data.length < 2) return [];
+  var h = data[0].map(function(x) { return String(x).trim(); });
+  var iN = h.indexOf('Name'), iE = h.indexOf('Email'), iR = h.indexOf('Role'), iA = h.indexOf('Active');
+  if (iE < 0 || iR < 0) return [];
+  var out = [];
+  for (var i = 1; i < data.length; i++) {
+    var email = String(data[i][iE] || '').trim().toLowerCase();
+    var role  = String(data[i][iR] || '').trim().toLowerCase();
+    var act   = iA < 0 ? '' : String(data[i][iA]).trim().toUpperCase();
+    if (email.indexOf('@') < 0) continue;
+    if (role !== 'president' && role !== 'assistant') continue;
+    if (act === 'FALSE') continue;
+    out.push({ email: email, name: iN < 0 ? '' : String(data[i][iN] || '').trim(), role: role });
+  }
+  return out;
 }
 
 /**

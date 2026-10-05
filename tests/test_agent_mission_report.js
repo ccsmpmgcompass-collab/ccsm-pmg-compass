@@ -138,3 +138,28 @@ assert.ok(body.includes('Camilo Olivarria 1'), 'expected Camilo Olivarria 1 name
 console.log('scores summary OK');
 
 console.log('agent mission report OK');
+
+// ===========================================================================
+// MISSION_LEADERSHIP (PLAN-2026-10-05-roster-access.md D1): once the tab has
+// active rows, the report goes to THEM — the President and the assistants
+// under their own addresses — and no longer to the Is_AP / Is_MP mailboxes.
+// An inactive row, a bad address and a role the tab cannot hold are skipped.
+// ===========================================================================
+const leadSheet = ss.insertSheet('MISSION_LEADERSHIP');
+leadSheet.getRange(1, 1, 6, 5).setValues([
+  ['Name', 'Email', 'Role', 'Active', 'Notes'],
+  ['Presidente', 'Presidente@ChurchOfJesusChrist.org', 'president', true, ''],
+  ['AP Uno', 'ap.uno@missionary.org', 'Assistant', 'TRUE', ''],
+  ['AP Viejo', 'ap.viejo@missionary.org', 'assistant', false, 'relevado'],
+  ['Mal', 'sin-arroba', 'assistant', 'TRUE', ''],
+  ['ZL', 'zl@missionary.org', 'zone leader', 'TRUE', ''],
+]);
+assert.deepStrictEqual(scope.amr_loadLeadershipEmails().sort(),
+  ['ap.uno@missionary.org', 'presidente@churchofjesuschrist.org']);
+
+env.state.emails.length = 0;
+scope.runAgentMissionReport();
+assert.strictEqual(env.state.emails.length, 2,
+  'expected one report per active MISSION_LEADERSHIP row, and none to the Is_AP/Is_MP mailboxes');
+
+console.log('MISSION_LEADERSHIP recipients OK');
