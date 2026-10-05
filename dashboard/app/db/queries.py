@@ -4353,15 +4353,104 @@ def get_leader_assignment_warnings() -> list[str]:
     return warnings
 
 
-# ── Area lineage (merge/split/rename/retire) ────────────────────────────────
-# Reads AREA_LINEAGE, written by docs/LineageReview.gs's applyLineage(). See
-# docs/superpowers/specs/2026-07-07-area-lifecycle-design.md and
-# docs/superpowers/specs/2026-07-19-area-lineage-completion-design.md.
+# ── Area lineage (merge/split/rename) ───────────────────────────────────────
+# AREA_LINEAGE: one row per area that continues another — Applied_At |
+# Transfer_Date | Change_Type | Old_Areas (";"-joined) | New_Area |
+# Recorded_By | Notes. Provo wrote it from docs/LineageReview.gs; CCSM writes it
+# from Traslados — Apply records the links confirmed at Preview, and the
+# Linaje editor adds or removes rows by hand (PLAN-2026-10-05-roster-access.md
+# R6). It feeds the Desgloses badge and marker below, and the goals history a
+# new area inherits (R7).
+
+LINEAGE_TAB = "AREA_LINEAGE"
+LINEAGE_HEADERS = ["Applied_At", "Transfer_Date", "Change_Type", "Old_Areas",
+                   "New_Area", "Recorded_By", "Notes"]
+LINEAGE_TYPES = ("rename", "split", "merge")
+
 
 def get_area_lineage() -> pd.DataFrame:
     """All AREA_LINEAGE rows. Empty DataFrame if the tab doesn't exist yet
     (read_tab handles the missing-worksheet case) or has no rows."""
-    return read_tab("AREA_LINEAGE")
+    return read_tab(LINEAGE_TAB)
+
+
+def lineage_parents() -> dict:
+    """``{new_area: [(old_area, transfer_date), ...]}`` — the predecessors
+    whose history a new area inherits until it has its own (R7). Parsed by the
+    weekly sector-goal job's own reader, so the job and the page agree."""
+    from app.ingestion import area_goals_runner as R
+    return R.lineage(read_values(LINEAGE_TAB))
+
+
+def _lineage_records() -> list:
+    df = get_area_lineage()
+    if df.empty or "New_Area" not in df.columns:
+        return []
+    out = []
+    for r in df.to_dict("records"):
+        row = {h: str(r.get(h, "") or "").strip() for h in LINEAGE_HEADERS}
+        if row["New_Area"] and row["Old_Areas"]:
+            out.append(row)
+    return out
+
+
+def save_area_lineage(rows: list) -> None:
+    """Rewrite AREA_LINEAGE as exactly ``rows`` (dicts keyed by
+    LINEAGE_HEADERS; Old_Areas a list or a ";"-joined string). Creates the tab
+    on first save."""
+    from app.db.sheets_client import overwrite_tab
+
+    body = []
+    for r in rows:
+        old = r.get("Old_Areas", "")
+        if isinstance(old, (list, tuple)):
+            old = ";".join(str(o).strip() for o in old if str(o).strip())
+        new = str(r.get("New_Area", "") or "").strip()
+        if not new or not str(old).strip():
+            continue
+        body.append([str(r.get("Applied_At", "") or "").strip(),
+                     str(r.get("Transfer_Date", "") or "").strip()[:10],
+                     str(r.get("Change_Type", "") or "").strip().lower(),
+                     str(old).strip(), new,
+                     str(r.get("Recorded_By", "") or "").strip(),
+                     str(r.get("Notes", "") or "").strip()])
+    # RAW-equivalent: a leading apostrophe would be wrong, and USER_ENTERED
+    # turns "2026-09-07" into a date cell, which reads back as the same text.
+    overwrite_tab(LINEAGE_TAB, [LINEAGE_HEADERS] + body)
+
+
+def add_area_lineage(rows: list) -> int:
+    """Add ``rows`` to AREA_LINEAGE, replacing any existing row for the same
+    New_Area and Transfer_Date (so re-applying a transfer cannot duplicate a
+    link). Returns how many rows were written."""
+    keep = {(r["New_Area"], r["Transfer_Date"][:10]): r for r in _lineage_records()}
+    added = 0
+    for r in rows:
+        old = r.get("Old_Areas", "")
+        if isinstance(old, (list, tuple)):
+            old = ";".join(old)
+        row = {h: str(r.get(h, "") or "").strip() for h in LINEAGE_HEADERS}
+        row["Old_Areas"] = str(old).strip()
+        row["Transfer_Date"] = row["Transfer_Date"][:10]
+        if not row["New_Area"] or not row["Old_Areas"]:
+            continue
+        keep[(row["New_Area"], row["Transfer_Date"])] = row
+        added += 1
+    if added:
+        save_area_lineage(sorted(keep.values(),
+                                 key=lambda r: (r["Transfer_Date"], r["New_Area"])))
+    return added
+
+
+def get_lineage_successors(area: str) -> list:
+    """Every AREA_LINEAGE row that names `area` among its Old_Areas, oldest
+    first — a split parent has one per child."""
+    out = []
+    for r in _lineage_records():
+        parents = [p.strip() for p in r["Old_Areas"].split(";") if p.strip()]
+        if area.strip() in parents:
+            out.append(r)
+    return sorted(out, key=lambda r: (r["Transfer_Date"], r["New_Area"]))
 
 
 def get_lineage_for_successor(area: str) -> dict | None:
@@ -4374,20 +4463,6 @@ def get_lineage_for_successor(area: str) -> dict | None:
     if matches.empty:
         return None
     return matches.iloc[-1].to_dict()
-
-
-def get_lineage_for_retired_parent(area: str) -> dict | None:
-    """Most recent AREA_LINEAGE row where `area` appears in the semicolon-
-    separated Old_Areas (i.e. `area` was combined/renamed away). None if
-    `area` was never a lineage parent."""
-    df = get_area_lineage()
-    if df.empty or "Old_Areas" not in df.columns:
-        return None
-    for _, row in df.iloc[::-1].iterrows():
-        parents = [p.strip() for p in str(row.get("Old_Areas", "")).split(";") if p.strip()]
-        if area.strip() in parents:
-            return row.to_dict()
-    return None
 
 
 def get_retired_lineage_areas() -> set:

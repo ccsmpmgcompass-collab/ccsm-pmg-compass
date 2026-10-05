@@ -237,6 +237,93 @@ def assistants_missing_from_ap_area(assistant_names, rows) -> list[str]:
     return missing
 
 
+# ── area lineage proposals ──────────────────────────────────────────────────────
+
+RENAME, SPLIT, MERGE = "rename", "split", "merge"
+
+
+def _companions(row: dict) -> list[str]:
+    return [str(row.get(c, "") or "").strip() for c in _COMPANION_COLS
+            if str(row.get(c, "") or "").strip()]
+
+
+def propose_lineage(roster_rows: list[dict], mission_org: list[dict]) -> list[dict]:
+    """Which areas this apply OPENS continue an area it CLOSES.
+
+    DAILY_LOG, WEEKLY_KI and every goal are keyed by area NAME, so a renamed or
+    split area starts from nothing. The 2026-09-07 transfer closed five areas
+    and opened seven, and each new one fell back to its zone's median.
+    AREA_LINEAGE records the link; this proposes it, for a person to confirm
+    at Preview — never written silently (PLAN-2026-10-05-roster-access.md D6).
+
+    A new area is linked to a closing area in the SAME ZONE that:
+
+    1. **shares a missionary** with it — the strongest evidence, because a
+       companion who stays when an area splits or is renamed is exactly how a
+       transfer reads. On 2026-09-07 this alone found all seven correctly;
+    2. failing any shared missionary, has a name contained in the new one's or
+       vice versa ("Galvarino" -> "Galvarino 1", "Los Sauces" -> "Purén y Los
+       Sauces"). Only a fallback: "Villa Obispo 1" is also contained in "Huepil
+       & Tucapel & Villa Obispo", and the shared missionary is what says which.
+
+    Returns one dict per new area that found a predecessor:
+    ``{"New_Area", "Old_Areas": [..], "Change_Type", "Shared": [names],
+    "By_Name": bool}`` — Change_Type is "merge" with more than one parent,
+    "split" when a parent has more than one child, "rename" otherwise.
+    """
+    rmap = _roster_map(roster_rows)
+    org_keys = {(r.get("Area_Name") or "").lower().strip() for r in mission_org}
+    closing = [r for r in mission_org
+               if _is_true(r.get("Active")) and not is_non_teaching_row(r)
+               and (r.get("Area_Name") or "").strip()
+               and (r.get("Area_Name") or "").lower().strip() not in rmap]
+    opening = [r for r in roster_rows
+               if r["Area_Name"].lower().strip() not in org_keys
+               and not is_non_teaching_row(r)]
+
+    def _name(row):
+        return frozenset(w for w in _name_tokens(row.get("Area_Name", ""))
+                         if not w.isdigit())
+
+    proposals = []
+    for new in opening:
+        zone = str(new.get("Zone", "")).strip().casefold()
+        people = {_name_tokens(n): n for n in _companions(new)}
+        same_zone = [o for o in closing
+                     if str(o.get("Zone", "")).strip().casefold() == zone]
+        parents, shared = [], []
+        for old in same_zone:
+            hits = [people[t] for t in (_name_tokens(n) for n in _companions(old))
+                    if t in people]
+            if hits:
+                parents.append(old["Area_Name"])
+                shared.extend(h for h in hits if h not in shared)
+        by_name = False
+        if not parents:
+            new_name = _name(new)
+            for old in same_zone:
+                old_name = _name(old)
+                if old_name and new_name and (old_name <= new_name or new_name <= old_name):
+                    parents.append(old["Area_Name"])
+                    by_name = True
+        if parents:
+            proposals.append({"New_Area": new["Area_Name"], "Old_Areas": parents,
+                              "Shared": shared, "By_Name": by_name})
+
+    children = {}
+    for p in proposals:
+        for parent in p["Old_Areas"]:
+            children[parent] = children.get(parent, 0) + 1
+    for p in proposals:
+        if len(p["Old_Areas"]) > 1:
+            p["Change_Type"] = MERGE
+        elif children[p["Old_Areas"][0]] > 1:
+            p["Change_Type"] = SPLIT
+        else:
+            p["Change_Type"] = RENAME
+    return proposals
+
+
 # ── guards ──────────────────────────────────────────────────────────────────────
 
 def run_guards(roster_rows: list[dict], mission_org: list[dict],

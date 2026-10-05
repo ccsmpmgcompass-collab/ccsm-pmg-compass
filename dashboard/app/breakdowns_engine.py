@@ -55,7 +55,7 @@ from app.db.queries import (
     get_config_value,
     get_daily_log,
     get_group_weekly_expectation_totals,
-    get_lineage_for_retired_parent,
+    get_lineage_successors,
     get_lineage_for_successor,
     get_nightly_submission_timing,
     get_weekly_form_data,
@@ -1076,50 +1076,76 @@ def _render_compliance(
 # docs/superpowers/specs/2026-07-19-area-lineage-completion-design.md.
 # ══════════════════════════════════════════════════════════════════════════════
 
+_LINEAGE_KIND = {
+    "rename": "Formerly {old}",
+    "split": "Split from {old}",
+    "merge": "Merged from {old}",
+}
+
+
 def render_lineage_badge(area: str) -> None:
-    """If `area` is a lineage successor within the last-2-transfers window,
-    render a small 'Combined' badge. No-op otherwise."""
+    """If `area` continues another area within the last two transfers, say
+    which. No-op otherwise.
+
+    Was Provo's "Combined — merged from X" in English, for every kind of link.
+    CCSM's links are mostly renames and splits (2026-09-07: five closed, seven
+    opened, no merge), so the wording follows Change_Type."""
     lineage = get_lineage_for_successor(area)
     if not lineage:
         return
     if not is_within_last_transfers(lineage.get("Transfer_Date", ""), n=2):
         return
-    old_areas = str(lineage.get("Old_Areas", "")).replace(";", " +")
+    old_areas = " + ".join(p.strip() for p in str(lineage.get("Old_Areas", "")).split(";")
+                           if p.strip())
+    kind = str(lineage.get("Change_Type", "")).strip().lower()
+    text = t(_LINEAGE_KIND.get(kind, "Previously {old}"), old=old_areas)
     st.markdown(
         f'<div style="display:inline-block;background:rgba(79,179,184,0.15);'
         f'border:1px solid rgba(79,179,184,0.4);border-radius:20px;'
-        f'padding:4px 12px;margin-bottom:10px;font-size:0.82rem;color:#4fb3b8;">'
-        f'Combined — merged from {html.escape(old_areas)}'
+        f'padding:4px 12px;margin-bottom:10px;font-size:0.82rem;color:#4fb3b8;"'
+        f' title="{html.escape(t("Its goals start from this history until it has enough of its own."))}">'
+        f'{html.escape(text)}'
         f'</div>',
         unsafe_allow_html=True,
     )
 
 
 def render_lineage_marker(area: str, area_val_key: str) -> bool:
-    """If `area` is a retired lineage parent, render the redirect card and
-    return True (caller should stop — there's no data left under the old
-    name to show). Returns False if `area` has no lineage record.
+    """If `area` was closed into one or more areas, say so, with a button to
+    each. Returns True when it rendered.
+
+    Until 2026-10-05 the caller stopped here: the card claimed the old area's
+    "continuous history" was on its successor's page. It is not — charts are
+    not stitched (PLAN-2026-10-05-roster-access.md D3), so the old area's
+    nights are only ever shown under its own name, and the page now carries on
+    and shows them.
 
     `area_val_key` is the scope_selector session_state key to update so the
     redirect button re-selects the successor (e.g. 'bd_area_val')."""
-    lineage = get_lineage_for_retired_parent(area)
-    if not lineage:
+    links = get_lineage_successors(area)
+    if not links:
         return False
-    new_area = str(lineage.get("New_Area", "")).strip()
-    applied_at = str(lineage.get("Applied_At", "")).strip()
-    st.info(
-        f"**{html.escape(area)}** was combined into **{html.escape(new_area)}**"
-        + (f" on {html.escape(applied_at)}." if applied_at else ".")
-        + " View its continuous history there."
-    )
-    if st.button(t('View {new_area}', new_area=new_area), key=f"lineage_redirect_{area}"):
-        st.session_state[area_val_key] = new_area
-        # Plain st.rerun() defaults to a full-app rerun even when called from
-        # inside the caller's st.fragment — that would tear down and resend the
-        # global CSS/header/sidebar (the exact unstyled-flash bug the fragment in
-        # 04_Desgloses.py was built to prevent). scope="fragment" keeps this
-        # redirect inside the fragment like every other selector change.
-        st.rerun(scope="fragment")
+    names = []
+    for r in links:
+        if r["New_Area"] not in names:
+            names.append(r["New_Area"])
+    when = links[-1].get("Transfer_Date", "")
+    st.info(t("**{area}** closed in the transfer of {date} and continues as "
+              "**{new}**. Its own history stays here — pick a period before "
+              "that transfer to see it.",
+              area=area, date=when or "—", new=" + ".join(names)))
+    cols = st.columns(min(len(names), 4))
+    for col, new_area in zip(cols, names):
+        if col.button(t('View {new_area}', new_area=new_area),
+                      key=f"lineage_redirect_{area}_{new_area}"):
+            st.session_state[area_val_key] = new_area
+            # Plain st.rerun() defaults to a full-app rerun even when called from
+            # inside the caller's st.fragment — that would tear down and resend
+            # the global CSS/header/sidebar (the exact unstyled-flash bug the
+            # fragment in 04_Desgloses.py was built to prevent).
+            # scope="fragment" keeps this redirect inside the fragment like
+            # every other selector change.
+            st.rerun(scope="fragment")
     return True
 
 

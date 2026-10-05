@@ -160,6 +160,26 @@ def overrides(grid: list) -> dict:
     return out
 
 
+def lineage(grid: list) -> dict:
+    """``{new_area: [(old_area, transfer_date), ...]}`` from AREA_LINEAGE.
+
+    The date is the transfer the new area began on: a predecessor's nights
+    BEFORE it are the new area's inherited history (PLAN-2026-10-05 D3). A row
+    without a readable date is skipped rather than guessed at.
+    """
+    out: dict = {}
+    for r in _records(grid):
+        new = r.get("New_Area", "")
+        try:
+            cutoff = date.fromisoformat(r.get("Transfer_Date", "")[:10])
+        except ValueError:
+            continue
+        for old in (p.strip() for p in r.get("Old_Areas", "").split(";")):
+            if new and old and old != new:
+                out.setdefault(new, []).append((old, cutoff))
+    return out
+
+
 def daily_frame(grid: list) -> pd.DataFrame:
     recs = _records(grid)
     return pd.DataFrame(recs) if recs else pd.DataFrame()

@@ -2594,6 +2594,53 @@ ES: dict[str, str] = {
     "Applying to MISSION_ORG...": "Aplicando a MISSION_ORG...",
     "Applied.": "Aplicado.",
     "Email addresses": "Correos",
+    # ── Area lineage (PLAN-2026-10-05 R6) ───────────────────────────────────
+    "rename": "cambio de nombre",
+    "split": "división",
+    "merge": "unión",
+    "shares {names}": "comparten a {names}",
+    "similar name": "nombre parecido",
+    "{new} ← {old} · {kind}": "{new} ← {old} · {kind}",
+    "Area lineage": "Linaje de áreas",
+    "A new area that continues an area this transfer closes. A confirmed link "
+    "lets the new area's goals start from its predecessor's numbers until it "
+    "has two weeks of its own, and Desgloses shows where it came from. Untick "
+    "any that are wrong; the Linaje editor below can fix them later.":
+        "Un área nueva que continúa un área que este traslado cierra. Un "
+        "vínculo confirmado hace que las metas del área nueva partan de los "
+        "números de su predecesora hasta que tenga dos semanas propias, y "
+        "Desgloses muestra de dónde viene. Desmarque los que estén mal; el "
+        "editor de Linaje, más abajo, puede corregirlos después.",
+    "Area lineage — every link": "Linaje de áreas — todos los vínculos",
+    "New area": "Área nueva",
+    "Came from": "Viene de",
+    "Kind": "Tipo",
+    "Remove links": "Quitar vínculos",
+    "Remove selected": "Quitar los seleccionados",
+    "Removed.": "Quitados.",
+    "No links recorded yet.": "Todavía no hay vínculos registrados.",
+    "Transfer it began": "Traslado en que comenzó",
+    "Add link": "Agregar vínculo",
+    "Pick the area(s) it came from — not the area itself.":
+        "Elija el área (o las áreas) de donde viene — no la misma área.",
+    "Link added.": "Vínculo agregado.",
+    "Lineage recorded: {links}": "Linaje registrado: {links}",
+    "The roster was applied, but the lineage could not be written ({error}). "
+    "Add it in the Linaje editor below.":
+        "La organización se aplicó, pero el linaje no se pudo escribir "
+        "({error}). Agréguelo en el editor de Linaje, más abajo.",
+    # Desgloses badge + marker
+    "Formerly {old}": "Antes se llamaba {old}",
+    "Split from {old}": "Dividida de {old}",
+    "Merged from {old}": "Unión de {old}",
+    "Previously {old}": "Antes: {old}",
+    "Its goals start from this history until it has enough of its own.":
+        "Sus metas parten de este historial hasta que tenga suficiente propio.",
+    "**{area}** closed in the transfer of {date} and continues as **{new}**. "
+    "Its own history stays here — pick a period before that transfer to see it.":
+        "**{area}** se cerró en el traslado del {date} y continúa como "
+        "**{new}**. Su propio historial sigue aquí: elija un período anterior a "
+        "ese traslado para verlo.",
     "Email filled in from the roster for: {areas}":
         "Correo tomado de la organización de IMOS para: {areas}",
     "No email address in the roster for: {areas}. Add one to MISSION_ORG by "
@@ -2662,6 +2709,7 @@ ES: dict[str, str] = {
     "President": "Presidente",
     "Assistant": "Asistente",
     "Sign-in email": "Correo de ingreso",
+    "firstname.lastname@missionary.org": "nombre.apellido@missionary.org",
     "Name": "Nombre",
     "Active": "Activo",
     "Role": "Rol",

@@ -52,8 +52,9 @@ from app.config.flavor_loader import METRIC_LABELS, flavor
 from app.config.metric_catalog import non_numeric_metrics, nightly_metrics
 from app.db import sheets_client as sc
 from app.db.queries import (
-    LEADERSHIP_ROLES, get_areas_df, get_config_value, get_live_snapshot,
-    get_mission_leadership, save_mission_leadership,
+    LEADERSHIP_ROLES, LINEAGE_TYPES, add_area_lineage, get_area_lineage,
+    get_areas_df, get_config_value, get_live_snapshot, get_mission_leadership,
+    save_area_lineage, save_mission_leadership,
 )
 from app.db.sheets_client import read_tab
 from app.i18n import t
@@ -275,6 +276,97 @@ def _render_schedule_tab() -> None:
 
 # ── Roster Update tab ────────────────────────────────────────────────────────
 
+def _kind_label(kind: str) -> str:
+    return {"rename": t("rename"), "split": t("split"),
+            "merge": t("merge")}.get(kind, kind)
+
+
+def _proposal_label(p: dict) -> str:
+    why = (t("shares {names}", names=", ".join(p["Shared"])) if p.get("Shared")
+           else t("similar name") if p.get("By_Name") else "")
+    return t("{new} ← {old} · {kind}", new=p["New_Area"],
+             old=" + ".join(p["Old_Areas"]), kind=_kind_label(p["Change_Type"])) \
+        + (f" · {why}" if why else "")
+
+
+def _render_lineage_proposals(proposals: list) -> None:
+    """One checkbox per proposed link, ticked by default; Apply records the
+    ticked ones (PLAN-2026-10-05 D6 — proposed, never written unreviewed)."""
+    if not proposals:
+        return
+    render_section_label(
+        t("Area lineage"),
+        info=t("A new area that continues an area this transfer closes. A "
+               "confirmed link lets the new area's goals start from its "
+               "predecessor's numbers until it has two weeks of its own, and "
+               "Desgloses shows where it came from. Untick any that are wrong; "
+               "the Linaje editor below can fix them later."))
+    for i, prop in enumerate(proposals):
+        st.checkbox(_proposal_label(prop), value=True, key=f"tf_lin_{i}")
+
+
+def _confirmed_lineage(proposals: list) -> list:
+    return [prop for i, prop in enumerate(proposals or [])
+            if st.session_state.get(f"tf_lin_{i}", True)]
+
+
+def _render_lineage_editor() -> None:
+    """AREA_LINEAGE by hand: every link, a way to remove one, and a form to add
+    one — for the links Apply did not propose, the emergency path, and backfill."""
+    with st.expander(t("Area lineage — every link")):
+        lin = get_area_lineage()
+        rows = ([] if lin.empty or "New_Area" not in lin.columns
+                else lin.to_dict("records"))
+        if rows:
+            render_table(pd.DataFrame([{
+                t("New area"): r.get("New_Area", ""),
+                t("Came from"): str(r.get("Old_Areas", "")).replace(";", " + "),
+                t("Kind"): _kind_label(str(r.get("Change_Type", "")).lower()),
+                t("Transfer"): r.get("Transfer_Date", ""),
+            } for r in rows]))
+            labels = {i: f'{r.get("New_Area", "")} ← '
+                         f'{str(r.get("Old_Areas", "")).replace(";", " + ")}'
+                      for i, r in enumerate(rows)}
+            drop = st.multiselect(t("Remove links"), list(labels),
+                                  format_func=labels.get, key="lin_drop")
+            if drop and st.button(t("Remove selected"), key="lin_drop_btn"):
+                save_area_lineage([r for i, r in enumerate(rows) if i not in drop])
+                st.success(t("Removed."))
+                st.rerun()
+        else:
+            st.caption(t("No links recorded yet."))
+
+        org = get_areas_df(active_only=False)
+        if org.empty or "Area_Name" not in org.columns:
+            return
+        every = sorted(org["Area_Name"].dropna().astype(str).str.strip().unique())
+        active = sorted(get_areas_df(active_only=True)["Area_Name"]
+                        .dropna().astype(str).str.strip().unique())
+        _win = transfer_window(0, _TODAY)
+        with st.form("lineage_add_form", clear_on_submit=True):
+            c1, c2 = st.columns(2)
+            new_area = c1.selectbox(t("New area"), active, key="lin_new")
+            old_areas = c2.multiselect(t("Came from"), every, key="lin_old")
+            c3, c4 = st.columns(2)
+            kind = c3.selectbox(t("Kind"), list(LINEAGE_TYPES),
+                                format_func=_kind_label, key="lin_kind")
+            when = c4.date_input(t("Transfer it began"),
+                                 value=(_win or {}).get("start") or _TODAY,
+                                 key="lin_date")
+            if st.form_submit_button(t("Add link")):
+                if not old_areas or new_area in old_areas:
+                    st.error(t("Pick the area(s) it came from — not the area itself."))
+                else:
+                    from datetime import datetime as _dt
+                    add_area_lineage([{
+                        "Applied_At": _dt.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "Transfer_Date": when.isoformat(), "Change_Type": kind,
+                        "Old_Areas": old_areas, "New_Area": new_area,
+                        "Recorded_By": user.get("email", ""), "Notes": "manual"}])
+                    st.success(t("Link added."))
+                    st.rerun()
+
+
 def _report_emails(summary: dict) -> None:
     """What Apply did with email addresses. A new area takes its mailbox from
     the roster now (PLAN-2026-10-05 R1); only an area IMOS has no address for
@@ -406,6 +498,7 @@ def _render_roster_tab() -> None:
                 with st.expander(f"{label} ({fmt_int(len(items))})"):
                     for item in items:
                         st.write(f"- {item}")
+        _render_lineage_proposals(preview.get("lineage") or [])
 
         override = False
         if not guard["ok"]:
@@ -419,13 +512,26 @@ def _render_roster_tab() -> None:
                      disabled=(not guard["ok"] and not override)):
             with st.spinner(t("Applying to MISSION_ORG...")):
                 try:
-                    summary = tas.apply(override=override)
+                    summary = tas.apply(
+                        override=override,
+                        lineage=_confirmed_lineage(preview.get("lineage")),
+                        applied_by=user.get("email", ""))
                 except tas.TransferBlocked as e:
                     st.error(str(e))
                 else:
                     st.success(t("Applied."))
                     _report_emails(summary)
+                    if summary.get("lineage_recorded"):
+                        st.info(t("Lineage recorded: {links}",
+                                  links="; ".join(summary["lineage_recorded"])))
+                    if summary.get("lineage_error"):
+                        st.warning(t("The roster was applied, but the lineage "
+                                     "could not be written ({error}). Add it in "
+                                     "the Linaje editor below.",
+                                     error=summary["lineage_error"]))
                     st.session_state.pop("tf_preview", None)
+
+    _render_lineage_editor()
 
     st.divider()
 
@@ -546,7 +652,7 @@ def _render_leadership_tab() -> None:
                                      label_visibility=vis, placeholder=t("Name"))
             email = c_mail.text_input(t("Sign-in email"), r.get("Email", ""),
                                       key=f"ld_email_{i}", label_visibility=vis,
-                                      placeholder="nombre.apellido@missionary.org")
+                                      placeholder=t("firstname.lastname@missionary.org"))
             role = c_role.selectbox(
                 t("Role"), list(LEADERSHIP_ROLES),
                 index=list(LEADERSHIP_ROLES).index(r.get("Role") or "assistant")

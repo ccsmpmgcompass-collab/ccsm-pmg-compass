@@ -231,8 +231,9 @@ def _scope_body() -> None:
     # can't be cut to an arbitrary period.
 
     if _level == "area":
-        if render_lineage_marker(selected_area, area_val_key="bd_area_val"):
-            return
+        # A closed area says what it became — and its own history still shows
+        # below (PLAN-2026-10-05 R6; it used to stop here).
+        render_lineage_marker(selected_area, area_val_key="bd_area_val")
 
         # Derive zone/district from the chosen area so the companionship card
         # and notes are labelled correctly even when those filters were left on

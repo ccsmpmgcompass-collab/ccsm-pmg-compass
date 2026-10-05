@@ -220,3 +220,54 @@ def test_apply_refuses_on_an_unknown_pilot_zone(monkeypatch):
         tas.apply()
     assert "Los Ángeles Norte" in str(exc.value)
     assert "deactivate" in str(exc.value)
+
+
+# ── lineage at Apply (PLAN-2026-10-05 R6) ────────────────────────────────────
+
+def _stub_apply(monkeypatch, recorded):
+    import types
+    org_headers = ["Area_Name", "Zone", "Companion1_Name", "Companion1_Email",
+                   "Companion2_Name", "Companion2_Email", "Active"]
+    org = [{"Area_Name": "Collipulli", "Zone": "Angol", "Companion1_Name": "Bruno Andrade",
+            "Companion1_Email": "", "Companion2_Name": "", "Companion2_Email": "",
+            "Active": "TRUE"}]
+    roster = te.parse_roster([{"Area": "Collipulli 2", "Zone": "Angol",
+                               "Companion1_Name": "Bruno Andrade",
+                               "Area_Email": "500222@missionary.org"}])
+    monkeypatch.setattr(tas, "load_state", lambda: (org_headers, org, roster, []))
+    monkeypatch.setattr(tas.sc, "read_values", lambda tab: [])
+    monkeypatch.setattr(tas.sc, "overwrite_tab", lambda tab, rows: None)
+    monkeypatch.setattr(tas.sc, "append_row", lambda tab, row, scoped=False: None)
+    monkeypatch.setattr(tas, "_current_cycle_start", lambda today: CYCLE_6)
+    monkeypatch.setattr(tas, "_advance_schedule", lambda start: False)
+    monkeypatch.setattr(tas, "_set_transfer_start_date", lambda start: False)
+    clearable = types.SimpleNamespace(clear=lambda: None)
+    for name in ("get_area_language_group", "_resolve_area_category",
+                 "get_mission_weekly_expectation_total",
+                 "get_mission_transfer_expectation_total"):
+        monkeypatch.setattr(tas.q, name, clearable)
+    monkeypatch.setattr(tas.q, "add_area_lineage",
+                        lambda rows: recorded.extend(rows) or len(rows))
+    return roster, org
+
+
+def test_confirmed_lineage_is_recorded_against_the_cycle(monkeypatch):
+    recorded = []
+    roster, org = _stub_apply(monkeypatch, recorded)
+    proposals = te.propose_lineage(roster, org)
+    summary = tas.apply(override=True, today=APPLIED_ON, lineage=proposals,
+                        applied_by="ap@missionary.org")
+    assert len(recorded) == 1
+    row = recorded[0]
+    assert row["New_Area"] == "Collipulli 2" and row["Old_Areas"] == ["Collipulli"]
+    assert row["Transfer_Date"] == "2026-09-07"     # the cycle, not the click
+    assert row["Recorded_By"] == "ap@missionary.org"
+    assert summary["lineage_recorded"] == ["Collipulli 2 <- Collipulli"]
+
+
+def test_apply_without_confirmed_links_records_none(monkeypatch):
+    """The emergency path passes nothing: a link is never written unreviewed."""
+    recorded = []
+    _stub_apply(monkeypatch, recorded)
+    summary = tas.apply(override=True, today=APPLIED_ON)
+    assert recorded == [] and summary["lineage_recorded"] == []

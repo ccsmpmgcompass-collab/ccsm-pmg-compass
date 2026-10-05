@@ -132,15 +132,26 @@ def preview() -> dict:
         # no longer places in the assistants' area (R4).
         "assistants_moved": te.assistants_missing_from_ap_area(
             _listed_assistants(), roster),
+        # New areas that continue an area this apply closes, for the user to
+        # confirm before Apply records them in AREA_LINEAGE (R6).
+        "lineage": te.propose_lineage(roster, org),
     }
 
 
 # ── apply ───────────────────────────────────────────────────────────────────────
 
-def apply(override: bool = False, today: date | None = None) -> dict:
-    """Snapshot -> merge MISSION_ORG -> advance schedule/config -> log. Returns
-    the apply summary (new_emails_needed, deactivated_with_email). Raises
-    TransferBlocked if the deactivation guard trips and override is False."""
+def apply(override: bool = False, today: date | None = None,
+          lineage: list | None = None, applied_by: str = "") -> dict:
+    """Snapshot -> merge MISSION_ORG -> advance schedule/config -> lineage ->
+    log. Returns the apply summary (new_emails_needed, deactivated_with_email,
+    lineage_recorded, ...). Raises TransferBlocked if the deactivation guard
+    trips and override is False.
+
+    `lineage` is the Preview's proposals the user CONFIRMED (propose_lineage
+    dicts). They are recorded against this cycle's start date. The emergency
+    path passes none: nobody has reviewed a proposal there, and D6 says a link
+    is never written unreviewed — the Linaje editor can add it afterwards.
+    """
     today = today or date.today()
     org_headers, org, roster, unknown = load_state()
 
@@ -182,6 +193,24 @@ def apply(override: bool = False, today: date | None = None) -> dict:
     cycle_start = _current_cycle_start(today)
     schedule_updated = _advance_schedule(cycle_start)
     config_updated = _set_transfer_start_date(cycle_start)
+
+    summary["lineage_recorded"] = []
+    if lineage:
+        stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        rows = [{"Applied_At": stamp, "Transfer_Date": cycle_start.isoformat(),
+                 "Change_Type": p.get("Change_Type", ""),
+                 "Old_Areas": p.get("Old_Areas", []), "New_Area": p.get("New_Area", ""),
+                 "Recorded_By": applied_by,
+                 "Notes": ("shared: " + ", ".join(p["Shared"])) if p.get("Shared")
+                          else ("by name" if p.get("By_Name") else "")}
+                for p in lineage]
+        try:
+            q.add_area_lineage(rows)
+            summary["lineage_recorded"] = [
+                f'{r["New_Area"]} <- {";".join(r["Old_Areas"])}' for r in rows]
+        except Exception as e:   # the roster is applied; lineage can be re-added
+            _logger.warning("Could not write AREA_LINEAGE: %s", e)
+            summary["lineage_error"] = str(e)
 
     _log(summary, schedule_updated, config_updated)
 
@@ -320,6 +349,8 @@ def _log(summary: dict, schedule_updated: bool, config_updated: bool) -> None:
                      + "; ".join(summary["email_mismatches"]))
     if summary.get("deactivated_with_email"):
         parts.append("Deactivated w/ email: " + ", ".join(summary["deactivated_with_email"]))
+    if summary.get("lineage_recorded"):
+        parts.append("Lineage: " + "; ".join(summary["lineage_recorded"]))
     parts.append(f"schedule_updated={schedule_updated} config_updated={config_updated}")
     try:
         sc.append_row(LOG_TAB, [
