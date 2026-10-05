@@ -86,15 +86,15 @@ def allowed_emails() -> set:
 
 def is_leadership(email: str) -> bool:
     """
-    True for the Mission President and the assistants (MISSION_LEADERSHIP, or
-    MISSION_ORG's Is_MP / Is_AP flags) and for the owner accounts. Gates the
-    leadership-only pages: Traslados' Apply, Editar Envios, Mantenimiento's
-    settings, Centro de Accion, Sugerencias and the action bell.
+    True for the Mission President and the assistants as MISSION_LEADERSHIP
+    lists them, and for the owner accounts. Gates the leadership-only pages:
+    Traslados' Apply, Editar Envíos, Mantenimiento's settings, Centro de
+    Acción, Sugerencias and the action bell.
 
-    Zone, district and sister training leaders are NOT leadership here
-    (PLAN-2026-10-05-roster-access.md D2): they sign in with their area's
-    shared mailbox, and anyone who reads that mailbox could otherwise apply a
-    transfer.
+    No area mailbox is leadership here — not a zone, district or sister
+    training leader's (PLAN-2026-10-05-roster-access.md D2), and since D11 not
+    the AP area's either (La Marina 1, four missionaries on one inbox). Anyone
+    who reads a shared mailbox could otherwise apply a transfer.
     """
     email = (email or "").lower().strip()
     if email in _OWNER_ACCOUNTS:

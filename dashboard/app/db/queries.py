@@ -1578,10 +1578,13 @@ def get_user_role(email: str) -> str:
     The signed-in person's role.
     Returns: 'president' | 'assistant' | 'leader' | 'missionary' | 'unknown'
 
-    MISSION_LEADERSHIP first — it holds the addresses the President and the
-    assistants actually sign in with. Then MISSION_ORG's flags, which is all
-    there was before that tab existed and is still how a zone, district or
-    sister training leader is known (by their area's mailbox).
+    "president" and "assistant" come ONLY from MISSION_LEADERSHIP — the
+    addresses the President and the assistants actually sign in with. Then
+    MISSION_ORG's flags, which say who leads from an AREA mailbox: a zone,
+    district or sister training leader. An Is_AP or Is_MP row's mailbox is a
+    "leader" too, not an assistant: La Marina 1's is shared by four missionaries
+    and leads its district (Zackary, 2026-10-05 — it no longer opens the
+    leadership pages or sets goals; PLAN-2026-10-05-roster-access.md D11).
     """
     if not email:
         return "unknown"
@@ -1600,11 +1603,8 @@ def get_user_role(email: str) -> str:
         }
         if email_lower not in emails:
             continue
-        if str(row.get("Is_MP", "")).upper() == "TRUE":
-            return "president"
-        if str(row.get("Is_AP", "")).upper() == "TRUE":
-            return "assistant"
-        if any(str(row.get(f, "")).upper() == "TRUE" for f in ("Is_ZL", "Is_STL", "Is_DL")):
+        if any(str(row.get(f, "")).upper() == "TRUE"
+               for f in ("Is_MP", "Is_AP", "Is_ZL", "Is_STL", "Is_DL")):
             return "leader"
         return "missionary"
 

@@ -86,28 +86,25 @@ def resolve_leadership_task(task_id: str) -> None:
 
 
 def get_leadership_roster() -> list[dict]:
-    """MP + APs as [{"name": ..., "email": ...}], deduplicated by email,
-    sourced from active MISSION_ORG rows (Is_MP or Is_AP == "TRUE"). Both
-    companions on a leadership row are included (MP + spouse, or AP1 + AP2)."""
-    df = get_areas_df()
+    """The President and the assistants as [{"name": ..., "email": ...}] — the
+    people a task can be handed to. Active MISSION_LEADERSHIP rows, by the
+    address each signs in with.
+
+    Was MISSION_ORG's Is_MP / Is_AP rows until 2026-10-05, which meant one
+    entry: La Marina 1's shared mailbox, under whichever companion's name came
+    first. That mailbox no longer opens the Action Center (D11), so a task
+    handed to it could never be read.
+    """
+    from app.db.queries import get_mission_leadership
+
+    df = get_mission_leadership()
     if df.empty:
         return []
     roster: dict[str, str] = {}
     for _, row in df.iterrows():
-        is_leader = (
-            str(row.get("Is_MP", "")).upper() == "TRUE"
-            or str(row.get("Is_AP", "")).upper() == "TRUE"
-        )
-        if not is_leader:
-            continue
-        for name_col, email_col in (
-            ("Companion1_Name", "Companion1_Email"),
-            ("Companion2_Name", "Companion2_Email"),
-        ):
-            email = str(row.get(email_col, "")).strip().lower()
-            name = str(row.get(name_col, "")).strip()
-            if email and "@" in email and email not in roster:
-                roster[email] = name or email
+        email = str(row.get("Email", "")).strip().lower()
+        if email and "@" in email and email not in roster:
+            roster[email] = str(row.get("Name", "")).strip() or email
     return [
         {"name": name, "email": email}
         for email, name in sorted(roster.items(), key=lambda kv: kv[1])

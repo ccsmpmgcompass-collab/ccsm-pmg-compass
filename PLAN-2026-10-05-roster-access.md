@@ -139,7 +139,13 @@ Mine, stated so they can be overruled:
   mission section: an `Is_AP` row is treated as its district's DL in
   `a1c_buildPeopleMap` (IMOS gives La Marina 1 only the calling "AP", so
   MISSION_ORG never flags it `Is_DL`). The President keeps the report.
-- **D9 — The MISSION_ORG `Is_AP` / `Is_MP` flags still count as a leadership
+- **D11 — (Zackary, 2026-10-05) D9 is REVERSED.** The AP area's shared mailbox
+  no longer opens the leadership pages or sets goals: "president" and
+  "assistant" come only from MISSION_LEADERSHIP, and an `Is_AP` / `Is_MP`
+  MISSION_ORG row's mailbox is a "leader" (it still signs in). Centro de
+  Acción's task roster is the tab too. LEADERSHIP_TASKS does not exist yet, so
+  no task was assigned to the shared mailbox.
+- **D9 (superseded by D11)** — The MISSION_ORG `Is_AP` / `Is_MP` flags still count as a leadership
   role** alongside the tab, so nothing that works today stops working. The
   shared La Marina 1 mailbox therefore keeps leadership access — the same as
   before this plan.

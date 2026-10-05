@@ -118,7 +118,8 @@ st.caption(t("Hand something to another leader — it'll show in their Action Ce
 roster = [r for r in get_leadership_roster() if r["email"].lower() != current_email.lower()]
 
 if not roster:
-    st.info(t("No other leadership accounts found in MISSION_ORG."))
+    st.info(t("No other leader is listed. Add the President and the assistants "
+              "on Traslados > Liderazgo."))
 else:
     # Due-date checkbox lives OUTSIDE the form (same pattern as 10_Notas.py's
     # follow-up date) so ticking it reruns immediately and the date picker

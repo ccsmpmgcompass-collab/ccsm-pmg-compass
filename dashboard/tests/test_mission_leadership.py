@@ -81,8 +81,9 @@ def test_an_inactive_row_is_kept_for_the_editor():
 def test_no_tab_means_no_leaders_from_it():
     del _TABS[q.LEADERSHIP_TAB]
     assert q.get_leadership_roles() == {}
-    # ...and MISSION_ORG's flags still answer, as before the tab existed.
-    assert q.get_user_role("500407562@missionary.org") == "assistant"
+    # ...and MISSION_ORG's flags still answer — but an AP area's mailbox is a
+    # LEADER (it leads its district), never an assistant (D11).
+    assert q.get_user_role("500407562@missionary.org") == "leader"
 
 
 # ── roles ─────────────────────────────────────────────────────────────────────
@@ -102,7 +103,7 @@ def test_mission_org_still_names_area_mailboxes():
 @pytest.mark.parametrize("email,expected", [
     ("gutierrezsaucedom@churchofjesuschrist.org", True),   # tab: president
     ("anderson.phillips@missionary.org", True),            # tab: assistant
-    ("500407562@missionary.org", True),                    # MISSION_ORG Is_AP (D9)
+    ("500407562@missionary.org", False),                   # AP area's shared mailbox (D11)
     ("zackary.butterfield@missionary.org", True),          # owner
     ("ccsm.pmg.compass@gmail.com", True),                  # system
     ("500388234@missionary.org", False),                   # a zone leader's mailbox
@@ -117,6 +118,16 @@ def test_is_leadership(email, expected):
 def test_a_zone_leader_still_signs_in():
     """D2 narrows the leadership PAGES, not sign-in (2026-08-22 decision)."""
     assert "500388234@missionary.org" in auth.allowed_emails()
+    assert "500407562@missionary.org" in auth.allowed_emails()
+
+
+def test_the_task_roster_is_the_tab_not_the_ap_mailbox():
+    """Centro de Acción hands tasks to these people. It was MISSION_ORG's AP
+    row — the shared mailbox, which can no longer open the page (D11)."""
+    from app.db.action_center_queries import get_leadership_roster
+    assert [r["email"] for r in get_leadership_roster()] == [
+        "anderson.phillips@missionary.org",
+        "gutierrezsaucedom@churchofjesuschrist.org"]
 
 
 def test_the_tab_lets_leaders_sign_in_with_their_own_address():
@@ -139,6 +150,7 @@ def test_leaders_are_no_longer_hardcoded():
     ({"email": "anderson.phillips@missionary.org", "role": "assistant"}, True),
     ({"email": "zackary.butterfield@missionary.org", "role": "unknown"}, True),
     ({"email": "500388234@missionary.org", "role": "leader"}, False),
+    ({"email": "500407562@missionary.org", "role": "leader"}, False),
     ({"email": "grayden16gmc@gmail.com", "role": "unknown"}, False),
 ])
 def test_who_sets_goals(user, expected):

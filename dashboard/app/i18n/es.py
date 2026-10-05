@@ -824,8 +824,10 @@ ES: dict[str, str] = {
     "Assign to": "Asignar a",
     "Hand something to another leader — it'll show in their Action Center.":
         "Entregue algo a otro líder — aparecerá en su Centro de Acción.",
-    "No other leadership accounts found in MISSION_ORG.":
-        "No se encontraron otras cuentas de liderazgo en MISSION_ORG.",
+    "No other leader is listed. Add the President and the assistants on "
+    "Traslados > Liderazgo.":
+        "No hay otro líder en la lista. Agregue al Presidente y a los asistentes "
+        "en Traslados > Liderazgo.",
     "Due date": "Fecha límite",
     "Set a due date": "Establecer una fecha límite",
     "Notes (optional)": "Notas (opcional)",
