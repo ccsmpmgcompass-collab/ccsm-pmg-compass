@@ -646,23 +646,30 @@ def _render_leadership_tab() -> None:
     with st.form("leadership_form"):
         edited = []
         for i, r in enumerate(records):
-            vis = "visible" if i == 0 else "collapsed"
-            c_name, c_mail, c_role, c_act, c_note = st.columns([3, 4, 2, 1.3, 3])
+            # Two rows per person, not five columns in one: at the Traslados
+            # pane's narrower widths five columns squeezed "Activo" to a letter
+            # per line and cut the role and the address off (checked live
+            # 2026-10-05). Labels on every row, since on a phone the columns
+            # stack and a label shown only once would leave the rest unnamed.
+            if i:
+                st.divider()
+            c_name, c_mail = st.columns([2, 3])
             name = c_name.text_input(t("Name"), r.get("Name", ""), key=f"ld_name_{i}",
-                                     label_visibility=vis, placeholder=t("Name"))
+                                     placeholder=t("Name"))
             email = c_mail.text_input(t("Sign-in email"), r.get("Email", ""),
-                                      key=f"ld_email_{i}", label_visibility=vis,
+                                      key=f"ld_email_{i}",
                                       placeholder=t("firstname.lastname@missionary.org"))
+            c_role, c_note = st.columns([2, 3])
             role = c_role.selectbox(
                 t("Role"), list(LEADERSHIP_ROLES),
                 index=list(LEADERSHIP_ROLES).index(r.get("Role") or "assistant")
                 if (r.get("Role") or "assistant") in LEADERSHIP_ROLES else 1,
                 format_func=lambda k: role_label.get(k, k),
-                key=f"ld_role_{i}", label_visibility=vis)
-            active = c_act.checkbox(t("Active"), value=str(r.get("Active", "TRUE")).upper() == "TRUE",
-                                    key=f"ld_active_{i}")
+                key=f"ld_role_{i}")
             notes = c_note.text_input(t("Notes"), r.get("Notes", ""), key=f"ld_notes_{i}",
-                                      label_visibility=vis, placeholder=t("Notes"))
+                                      placeholder=t("Notes"))
+            active = st.checkbox(t("Active"), value=str(r.get("Active", "TRUE")).upper() == "TRUE",
+                                 key=f"ld_active_{i}")
             edited.append({"Name": name, "Email": email, "Role": role,
                            "Active": active, "Notes": notes})
         submitted = st.form_submit_button(t("Save leadership"), type="primary")
