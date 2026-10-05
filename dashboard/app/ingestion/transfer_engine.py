@@ -12,10 +12,11 @@ half runs in Apps Script — see CCSM_TransferWebApp.gs.
 MISSION_ORG rows and roster rows are dicts keyed by column name. MISSION_ORG
 uses `Area_Name`; a raw TRANSFER_IMPORT row uses `Area` (+ `Calling`), which
 parse_roster() normalizes into the MISSION_ORG shape. CCSM's live MISSION_ORG
-has no Language_Type, Area_ID, Companion3_Name, or Companion4_Name — every
-function below reads via .get(col, default), so those columns being absent is
-harmless (diffs against them always come out equal, new-area code that would
-set them just adds keys nothing reads).
+has no Language_Type or Area_ID — every function below reads via
+.get(col, default), so a column being absent is harmless, and apply writes only
+the columns the tab's own header carries. Companion3_Name / Companion4_Name
+were added to the tab on 2026-10-05 (PLAN-2026-10-05-roster-access.md R2), and
+flow through Apply from then on because _ROSTER_COPY_COLS always carried them.
 """
 
 from __future__ import annotations

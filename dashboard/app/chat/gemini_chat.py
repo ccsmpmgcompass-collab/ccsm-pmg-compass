@@ -287,8 +287,10 @@ def load_org_context() -> str:
                 role = " [holds SISTER TRAINING LEADER]"
             elif is_dl:
                 role = " [holds DISTRICT LEADER]"
+            c3 = str(row.get("Companion3_Name", "")).strip()
+            c4 = str(row.get("Companion4_Name", "")).strip()
             companions = " + ".join(
-                n for n in [c1, c2] if n and n.lower() not in ("nan", "")
+                n for n in [c1, c2, c3, c4] if n and n.lower() not in ("nan", "")
             )
             loc = f"{zone} / {district}" if district and district.lower() != "nan" else zone
             if companions:

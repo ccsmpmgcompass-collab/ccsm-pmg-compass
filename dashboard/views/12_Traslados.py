@@ -251,11 +251,18 @@ def _render_schedule_tab() -> None:
                if "District" in org.columns else [])
         )
 
+    # Companions 3 and 4 exist since 2026-10-05 (PLAN-2026-10-05 R2): La Marina
+    # 1 and Los Huertos each have four missionaries in IMOS, and the two-column
+    # tab dropped the last two of each. A column that is empty on every row is
+    # left out, so a mission of pairs sees the table it always saw.
     cols = [c for c in ("Area_Name", "Zone", "District", "Companion1_Name",
-                         "Companion2_Name") if c in org.columns]
+                         "Companion2_Name", "Companion3_Name", "Companion4_Name")
+            if c in org.columns and (not c.startswith(("Companion3", "Companion4"))
+                                     or org[c].astype(str).str.strip().ne("").any())]
     roster = org[cols].rename(columns={
         "Area_Name": t("Area"), "Zone": t("Zone"), "District": t("District"),
         "Companion1_Name": t("Companion 1"), "Companion2_Name": t("Companion 2"),
+        "Companion3_Name": t("Companion 3"), "Companion4_Name": t("Companion 4"),
     })
     with st.expander(t("Every area ({count})", count=fmt_int(len(roster)))):
         render_table(roster)

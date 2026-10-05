@@ -2171,6 +2171,8 @@ ES: dict[str, str] = {
     "Districts": "Distritos",
     "Companion 1": "Compañero 1",
     "Companion 2": "Compañero 2",
+    "Companion 3": "Compañero 3",
+    "Companion 4": "Compañero 4",
     "Every area ({count})": "Todas las áreas ({count})",
     "All zones": "Todas las zonas",
 

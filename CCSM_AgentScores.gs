@@ -488,7 +488,10 @@ function asc_loadActiveAreas() {
       areaCode:        obj['Area_Code'] || obj['Area_Name'],
       areaName:        obj['Area_Name'],
       zone:            obj['Zone'] || '',
-      missionaryNames: [obj['Companion1_Name'], obj['Companion2_Name']].filter(Boolean).join(' & ')
+      // Companions 3 and 4 exist on MISSION_ORG since 2026-10-05 (La Marina 1
+      // and Los Huertos are foursomes); a pair's row has them blank.
+      missionaryNames: [obj['Companion1_Name'], obj['Companion2_Name'],
+                        obj['Companion3_Name'], obj['Companion4_Name']].filter(Boolean).join(' & ')
     });
   }
 
