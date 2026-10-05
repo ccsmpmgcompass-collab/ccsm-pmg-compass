@@ -1471,14 +1471,123 @@ def get_allowed_emails() -> set:
     return emails
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# MISSION_LEADERSHIP — who the President and the assistants are
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# PLAN-2026-10-05-roster-access.md D1. MISSION_ORG cannot say who leads the
+# mission: its one Is_AP row (La Marina 1) carries a mailbox four missionaries
+# share, and no row is flagged Is_MP. So the President and both APs could only
+# sign in because their addresses were typed into auth.py, every AP change was
+# a code edit + push + Reboot, and the President received no email from the
+# system at all. This tab is the list instead: one row per person, under the
+# address they actually sign in with, edited on Traslados.
+
+LEADERSHIP_TAB = "MISSION_LEADERSHIP"
+LEADERSHIP_HEADERS = ["Name", "Email", "Role", "Active", "Notes"]
+#: The two roles the tab may hold. Zone, district and sister training leaders
+#: are NOT here: they lead from their own area's mailbox, and MISSION_ORG's
+#: flags already say who they are.
+LEADERSHIP_ROLES = ("president", "assistant")
+
+
+def _clean_leadership(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalised rows, invalid ones dropped: email lower-case with an '@',
+    role one of LEADERSHIP_ROLES, Active TRUE unless it says otherwise."""
+    if df.empty or "Email" not in df.columns:
+        return pd.DataFrame(columns=LEADERSHIP_HEADERS)
+    out = df.copy()
+    for col in LEADERSHIP_HEADERS:
+        if col not in out.columns:
+            out[col] = ""
+        out[col] = out[col].astype(str).str.strip()
+    out["Email"] = out["Email"].str.lower()
+    out["Role"] = out["Role"].str.lower()
+    out["Active"] = out["Active"].str.upper().replace({"": "TRUE"})
+    out = out[out["Email"].str.contains("@") & out["Role"].isin(LEADERSHIP_ROLES)]
+    return out[LEADERSHIP_HEADERS].reset_index(drop=True)
+
+
+def get_mission_leadership(active_only: bool = True) -> pd.DataFrame:
+    """MISSION_LEADERSHIP rows (Name | Email | Role | Active | Notes).
+
+    Empty frame when the tab does not exist yet — every caller then falls back
+    to MISSION_ORG's Is_MP / Is_AP flags, exactly as before the tab existed.
+    """
+    df = _clean_leadership(read_tab(LEADERSHIP_TAB, header_marker="Email"))
+    if active_only:
+        df = df[df["Active"] == "TRUE"].reset_index(drop=True)
+    return df
+
+
+def get_leadership_roles() -> dict:
+    """``{email: "president" | "assistant"}`` for every active row."""
+    df = get_mission_leadership()
+    return dict(zip(df["Email"], df["Role"]))
+
+
+def validate_leadership_rows(rows: list) -> list:
+    """The problems with ``rows`` (dicts keyed by LEADERSHIP_HEADERS), as
+    sentences — an empty list means they may be saved. A row with neither a
+    name nor an email is an empty editor line and is ignored."""
+    problems = []
+    seen = set()
+    for i, r in enumerate(rows, start=1):
+        name = str(r.get("Name", "") or "").strip()
+        email = str(r.get("Email", "") or "").strip().lower()
+        role = str(r.get("Role", "") or "").strip().lower()
+        if not (name or email):
+            continue
+        label = name or email or f"#{i}"
+        if "@" not in email or " " in email:
+            problems.append(f"{label}: '{email}' is not an email address")
+        if role not in LEADERSHIP_ROLES:
+            problems.append(f"{label}: role must be president or assistant")
+        if email and email in seen:
+            problems.append(f"{label}: {email} is listed twice")
+        seen.add(email)
+    return problems
+
+
+def save_mission_leadership(rows: list) -> None:
+    """Rewrite MISSION_LEADERSHIP from ``rows``; creates the tab on first save.
+    Raises ValueError when validate_leadership_rows finds a problem."""
+    from app.db.sheets_client import overwrite_tab
+
+    problems = validate_leadership_rows(rows)
+    if problems:
+        raise ValueError("; ".join(problems))
+    body = []
+    for r in rows:
+        name = str(r.get("Name", "") or "").strip()
+        email = str(r.get("Email", "") or "").strip().lower()
+        if not (name or email):
+            continue
+        active = r.get("Active", True)
+        if not isinstance(active, bool):
+            active = str(active).strip().upper() not in ("FALSE", "0", "NO")
+        body.append([name, email, str(r.get("Role", "")).strip().lower(),
+                     "TRUE" if active else "FALSE",
+                     str(r.get("Notes", "") or "").strip()])
+    overwrite_tab(LEADERSHIP_TAB, [LEADERSHIP_HEADERS] + body)
+
+
 def get_user_role(email: str) -> str:
     """
-    Derive role from MISSION_ORG flags.
+    The signed-in person's role.
     Returns: 'president' | 'assistant' | 'leader' | 'missionary' | 'unknown'
+
+    MISSION_LEADERSHIP first — it holds the addresses the President and the
+    assistants actually sign in with. Then MISSION_ORG's flags, which is all
+    there was before that tab existed and is still how a zone, district or
+    sister training leader is known (by their area's mailbox).
     """
     if not email:
         return "unknown"
     email_lower = email.lower().strip()
+    role = get_leadership_roles().get(email_lower)
+    if role:
+        return role
     df = get_areas_df()
     if df.empty:
         return "unknown"

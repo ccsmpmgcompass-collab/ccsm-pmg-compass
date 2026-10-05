@@ -6,77 +6,63 @@ Two-layer authentication:
   Layer 2 — Code-level allowlist: only approved emails get in regardless of SSO.
 
 Approved emails:
-  - ALWAYS_ALLOWED hardcoded list (CCSM system account; Mission President once added — see TODO below)
-  - Every Companion1_Email / Companion2_Email in MISSION_ORG — i.e. all 97 area
-    mailboxes, NOT just APs. (An earlier version of this docstring said
-    "Is_AP = TRUE"; get_allowed_emails() has never filtered on that flag.
-    Verified against the live sheet: 97 addresses, all @missionary.org.)
+  - _ALWAYS_ALLOWED: the owner and system accounts, hardcoded.
+  - Every active row of MISSION_LEADERSHIP — the Mission President and the
+    assistants, under the addresses they sign in with (since 2026-10-05,
+    PLAN-2026-10-05-roster-access.md D1). Edited on Traslados, so a new AP
+    is a row, not a code change.
+  - Every Companion1_Email / Companion2_Email in MISSION_ORG — i.e. every area
+    mailbox, NOT just APs. (An earlier version of this docstring said
+    "Is_AP = TRUE"; get_allowed_emails() has never filtered on that flag.)
   - STREAMLIT_DEV_EMAIL in secrets (LOCAL DEV ONLY — must be blank in production)
 
-Consequence worth knowing before go-live: MISSION_ORG holds no
-churchofjesuschrist.org addresses at all, so mission leadership cannot sign in
-on the strength of the sheet alone — the Mission President must be added to
-_ALWAYS_ALLOWED below or he is locked out of his own dashboard.
+Who may open the LEADERSHIP pages (is_leadership) is narrower than who may sign
+in: the President, the assistants and the owner accounts (D2). Zone, district
+and sister training leaders sign in with their area's mailbox, which several
+missionaries can share, and until 2026-10-05 that alone opened Traslados'
+Apply, Editar Envios and Mantenimiento's settings to 19 mailboxes.
 """
 
 import time
 import streamlit as st
-from app.db.queries import get_allowed_emails, get_user_role
+from app.db.queries import get_allowed_emails, get_leadership_roles, get_user_role
 from app.i18n import t
 
 _SESSION_TIMEOUT_SECONDS = 4 * 3600  # 4 hours
 
-# ── Hardcoded always-allowed list ──────────────────────────────────────────────
-# These are approved regardless of MISSION_ORG contents.
-# Add or remove emails here to control access tightly.
-_ALWAYS_ALLOWED = {
-    "ccsm.pmg.compass@gmail.com",   # CCSM system account (from AGENT_CONFIG)
-
-    # TEMPORARY — deploy verification only, remove before go-live.
-    "grayden16gmc@gmail.com",
-
-    # Individual missionaries who sign in with a personal address rather than
-    # their area's shared mailbox. MISSION_ORG only stores the shared mailbox
-    # (a missionary-ID address like 500488642@missionary.org), so anyone using
-    # a different address is invisible to get_allowed_emails() and must be
-    # listed here by hand.
-    "zackary.butterfield@missionary.org",   # Los Huertos, San Pedro zone
-    "anderson.phillips@missionary.org",     # AP2 (AP1 from the 2026-09-07 transfer)
-    "presley.egbers@missionary.org",        # AP — moved into La Marina 1 on 2026-09-07,
-                                            # replacing Hyrum Turner, who went home.
-    # Hyrum Turner was removed 2026-09-08. Note WHY these have to be listed by
-    # hand: MISSION_ORG cannot supply the address an AP signs in with — its one
-    # Is_AP row (La Marina 1) carries the shared missionary-ID mailbox
-    # 500407562@missionary.org for every companion in it — so a new AP is
-    # invisible to get_allowed_emails() and cannot open the goals or roster
-    # pages until his personal firstname.lastname@missionary.org address is
-    # added above. Do this every transfer that changes an assistant.
-
-    # Mission President — MISSION_ORG has no churchofjesuschrist.org
-    # addresses at all, so the sheet grants him nothing on its own (see
-    # module docstring); he can only sign in via this hardcoded entry.
-    "gutierrezsaucedom@churchofjesuschrist.org",   # Presidente Gutierrez
+# ── Hardcoded accounts ─────────────────────────────────────────────────────────
+#: The owner and system accounts: approved to sign in AND treated as leadership
+#: regardless of any tab, so the people who maintain the app can never be
+#: locked out of it by a sheet edit.
+_OWNER_ACCOUNTS = {
+    "ccsm.pmg.compass@gmail.com",           # CCSM system account (from AGENT_CONFIG)
+    "zackary.butterfield@missionary.org",   # owner — Los Huertos, San Pedro zone
 }
 
-# Mission-leadership roles, plus the always-allowed owner/admin accounts above.
-_LEADERSHIP_ROLES = {"president", "assistant", "leader"}
-
-#: Accounts that may SET the mission's goals, on top of MISSION_ORG's own
-#: Is_MP / Is_AP flags. Everything in _ALWAYS_ALLOWED except the temporary
-#: deploy-verification address, which is for reaching the app, not for setting
-#: what the mission is measured against.
+#: Approved to sign in regardless of MISSION_ORG / MISSION_LEADERSHIP.
 #:
-#: This exists because the role check alone admits NOBODY. Probed live
-#: 2026-09-05: not one of these five addresses appears in MISSION_ORG, so
-#: get_user_role() returns "unknown" for every one of them. The only row flagged
-#: Is_AP=TRUE carries AP1's missionary-ID mailbox (500407562@missionary.org),
-#: not the named address he signs in with, and NO row is flagged Is_MP at all —
-#: the mission president has no row in the tab. So a plain
-#: `role in ("president", "assistant")` gate was passing for exactly one
-#: account, the system gmail, and silently locking out the mission president,
-#: both assistants and the owner. Same reason _ALWAYS_ALLOWED itself exists,
-#: applied to the second question the app asks about a person.
-_GOAL_SETTERS = _ALWAYS_ALLOWED - {"grayden16gmc@gmail.com"}
+#: The President and the assistants used to be listed here by hand (and
+#: removed by hand — Hyrum Turner, 2026-09-08), because MISSION_ORG cannot
+#: supply the address an AP signs in with: its one Is_AP row (La Marina 1)
+#: carries the mailbox 500407562@missionary.org that four missionaries share.
+#: Since 2026-10-05 they are rows of MISSION_LEADERSHIP instead
+#: (PLAN-2026-10-05-roster-access.md D1) — a new AP is a row on Traslados, not
+#: a code change. Do not add them back here.
+_ALWAYS_ALLOWED = _OWNER_ACCOUNTS | {
+    # TEMPORARY — deploy verification only, remove before go-live. Signs in;
+    # is NOT leadership and does not set goals.
+    "grayden16gmc@gmail.com",
+}
+
+#: The roles that open the leadership pages. "leader" (ZL / STL / DL) was in
+#: this set until 2026-10-05 and is not now — D2.
+_LEADERSHIP_ROLES = {"president", "assistant"}
+
+#: Accounts that may SET the mission's goals beyond the president/assistant
+#: roles: the owner accounts. (Before MISSION_LEADERSHIP, the role check alone
+#: admitted nobody — probed live 2026-09-05, not one leader's sign-in address
+#: was in MISSION_ORG — so this list carried every leader by hand.)
+_GOAL_SETTERS = _OWNER_ACCOUNTS
 
 
 def can_set_goals(user: dict) -> bool:
@@ -90,14 +76,28 @@ def can_set_goals(user: dict) -> bool:
     return (user or {}).get("role") in ("president", "assistant") or email in _GOAL_SETTERS
 
 
+def allowed_emails() -> set:
+    """Every address that may sign in: the hardcoded accounts, MISSION_LEADERSHIP
+    and every MISSION_ORG area mailbox."""
+    return (_ALWAYS_ALLOWED
+            | {e.lower() for e in get_allowed_emails()}
+            | set(get_leadership_roles()))
+
+
 def is_leadership(email: str) -> bool:
     """
-    True for mission leadership (president/assistant/leader per MISSION_ORG) or
-    for the always-allowed owner/admin accounts. Use this to gate leadership-only
-    pages so the developer/owner account is never locked out.
+    True for the Mission President and the assistants (MISSION_LEADERSHIP, or
+    MISSION_ORG's Is_MP / Is_AP flags) and for the owner accounts. Gates the
+    leadership-only pages: Traslados' Apply, Editar Envios, Mantenimiento's
+    settings, Centro de Accion, Sugerencias and the action bell.
+
+    Zone, district and sister training leaders are NOT leadership here
+    (PLAN-2026-10-05-roster-access.md D2): they sign in with their area's
+    shared mailbox, and anyone who reads that mailbox could otherwise apply a
+    transfer.
     """
     email = (email or "").lower().strip()
-    if email in _ALWAYS_ALLOWED:
+    if email in _OWNER_ACCOUNTS:
         return True
     return get_user_role(email) in _LEADERSHIP_ROLES
 
@@ -179,9 +179,7 @@ def require_auth() -> dict:
         return cached
 
     # ── Allowlist check — both layers must pass ───────────────────────────────
-    allowed = _ALWAYS_ALLOWED | {e.lower() for e in get_allowed_emails()}
-
-    if email not in allowed:
+    if email not in allowed_emails():
         import datetime
         print(f"[AUTH BLOCKED] {email} attempted access at {datetime.datetime.utcnow().isoformat()}")
         st.error(
