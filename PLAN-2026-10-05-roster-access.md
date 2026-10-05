@@ -177,13 +177,35 @@ or the President and both APs are locked out until it is. After the push:
 
 | Step | State | Commit |
 |---|---|---|
-| C1 | not started | — |
-| C2 | not started | — |
-| R1 | not started | — |
-| R2 | not started | — |
-| R3 | not started | — |
-| R4 | not started | — |
-| R5 | not started | — |
-| R6 | not started | — |
-| R7 | not started | — |
-| S | not started — needs Zackary's approval per write | — |
+| C1 | **DONE** — suite green (was 11 failed): 9 date time-bombs, 2 tests of a deleted section | `2f9f898` |
+| C2 | **DONE** | `dd5c675` |
+| R1 | **DONE** | `4a90f86` |
+| R2 | **DONE** (+ `CCSM_AgentScores.gs` re-paste) | `e2c7e1f` |
+| R3 | **DONE** | `319c989`, RAW writes `ddf5a3d` |
+| R4 | **DONE**, verified in the local app; two-row layout after a live check | `2ae082e`, layout `2cecc00` |
+| R5 | **DONE** (+ re-paste `CCSM_AgentMissionReport.gs`, `CCSM_Agent1C.gs`) | `53421b0` |
+| R6 | **DONE**, verified in the local app (badge, closed-area card, Linaje table) | `693ded6` |
+| R7 | **DONE** — live: Collipulli 2 and Purén y Los Sauces now source "lineage" | `b50ea08` |
+| S | **DONE 2026-10-05**, all three approved by Zackary: MISSION_LEADERSHIP (3 rows), MISSION_ORG O:P companions 3-4 (La Marina 1, Los Huertos), AREA_LINEAGE (7 rows). MISSION_ORG still 108 rows. | live sheet |
+
+Also found and fixed: `test_action_center_maintenance.py` replaced
+`auth.is_leadership` without restoring it, which made everyone leadership for
+every later test (`fbb9a16`).
+
+**Not changed, noted:** five Apps Script node suites (`test_agent5b6`,
+`test_ccsm_data`, `test_ccsm_helpers`, `test_harness_selftest`,
+`test_quota_guards`) fail identically with and without this plan's changes.
+
+**What takes effect when:**
+- On push + Reboot: sign-in and leadership pages read MISSION_LEADERSHIP; the
+  Liderazgo section, lineage proposals/editor and Spanish badge go live.
+- On re-paste of the three .gs files: the President and both APs get the
+  Monday mission report and the weekly letter's mission section under their own
+  addresses; SCORES lists all four companions.
+- Monday 2026-10-12, 12:00 UTC: the first sector-goal job that reads
+  AREA_LINEAGE (this week's GOALS_CONFIG was written this morning without it).
+  A goal still moves at most 10% a week from last week's, so the change arrives
+  gradually.
+- 2026-10-19 transfer: Preview proposes lineage for whatever opens; new areas
+  get their mailbox from the roster; Preview warns if an assistant left the AP
+  area — update Liderazgo the same day.
