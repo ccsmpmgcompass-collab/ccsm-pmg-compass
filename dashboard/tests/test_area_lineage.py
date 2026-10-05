@@ -165,3 +165,91 @@ def test_the_shared_parser_gives_each_parent_and_its_cutoff():
             ["x", "2026-09-07", "rename", "Mismo", "Mismo", "", ""]]
     assert R.lineage(grid) == {
         "Centro": [("Norte", date(2026, 9, 7)), ("Sur", date(2026, 9, 7))]}
+
+
+# ── the history a new area inherits (R7) ──────────────────────────────────────
+
+from datetime import timedelta
+
+from app.analytics import area_goals as AG
+
+MONDAY = date(2026, 10, 5)
+CUTOFF = date(2026, 9, 7)
+
+
+def _nights(area, first, n, contacts):
+    return [{"Date": (first + timedelta(days=i)).isoformat(), "Area": area,
+             "contacts_made": str(contacts)} for i in range(n)]
+
+
+def _daily(*chunks):
+    return pd.DataFrame([r for c in chunks for r in c])
+
+
+def _goal(daily, lineage=None, roster=None):
+    roster = roster or {"Purén y Los Sauces": "Angol"}
+    return AG.compute(daily, roster, ["contacts_made"], week_start=MONDAY,
+                      stretch=1.0, lineage=lineage)
+
+
+def test_a_new_area_short_of_nights_counts_its_parents_nights():
+    """Purén y Los Sauces had 10 nights of its own on 2026-10-05; the rule
+    wants 14, so it borrowed Angol's median. With the link it is measured on
+    Los Sauces' nights before 09-07 plus its own."""
+    daily = _daily(_nights("Los Sauces", date(2026, 8, 24), 14, 5),
+                   _nights("Purén y Los Sauces", date(2026, 9, 24), 10, 5),
+                   _nights("Alemania 2", date(2026, 8, 24), 40, 20))
+    roster = {"Purén y Los Sauces": "Angol", "Alemania 2": "Angol"}
+    without = _goal(daily, roster=roster)["Purén y Los Sauces"]["contacts_made"]
+    assert without.source == AG.ZONE and without.goal == 140       # Alemania 2's 20/night
+    links = {"Purén y Los Sauces": [("Los Sauces", CUTOFF)]}
+    got = AG.compute(daily, roster, ["contacts_made"], week_start=MONDAY,
+                     stretch=1.0, lineage=links)["Purén y Los Sauces"]["contacts_made"]
+    assert got.source == AG.LINEAGE and got.goal == 35             # 5 a night, x7
+
+
+def test_parent_nights_after_the_transfer_do_not_count():
+    """A parent that somehow kept filing after it closed is not history the
+    child inherits."""
+    daily = _daily(_nights("Los Sauces", CUTOFF, 20, 9),
+                   _nights("Purén y Los Sauces", date(2026, 9, 24), 10, 5))
+    got = _goal(daily, {"Purén y Los Sauces": [("Los Sauces", CUTOFF)]})
+    assert got["Purén y Los Sauces"]["contacts_made"].source != AG.LINEAGE
+
+
+def test_an_area_with_enough_of_its_own_ignores_its_parent():
+    daily = _daily(_nights("Los Sauces", date(2026, 8, 24), 14, 50),
+                   _nights("Purén y Los Sauces", date(2026, 9, 7), 28, 5))
+    got = _goal(daily, {"Purén y Los Sauces": [("Los Sauces", CUTOFF)]})
+    g = got["Purén y Los Sauces"]["contacts_made"]
+    assert g.source == AG.OWN and g.goal == 35
+
+
+def test_a_merge_averages_its_parents_rather_than_adding_them():
+    daily = _daily(_nights("Norte", date(2026, 8, 24), 14, 4),
+                   _nights("Sur", date(2026, 8, 24), 14, 8))
+    got = AG.compute(daily, {"Centro": "Angol"}, ["contacts_made"], week_start=MONDAY,
+                     stretch=1.0,
+                     lineage={"Centro": [("Norte", CUTOFF), ("Sur", CUTOFF)]})
+    g = got["Centro"]["contacts_made"]
+    assert g.source == AG.LINEAGE and g.goal == 42                 # (4+8)/2 x 7
+
+
+def test_the_ki_rec_counts_a_parents_weeks_until_two_of_its_own(monkeypatch):
+    weekly = pd.DataFrame([
+        {"week_end_date": "2026-08-23", "area": "Los Sauces", "zone": "Angol", "ki_new_people_real": "10"},
+        {"week_end_date": "2026-08-30", "area": "Los Sauces", "zone": "Angol", "ki_new_people_real": "10"},
+        {"week_end_date": "2026-09-13", "area": "Purén y Los Sauces", "zone": "Angol", "ki_new_people_real": "4"},
+    ])
+    monkeypatch.setattr(q, "lineage_parents",
+                        lambda: {"Purén y Los Sauces": [("Los Sauces", CUTOFF)]})
+    framed, inherited = q._with_lineage(weekly, "Purén y Los Sauces")
+    assert inherited
+    mine = framed[framed["area"] == "Purén y Los Sauces"]
+    assert sorted(mine["ki_new_people_real"].astype(int)) == [4, 10, 10]
+    # Two weeks of its own and the parent stops counting.
+    two = pd.concat([weekly, pd.DataFrame([{"week_end_date": "2026-09-20",
+                     "area": "Purén y Los Sauces", "zone": "Angol",
+                     "ki_new_people_real": "6"}])], ignore_index=True)
+    _, inherited = q._with_lineage(two, "Purén y Los Sauces")
+    assert not inherited

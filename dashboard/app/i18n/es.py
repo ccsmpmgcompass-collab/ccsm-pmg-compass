@@ -2629,6 +2629,13 @@ ES: dict[str, str] = {
     "Add it in the Linaje editor below.":
         "La organización se aplicó, pero el linaje no se pudo escribir "
         "({error}). Agréguelo en el editor de Linaje, más abajo.",
+    "**{area} has less than two weeks of its own reports**, so REC below also "
+    "counts the weeks of {parents}, the area it continues, from before the "
+    "transfer. It becomes the area's own number after two weekly reports.":
+        "**{area} tiene menos de dos semanas de informes propios**, así que el "
+        "REC de abajo también cuenta las semanas de {parents}, el área que "
+        "continúa, de antes del traslado. Pasa a ser el número propio del área "
+        "después de dos informes semanales.",
     # Desgloses badge + marker
     "Formerly {old}": "Antes se llamaba {old}",
     "Split from {old}": "Dividida de {old}",

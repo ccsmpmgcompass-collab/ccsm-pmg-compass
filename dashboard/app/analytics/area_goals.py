@@ -10,9 +10,12 @@ every active sector and every nightly metric, for the week starting
     ``week_start``, divided by the nights it actually filed, times seven: what
     it does in a week on the nights it reports (G-D5's basis).
   * **too little history** (fewer than ``MIN_NIGHTS`` filed nights — a new,
-    renamed or silent sector) borrows its zone's median pace among the sectors
-    that do qualify, then the mission's pooled pace (G-D9). With no nightly data
-    at all, the configured `AGENT_CONFIG` goal stands in, unstretched.
+    renamed or silent sector) first counts the nights of the area(s) it
+    CONTINUES (AREA_LINEAGE) from before the transfer it began on, alongside
+    its own (PLAN-2026-10-05-roster-access.md D3). Failing that it borrows its
+    zone's median pace among the sectors that do qualify, then the mission's
+    pooled pace (G-D9). With no nightly data at all, the configured
+    `AGENT_CONFIG` goal stands in, unstretched.
   * **goal** — ``ceil(pace x stretch)``, never below 1 (G-D7), moved at most
     ``max(1, CAP x last week's goal)`` from last week's computed goal (G-D8).
     The minimum step of 1 is what lets a small goal move at all: 10% of 2 is
@@ -46,8 +49,8 @@ MIN_NIGHTS = 14
 #: The most a goal may move in one week, as a share of last week's (G-D8).
 CAP = 0.10
 
-LEADERSHIP, OWN, ZONE, MISSION, CONFIG = (
-    "leadership", "own", "zone", "mission", "config")
+LEADERSHIP, OWN, LINEAGE, ZONE, MISSION, CONFIG = (
+    "leadership", "own", "lineage", "zone", "mission", "config")
 
 
 @dataclass(frozen=True)
@@ -94,12 +97,35 @@ def _rows(daily: pd.DataFrame, start: date, end: date) -> pd.DataFrame:
     return out
 
 
+def inherited_rows(all_rows: pd.DataFrame, own: pd.DataFrame | None,
+                   links) -> pd.DataFrame | None:
+    """``own`` plus each parent's rows dated BEFORE that parent's cutoff.
+
+    ``links`` is ``[(parent_area, cutoff_date), ...]`` from AREA_LINEAGE. The
+    parents' rows keep their own Area name, so `pace` counts each parent's
+    nights separately: a split child gets its parent's per-week pace, and a
+    merged area gets roughly its parents' AVERAGE — one companionship, not the
+    sum of two (D7). None when the parents left nothing in the window.
+    """
+    if all_rows is None or all_rows.empty or not links:
+        return None
+    d = pd.to_datetime(all_rows["Date"], errors="coerce").dt.date
+    parts = [all_rows[(all_rows["Area"] == parent) & (d < cutoff)]
+             for parent, cutoff in links]
+    parts = [p for p in parts if not p.empty]
+    if not parts:
+        return None
+    if own is not None and not own.empty:
+        parts = [own] + parts
+    return pd.concat(parts, ignore_index=True)
+
+
 def compute(daily: pd.DataFrame, roster: dict, keys, *, week_start: date,
             stretch: float = 1.10, previous: dict | None = None,
             previous_overridden: dict | None = None,
             overrides: dict | None = None, configured: dict | None = None,
             weeks: int = WINDOW_WEEKS, min_nights: int = MIN_NIGHTS,
-            cap: float = CAP) -> dict:
+            cap: float = CAP, lineage: dict | None = None) -> dict:
     """``{area: {key: AreaGoal}}`` for every sector in ``roster``.
 
     ``roster`` — {area: zone} for the active sectors.
@@ -107,13 +133,18 @@ def compute(daily: pd.DataFrame, roster: dict, keys, *, week_start: date,
     ``previous_overridden`` — {area: set(keys)} that were leadership's last week.
     ``overrides`` — {area: {key: goal}} leadership's standing goals.
     ``configured`` — {key: goal}: AGENT_CONFIG's GOAL_* rows, the last fallback.
+    ``lineage`` — {area: [(parent, cutoff), ...]} from AREA_LINEAGE: a sector
+    short of ``min_nights`` of its own is measured on its own nights plus its
+    parents' from before ``cutoff``, when together they reach ``min_nights``.
     """
     previous = previous or {}
     previous_overridden = previous_overridden or {}
     overrides = overrides or {}
     configured = configured or {}
+    lineage = lineage or {}
     start, end = window(week_start, weeks)
-    rows = _rows(daily, start, end)
+    all_rows = _rows(daily, start, end)
+    rows = all_rows
     if not rows.empty and "Area" in rows.columns:
         rows = rows[rows["Area"].isin(set(roster))]
 
@@ -121,6 +152,17 @@ def compute(daily: pd.DataFrame, roster: dict, keys, *, week_start: date,
                if not rows.empty and "Area" in rows.columns else {})
     nights = {a: area_nights(g) for a, g in by_area.items()}
     qualified = {a for a, n in nights.items() if n >= min_nights}
+
+    # The parents' rows come from ALL rows in the window, not the roster-
+    # filtered ones: a parent is closed, so it is not on the roster.
+    inherited = {}
+    if lineage and not all_rows.empty and "Area" in all_rows.columns:
+        for area in roster:
+            if area in qualified or area not in lineage:
+                continue
+            combined = inherited_rows(all_rows, by_area.get(area), lineage[area])
+            if combined is not None and area_nights(combined) >= min_nights:
+                inherited[area] = combined
 
     out: dict = {}
     for key in keys:
@@ -140,6 +182,8 @@ def compute(daily: pd.DataFrame, roster: dict, keys, *, week_start: date,
                 continue
             if area in own:
                 measured, source = own[area], OWN
+            elif area in inherited and pace(inherited[area], key) is not None:
+                measured, source = pace(inherited[area], key), LINEAGE
             elif zone in zone_median:
                 measured, source = zone_median[zone], ZONE
             elif mission is not None:

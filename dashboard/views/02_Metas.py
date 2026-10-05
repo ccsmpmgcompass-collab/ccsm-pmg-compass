@@ -77,6 +77,7 @@ from app.db.queries import (
     get_recommended_transfer_goals,
     transfer_rec_basis,
     area_zone,
+    lineage_parents,
     get_mission_recommended_goals,
     get_mission_transfer_expectation_total,
     get_area_weekly_expectation,
@@ -1433,6 +1434,16 @@ if selected_section == "Area Goal Customization":
         _tg_basis = transfer_rec_basis(selected_area, _tg_weeks)
         _borrowed = sorted({_tg_basis.get(_k) for _k, _l, _f in transfer_ki_defs
                             if _tg_basis.get(_k) in ("zone", "mission")})
+        # An area that continues another (AREA_LINEAGE) counts its
+        # predecessor's weeks until it has two of its own — said the same way,
+        # once, above the grid (PLAN-2026-10-05 R7).
+        if any(_tg_basis.get(_k) == "lineage" for _k, _l, _f in transfer_ki_defs):
+            _parents = sorted({p for p, _c in lineage_parents().get(selected_area, [])})
+            st.info(t("**{area} has less than two weeks of its own reports**, so "
+                      "REC below also counts the weeks of {parents}, the area it "
+                      "continues, from before the transfer. It becomes the "
+                      "area's own number after two weekly reports.",
+                      area=selected_area, parents=" + ".join(_parents)))
         if _borrowed:
             _zone_name = str(area_zone(selected_area) or "").strip()
             if "zone" in _borrowed and _zone_name:

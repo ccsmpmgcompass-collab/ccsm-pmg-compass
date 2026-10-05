@@ -5,7 +5,8 @@ PLAN-2026-10-02-goals.md, step G7. Runs every Monday morning in GitHub Actions
 long before Agent1A's 9:15 PM email:
 
   1. reads DAILY_LOG, MISSION_ORG, QUESTIONS_CONFIG, AGENT_CONFIG, APP_SETTINGS,
-     last week's AREA_WEEKLY_GOALS rows and NIGHTLY_GOAL_OVERRIDES;
+     last week's AREA_WEEKLY_GOALS rows, NIGHTLY_GOAL_OVERRIDES and
+     AREA_LINEAGE (a new sector's inherited history — PLAN-2026-10-05 R7);
   2. computes each active sector's goal per nightly metric for the week starting
      this Monday — `app.analytics.area_goals.compute`, the one copy of the rule;
   3. writes that week's rows into AREA_WEEKLY_GOALS (a re-run replaces them, so
@@ -311,7 +312,8 @@ def main() -> None:
     goals = AG.compute(daily, areas, keys, week_start=week_start,
                        stretch=stretch(_grid(sh, "APP_SETTINGS")),
                        previous=prev, previous_overridden=prev_over,
-                       overrides=standing, configured=configured_goals(cfg))
+                       overrides=standing, configured=configured_goals(cfg),
+                       lineage=lineage(_grid(sh, "AREA_LINEAGE")))
     counts = summary(goals)
     _status(f"Week {week_start}: {len(goals)} sectors x {len(keys)} metrics; "
             + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())))

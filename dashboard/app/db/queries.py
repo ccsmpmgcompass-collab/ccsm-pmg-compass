@@ -812,7 +812,8 @@ def get_this_weeks_sector_goals() -> tuple:
         get_daily_log(60), R.roster(read_values("MISSION_ORG")),
         R.nightly_keys(read_values("QUESTIONS_CONFIG")), week_start=monday,
         stretch=1 + get_rec_stretch_pct() / 100.0, previous=prev,
-        previous_overridden=prev_over, configured=get_area_weekly_goals())
+        previous_overridden=prev_over, configured=get_area_weekly_goals(),
+        lineage=lineage_parents())
     return monday, goals
 
 
@@ -2960,8 +2961,51 @@ def _peer_means(df: pd.DataFrame, keys: list, area: str) -> tuple[dict, str]:
     return out, basis
 
 
+#: Completed weekly rows an area needs of its OWN before its predecessors'
+#: weeks stop counting toward its Key Indicator REC — two, the same two weeks
+#: the nightly sector goals ask for (area_goals.MIN_NIGHTS = 14).
+LINEAGE_MIN_WEEKS = 2
+
+
+def _with_lineage(df: pd.DataFrame, area: str | None) -> tuple[pd.DataFrame, bool]:
+    """``df`` with `area`'s predecessors' weekly rows from before the transfer
+    it began on, relabelled as `area` — when it has fewer than
+    LINEAGE_MIN_WEEKS completed weeks of its own. Returns (frame, inherited).
+
+    Relabelling is right here though not in the nightly pace: `_stretch_means`
+    averages an area's ROWS, one per area-week, so a merged area's two parents
+    on the same week average rather than add (D7) — and a split child gets its
+    one parent's weekly mean.
+    """
+    if area is None or df.empty or "area" not in df.columns:
+        return df, False
+    links = lineage_parents().get(str(area).strip())
+    if not links:
+        return df, False
+    names = df["area"].astype(str).str.strip()
+    own = df[names == str(area).strip()]
+    if "week_end_date" in own.columns:
+        own = exclude_current_week(own)
+    if len(own) >= LINEAGE_MIN_WEEKS:
+        return df, False
+    weeks = pd.to_datetime(df.get("week_end_date"), errors="coerce").dt.date \
+        if "week_end_date" in df.columns else None
+    if weeks is None:
+        return df, False
+    parts = []
+    for parent, cutoff in links:
+        hit = df[(names == parent) & (weeks < cutoff)]
+        if not hit.empty:
+            parts.append(hit.assign(area=str(area).strip()))
+    if not parts:
+        return df, False
+    return pd.concat([df] + parts, ignore_index=True), True
+
+
 def transfer_rec_basis(area: str, weeks: float) -> dict:
-    """``{key: "own" | "zone" | "mission"}`` — where each key's REC came from.
+    """``{key: "own" | "lineage" | "zone" | "mission"}`` — where each key's
+    REC came from. "lineage" means the area's own weeks were too few and its
+    predecessors' weeks from AREA_LINEAGE were counted with them.
 
     The page labels a borrowed number so leadership never reads a zone figure as
     this area's own measured performance. Kept separate from
@@ -2972,6 +3016,8 @@ def transfer_rec_basis(area: str, weeks: float) -> dict:
     nightly_keys = _goalable_nightly_keys(metric_defs)
     weekly_keys = _goalable_weekly_keys(metric_defs)
     nightly_df, weekly_df = get_weekly_ki(), get_weekly_form_data()
+    nightly_df, n_inh = _with_lineage(nightly_df, area)
+    weekly_df, w_inh = _with_lineage(weekly_df, area)
 
     own = {}
     own.update(_stretch_means(nightly_df, nightly_keys, area))
@@ -2983,7 +3029,7 @@ def transfer_rec_basis(area: str, weeks: float) -> dict:
     out = {}
     for k in nightly_keys + weekly_keys:
         if k in own:
-            out[k] = "own"
+            out[k] = "lineage" if (w_inh if k in weekly_keys else n_inh) else "own"
         else:
             out[k] = w_basis if k in weekly_keys else n_basis
     return out
@@ -3214,6 +3260,11 @@ def get_recommended_transfer_goals(area: str, weeks: float) -> dict:
     weekly_keys = _goalable_weekly_keys(metric_defs)
 
     nightly_df, weekly_df = get_weekly_ki(), get_weekly_form_data()
+    # A new area with under two weeks of its own counts the weeks of the
+    # area(s) it continues (AREA_LINEAGE) before borrowing its zone's median
+    # below — PLAN-2026-10-05-roster-access.md D3.
+    nightly_df, _ = _with_lineage(nightly_df, area)
+    weekly_df, _ = _with_lineage(weekly_df, area)
 
     weekly: dict = {}
     weekly.update(_stretch_means(nightly_df, nightly_keys, area))
@@ -4379,7 +4430,10 @@ def lineage_parents() -> dict:
     whose history a new area inherits until it has its own (R7). Parsed by the
     weekly sector-goal job's own reader, so the job and the page agree."""
     from app.ingestion import area_goals_runner as R
-    return R.lineage(read_values(LINEAGE_TAB))
+    df = get_area_lineage()
+    if df.empty:
+        return {}
+    return R.lineage([list(df.columns)] + df.astype(str).values.tolist())
 
 
 def _lineage_records() -> list:
