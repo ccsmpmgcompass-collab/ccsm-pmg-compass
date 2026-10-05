@@ -715,24 +715,33 @@ not a code change.
 > (GOALS_CONFIG, the nightly goals, Agent2) are now `PLAN-2026-10-02-goals.md`.
 > Step 6 (automation) was done by `PLAN-2026-09-19-tableau-autosync.md`; this
 > file's STATUS table predates both and is not updated row by row.
+>
+> **2026-10-05:** the test baseline, section-number and sheet-capacity bullets
+> below were closed or re-measured by `PLAN-2026-10-05-roster-access.md` (C1,
+> §0.5); each bullet says what became of it.
 
-- **14 pre-existing test failures** — the standing baseline. **Corrected
-  2026-09-05: it is 14, not the 13 carried in the notes.** Measured by stashing
-  the working change and re-running: identical 14 either way. They cluster in
-  five page-render files and several fail as "picker did not render", which
-  looks like one shared harness/fixture cause rather than fourteen bugs. Worth a cleanup pass eventually. **Do not blame a new
-  change for them: stash and re-run first.**
-- **Section numbers drift on fragment reruns** — `design_system.py`'s
-  label→number map keys on the full label, which is not stable.
+- ~~**14 pre-existing test failures**~~ **CLOSED 2026-10-05** — the suite is
+  green. The count fell 14 → 13 → 11 over September, and the diagnosis carried
+  in the notes ("one shared harness cause", later "stale expectations of Panel
+  sections the redesign removed") was wrong for most of them: **9 were date
+  time-bombs**, fixtures pinned to late July / early August and read through
+  windows measured back from today; 2 drove Metas' deleted Mission Goals
+  section. Fixed in the fixtures, not the pages (PLAN-2026-10-05 step C1).
+- ~~**Section numbers drift on fragment reruns**~~ **MOOT** — no page numbers
+  its sections since the data-pages redesign (2026-09-18) retired them;
+  `render_section_label(numbered=True)` has no caller.
 - **A zone-vs-zone "who improved most" leaderboard** — ruled out of Desgloses
   scope; the twin machinery now exists and it would be cheap on the Panel.
 - **Per-zone baptisms** — blocked on whether the Tableau view exposes them.
   Do **not** splice `WEEKLY_KI.ki_baptized_confirmed_real` into the certified
   series; it undercounts by roughly half (~18–20 against an official 41).
-- **Sheet capacity and ownership** (`PLAN-2026-08-22.md` §3.2h) — ~650,000 empty
-  cells reclaimable, `NIGHTLY_FORM_RAW` at 272 columns with unmeasured growth,
-  and `COMPASS_CCSM` owned by a personal `gmail.com` account rather than a
-  `churchofjesuschrist.org` one. That last one is a continuity/handoff question.
+- **Sheet capacity and ownership** — **re-measured 2026-10-05**
+  (PLAN-2026-10-05 §0.5, D8): 2.25M grid cells, 22.5% of the 10M cap, 1.5M of
+  them empty grid — deliberately NOT trimmed, because a row trim breaks every
+  Apps Script writer that appends with `getRange(lastRow + 1, …)`. The real
+  limit is `NIGHTLY_FORM_RAW`, ~260k cells a month at 45 areas; archiving it
+  is queued there as its own project. The sheet is owned by the system account
+  `ccsm.pmg.compass@gmail.com` — a handoff question for Zackary, unchanged.
 - **Nightly reporting compliance ~78%, dipped to 44% on 2026-09-02** —
   operational, not code.
 
@@ -823,9 +832,9 @@ commit — same as `PLAN-2026-09-03-desgloses-progression.md`._
 | 3 — Phase 3.3 acceptance | not started | — |
 | 4 — Phase 3.5 payoff | not started | — |
 | 5 — Phase 4 sweep | not started | — |
-| 6 — Phase 3.4 automation | not started | — |
+| 6 — Phase 3.4 automation | **DONE** by `PLAN-2026-09-19-tableau-autosync.md` (nightly, not monthly) | — |
 | 7a — `Transfer_Number` parses | **DONE** | `9c33d83` |
 | 7b — Transfer-year library | **DONE** | `8eac9f8` |
 | 7c-7f, 7i — store, Metas, bulk, Resumen | **DONE**, verified in the app | `cf28071` |
 | 7g, 7h — KI card row, Panel bar | **DONE**, verified in the app | `4d58d39` |
-| 7 — first live save | **OPEN** — `AREA_TRANSFER_GOALS` is created on first save and needs Zackary's approval | — |
+| 7 — first live save | **DONE** 2026-09-08 (Los Huertos, 2026-5); all 45 areas set for 2026-6 | — |
