@@ -410,7 +410,7 @@ def test_traslados_leadership_section_renders():
     at = _run("views/12_Traslados.py", traslados_section_val="Leadership")
     body = _text(at)
     assert "LIDERAZGO DE LA MISIÓN" in body.upper()
-    assert "Todavía no hay nadie en la lista" in body
+    assert "No hay nadie en la lista" in body
     assert any(b.label == "Guardar liderazgo" for b in at.button)
     assert any(w.key == "ld_email_0" for w in at.text_input)
 

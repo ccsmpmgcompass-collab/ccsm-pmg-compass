@@ -636,9 +636,10 @@ def _render_leadership_tab() -> None:
                      "for anyone released, and add the new assistant.",
                      names=", ".join(moved)))
     if current.empty:
-        st.info(t("No one is listed yet. Until someone is, the app knows the "
-                  "assistants only by their area's shared mailbox, and the "
-                  "President receives no email from it."))
+        st.warning(t("No one is listed. Until someone is, nobody receives the "
+                     "Monday mission report or the mission section of the weekly "
+                     "letter — they never fall back to the assistants' shared "
+                     "area mailbox, which gets its district's section instead."))
 
     role_label = {"president": t("President"), "assistant": t("Assistant")}
     records = current.to_dict("records") + [

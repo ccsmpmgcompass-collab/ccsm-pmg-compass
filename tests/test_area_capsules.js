@@ -362,7 +362,10 @@ const ZONE = [
   const ROLE = {
     zone:     { Is_ZL: 'TRUE',  Is_DL: 'FALSE', Is_AP: 'FALSE' },
     district: { Is_ZL: 'FALSE', Is_DL: 'TRUE',  Is_AP: 'FALSE' },
-    mission:  { Is_ZL: 'FALSE', Is_DL: 'FALSE', Is_AP: 'TRUE'  },
+    // The mission letter is the President's (Is_MP): since 2026-10-05 an Is_AP
+    // area's shared mailbox leads its DISTRICT, and the assistants get the
+    // mission section through MISSION_LEADERSHIP, not a MISSION_ORG flag.
+    mission:  { Is_ZL: 'FALSE', Is_DL: 'FALSE', Is_AP: 'FALSE', Is_MP: 'TRUE' },
   };
   function letter(scopeName) {
     const totals = { total_areas: 3, submitted: 3, contacts_made: 168 };

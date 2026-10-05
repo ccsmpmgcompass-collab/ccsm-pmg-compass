@@ -103,13 +103,15 @@ assert.notStrictEqual(k({ type: 'DL', zone: 'Z', district: 'Distrito Uno' }),
                       k({ type: 'DL', zone: 'Z', district: 'Distrito Dos' }),
   'different districts are different sections');
 
-// Two AP rows in different zones collapse to a single mission summary.
+// Two AP rows in one district collapse to a single district summary — an AP
+// area's mailbox leads its district (2026-10-05), never the mission.
 const twoAp = scope.a1c_buildPeopleMap([
   row({ Is_AP: 'TRUE', Area_Name: 'Área Uno', Zone: 'Zona Uno' }),
   row({ Is_AP: 'TRUE', Area_Name: 'Área Dos', Zone: 'Zona Dos' })
 ]);
 assert.strictEqual(twoAp[SHARED].roles.length, 1,
-  'two AP rows must not render the mission summary twice');
+  'two AP rows in one district must not render its summary twice');
+assert.strictEqual(twoAp[SHARED].roles[0].type, 'DL');
 
 // ===========================================================================
 // 4. End to end: the rendered letter carries exactly one section heading.
@@ -130,36 +132,44 @@ const summaries = {
   districts: { 'Distrito Uno': { total_areas: 1, submitted: 1, contacts_made: 40 } }
 };
 
-[['Is_ZL', 'Zona'], ['Is_DL', 'Distrito'], ['Is_AP', 'la Misión']].forEach((pair) => {
-  const people = scope.a1c_buildPeopleMap([row({ [pair[0]]: 'TRUE' })]);
-  const html = scope.a1c_buildEmail(people[SHARED], areas, summaries, new Date(2026, 7, 23));
-  const found = html.match(HEADINGS) || [];
-  assert.strictEqual(found.length, 1,
-    pair[0] + ' letter must contain exactly one leadership summary, got ' + found.length);
-});
+[['Is_ZL', 'Zona'], ['Is_DL', 'Distrito'], ['Is_AP', 'Distrito'], ['Is_MP', 'la Misión']]
+  .forEach((pair) => {
+    const people = scope.a1c_buildPeopleMap([row({ [pair[0]]: 'TRUE' })]);
+    const html = scope.a1c_buildEmail(people[SHARED], areas, summaries, new Date(2026, 7, 23));
+    const found = html.match(HEADINGS) || [];
+    assert.strictEqual(found.length, 1,
+      pair[0] + ' letter must contain exactly one leadership summary, got ' + found.length);
+    assert.strictEqual(found[0], 'Resumen de ' + pair[1],
+      pair[0] + ' letter must carry the ' + pair[1] + ' summary, got ' + found[0]);
+  });
 
 console.log('test_duplicate_leadership_section: OK');
 
 // ===========================================================================
 // MISSION_LEADERSHIP (PLAN-2026-10-05-roster-access.md D1): the President and
 // the assistants get the mission section under their own addresses, with no
-// area of their own; the AP area's shared mailbox keeps its letter; a person
-// already reached through MISSION_ORG gets the mission section once.
+// area of their own. The AP area's shared mailbox keeps its own area and gets
+// its DISTRICT's section, as district leader — never the mission's
+// (Zackary, 2026-10-05).
 // ===========================================================================
 const withLeaders = scope.a1c_buildPeopleMap(
-  [row({ Is_AP: 'TRUE' })],
+  [row({ Is_AP: 'TRUE', District: 'La Marina 1' })],
   [{ email: 'Presidente@ChurchOfJesusChrist.org', name: 'Presidente', role: 'president' },
-   { email: 'ap.uno@missionary.org', name: 'AP Uno', role: 'assistant' },
-   { email: SHARED, name: 'Elder Uno', role: 'assistant' }]);
+   { email: 'ap.uno@missionary.org', name: 'AP Uno', role: 'assistant' }]);
 const pres = withLeaders['presidente@churchofjesuschrist.org'];
 assert.ok(pres, 'the President must receive a letter');
 assert.deepStrictEqual(pres.areas, []);
 assert.strictEqual(pres.roles.length, 1);
 assert.strictEqual(pres.roles[0].type, 'MP');
 assert.strictEqual(withLeaders['ap.uno@missionary.org'].roles[0].type, 'AP');
-assert.strictEqual(withLeaders[SHARED].roles.length, 1,
-  'the shared AP mailbox, also listed, must not get the mission section twice');
+assert.deepStrictEqual(withLeaders[SHARED].roles.map((r) => [r.type, r.district]),
+  [['DL', 'La Marina 1']],
+  'the shared AP mailbox must get its district, as district leader, and not the mission');
 assert.strictEqual(withLeaders[SHARED].areas.length, 1, 'and keeps its own area');
+
+// An AP row with no district gets no leadership section rather than the mission's.
+const noDistrict = scope.a1c_buildPeopleMap([row({ Is_AP: 'TRUE', District: '' })], []);
+assert.deepStrictEqual(noDistrict[SHARED].roles, []);
 
 // No tab in this stub spreadsheet: the one-argument call (as runAgent1C makes)
 // behaves exactly as before.

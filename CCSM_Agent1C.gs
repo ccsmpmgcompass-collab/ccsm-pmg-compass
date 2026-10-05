@@ -539,6 +539,17 @@ function a1c_buildPeopleMap(fullOrgData, leadership) {
     // Measured on the live roster: 20 of the 21 leaders got a duplicate
     // (9 DL, 6 STL, 4 ZL, 1 AP).
     var role = a1c_getRoleFromRow(orgRow);
+    // The AP area's mailbox (La Marina 1: four missionaries, one inbox) is
+    // read by its DISTRICT's leader, not by the mission's: the assistants
+    // receive the mission section at their own addresses through
+    // MISSION_LEADERSHIP below. So that mailbox gets its district's summary,
+    // as district leader (Zackary, 2026-10-05). IMOS gives the area one
+    // calling, "AP", so MISSION_ORG never flags it Is_DL; this is where it
+    // becomes one. No district on the row means no leadership section at all,
+    // never a fallback to the mission's.
+    if (role && role.type === 'AP') {
+      role = role.district ? { type: 'DL', zone: role.zone, district: role.district } : null;
+    }
     if (role) {
       var key = a1c_roleSectionKey_(role);
       var already = people[email].roles.some(function(existing) {

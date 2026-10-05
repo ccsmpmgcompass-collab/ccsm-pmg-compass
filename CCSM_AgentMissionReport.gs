@@ -32,12 +32,14 @@
  *
  * RECIPIENTS: every active row of MISSION_LEADERSHIP — the Mission President
  * and the assistants under the addresses they actually use (since 2026-10-05,
- * PLAN-2026-10-05-roster-access.md D1). Before that tab existed this went only
- * to MISSION_ORG rows flagged Is_AP / Is_MP, which on CCSM's roster meant the
- * one mailbox La Marina 1's four missionaries share — and never the President,
- * whom no row is flagged for. Those flags remain the FALLBACK when the tab is
- * missing or empty, deduped by Companion1_Email/Companion2_Email (same
- * shared-mailbox handling as CCSM_Agent1C.gs's people map).
+ * PLAN-2026-10-05-roster-access.md D1) — and NOBODY else. Before that tab
+ * existed this went to MISSION_ORG rows flagged Is_AP / Is_MP, which on CCSM's
+ * roster meant the one mailbox La Marina 1's four missionaries share, and never
+ * the President, whom no row is flagged for. Zackary, 2026-10-05: the report is
+ * for the assistants' own addresses, not that shared mailbox — so there is no
+ * fallback to the flags. An empty tab sends nothing and logs an ERROR saying
+ * so, rather than quietly mailing the shared inbox. (That mailbox now gets its
+ * district's section of Agent1C's weekly letter instead.)
  *
  * CONTENT (all Spanish, all CCSM's own metrics):
  *   1. Mission-wide KPI tiles for the week (sums across every active area)
@@ -79,17 +81,15 @@ function runAgentMissionReport() {
     var scores        = amr_loadScores();
 
     var recipients = amr_loadLeadershipEmails();
-    if (recipients.length) {
-      notes.push('Recipients: MISSION_LEADERSHIP (' + recipients.length + ')');
-    } else {
-      recipients = amr_collectApMpRecipients(missionOrg);
-    }
     if (recipients.length === 0) {
-      notes.push('No AP/MP recipients found (MISSION_LEADERSHIP is empty and no MISSION_ORG row has Is_AP or Is_MP set)');
-      logRun('AgentMissionReport', 'SUCCESS', null, 0, null, notes.join(' | '));
+      notes.push('NO RECIPIENTS: MISSION_LEADERSHIP has no active row, so the mission ' +
+                 'report went to nobody. List the President and the assistants on ' +
+                 'Traslados > Liderazgo.');
+      logRun('AgentMissionReport', 'ERROR', null, 0, null, notes.join(' | '));
       Logger.log('AgentMissionReport: ' + notes.join(' | '));
       return;
     }
+    notes.push('Recipients: MISSION_LEADERSHIP (' + recipients.length + ')');
 
     var subject = amr_buildSubject(weekEnd);
     var body    = amr_buildEmail(weekEnd, summary, scores);
@@ -275,11 +275,11 @@ function amr_loadScores() {
 }
 
 /**
- * Active MISSION_LEADERSHIP addresses, lower-cased and deduped. [] when the
- * tab is missing (getTab throws) or holds no valid row, so the caller falls
- * back to MISSION_ORG's flags. Same validity rule as the dashboard's
- * queries._clean_leadership: an '@' in the email, role president or
- * assistant, and Active anything but FALSE (blank counts as active).
+ * Active MISSION_LEADERSHIP addresses, lower-cased and deduped — the report's
+ * whole recipient list. [] when the tab is missing (getTab throws) or holds no
+ * valid row. Same validity rule as the dashboard's queries._clean_leadership:
+ * an '@' in the email, role president or assistant, and Active anything but
+ * FALSE (blank counts as active).
  */
 function amr_loadLeadershipEmails() {
   var data;
@@ -299,20 +299,6 @@ function amr_loadLeadershipEmails() {
     out[email] = true;
   }
   return Object.keys(out);
-}
-
-function amr_collectApMpRecipients(missionOrg) {
-  var emails = {};
-  missionOrg.forEach(function(row) {
-    var isLeader = String(row['Is_AP']).toUpperCase() === 'TRUE' || String(row['Is_MP']).toUpperCase() === 'TRUE';
-    if (!isLeader) return;
-    [row['Companion1_Email'], row['Companion2_Email']].forEach(function(email) {
-      email = String(email || '').trim().toLowerCase();
-      if (!email || email.indexOf('@') < 0) return;
-      emails[email] = true;
-    });
-  });
-  return Object.keys(emails);
 }
 
 // ─── EMAIL BUILDER ───────────────────────────────────────────────────────────

@@ -2707,12 +2707,14 @@ ES: dict[str, str] = {
         "{names}: figura(n) aquí como asistente(s), pero MISSION_ORG ya no "
         "lo(s) ubica en el área de los asistentes. Desmarque Activo para quien "
         "haya sido relevado y agregue al nuevo asistente.",
-    "No one is listed yet. Until someone is, the app knows the assistants only "
-    "by their area's shared mailbox, and the President receives no email from "
-    "it.":
-        "Todavía no hay nadie en la lista. Mientras tanto, la aplicación conoce "
-        "a los asistentes solo por el correo compartido de su área, y el "
-        "Presidente no recibe ningún correo de ella.",
+    "No one is listed. Until someone is, nobody receives the Monday mission "
+    "report or the mission section of the weekly letter — they never fall back "
+    "to the assistants' shared area mailbox, which gets its district's section "
+    "instead.":
+        "No hay nadie en la lista. Mientras tanto, nadie recibe el informe de la "
+        "misión del lunes ni la sección de la misión de la carta semanal: nunca "
+        "se envían al correo compartido del área de los asistentes, que recibe "
+        "la sección de su distrito.",
     "President": "Presidente",
     "Assistant": "Asistente",
     "Sign-in email": "Correo de ingreso",

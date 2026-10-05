@@ -132,6 +132,13 @@ Mine, stated so they can be overruled:
   run (only `appendRow` extends the grid), and the sheet sits at 22.5% of the
   cap. The real fix is archiving old `NIGHTLY_FORM_RAW` rows — queued as its own
   project (§3).
+- **D10 — (Zackary, 2026-10-05, after the push) The mission report goes ONLY
+  to MISSION_LEADERSHIP** — no fallback to the AP area's shared mailbox, and an
+  empty tab sends nothing and logs an ERROR. **That shared mailbox gets its
+  district's section of the weekly letter, as district leader**, instead of the
+  mission section: an `Is_AP` row is treated as its district's DL in
+  `a1c_buildPeopleMap` (IMOS gives La Marina 1 only the calling "AP", so
+  MISSION_ORG never flags it `Is_DL`). The President keeps the report.
 - **D9 — The MISSION_ORG `Is_AP` / `Is_MP` flags still count as a leadership
   role** alongside the tab, so nothing that works today stops working. The
   shared La Marina 1 mailbox therefore keeps leadership access — the same as

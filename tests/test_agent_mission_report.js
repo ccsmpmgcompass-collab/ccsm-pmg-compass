@@ -81,17 +81,38 @@ for (let i = 1; i < orgData.length; i++) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Recipients come ONLY from MISSION_LEADERSHIP (2026-10-05). The Is_AP / Is_MP
+// flags set above stay on MISSION_ORG to prove they are ignored: the AP area's
+// shared mailbox (ap@example.com here, La Marina 1's on the live roster) must
+// never receive this report. An inactive row, a bad address and a role the
+// tab cannot hold are skipped.
+// ---------------------------------------------------------------------------
+const leadSheet = ss.insertSheet('MISSION_LEADERSHIP');
+leadSheet.getRange(1, 1, 6, 5).setValues([
+  ['Name', 'Email', 'Role', 'Active', 'Notes'],
+  ['Presidente', 'Presidente@ChurchOfJesusChrist.org', 'president', true, ''],
+  ['AP Uno', 'ap.uno@missionary.org', 'Assistant', 'TRUE', ''],
+  ['AP Viejo', 'ap.viejo@missionary.org', 'assistant', false, 'relevado'],
+  ['Mal', 'sin-arroba', 'assistant', 'TRUE', ''],
+  ['ZL', 'zl@missionary.org', 'zone leader', 'TRUE', ''],
+]);
+assert.deepStrictEqual(scope.amr_loadLeadershipEmails().sort(),
+  ['ap.uno@missionary.org', 'presidente@churchofjesuschrist.org'],
+  'the recipients are the two valid active rows, and not ap@example.com / mp@example.com');
+
 scope.runAgentMissionReport();
 
 // ===========================================================================
-// Recipients: exactly the AP and MP addresses, no duplicates, no one else.
+// Recipients: one send per valid active MISSION_LEADERSHIP row, no one else.
 // ===========================================================================
 // TEST_MODE defaults TRUE in the builder, so resolveRecipient() redirects
 // every real address to the TEST_INBOX_EMAIL -- same as every other suite
 // in this repo (see test_agent1c.js). 2 sends still means 2 real
-// recipients were resolved (AP + MP), even though both land in one inbox.
+// recipients were resolved, even though both land in one inbox; WHICH two is
+// asserted on amr_loadLeadershipEmails above.
 const emails = env.state.emails;
-assert.strictEqual(emails.length, 2, 'expected exactly 2 emails, one per AP/MP recipient');
+assert.strictEqual(emails.length, 2, 'expected exactly 2 emails, one per MISSION_LEADERSHIP row');
 assert.ok(emails.every((e) => e.to === 'CCSM.PMG.Compass@gmail.com'),
   'expected both sends redirected to the TEST_MODE inbox');
 
@@ -140,26 +161,18 @@ console.log('scores summary OK');
 console.log('agent mission report OK');
 
 // ===========================================================================
-// MISSION_LEADERSHIP (PLAN-2026-10-05-roster-access.md D1): once the tab has
-// active rows, the report goes to THEM — the President and the assistants
-// under their own addresses — and no longer to the Is_AP / Is_MP mailboxes.
-// An inactive row, a bad address and a role the tab cannot hold are skipped.
+// No fallback (2026-10-05): with nobody active in MISSION_LEADERSHIP the report
+// goes to NOBODY — not to the AP area's shared mailbox — and the run is logged
+// as an ERROR so the empty list gets noticed.
 // ===========================================================================
-const leadSheet = ss.insertSheet('MISSION_LEADERSHIP');
-leadSheet.getRange(1, 1, 6, 5).setValues([
-  ['Name', 'Email', 'Role', 'Active', 'Notes'],
-  ['Presidente', 'Presidente@ChurchOfJesusChrist.org', 'president', true, ''],
-  ['AP Uno', 'ap.uno@missionary.org', 'Assistant', 'TRUE', ''],
-  ['AP Viejo', 'ap.viejo@missionary.org', 'assistant', false, 'relevado'],
-  ['Mal', 'sin-arroba', 'assistant', 'TRUE', ''],
-  ['ZL', 'zl@missionary.org', 'zone leader', 'TRUE', ''],
-]);
-assert.deepStrictEqual(scope.amr_loadLeadershipEmails().sort(),
-  ['ap.uno@missionary.org', 'presidente@churchofjesuschrist.org']);
-
+leadSheet.getRange(2, 4, 2, 1).setValues([[false], ['FALSE']]);
+assert.deepStrictEqual(scope.amr_loadLeadershipEmails(), []);
 env.state.emails.length = 0;
 scope.runAgentMissionReport();
-assert.strictEqual(env.state.emails.length, 2,
-  'expected one report per active MISSION_LEADERSHIP row, and none to the Is_AP/Is_MP mailboxes');
+assert.strictEqual(env.state.emails.length, 0,
+  'an empty MISSION_LEADERSHIP must send nothing, not fall back to the Is_AP mailbox');
+const runLog = ss.getSheetByName('AGENT_RUN_LOG').getDataRange().getValues();
+const last = runLog.filter((r) => r[1] === 'AgentMissionReport').pop();
+assert.ok(last && last.indexOf('ERROR') >= 0, 'expected the empty run logged as ERROR: ' + last);
 
 console.log('MISSION_LEADERSHIP recipients OK');
