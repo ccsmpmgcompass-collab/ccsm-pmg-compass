@@ -18,11 +18,14 @@ seven ki_*_real / ki_*_meta pairs, and SCORE_CONFIG's two sections are separated
 by a blank row.
 """
 
+from datetime import timedelta
+
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
 from app.config import metric_catalog as mc
+from app.utils.area_helpers import mission_today
 
 # ── Fixtures: a faithful slice of the live sheet ──────────────────────────────
 
@@ -115,7 +118,20 @@ MISSION_ORG = pd.DataFrame([
      "Active": "TRUE"},
 ])
 
-_DATES = ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31"]
+# Every date below is RELATIVE TO TODAY. They were pinned to 2026-07-27…08-01
+# until 2026-10-05, and every page reads its data through a window measured
+# back from today ("últimos 7 días", the running transfer) — so a few weeks
+# after they were written, the Panel's nightly section and Puntajes' Daily
+# Activity found nothing inside their windows and six tests here failed for a
+# reason that had nothing to do with what they assert. The old shape is kept:
+# a transfer that started on a Monday, five reported nights inside it ending
+# yesterday, two completed weekly-form weeks before it.
+_TODAY = mission_today()
+_NIGHTS = [_TODAY - timedelta(days=n) for n in range(5, 0, -1)]
+_START = _NIGHTS[0] - timedelta(days=_NIGHTS[0].weekday())   # its Monday
+_DATES = [d.isoformat() for d in _NIGHTS]
+_WEEKS = [(_START - timedelta(days=8)).isoformat(),
+          (_START - timedelta(days=1)).isoformat()]          # two Sundays
 _NUMERIC_NIGHTLY = [k for k, _, d in _NIGHTLY if d == "NUMBER"]
 
 
@@ -135,7 +151,7 @@ def _daily_log() -> pd.DataFrame:
 
 def _weekly_ki() -> pd.DataFrame:
     rows = []
-    for week in ("2026-07-19", "2026-07-26"):
+    for week in _WEEKS:
         for area, zone, district in (("Arauco 1", "Arauco", "Arauco"),
                                      ("Lota 2", "Arauco", "Lota")):
             row = {"week_end_date": week, "area": area, "zone": zone,
@@ -179,20 +195,20 @@ def _scores() -> pd.DataFrame:
     return pd.DataFrame([
         {"Area_Code": "A014", "Area_Name": "Arauco 1", "Zone": "Arauco",
          "Missionary_Names": "Elder Uno / Elder Dos",
-         "Week_Ending_Date": "2026-07-26", "Effort_Score": "72.5",
+         "Week_Ending_Date": _WEEKS[-1], "Effort_Score": "72.5",
          "Skill_Score": "64.0", "KI_Score": "80.0",
-         "Effectiveness_Score": "72.2", "Computed_At": "2026-07-26 23:00"},
+         "Effectiveness_Score": "72.2", "Computed_At": _WEEKS[-1] + " 23:00"},
         {"Area_Code": "A021", "Area_Name": "Lota 2", "Zone": "Arauco",
          "Missionary_Names": "Hermana Tres / Hermana Cuatro",
-         "Week_Ending_Date": "2026-07-26", "Effort_Score": "55.0",
+         "Week_Ending_Date": _WEEKS[-1], "Effort_Score": "55.0",
          "Skill_Score": "48.5", "KI_Score": "60.0",
-         "Effectiveness_Score": "54.5", "Computed_At": "2026-07-26 23:00"},
+         "Effectiveness_Score": "54.5", "Computed_At": _WEEKS[-1] + " 23:00"},
         # A leadership tracking row. Never a real area — it never submits and
         # scores 0, so leaving it in drags every mission average down.
         {"Area_Code": "ZL01", "Area_Name": "Zone Leader - Arauco", "Zone": "ALL",
-         "Missionary_Names": "", "Week_Ending_Date": "2026-07-26",
+         "Missionary_Names": "", "Week_Ending_Date": _WEEKS[-1],
          "Effort_Score": "0", "Skill_Score": "0", "KI_Score": "0",
-         "Effectiveness_Score": "0", "Computed_At": "2026-07-26 23:00"},
+         "Effectiveness_Score": "0", "Computed_At": _WEEKS[-1] + " 23:00"},
     ])
 
 
@@ -203,7 +219,7 @@ def _live_snapshot() -> pd.DataFrame:
     for area, zone, district in (("Arauco 1", "Arauco", "Arauco"),
                                  ("Lota 2", "Arauco", "Lota")):
         row = {"Area": area, "Zone": zone, "District": district,
-               "Last_Updated": "2026-08-01 06:00"}
+               "Last_Updated": _NIGHTS[-1].isoformat() + " 06:00"}
         for i, key in enumerate(_NUMERIC_NIGHTLY):
             for window, mult in (("7d", 7), ("14d", 14), ("28d", 28),
                                  ("transfer", 35)):
@@ -213,7 +229,7 @@ def _live_snapshot() -> pd.DataFrame:
 
 
 TRANSFER_SCHEDULE = pd.DataFrame([
-    {"Transfer_Number": "1", "Start_Date": "2026-07-27", "Weeks": "6",
+    {"Transfer_Number": "1", "Start_Date": _START.isoformat(), "Weeks": "6",
      "Status": "Activo"},
 ])
 
@@ -222,7 +238,7 @@ AGENT_CONFIG = pd.DataFrame([
     {"Key": "MISSION_LANGUAGE", "Value": "ES"},
     {"Key": "MISSION_LOCALE", "Value": "es_CL"},
     {"Key": "MISSION_TIMEZONE", "Value": "America/Santiago"},
-    {"Key": "TRANSFER_START_DATE", "Value": "2026-07-27"},
+    {"Key": "TRANSFER_START_DATE", "Value": _START.isoformat()},
 ])
 
 _TABS = {}
@@ -475,9 +491,17 @@ def test_rate_targets_fall_back_to_the_agents_own_defaults():
     a new mission starts in. The targets must come from CCSM_Agent1A.gs's
     declared defaults — never from zero, which would paint every rate as
     comfortably met."""
+    import re
+
     body = _text(_run("views/01_Panel.py"))
-    # contact_rate and mc_rate both default to 0.50.
-    assert "de la meta de 50%" in body
+    # contact_rate and mc_rate both default to 0.50. The card has printed its
+    # goal as "250% de 50%" since the KPI card redesign (data-pages A1,
+    # 2026-09-18); this asserted the older "de la meta de 50%" wording until
+    # 2026-10-05, and failed on the wording rather than on the target.
+    # Read off the Contacto card itself, so another card's 50% cannot answer.
+    card = re.search(r'pmg-kpi-label"[^>]*>Contacto<(.*?)pmg-kpi-label', body, re.S)
+    assert card, "the Contacto rate card did not render"
+    assert re.search(r">[^<]*% de 50%<", card.group(1)), card.group(1)
 
 
 def test_a_rate_with_no_denominator_shows_its_target_not_a_zero():
@@ -498,7 +522,9 @@ def test_daily_activity_totals_every_nightly_metric():
     appears somewhere on the page even when Daily Activity itself rendered five
     "No data for this category" panels.
     """
-    at = _run("views/06_Puntajes.py")
+    # Puntajes renders only its selected section (audit step 1.7), and
+    # the explorer is not the default one.
+    at = _run("views/06_Puntajes.py", scores_page_section="daily")
     tile_labels = {m.label for m in at.metric}
     missing = [
         label for _key, label, dtype in _NIGHTLY
@@ -514,7 +540,9 @@ def test_daily_activity_excludes_non_numeric_metrics():
     """`effort` is CHOICE and `exchanges` is YESNO. Summing either produces a
     number with no meaning, and _num() would coerce the words to 0 — a real
     zero and an unparseable answer would look identical."""
-    at = _run("views/06_Puntajes.py")
+    # Puntajes renders only its selected section (audit step 1.7), and
+    # the explorer is not the default one.
+    at = _run("views/06_Puntajes.py", scores_page_section="daily")
     chart_pickers = [w for w in at.multiselect if w.key == "da_trend_metrics"]
     assert chart_pickers, "Daily Activity's metric picker did not render"
 

@@ -16,6 +16,8 @@ that data path actually narrows per zone, which is the part
 DASHBOARD_SUMMARY's EFFORT rows structurally could not do.
 """
 
+from datetime import date, timedelta
+
 import pandas as pd
 import pytest
 
@@ -27,8 +29,13 @@ def _daily_log_rows():
     # Arauco 1 (District Arauco) answers "Todo" every night; Lota 2 (District
     # Lota, same Zone) answers "Algo" every night. A zone-only filter cannot
     # tell them apart; a district filter must.
+    #
+    # The three nights are the three before today. They were pinned to
+    # 2026-08-03..05 until 2026-10-05, and get_daily_effort_log(30) keeps only
+    # the last 30 days — so a month after this was written all three tests read
+    # an empty log and failed on the date, not on the scoping they exist for.
     rows = []
-    for d in ("2026-08-03", "2026-08-04", "2026-08-05"):
+    for d in [(date.today() - timedelta(days=n)).isoformat() for n in (3, 2, 1)]:
         rows.append({"Date": d, "Area": "Arauco 1", "Zone": "Arauco",
                       "District": "Arauco", "effort": "Todo"})
         rows.append({"Date": d, "Area": "Lota 2", "Zone": "Arauco",
