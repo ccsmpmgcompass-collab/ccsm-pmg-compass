@@ -198,6 +198,20 @@ def test_the_baptism_page_names_both_figures_and_sums_neither():
     assert "nunca se suman" in text
 
 
+def test_the_two_figures_differ_by_scope_not_by_missionaries_skipping_it():
+    """AUDIT-2026-10-06 C3. The packet said the two disagree because "los
+    misioneros no siempre anotan el campo" — retracted 2026-10-02: the
+    certified figure counts every zone, the form only the pilot's, and like
+    for like they agree. Said on the baptism page and on page 3 alike."""
+    mission = of(S.MISSION)
+    for text in (words(PK.baptism_page(mission)),
+                 PK._two_baptism_figures(mission)):
+        assert "no siempre" not in text
+        assert "todas las zonas de la misión" in text
+        assert "del piloto" in text
+        assert "las 1 zonas" not in text       # this roster has one zone
+
+
 def test_the_open_month_is_kept_out_of_the_year_s_total_on_the_page():
     text = words(PK.baptism_page(of(S.MISSION)))
     assert "319 bautismos certificados hasta agosto" in text
@@ -242,7 +256,8 @@ def test_a_period_with_no_capture_prints_a_dash_and_says_why():
     lead = words(flow[:4])
     assert "sin cifra certificada" in lead
     assert "No hay cifra certificada de bautismos para 2026-6" in lead
-    assert "decisión 42" in lead
+    assert "sólo cubre las zonas del piloto" in lead
+    assert "no siempre" not in lead
 
 
 def test_a_capture_a_night_behind_says_how_many_days_it_covers():

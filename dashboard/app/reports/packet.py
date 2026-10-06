@@ -642,11 +642,13 @@ def _two_baptism_figures(mission) -> str:
     if ki is not None and ki.actual is not None:
         parts.append(f"El formulario semanal de las compañerías informó "
                      f"{_count(ki.actual)} en {period.label}.")
+    pilot = _pilot_zones(mission)
     parts.append(
-        "La página de bautismos usa la certificada; la del formulario va en "
-        "los Indicadores Clave con su propio nombre, porque no siempre se "
-        "anota. Nunca se suman, y la del formulario no abre ninguna página: "
-        "ni «lo más fuerte» ni «lo que hay que mover».")
+        f"La página de bautismos usa la certificada, que cuenta todas las "
+        f"zonas de la misión; la del formulario cuenta sólo {pilot} y va en "
+        f"los Indicadores Clave con su propio nombre. Nunca se suman, y la "
+        f"del formulario no abre ninguna página: ni «lo más fuerte» ni «lo "
+        f"que hay que mover».")
     return " ".join(parts)
 
 
@@ -989,8 +991,8 @@ def _headline_tiles(model) -> list:
 
 
 #: Decision 37. The weekly form's baptism Key Indicator is the figure the
-#: packet trusts least — companionships leave the field blank, and on
-#: 2026-09-23 it read 5 for a transfer Tableau certified far more of — so it is
+#: packet trusts least — a handful of events a transfer, so one baptism moves
+#: it by a third — so it is
 #: never the sentence a unit's first page opens with, in either direction. It
 #: keeps its tile, its row and its page (M6), where it sits beside the
 #: certified figure under its own name.
@@ -1886,25 +1888,57 @@ def baptism_page(model) -> list:
         ]
 
     # The note is unconditional. It is the packet's statement about WHICH of
-    # two disagreeing figures it used, and that is worth saying even in a
-    # period where the form happened to report nothing.
-    ki = model.ki("ki_baptized_confirmed_real")
-    said = (f"El formulario semanal de las compañerías informó "
-            f"{_count(ki.actual)} en {model.period.label.lower()}, y las dos "
-            f"no coinciden: los misioneros no siempre anotan el campo."
-            if ki is not None else
-            "El formulario semanal de las compañerías pregunta lo mismo y no "
-            "coincide: los misioneros no siempre anotan el campo.")
+    # two figures it used, and that is worth saying even in a period where the
+    # form happened to report nothing.
+    #
+    # It used to say the two disagree because "los misioneros no siempre
+    # anotan el campo". That was retracted on 2026-10-02 (PLAN-2026-10-02-
+    # goals.md §2.5): the certified figure counts all ten zones and the form
+    # only the pilot's, and like for like they agree (6 against 5). A council
+    # packet must not tell its readers something false about the missionaries
+    # they lead (AUDIT-2026-10-06 C3).
     flow += [
         Spacer(0, 10),
         Paragraph(PP.text(
-            f"Sobre la cifra de bautismos (decisión 21). Arriba está la cifra "
-            f"CERTIFICADA de Tableau, que es la que cuenta. {said} Donde "
-            f"exista la certificada se usa esa; la del formulario aparece en "
-            f"sus Indicadores Clave bajo su propio nombre, y nunca se "
-            f"suman."), st["note_lead"]),
+            f"Sobre la cifra de bautismos. Arriba está la cifra CERTIFICADA "
+            f"de Tableau, que es la que cuenta. "
+            f"{_form_baptisms_sentence(model)}"), st["note_lead"]),
     ]
     return flow
+
+
+def _pilot_zones(model) -> str:
+    """The zones that file Compass forms, in words — "las 4 zonas del piloto".
+
+    The mission's children ARE the pilot: the roster carries only the zones
+    AGENT_CONFIG.PILOT_ZONES names, while Tableau counts every zone.
+    """
+    zones = len(model.children) if model.scope.level == S.MISSION else 0
+    if zones == 1:
+        return "la zona del piloto"
+    if zones:
+        return f"las {es_display.integer(zones)} zonas del piloto"
+    return "las zonas del piloto"
+
+
+def _form_baptisms_sentence(model) -> str:
+    """Why the form's baptism figure is not the certified one: SCOPE.
+
+    The certified figure counts every zone of the mission; the weekly form is
+    filled only in the pilot zones. Two different populations — so the two
+    are never compared and never summed (decisions 21, 34), and neither is
+    evidence about whether companionships fill the field.
+    """
+    ki = model.ki("ki_baptized_confirmed_real")
+    pilot = _pilot_zones(model)
+    said = (f"El formulario semanal de las compañerías informó "
+            f"{_count(ki.actual)} en {model.period.label.lower()}. "
+            if ki is not None and ki.actual is not None else "")
+    return (f"{said}La certificada cuenta todas las zonas de la misión y el "
+            f"formulario sólo {pilot}, así que las dos cifras no se comparan, "
+            f"y nunca se suman. La del formulario aparece en los Indicadores "
+            f"Clave "
+            f"bajo su propio nombre.")
 
 
 # ── The pages of one unit ────────────────────────────────────

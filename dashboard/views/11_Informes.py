@@ -746,14 +746,13 @@ if _BLOCK is not None and _BLOCK.baptisms is not None:
     render_section_label(
         f"Bautismos · {_model.period.label}",
         right="cifra certificada · fuente: Tableau",
-        info=("La cifra CERTIFICADA de Tableau para los días de este período. "
-              "El mes y el año salen de TABLEAU_BAPTISMS; la semana, los "
-              "traslados y las últimas seis semanas, de "
-              "TABLEAU_BAPTISM_WINDOWS, que la sincronización nocturna llena. "
-              "Si no hay captura de estos días no se muestra otra cifra en su "
-              "lugar (decisión 42). El formulario semanal pregunta lo mismo y "
-              "no coincide, así que aparece aparte, en Indicadores Clave, bajo "
-              "su propio nombre."),
+        info=("La cifra CERTIFICADA de Tableau para los días de este período, "
+              "que la sincronización nocturna captura. Si no hay captura de "
+              "estos días no se muestra otra cifra en su lugar. Cuenta todas "
+              "las zonas de la misión; el formulario semanal sólo las del "
+              "piloto, así que su cifra aparece aparte, en Indicadores Clave, "
+              "bajo su propio nombre, y las dos nunca se comparan ni se "
+              "suman."),
     )
     # A refused period shows a dash, never 0: "no certified figure" and "no
     # baptisms" are different facts.
@@ -776,7 +775,7 @@ if _BLOCK is not None and _BLOCK.baptisms is not None:
                        "note": _BAP.year_to_date.window.label})
     render_kpi_row(_cards)
     st.caption(_FIG.sentence(_model.period.label) if _FIG is not None
-               else "Sin cifra certificada de bautismos (decisión 42).")
+               else "Sin cifra certificada de bautismos para este período.")
 
     render_section_label(
         f"El año {_BAP.year} contra su meta",

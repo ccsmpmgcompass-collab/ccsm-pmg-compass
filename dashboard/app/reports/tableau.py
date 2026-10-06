@@ -879,9 +879,9 @@ class PeriodBaptisms:
             why = self.reason
             return (f"No hay cifra certificada de bautismos para "
                     f"{period_label}{': ' + why if why else ''}. No se "
-                    f"imprime otra en su lugar: los registros de Tableau "
-                    f"quedan por debajo de la cifra certificada y el "
-                    f"formulario semanal no siempre se anota (decisión 42).")
+                    f"imprime otra en su lugar: los registros de Tableau por "
+                    f"persona quedan por debajo de la cifra certificada, y el "
+                    f"formulario semanal sólo cubre las zonas del piloto.")
         days = self.window
         cross = days.start.year != days.end.year
         out = (f"Bautismos certificados por Tableau entre el "
