@@ -809,6 +809,22 @@ ES: dict[str, str] = {
         "No se detectaron problemas de mantenimiento.",
     "{count} agent run(s) failed in the last 14 days":
         "{count} ejecución(es) de agente fallaron en los últimos 14 días",
+    # Missed runs — app/analytics/agent_runs.py (2026-10-06)
+    "{agent} did not run after {after} on {date} — that run's emails may not "
+    "have gone out":
+        "{agent} no se ejecutó después de {after} el {date}; puede que los "
+        "correos de esa ejecución no se hayan enviado",
+    "{agent} has no run in AGENT_RUN_LOG — its trigger is probably not installed":
+        "{agent} no tiene ninguna ejecución en AGENT_RUN_LOG; probablemente su "
+        "activador no está instalado",
+    "{agent} last ran {days} days ago, and it runs every day — its trigger may "
+    "be missing":
+        "{agent} se ejecutó por última vez hace {days} días, y corre todos los "
+        "días; puede que falte su activador",
+    "{agent} last ran {days} days ago, and it runs every week — its trigger may "
+    "be missing":
+        "{agent} se ejecutó por última vez hace {days} días, y corre cada semana; "
+        "puede que falte su activador",
     "DAILY_LOG hasn't been written in {days} day(s)":
         "DAILY_LOG no se ha actualizado en {days} día(s)",
     "WEEKLY_KI's latest week ended {days} day(s) ago":
@@ -1477,6 +1493,19 @@ ES: dict[str, str] = {
     "Raw log — last 50 runs": "Registro sin procesar — últimas 50 ejecuciones",
     "No failed agent runs in the last 14 days.":
         "No hubo ejecuciones de agentes fallidas en los últimos 14 días.",
+    "Agents that should have run and did not:":
+        "Agentes que debían ejecutarse y no lo hicieron:",
+    "In the Apps Script editor (COMPASS_CCSM → Extensions → Apps Script, signed "
+    "in as the sheet's owner), run smokeTestPipeline() — it only reads, and its "
+    "log names any missing trigger. Then run setupAllCcsmTriggers(), which "
+    "reinstalls every scheduled trigger exactly once. Not on a Monday between "
+    "9:15 and 10:30 PM, while the weekly letters are being sent.":
+        "En el editor de Apps Script (COMPASS_CCSM → Extensiones → Apps Script, "
+        "con la cuenta dueña de la hoja), ejecute smokeTestPipeline(): solo lee, "
+        "y su registro nombra cualquier activador que falte. Luego ejecute "
+        "setupAllCcsmTriggers(), que reinstala cada activador programado una sola "
+        "vez. No lo haga un lunes entre las 21:15 y las 22:30, mientras se envían "
+        "las cartas semanales.",
     "Every Apps Script agent appends a row to AGENT_RUN_LOG when it runs. An "
     "agent missing from the last-run table, or a red status, means its trigger "
     "didn't fire or the run errored.":

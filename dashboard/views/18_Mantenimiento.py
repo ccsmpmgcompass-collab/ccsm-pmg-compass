@@ -41,6 +41,7 @@ from app.db.sheets_client import (
     read_values,
     update_cells,
 )
+from app.db.action_center_queries import missed_run_messages
 from app.i18n import t
 from app.i18n.formats import fmt_date, fmt_day_month, fmt_int
 from app.utils.area_helpers import mission_today
@@ -407,6 +408,21 @@ if _sec == _TAB_HEALTH:
                 ).strip()[:160],
             })
         st.dataframe(pd.DataFrame(_rows), use_container_width=True, hide_index=True)
+
+        # Runs that never happened write no row, so neither the table above
+        # nor the failures below can show them (2026-10-05: the mission report
+        # had not run for two months; Agent1C skipped 2026-09-28).
+        _missed = missed_run_messages()
+        if _missed:
+            st.error(t("Agents that should have run and did not:") + "\n\n"
+                     + "\n".join(f"- {m}" for m in _missed))
+            st.caption(t("In the Apps Script editor (COMPASS_CCSM → Extensions → Apps "
+                         "Script, signed in as the sheet's owner), run "
+                         "smokeTestPipeline() — it only reads, and its log names any "
+                         "missing trigger. Then run setupAllCcsmTriggers(), which "
+                         "reinstalls every scheduled trigger exactly once. Not on a "
+                         "Monday between 9:15 and 10:30 PM, while the weekly letters "
+                         "are being sent."))
 
         _fails = _log[
             ~_log["Status"].astype(str).str.strip().str.upper().isin(["SUCCESS", "OK", ""])

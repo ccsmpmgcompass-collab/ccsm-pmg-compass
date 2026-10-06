@@ -125,6 +125,31 @@ def _latest_date(tab: str, marker: str, candidates: tuple):
     return vals.max() if not vals.empty else None
 
 
+def missed_run_messages() -> list[str]:
+    """`agent_runs.missed_runs` as one sentence each, for the bell and for
+    Mantenimiento's Agent Runs section — the agents that SHOULD have run and
+    left no row (a missing trigger, a chain step that never fired)."""
+    from app.analytics.agent_runs import missed_runs
+
+    msgs = []
+    for p in missed_runs(read_tab("AGENT_RUN_LOG", header_marker="Agent"), datetime.now()):
+        if p["kind"] == "chain":
+            msgs.append(t("{agent} did not run after {after} on {date} — that run's "
+                          "emails may not have gone out",
+                          agent=p["agent"], after=p["after"],
+                          date=p["when"].strftime("%Y-%m-%d")))
+        elif p["last"] is None:
+            msgs.append(t("{agent} has no run in AGENT_RUN_LOG — its trigger is "
+                          "probably not installed", agent=p["agent"]))
+        elif p["max_days"] <= 2:
+            msgs.append(t("{agent} last ran {days} days ago, and it runs every day — "
+                          "its trigger may be missing", agent=p["agent"], days=p["days"]))
+        else:
+            msgs.append(t("{agent} last ran {days} days ago, and it runs every week — "
+                          "its trigger may be missing", agent=p["agent"], days=p["days"]))
+    return msgs
+
+
 def _maintenance_issues() -> list[str]:
     """Re-run the same two health signals 18_Mantenimiento.py surfaces (agent
     failures, stale data) as short messages for the Action Center.
@@ -144,6 +169,9 @@ def _maintenance_issues() -> list[str]:
         if not fails.empty:
             issues.append(t("{count} agent run(s) failed in the last 14 days",
                              count=len(fails)))
+    # A run that never happened writes no row, so the check above cannot see it
+    # (2026-10-05: the mission report had not run for two months).
+    issues.extend(missed_run_messages())
 
     dl_date = _latest_date("DAILY_LOG", "Date", ("date",))
     if dl_date is not None and (datetime.now() - dl_date).days > 2:
