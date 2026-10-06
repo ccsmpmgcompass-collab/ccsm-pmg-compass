@@ -331,3 +331,29 @@ and "companería" was misspelt. `test_no_page_speaks_developer_language`
 sweeps every unit page, page 3 and the data note. The two screen messages
 for a missing roster/unit keep the tab name as "(pestaña MISSION_ORG)" only
 where an administrator has to act on it.
+
+### 2026-10-06 — 0.7 verified · PHASE 0 COMPLETE
+
+- **Suite: 0 failed / 1909 passed / 1 skipped** (baseline 0 / 1883 / 1; +26
+  new tests).
+- **Both live packets built** from the sheet loaded at 19:45 (this transfer
+  and last week): **104 pages each**, as before — Phase 0 changes no length.
+  Rasterised and read: p5 (zones + nightly table), p6 (nightly tail +
+  baptism page), p8 (rates + scores), p29–30 (El Mirador), p104 (data note).
+  No "no siempre", no "decisión", no `contact_rate` anywhere in the text;
+  `MISSION_ORG` appears only as p104's "pestaña" line.
+- El Mirador now opens "Lo más fuerte: Amigos en la Iglesia (Primera Semana)
+  va en 117% de la meta — 7 contra 6", where it used to be told to revise
+  that goal; its change column reads +20 ▲ · +4 · +10 · −12 ▼.
+- Side effect to know about for Phase 1: with per-unit flags, San Pedro's
+  zone mean moved 55% → **50%** (its 30% *Primera Semana* is now graded).
+  The zone order on p5 is unchanged (Angol 41 · LAN 46 · SP 50 · Ñielol 56)
+  and is still the wrong one — Phase 1 replaces it.
+- **Screen** (preview, live data): KI cards, rates and the nightly list show
+  the same figures and rules as the packet at 1400px; at 375px no horizontal
+  overflow.
+- Not pushed at the time of writing; the deployed app needs a Reboot after
+  the push.
+
+**Next: Phase 1** — needs his word on **P1** (index members and weights)
+first.
