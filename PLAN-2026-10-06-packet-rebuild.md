@@ -1,0 +1,253 @@
+# PMG Compass — Council Packet Rebuild (for the mission president)
+
+**Written 2026-10-06**, from `AUDIT-2026-10-06-council-packet.md` (scored
+41.5/100, answered the same day as decisions 44–51). Zackary: *"the best
+numerical informe … focus a mission president looking for areas to focus on
+and grow."*
+
+The audit is the evidence and this file is the build. Read the audit's §2–§4
+for any finding id used below (C1–C4, H1–H6, M1–M6, L1–L2).
+
+Convention as before: one commit per step, named with the step id, every step
+verified before its commit, the suite run against baseline before every push,
+STATUS appended after every step. **One phase per chat** — the chat is cleared
+between phases, so this file must be enough to resume from. A push touching
+`dashboard/app/` or `dashboard/views/` needs a **Reboot** of the deployed app
+(`dashboard/DEPLOYING.md`).
+
+---
+
+## §1 — Decisions (Zackary, 2026-10-06) — never re-open
+
+Carried from AUDIT §7.1. They continue the clarity pass's 36–43.
+
+| # | Decision | Replaces |
+|---|---|---|
+| 44 | Every Key Indicator is **graded (coloured) against leadership's goal** (`AREA_TRANSFER_GOALS`). The companionship's own goal prints as an uncoloured *compromiso* column. | 11 |
+| 45 | Units are **ranked by a goal-free productivity index**: output per active companionship-week relative to the mission (100 = mission), weighted toward the results nearest baptism. Reporting becomes its own list. | 14 |
+| 46 | **The 527 annual goal (all ten zones) is the baptism target.** Leadership's transfer baptism goals may be shown; they never drive colour. | — |
+| 47 | **Zones and districts get a baptism figure from Tableau's person-level export** (`confirmation_date` by roster area), labelled "registros de Tableau". The mission keeps the certified figure. | 42, below mission level only |
+| 48 | **All four forecasts print** — transfer finish, needed per week, annual landing, baptism pipeline — at mission and zone level, always a range with a one-line method, never coloured as a verdict. | — |
+| 49 | **About 45 pages** for a full transfer copy (from 104). | 25 |
+| 50 | The weekly packet keeps **the same structure** as the transfer packet. No short variant. | — |
+| 51 | **Both renderers change** — the Informes screen and the PDF. One model (decision 30 holds). | — |
+
+Decisions 1–43 still hold except where a row above names them.
+
+---
+
+## §2 — Proposals for the details §7.1 left open (NOT decided — need his word before the phase that uses them)
+
+Each is measured on live data, 2026-10-06, *Este traslado* (2026-6, 4 of 6
+weeks complete).
+
+### P1 — Index members and weights (Phase 1)
+
+**Proposal: six Key Indicators, weighted 3 · 2 · 2 · 1 · 1 · 1.**
+
+| Member | Weight | Why |
+|---|---:|---|
+| Amigos con Fecha Bautismal | 3 | The result nearest baptism with enough volume to trust (167 this transfer) |
+| Amigos en la Reunión Sacramental | 2 | Near baptism, 216 |
+| Conversos Recientes en la Iglesia | 2 | Retention; 210 |
+| Lecciones con Miembros | 1 | Activity, 528 |
+| Nuevas Personas Encontradas | 1 | Activity, 806 |
+| Amigos en la Iglesia (Primera Semana) | 1 | Near baptism but thin (41) |
+| *Bautizados y Confirmados (form)* | 0 | 7 events mission-wide; decision 37's reasoning. Phase 2 may add Tableau baptisms at zone level as a separate line, not inside the index |
+
+Index = Σ wₖ · (unit's rate per active area-week ÷ mission's) / Σ wₖ × 100.
+Each member's ratio is **capped at 250** so one tiny count cannot carry a unit,
+and a unit whose weighted event count is under 20 prints its index with
+"pocas cifras" and no colour.
+
+Measured (each member as % of the mission, then the index):
+
+| Zone | new | mlz | sac | 1wk | date | rc | **P1 index** | audit's 3-member |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Temuco Ñielol | 106 | 90 | 82 | 93 | 77 | 69 | **82** | 76 |
+| Angol | 83 | 96 | 127 | 98 | 108 | 45 | **94** | 93 |
+| Los Angeles Norte | 115 | 119 | 78 | 82 | 128 | 123 | **110** | 110 |
+| San Pedro | 91 | 95 | 123 | 130 | 91 | 156 | **115** | 123 |
+
+Same order as the audit's measure; the packet today prints the reverse
+(Angol last, Ñielol first).
+
+### P2 — How a zone's baptisms are graded under decision 46 (Phase 2)
+
+527 is a ten-zone figure and the roster knows four zones, so a "zone share" has
+to come from Tableau, which knows all ten.
+
+**Proposal:** a zone's reference line = 527 × the zone's share of the
+mission's Tableau baptisms over the trailing 12 closed months — "lo que le toca
+si la misión llega a 527 repartida como siempre". **Printed, never coloured**
+(decision 48's spirit). The zone's colour on baptisms comes from nowhere; its
+place comes from the index (P1) and its baptisms per companionship-week beside
+the pilot's. Districts get the count only, no reference line (too few events —
+see P3).
+
+### P3 — The small-count rule (H5; built in Phase 0 as 0.5)
+
+- **When the comparison period's count, rescaled to this period's reports, is
+  under 25**, a change prints as a **signed count**, not a percentage: this
+  period's count minus what the comparison period's rate would have produced
+  on this period's reports ("−3", "+4"). Same per-reporting basis every change
+  already rests on. 25 is not new: it is `period_delta.SMALL_COUNT_MAX`, the
+  rule the Panel's cards already follow, so the app keeps one threshold (the
+  audit's "~20" was a guess before this was found).
+- **An arrow only when the move clears a Poisson band**: the two-rate test
+  z = (r₁ − r₀) / √(λ(1/a₁ + 1/a₀)), λ = pooled rate, a = reporting
+  area-weeks; arrow when |z| ≥ 1.96. Otherwise the figure prints flat, no
+  colour.
+- Nightly rows keep the ±15% `FLAT_BAND` **and** must clear the same test to
+  carry a colour.
+
+### P4 — The pipeline model (Phase 2)
+
+- **Who is in it:** people in Tableau detail with a baptismal date set and no
+  `confirmation_date`, by roster area.
+- **Fit:** for every person whose date was set ≥ 180 days before the export,
+  the share baptised within 42 days *given* they were still unbaptised at age
+  a (days since the date was set), in buckets 0–14 · 15–30 · 31–60 · 61–90 ·
+  91–180 · >180. Refit every build (it is a groupby over ~1.000 rows).
+- **Forecast:** Σ p(bucket) over the open dates = expected baptisms in the next
+  six weeks. **Range:** the 10th–90th percentile of that sum as a
+  Poisson-binomial, widened by the backtest's error (the same forecast made at
+  each of the last 12 month-ends, against what then happened). The method line
+  prints the backtest's typical miss.
+- Audit facts it must reproduce: 391 open dates in the last 90 days; 26%
+  baptised ≤ 42 days, 34% ≤ 90, median 32 days.
+
+### P5 — The page budget does not add up to 45 yet (Phase 3)
+
+§5 of the audit allots mission ~6, zone 2, district 1, area ½. On CCSM's
+roster that is 2 front + 6 + 4×2 + 13×1 + 45×½ + 1 note = **≈ 53 pages**.
+Reaching ~45 needs one more economy, and it is his call when Phase 3 starts:
+(a) an area at a third of a page (→ ≈ 45), (b) a district's page shared with
+its areas' first block, or (c) accept ≈ 53. Recommendation: **(a)**, because
+the area block's sparklines go anyway (M5) and the nightly inputs fit in a
+four-line strip.
+
+---
+
+## §3 — Build steps
+
+### Phase 0 — defects (no decision needed; this chat)
+
+**0.1 (C3) — the false baptism sentence.** `packet.py:1891-1905`
+(`baptism_page`), `packet.py:645-649` (`_two_baptism_figures`),
+`packet.py:991-997` (`NOT_FOR_VERDICTS` comment) and the screen's info text
+`views/11_Informes.py:747-756`. Replace "los misioneros no siempre anotan el
+campo" with the scope truth: the certified figure counts all ten zones, the
+form counts the four pilot zones, so the two are not compared. Retraction:
+`PLAN-2026-10-02-goals.md` §2.5.
+
+**0.2 (H2) — conversion rates.** `model._rates` (`model.py:1157`) attaches each
+rate's Spanish label from `data.labels`, so neither renderer can fall back to
+the key (`packet.py:1040`). The packet's rate table gets its change column —
+`rate["change"]` in points, which `point_delta` already computes and nothing
+prints — and each rate's note says what it divides ("de 1.234 intentos de
+contacto"), which is how *Tasa de Lecciones*' denominator stops being a
+surprise. The screen already reads labels; it gets the same note.
+
+**0.3 (H1) — the flag is the mission's verdict pasted on every unit.**
+`grading.grade_ki` (`grading.py:226`). A unit's row carries the mission's flag
+only when **its own** attainment is outside the band in the same direction;
+never when its own attainment is ≥ 100%. Both renderers read `grade.flag`, so
+neither changes. (Phase 1 retires the Key Indicator flag outright once
+leadership's goal is the yardstick.)
+
+**0.4 (H4) — the nightly table.** `packet.nightly_page` (`packet.py:1413`),
+`nightly_lines` (`packet.py:810`), `ReportModel.nightly_weakest_first`
+(`model.py:452`) and the screen's `_nightly_rows` (`views/11_Informes.py:405`).
+REAL becomes the **per area-week** figure the percentage is taken on, beside a
+META on the same basis; the period total moves into the row's note. Flagged
+rows sort last. The head says what the order is ("más lejos de su meta
+primero"), and one sentence says why a nightly count is not the Key
+Indicator of the same name (nights through yesterday vs complete weeks of the
+weekly form — 900 vs 806 on 2026-10-06).
+
+**0.5 (H5) — small counts.** P3 above, in `grading` (one function, used by
+both `grade_ki` and `grade_nightly`), carried on `Grade`, printed by
+`packet._change` and the screen's KI cards and nightly rows.
+
+**0.6 (M4) — developer language.** No "decisión NN" and no tab name in any
+sentence a reader meets, packet or screen. The data note's *Fuente* column
+keeps the tab name as a second, smaller line under a plain Spanish source
+name, because that page exists for the reader who wants to argue with a
+number.
+
+**0.7 — verify Phase 0.** Suite against baseline; the packet built from the
+live sheet, rasterised and READ (pages 3–8, Angol, El Mirador); the screen at
+1400px and 375px. Push, and tell him to Reboot.
+
+### Phase 1 — yardstick and ranking (decisions 44, 45; needs P1)
+
+1.1 `MetricRow` gains `leadership_pct` (attainment against the pro-rated
+leadership goal, on the active basis); `grade_ki` grades on it. The
+companionship's goal becomes `compromiso`, printed uncoloured.
+1.2 Retire the Key Indicator flag (decision 22 stays for nightly).
+1.3 `model.productivity_index(rows, mission_rows)` per P1; `_rank_scopes`,
+`_ladder`, `_siblings`, `_areas_ranked` order on it. `_mean_attainment` stays
+only where a goal-attainment figure is still printed.
+1.4 Reporting as its own ranked list (silent and late areas), mission and
+zone.
+1.5 Both renderers: ranked tables, ladder, sibling strip, tiles, page 3's
+"Contra qué se mide" rule, the column glossary.
+1.6 Verify (as 0.7).
+
+### Phase 2 — the forward view (decisions 46, 47, 48; needs P2, P4)
+
+2.1 Zone and district baptisms from Tableau detail by roster area, labelled
+"registros de Tableau" (decision 47).
+2.2 Transfer finish and needed-per-week, per Key Indicator, mission and zone
+(AUDIT C4(a)).
+2.3 Annual landing range from the four anchors, year-over-year by month
+(2024, 2025, 2026), required monthly rate against the best month ever
+(AUDIT C4(b)).
+2.4 The pipeline forecast per P4, mission and zone, with its backtest.
+2.5 Both renderers; verify.
+
+### Phase 3 — the front section and the diet (decisions 49, 50; needs P5)
+
+3.1 *El tablero* (§5 item 1). 3.2 *Dónde enfocar* — Pareto of the shortfall,
+productivity × trend quadrant, reporting list (H6). 3.3 *Bautismos: el año y
+lo que viene*. 3.4 *Palancas* — mature-cohort funnel and result → driver
+lines (M2, M3). 3.5 a fixed 12-week strip on every unit page (H3). 3.6 zone 2
+pages, district 1, area per P5 with nightly inputs (M5); scores only with a
+comparator (M1); the zones table shows all seven or the index's members (M6);
+print guide off page 2 (L1). 3.7 verify, page count measured against 45.
+
+---
+
+## §4 — How to resume
+
+1. Read §1 (never re-open), §2 for the proposal the phase needs, then the
+   phase's steps in §3 and the last STATUS entry.
+2. **Phases 1–3 each need his word on their proposal first** (P1 → Phase 1,
+   P2 + P4 → Phase 2, P5 → Phase 3). Ask once, with the measured table.
+3. Live data: `model.load_data()` (~45 s) and pickle the `ReportData`; a packet
+   is `packet.build(period_key, data=data)`. Re-load when the date moves.
+4. Reading a page: `pip install --target <scratchpad>/pylib pypdfium2`,
+   rasterise, `Read` the PNG. Never into the venv.
+5. The screen: preview `ccsm-dashboard` (`.claude/launch.json`), **restart it
+   after every edit** — the watcher misses `app/` and `views/`.
+6. Suite against baseline, compare FAILURES not the passed count, and never
+   edit the tree while it runs.
+7. This machine's Git Bash heredocs collapse backslashes: write scripts with
+   backslashes through the Write tool.
+
+---
+
+## STATUS
+
+### 2026-10-06 — the plan is written; Phase 0 starts
+
+Suite baseline before any change: **0 failed / 1883 passed / 1 skipped**
+(4 min 50 s).
+
+Live state at the start: *Este traslado* packet 104 pages; mission against
+leadership's goal at 4 of 6 weeks — new people 806 of 1.359, member lessons
+528 of 1.017, sacrament 216 of 329, first week 41 of 54, dates 167 of 223,
+form baptisms 7 of 45, RC 210 of 351. All seven leadership goals are complete
+for 2026-6 (every area has one), so decision 44 has a goal to grade against
+everywhere.
