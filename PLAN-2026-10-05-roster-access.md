@@ -222,3 +222,21 @@ every later test (`fbb9a16`).
 - 2026-10-19 transfer: Preview proposes lineage for whatever opens; new areas
   get their mailbox from the roster; Preview warns if an assistant left the AP
   area — update Liderazgo the same day.
+
+### Follow-ups, 2026-10-06
+
+- **The 10/5 letters went out with the new code:** Agent1C sent 48 = 45 areas
+  + the President + both APs at their own addresses.
+- **The Monday mission report has not run since 2026-08-03**, including 10/5 —
+  its trigger is not installed. OWED BY ZACKARY in the Apps Script editor, as
+  the sheet's owner: `smokeTestPipeline()` (read-only), then
+  `setupAllCcsmTriggers()`, not during the Monday 21:15-22:30 chain. Nothing
+  else can do it: the bound script opens only for ccsm.pmg.compass@gmail.com.
+- **The 9/28 letters never went out** (Agent1A + 1B ran, Agent1C did not). A
+  one-off — 10/5 ran — whose cause only Apps Script's Executions page shows.
+- **Why both went unnoticed — fixed (`ec114d2`):** the app only flagged runs
+  that FAILED. `app/analytics/agent_runs.missed_runs` now flags agents past
+  their cadence and chain steps that never followed, in the Action Center bell
+  and Mantenimiento > Agent Runs.
+- **`AGENT_CONFIG.STREAMLIT_URL` added** (the 'Ver el Panel' button in leaders'
+  letters never rendered without it).
