@@ -1183,11 +1183,21 @@ def _rates(data: ReportData, scope: S.Scope, period: P.Period,
         return {c: float(pd.to_numeric(frame[c], errors="coerce").sum())
                 for c in frame.columns if c not in ("_area", "_day")}
 
-    return tuple(rate_rows(
-        totals(rows), totals(prior), data.agent_config,
-        current_days=int(rows["_day"].nunique()) if not rows.empty else 0,
-        prior_days=prior_days,
-    ))
+    # The Spanish names travel with the row, so neither renderer can fall back
+    # to the key: the packet printed "contact_rate" on every zone's rates page
+    # until 2026-10-06 (AUDIT-2026-10-06 H2). The denominator is named too —
+    # Tasa de Lecciones divides by contact ATTEMPTS, not by contacts, and a
+    # reader who is not told assumes the other.
+    out = []
+    for row in rate_rows(
+            totals(rows), totals(prior), data.agent_config,
+            current_days=int(rows["_day"].nunique()) if not rows.empty else 0,
+            prior_days=prior_days):
+        den = row["metric"].denominator
+        out.append({**row,
+                    "label": data.labels.get(row["key"], row["key"]),
+                    "denominator_label": data.labels.get(den, den)})
+    return tuple(out)
 
 
 # ── Children, ranked weakest first (decisions 14, 15) ────────────────────────

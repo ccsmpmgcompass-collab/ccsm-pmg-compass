@@ -227,6 +227,24 @@ def test_the_conversion_rates_stop_below_zone_level(district, zone):
     assert PK.rate_lines(district) == []
 
 
+def test_a_rate_line_prints_its_name_its_denominator_and_its_move(zone):
+    """AUDIT-2026-10-06 H2: never the key, always what it divides by, and the
+    change `point_delta` computed and the packet used to drop — in points."""
+    from dataclasses import replace
+    from app.analytics.period_delta import UP
+    row = {"key": "lesson_rate", "label": "Tasa de Lecciones",
+           "denominator_label": "Intentos de Contacto", "value": 9.5,
+           "target": 20.0, "pct_of_target": 47.5, "numerator": 95,
+           "denominator": 1000,
+           "change": {"points": 2.3, "direction": UP, "show": "points"}}
+    line = PK.rate_lines(replace(zone, rates=(row,)))[0]
+    assert line.label == "Tasa de Lecciones"
+    assert line.note == "95 de 1.000 intentos de contacto"
+    assert line.change == (UP, "+2,3 pp")
+    no_move = PK.rate_lines(replace(zone, rates=({**row, "change": None},)))[0]
+    assert no_move.change == (0, "—")
+
+
 def test_the_scores_print_ungraded(models):
     """They are the agent's own 0-100 composites, not a percentage of a goal,
     and the 90/60 bands would claim they were."""

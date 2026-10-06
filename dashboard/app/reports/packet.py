@@ -1038,6 +1038,7 @@ def rate_lines(model) -> list:
     for rate in model.rates:
         value, target = rate.get("value"), rate.get("target")
         pct = rate.get("pct_of_target")
+        den = rate.get("denominator_label") or ""
         lines.append(PP.MetricLine(
             label=rate.get("label") or rate.get("key", ""),
             value=es_display.percent(value, 1),
@@ -1045,9 +1046,36 @@ def rate_lines(model) -> list:
             pct=pct, status=_attainment_status(pct), magnitude=pct is None,
             verdict=(f"{PP.STATUS_WORD[_attainment_status(pct)]} · "
                      f"{_pct(pct)} de la meta") if pct is not None else "sin meta",
+            change=_rate_change(rate),
             note=(f"{es_display.integer(rate.get('numerator'))} de "
-                  f"{es_display.integer(rate.get('denominator'))}")))
+                  f"{es_display.integer(rate.get('denominator'))}"
+                  + (f" {den.lower()}" if den else ""))))
     return lines
+
+
+def _rate_change(rate) -> tuple:
+    """A rate's move in percentage POINTS, as `(direction, "+2,3 pp")`.
+
+    `rate_metrics.rate_row` has always computed it (`point_delta`, which
+    already refuses a window with too few reporting days and already holds a
+    two-point band for "flat"); the packet never printed it. Points, never a
+    percent of a percent: close_rate going 7,4% to 9,7% is "+2,3 pp", not
+    "+31%".
+    """
+    change = rate.get("change")
+    if not change or change.get("points") is None:
+        return (0, es_display.NA)
+    points = float(change["points"])
+    # `signed_percent`'s convention: "+" written out, the minus from the
+    # number itself — the packet's fonts have no U+2212.
+    return (int(change.get("direction") or 0),
+            f"{'+' if points > 0 else ''}{es_display.number(points, 1)} pp")
+
+
+def _rates_based(model) -> bool:
+    """Whether any rate carries a change — the head says "sin base" if not."""
+    return any((r.get("change") or {}).get("points") is not None
+               for r in model.rates)
 
 
 def score_tiles(model) -> list:
@@ -1468,13 +1496,19 @@ def rates_and_scores(model) -> list:
     if model.rates:
         flow.append(PP.SectionHead("Tasas de conversión",
                                    "la razón de los totales de la unidad"))
+        based = _rates_based(model)
+        against = _against_label(model)
         flow.append(PP.metric_table(
             rate_lines(model),
-            headers=("Tasa", "Real", "Meta", "", "Contra la meta", "")))
+            headers=("Tasa", "Real", "Meta", "", "Contra la meta",
+                     (("Cambio", f"vs {against}") if based and against
+                      else "Cambio" if based else NO_BASE_HEAD))))
         flow.append(Spacer(0, 4))
         flow.append(Paragraph(PP.text(
             "La razón de los totales de la unidad, no el promedio de las de "
-            "sus áreas. Un denominador en cero no es 0%: no hubo qué medir."),
+            "sus áreas; bajo cada nombre, qué divide a qué. El cambio va en "
+            "puntos porcentuales. Un denominador en cero no es 0%: no hubo "
+            "qué medir."),
             st["note"]))
     tiles = score_tiles(model)
     if tiles:

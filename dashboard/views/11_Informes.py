@@ -819,11 +819,14 @@ if _model.rates:
               "lecciones que medir."),
     )
     render_kpi_row([{
-        "label": _data.labels.get(r["key"], r["key"]),
+        "label": r.get("label") or r["key"],
         "value": r["value"] if r["value"] is not None else 0,
         "goal": r["target"],
         "unit": "%", "decimals": 1,
-        "note": f"{fmt_int(r['numerator'])} de {fmt_int(r['denominator'])}",
+        # What it divides by, named — the packet's note word for word.
+        "note": (f"{fmt_int(r['numerator'])} de {fmt_int(r['denominator'])}"
+                 + (f" {r['denominator_label'].lower()}"
+                    if r.get("denominator_label") else "")),
         "change": r.get("change"),
         "points_unit": "pp",
     } for r in _model.rates])

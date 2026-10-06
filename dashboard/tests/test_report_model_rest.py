@@ -276,6 +276,20 @@ def test_the_rates_are_the_ratio_of_totals(data, period):
     assert rates["lesson_rate"]["value"] == pytest.approx(20)
 
 
+def test_each_rate_carries_its_spanish_name_and_its_denominator_s(data, period):
+    """AUDIT-2026-10-06 H2: the packet printed "contact_rate" because the row
+    had no label and the renderer fell back to the key. The model names it,
+    and names what it divides by — Tasa de Lecciones is over contact
+    ATTEMPTS, which nobody guesses."""
+    for row in _report(data, period).rates:
+        assert row["label"] == data.labels.get(row["key"], row["key"])
+        assert row["denominator_label"]
+    lesson = next(r for r in _report(data, period).rates
+                  if r["key"] == "lesson_rate")
+    assert lesson["denominator_label"] == data.labels.get(
+        "contacts_attempted", "contacts_attempted")
+
+
 def test_the_rates_stop_at_zone_level(data, period):
     """Decision 13. A close rate over one companionship's fortnight of three
     lessons is a ratio of two small integers."""
