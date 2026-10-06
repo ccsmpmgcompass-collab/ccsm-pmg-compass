@@ -32,3 +32,10 @@ dashboard/logs/
 
 # Email preview tool: holds a dump of live sheet data (missionary names + emails)
 tools/email_preview/.data/
+
+# KI ranking PDFs (tools/build_ki_ranking.py): generated output, plus the cached
+# live sheet data it reads with --cached (sector-level results)
+/*.pdf
+/Indicadores_por_zona_*/
+tools/dump.json
+tools/ki_ranking_snapshots/
