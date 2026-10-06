@@ -251,3 +251,35 @@ leadership's goal at 4 of 6 weeks — new people 806 of 1.359, member lessons
 form baptisms 7 of 45, RC 210 of 351. All seven leadership goals are complete
 for 2026-6 (every area has one), so decision 44 has a goal to grade against
 everywhere.
+
+### 2026-10-06 — 0.1 (C3) done · `4b86ac4`
+
+The false sentence is gone from all four places it lived: the baptism page,
+page 3's "Dos cifras de bautismos", the no-capture sentence in
+`tableau.PeriodBaptisms.sentence` (a fourth copy the plan had not listed) and
+the screen's info text. Each now says the certified figure counts every zone
+and the form only the pilot's (`packet._pilot_zones`, "las 4 zonas del
+piloto", from the mission's children). New test pins "no siempre" out of both
+packet texts.
+
+### 2026-10-06 — 0.2 (H2) done · `b8a7a8d`
+
+`model._rates` attaches `label` and `denominator_label`; the packet's rate
+table has a real change column in points (`_rate_change`, "sin base" head
+when no rate has one) and every note names its denominator. Live, this
+transfer: contacto 45,1% (−2,2 pp) "7.413 de 16.428 intentos de contacto";
+lecciones 13,6% (−2,8 pp) "2.230 de 16.428 intentos de contacto"; invitación
+13,0% (+3,9 pp). Widest note 105pt of 143.
+
+### 2026-10-06 — 0.3 (H1) done
+
+`grading.flag_here`: the mission's verdict sticks to a unit only where the
+unit's own reading is outside the band in the same direction; applied inside
+`grade_ki` and `grade_nightly`, so neither renderer changed. The old test that
+pinned an area at 50% as flagged was rewritten to the new rule. Live, this
+transfer (only *Primera Semana* is flagged at mission level): unit rows
+carrying the flag **59 → 37**; now graded — San Pedro 30%, El Mirador
+**117% · al ritmo**, Huepil & Tucapel 28%, Laja 1 28%, Los Huertos 27%,
+San Pedro 1 39%, Lautaro 2 44%. The weekly packet has no flag at all, so the
+two packets still disagree about *Primera Semana* at mission level — that
+goes when Phase 1 retires the KI flag.

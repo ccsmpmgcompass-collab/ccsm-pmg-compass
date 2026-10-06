@@ -201,6 +201,42 @@ def test_a_flagged_goal_does_not_silence_the_movement():
     assert g.change_pct == pytest.approx(25)
 
 
+def test_a_unit_that_beat_the_goal_is_never_told_to_revise_it():
+    """AUDIT-2026-10-06 H1, the live case: El Mirador did 7 against a stated 6
+    and printed "la meta hay que revisarla" because the MISSION was under the
+    floor. The mission's verdict only sticks where the unit's own reading
+    agrees."""
+    g = G.grade_ki(7, 6, flag=G.GOAL_TOO_HIGH)
+    assert g.flag is None
+    assert g.status == "good" and g.pct == pytest.approx(116.7, abs=0.1)
+
+
+@pytest.mark.parametrize("actual,flag,kept", [
+    (24, G.GOAL_TOO_HIGH, True),      # under the floor here too
+    (31, G.GOAL_TOO_HIGH, False),     # inside the band here: graded
+    (0, G.GOAL_TOO_HIGH, True),       # nothing done, mission says broken
+    (260, G.GOAL_TOO_LOW, True),      # over the ceiling here too
+    (180, G.GOAL_TOO_LOW, False),
+    (None, G.GOAL_TOO_HIGH, False),   # no reading, nothing to flag
+])
+def test_the_mission_s_flag_sticks_only_where_the_unit_agrees(actual, flag,
+                                                               kept):
+    assert (G.flag_here(flag, actual, 100) == flag) is kept
+    assert (G.grade_ki(actual, 100, flag=flag).flag == flag) is kept
+
+
+def test_no_mission_flag_means_no_unit_flag_however_far_off_the_unit_is():
+    """The original reason the verdict is taken at mission scope still holds:
+    an area that did nothing against a sound goal is BEHIND, not flagged."""
+    assert G.flag_here(None, 0, 100) is None
+    assert G.grade_ki(0, 100).status == "bad"
+
+
+def test_a_nightly_row_drops_a_flag_its_own_figures_do_not_bear_out():
+    assert G.grade_nightly(50, 100, flag=G.GOAL_TOO_HIGH).flag is None
+    assert G.grade_nightly(10, 100, flag=G.GOAL_TOO_HIGH).flag == G.GOAL_TOO_HIGH
+
+
 # ── The acceptance criterion ─────────────────────────────────────────────────
 
 def test_the_twenty_nightly_metrics_are_not_a_wall_of_red():

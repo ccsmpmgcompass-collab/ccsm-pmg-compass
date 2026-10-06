@@ -187,6 +187,14 @@ def goal_is_unusable(actual, goal) -> str | None:
     is that the area is behind — which is the news, and the flag would bury it.
     That is why `grade_ki` and `grade_nightly` take the verdict as an argument
     rather than computing it per row.
+
+    **But a unit only carries it when its own reading agrees** (`flag_here`,
+    2026-10-06). Pasted onto every unit unconditionally, it told El Mirador
+    "la meta hay que revisarla" about a goal El Mirador BEAT (7 against 6), and
+    seven of the eighteen units printing it sat inside the usable band
+    (AUDIT-2026-10-06 H1). The mission still decides whether a goal is broken;
+    a unit whose own work reads as an ordinary percentage of it is simply
+    graded.
     """
     pct = attainment(actual, goal)
     if pct is None:
@@ -195,6 +203,27 @@ def goal_is_unusable(actual, goal) -> str | None:
         return GOAL_TOO_HIGH
     if pct > GOAL_CEILING * 100:
         return GOAL_TOO_LOW
+    return None
+
+
+def flag_here(flag, actual, goal) -> str | None:
+    """The mission's verdict `flag`, if THIS unit's own reading bears it out.
+
+    GOAL_TOO_HIGH survives only where the unit, too, is under `GOAL_FLOOR` of
+    the goal — so never where the unit reached it, which is the one place
+    "the goal is too high, revise it" is plainly false. GOAL_TOO_LOW survives
+    only where the unit, too, is over `GOAL_CEILING`. None where the unit has
+    no reading at all: there is no goal of its own to be unusable.
+    """
+    if not flag:
+        return None
+    pct = attainment(actual, goal)
+    if pct is None:
+        return None
+    if flag == GOAL_TOO_HIGH:
+        return flag if pct < GOAL_FLOOR * 100 else None
+    if flag == GOAL_TOO_LOW:
+        return flag if pct > GOAL_CEILING * 100 else None
     return None
 
 
@@ -236,12 +265,14 @@ def grade_ki(actual, goal, before=None, *, now=None, pace=None,
     bases — see `grade_nightly`, where they always do.
 
     `flag` is the mission-scope verdict from `goal_is_unusable`, passed in
-    rather than recomputed per row — see that function for why. A flagged goal
+    rather than recomputed per row — see that function for why — and kept only
+    where this row's own reading bears it out (`flag_here`). A flagged goal
     is **not scored**: `status` comes back None and the row prints its flag
     instead of a colour. Decision 22 in one line. The change against the
     comparison period is still carried, since that is a statement about the
     work rather than about the goal.
     """
+    flag = flag_here(flag, actual, goal)
     status = None if flag else goal_bar_status(
         attainment(actual, pace if pace is not None else goal))
     now = actual if now is None else now
@@ -269,6 +300,7 @@ def grade_nightly(actual, goal, before=None, *, now=None, flag=None) -> Grade:
     returns to the goal is decision G-D6, judged after one transfer of them.
     """
     now = actual if now is None else now
+    flag = flag_here(flag, actual, goal)
     return Grade(status=change_status(now, before),
                  pct=attainment(actual, goal),
                  change_pct=change(now, before), flag=flag)

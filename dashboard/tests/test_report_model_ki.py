@@ -209,18 +209,24 @@ def test_a_goal_nobody_set_reads_zero_rather_than_missing(data, period):
 
 # ── Decision 22: the flag is the mission's verdict, handed down ──────────────
 
-def test_an_unusable_goal_is_judged_at_mission_scope_and_applied_everywhere():
-    """A1 reaches half of the lessons goal and would grade "bad" on its own.
-    The mission reaches a fifth of it, which is not a yardstick — so the row is
-    flagged rather than scored, at every level, including A1's."""
+def test_an_unusable_goal_is_judged_at_mission_scope_but_sticks_only_where_true():
+    """The mission reaches a fifth of the lessons goal, which is not a
+    yardstick, so the mission's row is flagged rather than scored. A1 reaches
+    half of it — an ordinary percentage of a goal it can be measured against —
+    so A1 is graded, not told its goal needs revising (AUDIT-2026-10-06 H1;
+    until then the mission's verdict was pasted onto every unit)."""
     data = _data()
     period = P.resolve(P.THIS_TRANSFER, TODAY, data.cycles)
     assert data.ki_goal_flags(period)[LESSONS] == "goal_too_high"
 
+    mission = _report(data, period).ki(LESSONS)
+    assert mission.grade.status is None
+    assert mission.grade.flag_label.startswith("meta no utilizable")
+
     area = _report(data, period, S.AREA, area="A1").ki(LESSONS)
-    assert area.grade.pct == pytest.approx(50)     # it would have been graded
-    assert area.grade.status is None               # but it is flagged instead
-    assert area.grade.flag_label.startswith("meta no utilizable")
+    assert area.grade.pct == pytest.approx(50)
+    assert area.grade.flag is None
+    assert area.grade.status == "bad"
 
 
 def test_a_usable_goal_is_not_flagged_anywhere(data, period):
