@@ -38,6 +38,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.analytics.period_delta import SMALL_COUNT_MAX
 from app.config.theme import goal_bar_status
 
 #: Decision 22's two edges, as fractions of a normalised pace. A goal the work
@@ -59,6 +60,19 @@ GOAL_CEILING = 2.50
 #: which is decision 10's wall of red wearing arrows instead, and ±25% would
 #: call a genuine quarter-sized drop "steady".
 FLAT_BAND = 15.0
+
+#: Below this many events EXPECTED at the comparison period's pace, a change
+#: is printed as a signed count ("−3"), not a percentage. The Panel's own
+#: threshold, `period_delta.SMALL_COUNT_MAX`, so the app keeps one rule:
+#: El Mirador's "+260%" on a count of five was the same fact as "+4", and
+#: only the second admits how small the sample is (AUDIT-2026-10-06 H5).
+SMALL_COUNT = SMALL_COUNT_MAX
+
+#: How far a move has to clear Poisson noise before it gets a direction: the
+#: two-rate z-test, |z| ≥ 1,96 — about a one-in-twenty chance that a mission
+#: working at an unchanged pace shows a move this large by luck. Below it the
+#: change still prints, flat and without colour.
+NOISE_Z = 1.96
 
 #: What is wrong with the goal, not with the work.
 GOAL_TOO_HIGH = "goal_too_high"
@@ -129,6 +143,51 @@ def change(now, before) -> float | None:
     if before == 0:
         return None
     return (float(now) - before) / before * 100
+
+
+@dataclass(frozen=True)
+class CountChange:
+    """A change between two COUNTS, each over its own exposure (area-weeks or
+    area-nights), read for size and for noise.
+
+    ``expected`` is what the comparison period's pace would have produced on
+    this period's exposure, ``diff`` this period's count minus it, ``z`` the
+    two-rate Poisson statistic and ``small`` whether ``expected`` sits under
+    `SMALL_COUNT`.
+    """
+
+    expected: float
+    diff: float
+    z: float
+    small: bool
+
+    @property
+    def clear(self) -> bool:
+        """Whether the move is larger than the noise of counts this size."""
+        return abs(self.z) >= NOISE_Z
+
+
+def count_change(now, now_basis, before, before_basis) -> CountChange | None:
+    """The two counts as a `CountChange`, or None when either side is missing.
+
+    The test is on RATES — count over exposure — because the two periods rarely
+    have the same number of reports: z = (r₁ − r₀) / √(λ (1/a₁ + 1/a₀)), with λ
+    the pooled rate. Nothing in either period (λ = 0) is no move at all.
+    """
+    try:
+        now, before = float(now), float(before)
+        a1, a0 = float(now_basis), float(before_basis)
+    except (TypeError, ValueError):
+        return None
+    if a1 <= 0 or a0 <= 0 or now < 0 or before < 0:
+        return None
+    expected = before / a0 * a1
+    pooled = (now + before) / (a1 + a0)
+    z = 0.0
+    if pooled > 0:
+        z = (now / a1 - before / a0) / (pooled * (1 / a1 + 1 / a0)) ** 0.5
+    return CountChange(expected=expected, diff=now - expected, z=z,
+                       small=expected < SMALL_COUNT)
 
 
 def change_status(now, before, *, band: float = FLAT_BAND) -> str | None:
@@ -236,12 +295,22 @@ class Grade:
     and is always shown when it exists, whether or not it was graded on.
     ``change_pct`` is the move from the comparison period. ``flag`` marks a
     goal that is not a yardstick, and ``flag_label`` is the Spanish for it.
+
+    ``change_count`` replaces the percentage when the counts are small: this
+    period's count minus what the comparison period's pace would have produced
+    on this period's reports — "+4", where "+260%" said the same thing louder.
+    ``change_clear`` is False when the move is inside Poisson noise; the
+    change still prints, but without a direction (AUDIT-2026-10-06 H5). Both
+    stay at their defaults when the caller had no counts to give, which is
+    the old behaviour exactly.
     """
 
     status: str | None = None
     pct: float | None = None
     change_pct: float | None = None
     flag: str | None = None
+    change_count: float | None = None
+    change_clear: bool = True
 
     @property
     def flag_label(self) -> str:
@@ -252,8 +321,17 @@ class Grade:
         return self.status is not None
 
 
+def _noise(counts) -> tuple:
+    """`(change_count, change_clear)` from `(now, now_basis, before,
+    before_basis)` counts, or the no-counts defaults."""
+    cc = count_change(*counts) if counts else None
+    if cc is None:
+        return None, True
+    return (cc.diff if cc.small else None), cc.clear
+
+
 def grade_ki(actual, goal, before=None, *, now=None, pace=None,
-             flag=None) -> Grade:
+             flag=None, counts=None) -> Grade:
     """A Key Indicator: graded against its goal on 90/60, unless flagged.
 
     `pace` is the share of the goal due by now — pass `paced_goal(...)` for an
@@ -271,16 +349,22 @@ def grade_ki(actual, goal, before=None, *, now=None, pace=None,
     instead of a colour. Decision 22 in one line. The change against the
     comparison period is still carried, since that is a statement about the
     work rather than about the goal.
+
+    `counts` is `(now count, now exposure, before count, before exposure)`;
+    given, the change is read for size and noise (`count_change`).
     """
     flag = flag_here(flag, actual, goal)
     status = None if flag else goal_bar_status(
         attainment(actual, pace if pace is not None else goal))
     now = actual if now is None else now
+    change_count, clear = _noise(counts)
     return Grade(status=status, pct=attainment(actual, goal),
-                 change_pct=change(now, before), flag=flag)
+                 change_pct=change(now, before), flag=flag,
+                 change_count=change_count, change_clear=clear)
 
 
-def grade_nightly(actual, goal, before=None, *, now=None, flag=None) -> Grade:
+def grade_nightly(actual, goal, before=None, *, now=None, flag=None,
+                  counts=None) -> Grade:
     """A nightly metric: graded on movement, never on the goal (decision 31).
 
     ``actual`` is judged against ``goal``; ``now`` and ``before`` are what the
@@ -298,9 +382,18 @@ def grade_nightly(actual, goal, before=None, *, now=None, flag=None) -> Grade:
     launch, roughly twice what the mission did, produced every week. Those
     goals are being re-based (PLAN-2026-10-02-goals.md); whether the colour
     returns to the goal is decision G-D6, judged after one transfer of them.
+
+    With `counts`, a move must ALSO clear Poisson noise to carry a colour: a
+    metric of a few dozen nights moving 20% is inside what luck alone does,
+    and reads "warn" — steady — like any move inside the band.
     """
     now = actual if now is None else now
     flag = flag_here(flag, actual, goal)
-    return Grade(status=change_status(now, before),
+    change_count, clear = _noise(counts)
+    status = change_status(now, before)
+    if status in ("good", "bad") and not clear:
+        status = "warn"
+    return Grade(status=status,
                  pct=attainment(actual, goal),
-                 change_pct=change(now, before), flag=flag)
+                 change_pct=change(now, before), flag=flag,
+                 change_count=change_count, change_clear=clear)

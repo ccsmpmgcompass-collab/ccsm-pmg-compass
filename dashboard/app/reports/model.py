@@ -1019,7 +1019,12 @@ def _ki_rows(data: ReportData, scope: S.Scope, period: P.Period, *,
             # filed results for it — dividing those two sums would be the 2.040%
             # bug again.
             grade=grade_ki(per_reporting, meta_rate, before=before_rate,
-                           flag=(flags or {}).get(key)),
+                           flag=(flags or {}).get(key),
+                           # The raw counts behind the two rates, so a change
+                           # on single digits prints as "+4" and a move inside
+                           # Poisson noise prints without a direction (H5).
+                           counts=(actual, reporting_area_weeks, before,
+                                   before_area_weeks)),
         ))
     return out
 
@@ -1134,7 +1139,9 @@ def _nightly_rows(data: ReportData, scope: S.Scope, period: P.Period, *,
             before_per_reporting_area_week=before_rate,
             goal_per_area_week=goal,
             grade=grade_nightly(now_rate, goal, before=before_rate,
-                                now=now_rate, flag=(flags or {}).get(key)),
+                                now=now_rate, flag=(flags or {}).get(key),
+                                counts=(actual, area_days, before,
+                                        before_days)),
         ))
     return out
 

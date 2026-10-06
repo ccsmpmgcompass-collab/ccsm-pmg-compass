@@ -612,7 +612,10 @@ COLUMN_GLOSSARY = (
                               "lejos de lo real que no sirve para medir: la "
                               "cifra es real, la meta hay que revisarla."),
     ("Cambio", "Contra el período que nombra su encabezado, por área que "
-               "informó. Una raya bajo «sin base este período»: no hay con "
+               "informó. Con cifras chicas va en unidades («+4»), no en "
+               "porcentaje, y el triángulo sólo aparece cuando el movimiento "
+               "es más grande que lo que el azar mueve una cifra de ese "
+               "tamaño. Una raya bajo «sin base este período»: no hay con "
                "qué comparar."),
     ("Áreas que informaron", "La última fila de cada tabla semanal: cuántas "
                              "áreas entregaron el formulario esa semana."),
@@ -728,14 +731,25 @@ def _change(row, *, comparable: bool, confident: bool = True) -> tuple:
     used to print those figures in grey and explain below that they meant
     nothing; a reader who stops at the table takes -63% at its word.
     """
-    pct = row.grade.change_pct
-    if pct is None or not (comparable and confident):
+    grade = row.grade
+    if not (comparable and confident):
+        return (0, es_display.NA)
+    # Small counts print as a signed count, never a percentage, and a move
+    # inside Poisson noise prints with no direction (AUDIT-2026-10-06 H5):
+    # El Mirador read "+260%" on a count of five.
+    if grade.change_count is not None:
+        n = round(grade.change_count)
+        text = f"{'+' if n > 0 else ''}{es_display.integer(n)}"
+        direction = (1 if n > 0 else -1) if n and grade.change_clear else 0
+        return (direction, text)
+    pct = grade.change_pct
+    if pct is None:
         return (0, es_display.NA)
     # The direction of the figure as PRINTED: -0,3% prints "0%", and a red
     # triangle beside "-0%" reported a fall nobody could see in the number.
     if round(pct) == 0:
         return (0, es_display.signed_percent(0))
-    direction = 1 if pct > 0 else -1
+    direction = (1 if pct > 0 else -1) if grade.change_clear else 0
     return (direction, es_display.signed_percent(pct))
 
 

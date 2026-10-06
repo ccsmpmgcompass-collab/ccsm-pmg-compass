@@ -232,6 +232,54 @@ def test_no_mission_flag_means_no_unit_flag_however_far_off_the_unit_is():
     assert G.grade_ki(0, 100).status == "bad"
 
 
+def test_a_small_count_changes_in_units_not_percent():
+    """AUDIT-2026-10-06 H5: 5 → 18 over the same reports is "+260%" and also
+    "+13", and only the second admits how small the sample is. Under 25
+    expected at the old pace (the Panel's SMALL_COUNT_MAX) it is units."""
+    g = G.grade_ki(18 / 10, 5, before=5 / 10, counts=(18, 10, 5, 10))
+    assert g.change_count == pytest.approx(13)
+    assert g.change_pct == pytest.approx(260)
+
+
+def test_a_large_count_keeps_its_percentage():
+    g = G.grade_ki(900 / 40, 30, before=806 / 40, counts=(900, 40, 806, 40))
+    assert g.change_count is None
+    assert g.change_clear                         # 806 → 900 is not luck
+
+
+def test_the_expected_count_rescales_to_this_period_s_reports():
+    """Ten reports then, twenty now: the old pace on twenty reports is twice
+    the old count, and that is what "+N" is measured from."""
+    cc = G.count_change(12, 20, 5, 10)
+    assert cc.expected == pytest.approx(10)
+    assert cc.diff == pytest.approx(2)
+    assert cc.small
+
+
+@pytest.mark.parametrize("now,before,clear", [
+    (7, 11, False),        # the mission's baptisms, -35%: noise
+    (5, 2, False),         # +150% on a handful: noise
+    (40, 10, True),        # four times as many: real
+    (0, 0, False),         # nothing either side: no move
+])
+def test_a_move_needs_to_clear_poisson_noise_for_a_direction(now, before,
+                                                              clear):
+    assert G.count_change(now, 10, before, 10).clear is clear
+
+
+def test_a_nightly_move_inside_the_noise_reads_steady():
+    """+60% on a few nights clears the 15% band but not the noise."""
+    g = G.grade_nightly(8, 10, before=5, counts=(8, 10, 5, 10))
+    assert g.status == "warn"
+    loud = G.grade_nightly(80, 10, before=50, counts=(800, 100, 500, 100))
+    assert loud.status == "good"
+
+
+def test_no_counts_is_the_old_behaviour_exactly():
+    g = G.grade_ki(5, 10, before=4)
+    assert g.change_count is None and g.change_clear
+
+
 def test_a_nightly_row_drops_a_flag_its_own_figures_do_not_bear_out():
     assert G.grade_nightly(50, 100, flag=G.GOAL_TOO_HIGH).flag is None
     assert G.grade_nightly(10, 100, flag=G.GOAL_TOO_HIGH).flag == G.GOAL_TOO_HIGH

@@ -298,3 +298,21 @@ la Iglesia 25 against 45 (55%), Nuevas Personas 6,8 against 8,0 (85%).
 The screen's nightly list leads with the same per-area-week figure and drops
 its "/informó" cell (it IS the value now). Three tests that pinned the old
 heads and note were rewritten; two new ones pin the order and the sentence.
+
+### 2026-10-06 — 0.5 (H5) done — P3 as built
+
+`grading.count_change` (expected at the old pace on this period's exposure,
+the signed difference, the two-rate Poisson z) feeds two new `Grade` fields,
+`change_count` (set only when expected < 25, `period_delta.SMALL_COUNT_MAX`)
+and `change_clear` (|z| ≥ 1,96). The model passes raw counts and exposures —
+area-weeks for Key Indicators, area-nights for nightly. Packet `_change` and
+the screen's KI cards and nightly cells print "+20" for a small count and no
+triangle for a move inside the noise; a nightly status inside the noise reads
+"warn" (steady). Page 3's glossary explains it in one sentence.
+
+Live, El Mirador this transfer: sacrament +260% → **+20** ▲, first week
++133% → +4 (flat), dates +111% → +10 (flat), RC −70% → **−12** ▼. Mission:
+form baptisms −35% → −4 (flat); sacrament −17% and dates +4% lose their
+triangles. Zone/district/mission KI change cells: this transfer 57 in %, 55
+in units, 29 with a triangle; last week 14 in %, 112 in units, **3** with a
+triangle.

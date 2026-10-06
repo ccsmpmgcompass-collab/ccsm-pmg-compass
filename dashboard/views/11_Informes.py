@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from app.analytics import period_delta as _pd
 from app.auth.auth import require_auth
 from app.components.charts import (ranked_list, share_bar, spark_multiples,
                                    stage_bars)
@@ -253,8 +254,21 @@ def _ki_cards() -> list[dict]:
                             f"{fmt_int(_model.scope.area_count)} áreas")
         if row.grade.flag:
             card["note"] = row.grade.flag_label
-        if row.grade.change_pct is not None and comparable:
-            card["delta"] = row.grade.change_pct
+        # H5, the packet's rule: a small count moves in units, and a move
+        # inside Poisson noise is drawn flat and grey.
+        if comparable and row.grade.change_count is not None:
+            n = round(row.grade.change_count)
+            card["change"] = {
+                "pct": None, "change": n, "show": _pd.ABSOLUTE,
+                "direction": ((1 if n > 0 else -1)
+                              if n and row.grade.change_clear else _pd.FLAT)}
+        elif comparable and row.grade.change_pct is not None:
+            pct = row.grade.change_pct
+            card["change"] = {
+                "pct": pct, "change": None, "show": _pd.PERCENT,
+                "direction": ((1 if pct > 0 else -1)
+                              if round(pct) and row.grade.change_clear
+                              else _pd.FLAT)}
         else:
             card["change_note"] = "sin base este período"
             card["change_note_title"] = _comparison_note()
@@ -273,9 +287,14 @@ _NIGHTLY_COMPARABLE = (_model.comparison_nightly_coverage is not None
 
 def _change_cell(row) -> str:
     """A metric's movement as a short arrow string, or why there is none."""
-    if row.grade.change_pct is None or not _NIGHTLY_COMPARABLE:
+    if not _NIGHTLY_COMPARABLE:
         return NA
     arrow = {"good": "↑", "bad": "↓"}.get(row.grade.status, "→")
+    if row.grade.change_count is not None:
+        n = round(row.grade.change_count)
+        return f"{arrow} {'+' if n > 0 else ''}{fmt_int(n)}"
+    if row.grade.change_pct is None:
+        return NA
     return f"{arrow} {fmt_percent(abs(row.grade.change_pct))}"
 
 

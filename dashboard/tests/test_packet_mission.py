@@ -570,6 +570,29 @@ def test_every_comparison_head_fits_on_one_line(mission, label):
     assert PP.width_of(sub, PP.NOTE) <= PP.METRIC_COLUMNS[-1] - 2 * 3.5, sub
 
 
+def _line_with_grade(mission, grade):
+    row = replace(_row(mission, NEW), grade=grade)
+    return PK.ki_lines(replace(mission, key_indicators=(row,)),
+                       comparable=True, confident=True)[0]
+
+
+def test_a_small_count_prints_in_units_with_its_direction_if_real(mission):
+    """AUDIT-2026-10-06 H5 — "+260%" on five events becomes "+13"."""
+    line = _line_with_grade(mission, G.Grade(change_pct=260.0,
+                                             change_count=13.2))
+    assert line.change == (1, "+13")
+    quiet = _line_with_grade(mission, G.Grade(change_pct=-35.0,
+                                              change_count=-3.8,
+                                              change_clear=False))
+    assert quiet.change == (0, "-4")
+
+
+def test_a_percentage_inside_the_noise_prints_without_a_direction(mission):
+    line = _line_with_grade(mission, G.Grade(change_pct=-12.0,
+                                             change_clear=False))
+    assert line.change == (0, "-12%")
+
+
 def test_a_change_that_prints_as_zero_draws_no_direction(mission):
     assert _line_with_change(mission, comparable=True, confident=True,
                              pct=-0.3).change == (0, "0%")
