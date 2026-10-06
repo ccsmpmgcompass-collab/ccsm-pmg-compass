@@ -411,18 +411,24 @@ def _nightly_rows(rows) -> str:
     P5). The strip takes the row's right half on a laptop and its own second
     line on a phone.
 
-    The two per-area rates both appear because they answer different
-    questions, and the difference between them is the news: "por área activa"
-    counts the areas that did not report, "por área que informó" does not.
+    The headline is per area that reported, per week — the figure the goal
+    and the percentage rest on. "/activa" beside it counts the areas that did
+    not report as well, and the gap between the two is the news.
     """
+    # The headline value is per area per week on the nights filed — the basis
+    # the goal and the percentage use — and the period total moves to the
+    # sub-line (AUDIT-2026-10-06 H4, the packet's rule).
     return ranked_list([{
         "name": r.label,
         "rank": i,
         "sub": (f"meta {fmt_number(r.goal_per_area_week, 1)}/área/sem"
                 if r.goal_per_area_week
                 else "sin meta configurada")
+               + (" · promedio, escala de 1 a 3" if r.key == M.EFFORT_SCORE
+                  else f" · total del período {fmt_int(r.actual)}"
+                  if r.actual is not None else "")
                + (f" · {r.grade.flag_label}" if r.grade.flag else ""),
-        "value": r.actual,
+        "value": r.per_reporting_area_week,
         "bar": r.grade.pct,
         # No colour either when the movement it would report is not real.
         "status": r.grade.status if _NIGHTLY_COMPARABLE else None,
@@ -430,18 +436,15 @@ def _nightly_rows(rows) -> str:
             _pct(r.grade.pct),
             (fmt_number(r.per_active_area_week, 1)
              if r.per_active_area_week is not None else NA),
-            (fmt_number(r.per_reporting_area_week, 1)
-             if r.per_reporting_area_week is not None else NA),
             _change_cell(r),
         ],
     } for i, r in enumerate(rows, start=1)],
-        # Counts print whole; only the 1-3 effort score has a decimal to show.
         value_fmt=lambda v: (NA if v is None else
-                             fmt_int(v) if float(v) == int(v)
+                             fmt_int(round(v)) if abs(v) >= 10
                              else fmt_number(v, 1)),
         columns=[("% meta", "% de la meta, por noche informada"),
-                 ("/activa", "por área activa por semana"),
-                 ("/informó", "por área que informó por semana"),
+                 ("/activa", "por área activa por semana, contando las "
+                             "áreas que no informaron"),
                  ("cambio", "contra el período de comparación")],
     )
 
@@ -599,8 +602,10 @@ if _model.areas_ranked:
 # ── 4 · Trabajo nocturno ──────────────────────────────────────────────────────
 
 render_section_label(
-    "Trabajo nocturno", right=(_model.nightly_coverage.label if
-                               _model.nightly_coverage else ""),
+    "Trabajo nocturno",
+    right=("más lejos de su meta primero · "
+           + (_model.nightly_coverage.label if _model.nightly_coverage
+              else "")),
     info=("Todas las métricas del formulario nocturno, no una lista corta. El "
           "estado sale del MOVIMIENTO contra el período de comparación, no de "
           "la meta: medidas contra sus metas, las veinte métricas van del 6% "
@@ -632,6 +637,9 @@ else:
             f"{fmt_int(_model.nightly_coverage.areas_in_scope)} áreas "
             f"informaron al menos una noche."
         )
+    st.caption("Cada cifra va por área por semana, sobre las noches "
+               "informadas; el total del período va bajo cada nombre. "
+               + _model.nightly_source_note)
 
 
 # ── 4b · Hallazgo (decisiones 20, 24, 32, 34) ────────────────────────────────

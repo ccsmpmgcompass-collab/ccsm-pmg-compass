@@ -240,10 +240,36 @@ def test_the_nightly_rows_run_furthest_behind_first(mission):
 def test_a_nightly_row_names_the_goal_it_is_measured_against(mission):
     lines = PK.nightly_lines(mission, _data().nightly_goals, comparable=False)
     line = next(l for l in lines if l.label == "Intentos de Contacto")
-    # A flag rides on the same line when the goal has stopped being a
-    # yardstick, so the goal is what the note OPENS with rather than all of it.
-    assert line.note.startswith("meta 150/área/sem")
+    # AUDIT-2026-10-06 H4: REAL and META on one basis, per area per week, so
+    # the goal is the META cell itself and the period's total is the note.
+    assert line.goal == "150"
+    assert line.note.startswith("total del período: ")
     assert line.verdict.endswith("de la meta")
+
+
+def test_a_flagged_nightly_goal_sorts_last_not_first(mission):
+    """AUDIT-2026-10-06 H4: "Lecciones con CR" topped every nightly table for a
+    goal nobody could meet. A flagged goal is not a yardstick, so it cannot be
+    the furthest from one."""
+    rows = list(mission.nightly_metrics)
+    rows[0] = replace(rows[0], grade=G.Grade(pct=1.0, flag=G.GOAL_TOO_HIGH))
+    ordered = replace(mission, nightly_metrics=tuple(rows)).nightly_weakest_first
+    assert ordered[-1].grade.flag == G.GOAL_TOO_HIGH
+
+
+def test_the_nightly_page_says_why_a_count_differs_from_the_key_indicator(
+        mission):
+    """900 nightly against 806 weekly for "Nuevas Personas Encontradas", with
+    nothing connecting them — the sentence is the model's, both renderers'."""
+    text = mission.nightly_source_note
+    assert "informe de cada noche" in text and "semanas completas" in text
+    page = " ".join(getattr(f, "text", "") for f in
+                    PK.nightly_page(mission, _data().nightly_goals))
+    assert "informe de cada noche" in page
+    assert "más lejos de su meta primero" in " ".join(
+        f.note for f in
+        PK.nightly_page(mission, _data().nightly_goals)
+        if isinstance(f, PP.SectionHead))
 
 
 def test_a_nightly_metric_with_no_configured_goal_says_so():
@@ -253,7 +279,7 @@ def test_a_nightly_metric_with_no_configured_goal_says_so():
     bare = M.build_all(data=_data(nightly_goals={}))[0]
     lines = PK.nightly_lines(bare, {}, comparable=False)
     assert lines
-    assert all(l.note.startswith("sin meta configurada") for l in lines)
+    assert all("sin meta configurada" in l.note for l in lines)
     assert all(l.verdict == "sin meta" for l in lines)
     assert all(l.goal == "—" and l.pct is None for l in lines)
 
@@ -446,7 +472,9 @@ def _heads(flow):
 def test_the_nightly_heads_say_what_each_figure_is_measured_in(mission):
     heads = _heads(PK.nightly_page(mission, _data().nightly_goals))
     real, meta = heads[1], heads[2]
-    assert real[0].label == "Real" and "período" in real[1].text
+    # Both on one basis since AUDIT-2026-10-06 H4: "3.248 contra 44,8" was two
+    # figures nobody could compare without dividing.
+    assert real[0].label == "Real" and "área/sem" in real[1].text
     assert meta[0].label == "Meta" and "área/sem" in meta[1].text
 
 

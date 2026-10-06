@@ -283,3 +283,18 @@ carrying the flag **59 → 37**; now graded — San Pedro 30%, El Mirador
 San Pedro 1 39%, Lautaro 2 44%. The weekly packet has no flag at all, so the
 two packets still disagree about *Primera Semana* at mission level — that
 goes when Phase 1 retires the KI flag.
+
+### 2026-10-06 — 0.4 (H4) done
+
+Nightly REAL is now the per-area-week figure the percentage rests on
+(`per_reporting_area_week`), beside META on the same basis; the period total
+is the row's note ("total del período: 3.248"), and the effort score's note
+says it is a 1-3 average instead. `NightlyCoverage.through` carries the last
+night counted, and `ReportModel.nightly_source_note` — one sentence, both
+renderers — says why a nightly count is not the Key Indicator of the same
+name. Flagged rows sort last (*Lecciones con CR* left the top). Head:
+"más lejos de su meta primero". Live mission, this transfer: Invitaciones a
+la Iglesia 25 against 45 (55%), Nuevas Personas 6,8 against 8,0 (85%).
+The screen's nightly list leads with the same per-area-week figure and drops
+its "/informó" cell (it IS the value now). Three tests that pinned the old
+heads and note were rewritten; two new ones pin the order and the sentence.

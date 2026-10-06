@@ -38,6 +38,7 @@ from app.config import es_display
 from app.reports import packet_parts as PP
 from app.reports import periods as P
 from app.reports import scope as S
+from app.reports.model import EFFORT_SCORE
 
 #: How the packet is ordered and what each block of pages is for. The keys are
 #: stable; the titles and audiences are what the print guide prints.
@@ -598,10 +599,12 @@ def how_to_read(mission, sections) -> list:
 #: which). Vocabulary, not figures — the only thing on page 3 that is not
 #: generated, because it describes the table rather than this period.
 COLUMN_GLOSSARY = (
-    ("Real", "Lo que las compañerías informaron en el período, sumado."),
+    ("Real", "Lo que las compañerías informaron en el período, sumado. En "
+             "el trabajo nocturno, lo que un área hace en una semana de "
+             "noches informadas: su encabezado dice «área/sem»."),
     ("Meta", "La suma de las metas que las compañerías se pusieron. En el "
-             "trabajo nocturno es otra cosa: la meta de UN área para UNA "
-             "semana, y por eso su encabezado dice «área/sem»."),
+             "trabajo nocturno, la meta de un área para una semana, en la "
+             "misma escala que su real."),
     ("La barra", "Real contra meta. La marca violeta es la meta de traslado "
                  "del liderazgo, y la línea bajo el nombre dice cuánto es."),
     ("Contra su propia meta", "El porcentaje de la barra y su calificación. "
@@ -831,17 +834,37 @@ def nightly_lines(model, goals, *, comparable: bool) -> list:
         # beside it rest on one figure.
         goal = (row.goal_per_area_week if row.goal_per_area_week is not None
                 else goals.get(row.key))
-        note = (f"meta {es_display.number(goal, 0)}/área/sem" if goal
-                else "sin meta configurada")
+        # REAL and META on ONE basis, per area per week — the figure the
+        # percentage is taken on (AUDIT-2026-10-06 H4). It used to print the
+        # period total beside a per-area-week goal, two numbers no reader can
+        # compare without dividing; the total is still here, in the note.
+        if row.key == EFFORT_SCORE:
+            # An average on the agents' 1-3 scale, not a count: it has no
+            # period total to print.
+            note = "promedio, escala de 1 a 3"
+        else:
+            note = (f"total del período: {_count(row.actual)}"
+                    if row.actual is not None else "sin noches informadas")
+        if not goal:
+            note = f"{note} · sin meta configurada"
         if row.grade.flag:
             note = f"{note} · {row.grade.flag_label}"
         lines.append(PP.MetricLine(
-            label=row.label, value=_count(row.actual),
-            goal=_count(goal) if goal else es_display.NA,
+            label=row.label, value=_per_week(row.per_reporting_area_week),
+            goal=_per_week(goal) if goal else es_display.NA,
             pct=row.grade.pct, status=None, magnitude=True,
             verdict=_verdict(row, graded=False),
             change=_change(row, comparable=comparable), note=note))
     return lines
+
+
+def _per_week(value) -> str:
+    """A per-area-week figure: whole from 10 up, one decimal below — 44,8
+    lessons is 45, but 0,4 baptismal calendars is not 0."""
+    if value is None:
+        return es_display.NA
+    return (es_display.integer(round(value)) if abs(value) >= 10
+            else es_display.number(value, 1))
 
 
 #: Which three Key Indicators get a column of their own in a ranked table, and
@@ -1429,14 +1452,14 @@ def areas_page(model) -> list:
     return flow
 
 
-#: The nightly table's two figure heads (finding A4). Its REAL is the period's
-#: total and its META is ONE area's goal for ONE week — "4.408 contra 75" —
-#: while the Key Indicator table above it uses the same two words for two
-#: period totals. A reader who has just learnt what the columns mean there
-#: reads 4.408 against 75 as fifty-eight times the goal. "área/sem" is the
-#: vocabulary the rows' own notes already use ("meta 75/área/sem"), and fits
-#: the 37pt the column has where "área/semana" is 0,4pt too wide.
-NIGHTLY_REAL_HEAD = ("Real", "período")
+#: The nightly table's two figure heads (finding A4, then AUDIT-2026-10-06
+#: H4). Until 2026-10-06 REAL was the period's total and META one area's goal
+#: for one week — "3.248 contra 44,8" — two figures a reader could not compare
+#: without dividing. Both are per area per week now, the basis the percentage
+#: beside them is taken on, and the period's total moved to the row's note.
+#: "área/sem" fits the 37pt the column has where "área/semana" is 0,4pt too
+#: wide.
+NIGHTLY_REAL_HEAD = ("Real", "área/sem")
 NIGHTLY_META_HEAD = ("Meta", "área/sem")
 
 
@@ -1455,7 +1478,7 @@ def nightly_page(model, goals) -> list:
     flow = [
         PP.SectionHead(
             "Todo el trabajo nocturno",
-            f"más atrasado primero · "
+            f"más lejos de su meta primero · "
             f"{es_display.integer(len(model.nightly_metrics))} medidas"),
     ]
     nightly = model.nightly_coverage
@@ -1470,8 +1493,10 @@ def nightly_page(model, goals) -> list:
     # período" now (decision 38), where the eye already is.
     flow += [
         Paragraph(PP.text(
-            "El porcentaje es contra la meta por noche informada. La barra va "
-            "en un solo azul y el color va en el cambio."),
+            "Real y meta van por área por semana, sobre las noches "
+            "informadas; el total del período va bajo cada nombre. La barra "
+            "va en un solo azul y el color va en el cambio. "
+            + model.nightly_source_note),
             st["note"]),
         Spacer(0, 4),
         PP.metric_table(nightly_lines(

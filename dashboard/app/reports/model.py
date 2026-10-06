@@ -105,6 +105,11 @@ class NightlyCoverage:
     days_reported: int
     areas_reporting: int
     areas_in_scope: int
+    #: The last night the window counts — the period's end or the compliance
+    #: anchor, whichever comes first. The nightly figures run to here while
+    #: the Key Indicators stop at the last complete week, which is why the
+    #: same name can carry two counts on one page (AUDIT-2026-10-06 H4).
+    through: date | None = None
 
     @property
     def rate(self) -> float | None:
@@ -449,20 +454,39 @@ class ReportModel:
         return next((r for r in self.key_indicators if r.key == key), None)
 
     @property
+    def nightly_source_note(self) -> str:
+        """Why "Nuevas Personas Encontradas" can read 900 in the nightly table
+        and 806 among the Key Indicators (AUDIT-2026-10-06 H4): two forms, two
+        windows. The nightly form counts every night through
+        `NightlyCoverage.through`, the week in progress included; the weekly
+        form, complete weeks only. Both renderers print this sentence."""
+        from app.config import es_display
+        cov = self.nightly_coverage
+        through = (f" hasta el {es_display.day_month(cov.through)}"
+                   if cov is not None and cov.through is not None else "")
+        return (f"Estas cifras salen del informe de cada noche{through}; los "
+                f"Indicadores Clave, del formulario semanal y sólo de semanas "
+                f"completas. Una medida con el mismo nombre puede dar dos "
+                f"cifras.")
+
+    @property
     def nightly_weakest_first(self) -> tuple[MetricRow, ...]:
         """Decision 17's table order: furthest from its goal at the top.
 
         Attainment, not movement — the ORDER is about which metric is furthest
         behind, while the row's colour is about which way it moved (decision
-        31). A metric with no goal to be measured against sorts to the end
-        rather than to the top: it is not the weakest, it is unmeasured.
+        31); both renderers say so in the section's head. A metric with no
+        goal to be measured against sorts to the end rather than to the top:
+        it is not the weakest, it is unmeasured. So does a FLAGGED goal: it is
+        not a yardstick, and "Lecciones con CR" sat at the top of every table
+        for a goal nobody could meet (AUDIT-2026-10-06 H4).
 
         Lives on the model rather than in either renderer, so the screen and
         the printed page list them in the same order.
         """
         return tuple(sorted(
             self.nightly_metrics,
-            key=lambda r: (r.grade.pct is None,
+            key=lambda r: (r.grade.pct is None or bool(r.grade.flag),
                            r.grade.pct if r.grade.pct is not None else 0,
                            r.label),
         ))
@@ -855,7 +879,8 @@ def _nightly_coverage(data: ReportData, scope: S.Scope,
     possible = max(0, days) * scope.area_count
     df = data.daily_log
     if df is None or df.empty or days <= 0:
-        return NightlyCoverage(max(0, possible), 0, 0, scope.area_count)
+        return NightlyCoverage(max(0, possible), 0, 0, scope.area_count,
+                               through=end if days > 0 else None)
     window = df[(df["_day"] >= period.start.isoformat())
                 & (df["_day"] <= end.isoformat())
                 & df["_area"].isin(set(scope.areas))]
@@ -864,6 +889,7 @@ def _nightly_coverage(data: ReportData, scope: S.Scope,
         days_reported=len(window),
         areas_reporting=int(window["_area"].nunique()) if not window.empty else 0,
         areas_in_scope=scope.area_count,
+        through=end,
     )
 
 
