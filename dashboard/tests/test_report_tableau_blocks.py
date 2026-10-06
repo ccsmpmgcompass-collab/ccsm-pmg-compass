@@ -201,7 +201,7 @@ def test_the_mission_block_says_it_covers_more_of_the_mission_than_the_rest():
                            areas=["El Mirador"])
     assert "10 zonas" in whole.scope_note
     assert "Ninguna cifra de Tableau se suma" in whole.scope_note
-    assert "MISSION_ORG" in scoped.scope_note
+    assert "organigrama" in scoped.scope_note
 
 
 def test_a_scoped_block_drops_rows_from_areas_the_roster_does_not_carry():

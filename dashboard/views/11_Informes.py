@@ -67,8 +67,8 @@ _data = _load()
 render_page_header("Informes", f"{_data.mission_name} — informe de consejo")
 
 if _data.roster is None or _data.roster.empty:
-    st.info("MISSION_ORG está vacío. Sin el organigrama no hay unidades que "
-            "informar.")
+    st.info("El organigrama de la misión (pestaña MISSION_ORG) está vacío. "
+            "Sin él no hay unidades que informar.")
     st.stop()
 
 
@@ -84,7 +84,7 @@ _scope = S.resolve(
     mission_name=_data.mission_name,
 )
 if _scope is None:
-    st.warning("Esa unidad ya no está en MISSION_ORG.")
+    st.warning("Esa unidad ya no está en el organigrama de la misión.")
     st.stop()
 
 # Periods the schedule can actually supply — a label is simply absent rather
@@ -593,8 +593,8 @@ if _model.children and _child_label:
 if _model.strengths or _model.growth:
     render_section_label(
         "Su fortaleza · Para crecer", right=_model.period.label,
-        info=("Lo eligen los agentes de Apps Script y queda escrito en "
-              "WEEKLY_BREAKDOWNS semana a semana; esta página lo LEE, no lo "
+        info=("Lo eligen los agentes de Apps Script y queda escrito en su "
+              "análisis semana a semana; esta página lo LEE, no lo "
               "vuelve a calcular. Si se recalculara aquí, la compañía leería "
               "una cosa en su correo y otra en esta pantalla."),
     )
@@ -701,7 +701,7 @@ if _BLOCK is not None:
         "Hallazgo",
         right=(_BLOCK.window.caption if _BLOCK.present else "sin datos"),
         info=("Viene de Tableau, no de los formularios de Compass, y las dos "
-              "cifras nunca se suman ni comparten una tabla (decisión 34). "
+              "cifras nunca se suman ni comparten una tabla. "
               "La ventana es la del período recortada a lo que alcanza la "
               "exportación guardada: si no alcanza, la sección no se dibuja y "
               "dice por qué."),
@@ -865,7 +865,7 @@ if _model.scores and _model.scores.measured:
     render_section_label(
         "Puntajes", right=f"{fmt_int(_model.scores.areas_scored)} áreas "
                           f"calificadas",
-        info=("Los cuatro puntajes que escribe CCSM_AgentScores, promediados "
+        info=("Los cuatro puntajes que escriben los agentes, promediados "
               "sobre las semanas del período. Un área que el agente todavía no "
               "calificó no cuenta como cero: no calificada y calificada en "
               "cero son cosas distintas."),

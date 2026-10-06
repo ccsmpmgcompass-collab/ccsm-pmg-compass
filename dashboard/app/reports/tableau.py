@@ -396,7 +396,7 @@ class Reconciliation:
                     f"de las zonas piloto" if share is not None else "")
             bits.append(
                 f"{es_display.integer(len(self.unknown))} nombres de área de "
-                f"Tableau no están en MISSION_ORG y quedan fuera de toda cifra "
+                f"Tableau no están en el organigrama y quedan fuera de toda cifra "
                 f"por unidad: {names}, con "
                 f"{es_display.integer(self.unknown_rows)} personas{tail}.")
         if self.missing:
@@ -951,8 +951,8 @@ def _year_to_date(period, certified: dict, open_month: tuple,
         open_count, open_key, end = int(count), month, through
 
     if closed is None and open_count is None:
-        return _refused(period, f"TABLEAU_BAPTISMS no tiene ninguna captura "
-                                f"de {year}")
+        return _refused(period, f"Tableau no tiene ninguna captura "
+                                f"certificada de {year}")
     window = Window(start=period.start, end=min(end, period.end),
                     period_days=period.days)
     if window.coverage is not None and window.coverage < floor:
@@ -1046,7 +1046,7 @@ class Block:
                     "suma con una cifra de los formularios.")
         # Half a line since R3.2 (C11): it prints under all 17 unit finding
         # sections, and the join rule it used to spell out is in the data note.
-        return "Sólo las áreas de esta unidad en MISSION_ORG."
+        return "Sólo las áreas de esta unidad en el organigrama."
 
     @property
     def maturity_note(self) -> str:

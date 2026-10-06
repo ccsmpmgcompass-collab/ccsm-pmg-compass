@@ -216,12 +216,12 @@ def test_a_district_with_no_leader_asks_for_no_copies_and_says_why():
     rows = PK.hand_outs(sections, units, ROSTER)
     d2 = next(r for r in rows if "D2" in r.who)
     assert d2.copies == 0
-    assert "MISSION_ORG" in d2.note
+    assert "organigrama" in d2.note
 
 
 def test_that_note_reaches_the_printed_guide(pdf):
     guide = _pages(pdf)[1]
-    assert "Sin líder de distrito en MISSION_ORG" in guide
+    assert "Sin líder de distrito en el organigrama" in guide
     assert "2 de 3 distritos" in guide
 
 

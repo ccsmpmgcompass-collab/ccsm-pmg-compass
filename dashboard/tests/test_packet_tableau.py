@@ -9,6 +9,7 @@ page can name both figures honestly (decision 21 requires it) and only a
 shared TOTAL is the thing decision 34 forbids.
 """
 
+import re
 from datetime import date
 
 import pandas as pd
@@ -114,7 +115,7 @@ def test_the_mission_page_says_it_counts_ten_zones_and_the_rest_count_four():
     """Decision 34's hard case. Nothing else in the packet changes population
     from one page to the next, so it is said outright."""
     assert "10 zonas" in words(PK.finding_page(of(S.MISSION)))
-    assert "MISSION_ORG" in words(PK.finding_page(of(S.ZONE)))
+    assert "organigrama" in words(PK.finding_page(of(S.ZONE)))
 
 
 def test_an_area_gets_no_finding_page():
@@ -279,8 +280,11 @@ def test_the_data_note_says_where_the_period_s_baptisms_came_from():
     built, _ = models(windows=TRANSFER_WINDOW)
     text = words(PK.data_note(built))
     assert "Bautismos de 2026-6: 17 certificados por Tableau" in text
-    assert "TABLEAU_BAPTISM_WINDOWS" in text
-    assert "decisión 42" in text
+    # Plain words in the sentence; the tab only in the source column, in
+    # small type (AUDIT-2026-10-06 M4).
+    assert "captura por período" in text
+    assert "pestaña TABLEAU_BAPTISM_WINDOWS" in text
+    assert "decisión" not in text
 
 
 @pytest.mark.parametrize("gap,expected", [
@@ -310,7 +314,7 @@ def test_the_data_note_carries_the_four_things_that_make_the_rest_safe():
     text = words(PK.data_note(models()[0]))
     assert "hasta el 17 de sep de 2026" in text            # where it reaches
     assert "Nunca se suman ni comparten una tabla" in text  # decision 34
-    assert "no están en MISSION_ORG" in text                # decision 35
+    assert "no están en el organigrama" in text             # decision 35
     assert "por nombre de área" in text                     # how they match
 
 
@@ -323,7 +327,7 @@ def test_the_data_note_explains_an_absent_section_rather_than_omitting_it():
 
 def test_the_sources_table_names_the_two_tableau_tabs():
     text = words(PK.data_note(models()[0]))
-    assert "TABLEAU_DETAIL" in text and "TABLEAU_BAPTISMS" in text
+    assert "pestaña TABLEAU_DETAIL" in text and "pestaña TABLEAU_BAPTISMS" in text
 
 
 # ── PHASE T'S ACCEPTANCE (decision 34) ───────────────────────────────────────
@@ -367,3 +371,23 @@ def test_the_whole_packet_still_builds_with_the_finding_pages_in_it():
     pdf = PK.build_packet(built, data.roster, data.nightly_goals)
     assert pdf.startswith(b"%PDF")
     assert len(pdf) > 10_000
+
+
+JARGON = re.compile(r"decisi[oó]n(es)? \d|MISSION_ORG|COMPASS_CCSM|AGENT_CONFIG"
+                    r"|CCSM_Agent|WEEKLY_[A-Z_]+|TABLEAU_[A-Z_]+|DAILY_LOG"
+                    r"|AREA_TRANSFER_GOALS|\bSCORES\b")
+
+
+def test_no_page_speaks_developer_language():
+    """AUDIT-2026-10-06 M4: "decisión 42", MISSION_ORG, COMPASS_CCSM and tab
+    names were printed for the president. A tab name may appear only as the
+    small "pestaña X" line under a source in the data note."""
+    built, _ = models(windows=TRANSFER_WINDOW)
+    mission = next(m for m in built if m.scope.level == S.MISSION)
+    text = " ".join(
+        [words(PK.unit_pages(m, {})) for m in built]
+        + [words(PK.how_to_read(mission, PK.sections_for(built))),
+           words(PK.data_note(built))])
+    leftover = [m.group(0) for m in JARGON.finditer(text)
+                if not text[max(0, m.start() - 8):m.start()].endswith("pestaña ")]
+    assert not leftover, leftover

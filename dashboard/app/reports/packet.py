@@ -277,14 +277,14 @@ def hand_outs(sections, units, roster) -> list:
                     mission_section, first_page=first, last_page=last))
                  if together else f"{mission_label} + {pages}"), copies,
                 "La misión y su zona" if copies
-                else "Sin líder de zona en MISSION_ORG",
+                else "Sin líder de zona en el organigrama",
                 mission_count + count))
         elif scope.level == S.DISTRICT:
             copies = lead.district_leaders.get(scope.key, 0)
             rows.append(HandOut(
                 f"Líderes de distrito · {scope.name}", pages, copies,
                 "Su distrito" if copies
-                else "Sin líder de distrito en MISSION_ORG",
+                else "Sin líder de distrito en el organigrama",
                 count))
     return rows
 
@@ -430,14 +430,14 @@ def front_matter(mission, sections, units, roster, *, total_pages: int,
     missing = lead.districts_without_a_leader
     closing = [
         f"Papel total: {paper} hojas a doble cara si imprime exactamente las "
-        f"filas de arriba. Las copias salen de MISSION_ORG — una por "
+        f"filas de arriba. Las copias salen del organigrama — una por "
         f"compañería de liderazgo."]
     if missing:
         names = ", ".join(sorted(k.split("/")[-1] for k in missing))
         closing.append(
             f"{len(lead.district_leaders) - len(missing)} de "
             f"{len(lead.district_leaders)} distritos tienen un líder marcado "
-            f"en MISSION_ORG. Sin líder: {names}. Esa fila pide 0 copias; "
+            f"en el organigrama. Sin líder: {names}. Esa fila pide 0 copias; "
             f"decida a mano a quién entregarla.")
     sheets_per_copy = math.ceil(total_pages / 2) if total_pages else 0
     return (
@@ -448,7 +448,7 @@ def front_matter(mission, sections, units, roster, *, total_pages: int,
                        f"zona, distrito y área en este período.",
             facts=facts,
             contents=[(s.title, s.page_label) for s in sections],
-            note="Generado por PMG Compass desde COMPASS_CCSM el "
+            note="Generado por PMG Compass desde la hoja de datos de la misión el "
                  f"{es_display.long_date(mission.today)}. Cada cifra viene de lo "
                  f"que las compañerías informaron; la nota de datos al final "
                  f"dice qué falta y por qué.")
@@ -1879,8 +1879,7 @@ def _period_sentence(bap, period) -> str:
     the screen so the two cannot word it differently."""
     fig = bap.period
     if fig is None:
-        return (f"No hay cifra certificada de bautismos para {period.label} "
-                f"(decisión 42).")
+        return f"No hay cifra certificada de bautismos para {period.label}."
     return fig.sentence(period.label)
 
 
@@ -1931,7 +1930,7 @@ def baptism_page(model) -> list:
         ]
     if bap.total is None:
         flow.append(Paragraph(PP.text(
-            f"{bap.certified_label}: TABLEAU_BAPTISMS no tiene ningún mes "
+            f"{bap.certified_label}: Tableau no tiene capturado ningún mes "
             f"cerrado de {bap.year}, así que el año no se dibuja contra su "
             f"meta. No es un año sin bautismos; es un año sin captura."),
             st["note"]))
@@ -2259,8 +2258,8 @@ def area_block(model) -> list:
     else:
         flow.append(Spacer(0, 3))
         flow.append(Paragraph(PP.text(
-            "Sin fortaleza ni meta de crecimiento esta semana — "
-            "WEEKLY_BREAKDOWNS va una semana atrás de los Indicadores Clave."),
+            "Sin fortaleza ni meta de crecimiento esta semana — el análisis "
+            "de los agentes va una semana atrás de los Indicadores Clave."),
             st["note"]))
     scores = model.scores
     if scores is not None and scores.measured:
@@ -2368,39 +2367,51 @@ def data_note(models, goals=None) -> list:
         return flow
     period = mission.period
     cov = mission.coverage
+
+    def source(name, tab):
+        """A name the reader knows, and the sheet tab under it in small type
+        for the one who wants to check a figure (AUDIT-2026-10-06 M4: tab
+        names are developer language everywhere else in the packet)."""
+        return [name, Paragraph(PP.text(f"pestaña {tab}"), st["note"])]
+
     rows = [
-        ["Indicadores Clave", "WEEKLY_KI",
+        ["Indicadores Clave", source("Formulario semanal", "WEEKLY_KI"),
          "Lo que las compañerías informaron cada semana, filtrado al "
          "organigrama por el agente."],
-        ["Meta de las compañerías", "Formulario semanal",
+        ["Meta de las compañerías", source("Formulario semanal",
+                                           "WEEKLY_FORM_RAW"),
          "La meta de una semana se escribe en el formulario de la semana "
          "ANTERIOR, y así se lee aquí."],
-        ["Meta de traslado", "AREA_TRANSFER_GOALS",
+        ["Meta de traslado", source("Metas del liderazgo",
+                                    "AREA_TRANSFER_GOALS"),
          "La meta del liderazgo por área por ciclo, prorrateada a la parte "
          "del traslado que cubre este período."],
-        ["Trabajo nocturno", "DAILY_LOG",
-         "Un informe por área por noche. La meta por métrica sale de "
-         "AGENT_CONFIG, es una sola cifra para toda la misión y se mide por "
-         "noche informada."],
-        ["Fortaleza y crecimiento", "WEEKLY_BREAKDOWNS",
-         "Elegidas por los agentes, no recalculadas aquí. Esa pestaña va una "
-         "semana atrás de WEEKLY_KI."],
-        ["Puntajes", "SCORES",
+        ["Trabajo nocturno", source("Formulario nocturno", "DAILY_LOG"),
+         "Un informe por área por noche. La meta es la de cada sector para "
+         "esa semana, recalculada cada lunes, y se mide por noche "
+         "informada."],
+        ["Fortaleza y crecimiento", source("Análisis de los agentes",
+                                           "WEEKLY_BREAKDOWNS"),
+         "Elegidas por los agentes, no recalculadas aquí. Van una semana "
+         "atrás de los Indicadores Clave."],
+        ["Puntajes", source("Puntajes de los agentes", "SCORES"),
          "Los cuatro puntajes del agente, promediados sobre las semanas del "
          "período. Un área sin calificar no cuenta como cero."],
-        ["Organigrama", "MISSION_ORG",
+        ["Organigrama", source("Organigrama de la misión", "MISSION_ORG"),
          "Zona, distrito y compañería. La pertenencia se decide aquí y nunca "
          "en la columna de una fila de datos."],
-        ["Hallazgo", "TABLEAU_DETAIL",
+        ["Hallazgo", source("Tableau, por persona", "TABLEAU_DETAIL"),
          "Una fila por persona encontrada, con las fechas de sus hitos. "
          "Cubre las 10 zonas; los formularios de Compass cubren 4."],
-        ["Bautismos del año", "TABLEAU_BAPTISMS",
+        ["Bautismos del año", source("Tableau, certificada por mes",
+                                     "TABLEAU_BAPTISMS"),
          "La cifra certificada por mes. No es la que informa el formulario "
          "semanal, y las dos no se suman."],
-        ["Bautismos del período", "TABLEAU_BAPTISM_WINDOWS",
+        ["Bautismos del período", source("Tableau, certificada por período",
+                                         "TABLEAU_BAPTISM_WINDOWS"),
          "La misma cifra certificada, para los días exactos de la semana, "
          "los traslados y las últimas seis semanas. La llena la "
-         "sincronización nocturna (decisión 42)."],
+         "sincronización nocturna."],
     ]
     flow.append(PP.table(rows, [108, 124, W - 232],
                          headers=["Cifra", "Fuente", "Qué es"]))
@@ -2418,7 +2429,7 @@ def data_note(models, goals=None) -> list:
         sentences.append(
             "La cobertura de este período es demasiado delgada para sostener "
             "una comparación: la columna de cambio va en raya, con la razón "
-            "en su encabezado (decisión 38).")
+            "en su encabezado.")
     silent = mission.areas_silent
     if silent:
         sentences.append(
@@ -2448,7 +2459,7 @@ def data_note(models, goals=None) -> list:
         flow.append(Paragraph(PP.text(line), st["note_lead"]))
     flow.append(Spacer(0, 8))
     flow.append(Paragraph(PP.text(
-        f"Generado por PMG Compass desde COMPASS_CCSM el "
+        f"Generado por PMG Compass desde la hoja de datos de la misión el "
         f"{es_display.long_date(mission.today)}."), st["note"]))
     return flow
 
@@ -2494,7 +2505,7 @@ def _tableau_sentences(mission) -> list:
     if rec is not None and rec.note:
         out.append(rec.note)
     out.append(
-        "Las áreas de Tableau se emparejan con MISSION_ORG por nombre de "
+        "Las áreas de Tableau se emparejan con el organigrama por nombre de "
         "área. La zona y el distrito de cada cifra son los del roster, no los "
         "de Tableau, que registra dónde estaba un área cuando se escribió la "
         "fila.")
@@ -2524,11 +2535,11 @@ def _baptism_sentences(mission, baptisms) -> list:
                    f"{fig.reason}.")
     out.append(
         "Cada período lee la captura certificada de sus propios días: el mes "
-        "y el año, de TABLEAU_BAPTISMS; la semana, los traslados y las "
-        "últimas seis semanas, de TABLEAU_BAPTISM_WINDOWS, que la "
+        "y el año, de la captura mensual; la semana, los traslados y las "
+        "últimas seis semanas, de la captura por período que la "
         "sincronización nocturna llena. Nunca los registros de Tableau por "
         "persona, que quedan por debajo de la certificada, ni el formulario "
-        "semanal (decisión 42).")
+        "semanal, que sólo cubre las zonas del piloto.")
     if baptisms.provisional_label:
         out.append(f"Bautismos del año: {baptisms.certified_label}. "
                    f"{baptisms.provisional_label[0].upper()}"

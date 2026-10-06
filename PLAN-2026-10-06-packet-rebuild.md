@@ -316,3 +316,18 @@ form baptisms −35% → −4 (flat); sacrament −17% and dates +4% lose their
 triangles. Zone/district/mission KI change cells: this transfer 57 in %, 55
 in units, 29 with a triangle; last week 14 in %, 112 in units, **3** with a
 triangle.
+
+### 2026-10-06 — 0.6 (M4) done
+
+No "decisión NN", no tab name and no `COMPASS_CCSM`/`AGENT_CONFIG`/
+`CCSM_AgentScores` in any sentence a reader meets, packet or screen: the
+organigrama, "la hoja de datos de la misión", "la captura mensual / por
+período", "el análisis de los agentes". The data note's *Fuente* column is now
+a plain name with "pestaña X" under it in note type (`data_note.source`), the
+one place a tab name may print. Two stale facts fixed on the way: the data
+note said nightly goals come from AGENT_CONFIG as one mission-wide figure
+(they are per sector, recalculated each Monday, since PLAN-2026-10-02 G-D7),
+and "companería" was misspelt. `test_no_page_speaks_developer_language`
+sweeps every unit page, page 3 and the data note. The two screen messages
+for a missing roster/unit keep the tab name as "(pestaña MISSION_ORG)" only
+where an administrator has to act on it.

@@ -163,7 +163,7 @@ def test_a_trio_does_not_lose_its_third_missionary(areas):
 
 def test_an_area_with_nobody_on_the_roster_says_so(areas):
     said = " ".join(_text_of(PK.area_block(_area(areas, "A3"))))
-    assert "sin companería en MISSION_ORG" in said
+    assert "sin compañería en el organigrama" in said
 
 
 def test_the_block_names_the_district_and_the_zone_under_the_area(areas):
@@ -185,7 +185,7 @@ def test_an_area_the_agents_have_not_written_up_says_why(areas):
     """WEEKLY_BREAKDOWNS lags WEEKLY_KI by a week, so on a single-week period
     the whole mission reads blank here. That is the tab lagging, not a bug."""
     said = " ".join(_text_of(PK.area_block(_area(areas, "B1"))))
-    assert "WEEKLY_BREAKDOWNS" in said
+    assert "análisis de los agentes va una semana atrás" in said
 
 
 def test_the_scores_carry_the_areas_rank_in_its_district(areas):

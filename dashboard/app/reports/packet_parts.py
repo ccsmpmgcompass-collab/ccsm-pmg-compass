@@ -1535,7 +1535,7 @@ def companionship_line(names, *, width: float = CONTENT_WIDTH) -> Drawing:
     """
     d = Drawing(width, 11)
     if not names:
-        d.add(_string(0, 2, "sin companería en MISSION_ORG", NOTE, INK_3))
+        d.add(_string(0, 2, "sin compañería en el organigrama", NOTE, INK_3))
         return d
     d.add(_string(0, 2, fit(" · ".join(names), CELL, width), CELL, INK_2))
     return d
