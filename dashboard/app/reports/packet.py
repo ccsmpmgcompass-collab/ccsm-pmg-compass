@@ -35,6 +35,7 @@ from reportlab.platypus import (BaseDocTemplate, CondPageBreak, Flowable,
                                 Paragraph, Spacer)
 
 from app.config import es_display
+from app.reports import forecast as F
 from app.reports import packet_parts as PP
 from app.reports import periods as P
 from app.reports import scope as S
@@ -1362,6 +1363,9 @@ def at_a_glance(model, *, weekly_ok: bool, weekly_sure: bool) -> list:
             f"produce {_index_words(model.index.value)} que el promedio de la "
             f"misión" + (", sobre pocas cifras" if model.index.thin else "")
             + "."), st["body"]))
+    baptisms = unit_baptism_line(model)
+    if baptisms:
+        flow.append(Paragraph(PP.text(baptisms), st["body"]))
     flow.append(Spacer(0, 8))
     flow.append(PP.stat_tiles(W, _headline_tiles(model)))
     # A zone reads against the mission, an area against its district — the
@@ -2118,6 +2122,220 @@ def _form_baptisms_sentence(model) -> str:
             f"bajo su propio nombre.")
 
 
+# ── What is coming (decision 48, PLAN-2026-10-06 Phase 2) ─────────────────────
+#
+# Every figure here is a projection, printed as a range with its method in one
+# line and never coloured: a forecast is not a grade.
+
+def _int(value) -> str:
+    return es_display.NA if value is None else es_display.integer(round(value))
+
+
+def _range(low, high) -> str:
+    """"1.124-1.254", or one figure when the two round to the same."""
+    if low is None or high is None:
+        return es_display.NA
+    a, b = round(low), round(high)
+    return _int(a) if a == b else f"{_int(a)}-{_int(b)}"
+
+
+#: The finish table's columns: name, so far, goal, the range, the range as a
+#: share of the goal, what each week left would need, and how many times the
+#: recent pace that is.
+FINISH_COLUMNS = (150.0, 50.0, 56.0, 84.0, 64.0, 64.0, 52.0)
+
+
+def finish_block(model) -> list:
+    """Where each Key Indicator finishes the transfer at recent pace, and
+    what it would need per week — the president's "where will this transfer
+    finish?" (AUDIT-2026-10-06 C4(a))."""
+    st = PP.styles()
+    fwd = model.forward
+    rows = fwd.finish
+    if not rows:
+        return []
+    left = rows[0].weeks_left
+    pace = rows[0].pace_weeks
+    flow = [PP.SectionHead(
+        f"Cómo termina el traslado {fwd.transfer}",
+        f"proyección · faltan {es_display.integer(left)} "
+        f"{'semana' if left == 1 else 'semanas'}")]
+    if left <= 0:
+        flow.append(Paragraph(PP.text(
+            "El traslado ya terminó: no queda nada que proyectar."),
+            st["note_lead"]))
+        return flow
+    table = []
+    for k in rows:
+        lo, hi = k.pct(k.low), k.pct(k.high)
+        table.append([
+            k.label, _int(k.actual),
+            _int(k.goal) if k.goal else es_display.NA,
+            _range(k.low, k.high),
+            (f"{_int(lo)}-{_int(hi)}%" if lo is not None and round(lo) != round(hi)
+             else (f"{_int(lo)}%" if lo is not None else es_display.NA)),
+            _int(k.needed_per_week),
+            (f"{es_display.number(k.factor, 1)}×" if k.factor is not None
+             else es_display.NA)])
+    flow.append(PP.table(
+        table, FINISH_COLUMNS,
+        headers=("Indicador", ("Hasta hoy", "real"), ("Meta", "traslado"),
+                 ("Termina en", "rango"), ("De la meta", "rango"),
+                 ("Hace falta", "por semana"), ("Veces", "su ritmo")),
+        align=("l", "r", "r", "r", "r", "r", "r")))
+    flow.append(Spacer(0, 4))
+    goal_note = ("" if all(k.goal_complete for k in rows) else
+                 " Falta la meta de alguna área, así que la meta es parcial.")
+    flow.append(Paragraph(PP.text(
+        f"Método: lo que va del traslado más las {es_display.integer(left)} "
+        f"semanas que faltan, cada una como la peor, el promedio o la mejor "
+        f"de las últimas {es_display.integer(pace)} semanas completas, con los "
+        f"informes de hoy (un área que no informa sigue sin sumar). Meta: la "
+        f"del liderazgo para el traslado entero, todas las áreas.{goal_note} "
+        f"«Veces su ritmo» es lo que haría falta cada semana dividido por la "
+        f"semana promedio reciente. Sin color: es una proyección, no una "
+        f"calificación."), st["note"]))
+    return flow
+
+
+def year_block(model) -> list:
+    """The year's baptisms against the annual goal, and where they land
+    (AUDIT-2026-10-06 C4(b), decision 46). Certified at mission level;
+    Tableau's records against the zone's share of 527 at zone level."""
+    st = PP.styles()
+    W = PP.CONTENT_WIDTH
+    fwd = model.forward
+    yl = fwd.year
+    if yl is None:
+        return []
+    mission = model.scope.level == S.MISSION
+    flow = [PP.SectionHead(f"Bautismos {yl.year}: cómo cierra el año",
+                           f"{yl.source} · meses cerrados")]
+    tiles = [PP.Tile(label=f"En lo que va de {yl.year}", value=_int(yl.total),
+                     note=f"{es_display.integer(yl.months)} meses cerrados")]
+    if yl.low is not None:
+        tiles.append(PP.Tile(label="Cierre probable",
+                             value=_range(yl.low, yl.high),
+                             note=(f"de una meta de {_int(yl.goal)}"
+                                   if yl.goal else "sin meta")))
+    if yl.needed_per_month is not None:
+        best = (f"el mejor mes fue {_int(yl.best[0])} ({yl.best[1]})"
+                if yl.best else "")
+        tiles.append(PP.Tile(label="Hace falta por mes",
+                             value=_int(yl.needed_per_month), note=best))
+    prior = yl.same_months(yl.year - 1)
+    if prior:
+        gap = (yl.total - prior) / prior * 100
+        tiles.append(PP.Tile(label=f"Contra {yl.year - 1}",
+                             value=es_display.signed_percent(gap),
+                             note=(f"{_int(prior)} en los mismos "
+                                   f"{es_display.integer(yl.months)} meses")))
+    flow += [PP.stat_tiles(W, tiles), Spacer(0, 6)]
+
+    years = sorted(yl.monthly)
+    rows = []
+    run = 0
+    for i, name in enumerate(F.MONTH_ABBR):
+        this = yl.monthly.get(yl.year, [None] * 12)[i]
+        if this is not None:
+            run += this
+        row = [name] + [_int(yl.monthly[y][i]) if yl.monthly[y][i] is not None
+                        else "" for y in years]
+        row.append(_int(run) if this is not None else "")
+        row.append(_int(yl.goal * (i + 1) / 12) if yl.goal else "")
+        rows.append(row)
+    heads = (["mes"] + [str(y) for y in years]
+             + [("acumulado", str(yl.year)), ("ritmo de", "la meta")])
+    widths = [70.0] + [62.0] * len(years) + [80.0, 80.0]
+    flow.append(PP.table(rows, widths, headers=heads,
+                         align=["l"] + ["r"] * (len(years) + 2)))
+    flow.append(Spacer(0, 4))
+    anchors = " · ".join(f"{words} {_int(v)}" for words, v in yl.anchors)
+    lead = ""
+    b = fwd.baptisms
+    if not mission and b is not None and b.share is not None:
+        lead = (f"Registros de Tableau por persona, por área del organigrama: "
+                f"quedan algo por debajo de la cifra certificada. La meta de "
+                f"la zona es su parte de los {_int(b.annual_goal)} de la "
+                f"misión, la misma que tuvo de sus bautismos en los últimos "
+                f"doce meses ({es_display.percent(b.share * 100, 1)}); se "
+                f"imprime y no da color. ")
+    flow.append(Paragraph(PP.text(
+        f"{lead}Cierre probable: el mínimo y el máximo de cuatro cálculos — "
+        f"{anchors}. Sin color: es una proyección."), st["note"]))
+    return flow
+
+
+#: The pipeline's columns by age and, at mission level, by zone.
+PIPE_COLUMNS = (130.0, 70.0, 110.0, 80.0)
+ZONE_PIPE_COLUMNS = (170.0, 110.0, 90.0, 150.0)
+
+
+def pipeline_block(model) -> list:
+    """The open baptismal dates and the baptisms they are likely to become in
+    six weeks (AUDIT-2026-10-06 C4(c), P4)."""
+    st = PP.styles()
+    W = PP.CONTENT_WIDTH
+    pl = model.forward.pipeline
+    if pl is None:
+        return []
+    flow = [PP.SectionHead("Lo que viene: las fechas bautismales abiertas",
+                           "registros de Tableau · próximas 6 semanas")]
+    tiles = [PP.Tile(label="Fechas abiertas", value=_int(pl.open_dates),
+                     note="fijadas en el último año, sin bautismo"),
+             PP.Tile(label="Bautismos esperados", value=_range(pl.low, pl.high),
+                     note=f"en 6 semanas · centro {_int(pl.expected)}")]
+    fresh = sum(c for label, c, _ in pl.by_bucket[:3])
+    tiles.append(PP.Tile(label="Fijadas hace 60 días",
+                         value=_int(fresh),
+                         note="las que más probablemente se bauticen"))
+    flow += [PP.stat_tiles(W, tiles), Spacer(0, 6)]
+    rows = [[label, _int(c), f"{es_display.percent(p * 100, 0)}",
+             es_display.number(c * p, 1)] for label, c, p in pl.by_bucket]
+    flow.append(PP.table(
+        rows, PIPE_COLUMNS,
+        headers=(("Edad de la fecha", "días desde que se fijó"), "Abiertas",
+                 ("Se bautizan", "dentro de 6 semanas"), "Esperados"),
+        align=("l", "r", "r", "r")))
+    zones = model.forward.zones
+    if zones:
+        flow.append(Spacer(0, 8))
+        zrows = [[name, _int(z.open_dates), _range(z.low, z.high),
+                  "piloto de Compass" if pilot else "sin formularios de Compass"]
+                 for name, pilot, z in sorted(zones, key=lambda t: -t[2].expected)]
+        flow.append(PP.table(
+            zrows, ZONE_PIPE_COLUMNS,
+            headers=("Zona", "Fechas abiertas", ("Esperados", "6 semanas"), ""),
+            align=("l", "r", "r", "l")))
+    flow.append(Spacer(0, 4))
+    miss = (f" En los últimos {es_display.integer(pl.backtests)} cierres de "
+            f"mes, el mismo cálculo falló por un "
+            f"{es_display.percent((pl.miss or 0) * 100, 0)} típico."
+            if pl.miss is not None else "")
+    flow.append(Paragraph(PP.text(
+        "Método: cada fecha abierta cuenta con la probabilidad con que las "
+        "fechas de su misma edad terminaron en bautismo dentro de seis "
+        "semanas, medida en los últimos 15 cierres de mes de toda la misión."
+        f"{miss} El rango es el 80% de lo esperable. Sólo cuenta a quienes "
+        "hoy tienen fecha; registros de Tableau por persona, algo por debajo "
+        "de la cifra certificada. Sin color: es una proyección."),
+        st["note"]))
+    return flow
+
+
+def forward_pages(model) -> list:
+    """The three forward blocks, as one run-on section."""
+    return run_on([finish_block(model), year_block(model),
+                   pipeline_block(model)])
+
+
+def unit_baptism_line(model) -> str:
+    """A zone's or district's baptisms in the period, from Tableau's records
+    (decision 47) — the only baptism figure below the mission."""
+    b = model.forward.baptisms
+    return b.sentence if b is not None else ""
+
+
 # ── The pages of one unit ────────────────────────────────────
 
 #: How much room a section needs before it is allowed to start.
@@ -2177,6 +2395,7 @@ def mission_pages(model, goals, peers=None) -> list:
     return run_on([
         at_a_glance(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
         key_indicator_page(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
+        finish_block(model), year_block(model), pipeline_block(model),
         week_page(model), children_page(model), reporting_block(model),
         nightly_page(model, goals), baptism_page(model),
         finding_page(model), rates_and_scores(model),
@@ -2207,6 +2426,7 @@ def zone_pages(model, goals, peers=None) -> list:
     return run_on([
         at_a_glance(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
         key_indicator_page(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
+        finish_block(model), year_block(model), pipeline_block(model),
         week_page(model), children_page(model), reporting_block(model),
         areas_page(model), nightly_page(model, goals), finding_page(model),
         rates_and_scores(model),

@@ -406,3 +406,47 @@ the plan did not foresee goes back to him measured, as before.
   headless through Streamlit's AppTest (the pane was hidden and would not
   draw) with no exceptions — `scratchpad/apptest_informes.py rep_zone=Angol`
   is the harness, query param `rep_<level>`.
+
+### 2026-10-06 — PHASE 2 COMPLETE (2.1–2.5)
+
+New module `app/reports/forecast.py` (pure), `model.Forward` on every
+mission/zone/district model (`_forward`), `ReportData.tableau_dates()` parses
+the export once and fits the pipeline once for all 63 scopes.
+
+- **2.1 Zone/district baptisms (decision 47).** `forecast.unit_baptisms`:
+  `confirmation_date` in the period by roster area, labelled "registros de
+  Tableau", on every zone and district opening (`UnitBaptisms.sentence`, both
+  renderers). P2 as built: `share` = the unit's part of every Tableau baptism
+  in the last 12 closed months, `reference` = 527 × share, printed only.
+  Live, 2026-6 to date: Angol 3 · LAN 2 · San Pedro 2 · Ñielol 1; shares
+  7,9% · 11,5% · 15,1% · 8,2% → references 42 · 61 · 80 · 43.
+- **2.2 Transfer finish + needed per week.** `forecast.transfer_finish`: so
+  far + weeks left × (worst, mean, best) of the last 6 complete weeks' raw
+  totals; goal = leadership's whole-transfer goal, all areas. Live mission:
+  new people 806 → 1.124–1.254 of 2.038, needs 616/week = 3,3× pace; dates
+  167 → 225–265 of 334 (2,2×); form baptisms 7 → 7–21 of 68 (11,4×).
+- **2.3 Year landing.** `forecast.year_landing`: the four anchors give
+  **443–467** against 527, **60/month needed vs a best month of 50 (dic
+  2024)**, **+17% on 2025's same 9 months** (296) — the audit's C4(b) to the
+  unit. Month table carries 2024 · 2025 · 2026 · cumulative · goal pace.
+  Zones get the same from Tableau records against their 527 share.
+- **2.4 Pipeline (P4).** `forecast.fit_pipeline` pools 15 month-ends (each
+  with six full weeks after it): P(baptised within 6 weeks | still open at
+  age a) = 21% · 16% · 8% · 4% · 2% · 1% for 0-14 · 15-30 · 31-60 · 61-90 ·
+  91-180 · 181-365 days. **Backtest: 8% typical miss over the last 12
+  month-ends.** Live: 1.159 dates open (set in the last year), **40–57
+  baptisms expected in 6 weeks** (centre 49); 267 set in the last 60 days. By
+  zone (all ten, Tableau's own zone column, decision 24's precedent): San
+  Pedro 4–10 … Victoria 1–6. Range = 80%: the wider of the Poisson-binomial
+  spread and the backtest miss.
+- **2.5 Renderers.** Packet `finish_block`, `year_block`, `pipeline_block`
+  after the Key Indicators on mission and zone pages (Phase 3 re-orders);
+  screen section "1c · Lo que viene" with the same three. Nothing coloured.
+  Packet now **112 pages** (+8) — Phase 3 is the diet.
+- Verified: suite **0 failed / 1931 passed / 1 skipped**; 11 new tests in
+  `test_report_forecast.py`. Pages 4–6 read. Screen: mission, zone and
+  district run headless with no exceptions. Found and fixed on the way: on
+  this stack (NumPy 2.5, pandas 2.3) a datetime Series compared with a
+  Timestamp, and `pd.date_range`, raise a DeprecationWarning from inside
+  pandas — 758 per suite run — so the forecast works on `datetime64[ns]`
+  arrays and builds month-ends from plain dates.

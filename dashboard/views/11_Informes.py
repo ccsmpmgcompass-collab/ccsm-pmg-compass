@@ -545,6 +545,115 @@ if _model.ladder:
         st.caption(f"Y de lado: {_beside}")
 
 
+# ── 1c · Lo que viene (decisión 48) ──────────────────────────────────────────
+#
+# Las cuatro proyecciones del paquete, del mismo `model.forward`: cómo termina
+# el traslado y qué haría falta por semana, cómo cierra el año contra los 527,
+# y las fechas bautismales abiertas. Siempre un rango con su método, nunca un
+# color: una proyección no es una calificación.
+
+_FWD = _model.forward
+
+
+def _rng(lo, hi) -> str:
+    if lo is None or hi is None:
+        return NA
+    a, b = round(lo), round(hi)
+    return fmt_int(a) if a == b else f"{fmt_int(a)}–{fmt_int(b)}"
+
+
+if _FWD.baptisms is not None:
+    st.caption(_FWD.baptisms.sentence)
+
+if _FWD.finish and _FWD.finish[0].weeks_left > 0:
+    _left = _FWD.finish[0].weeks_left
+    render_section_label(
+        f"Cómo termina el traslado {_FWD.transfer}",
+        right=f"proyección · faltan {fmt_int(_left)} semanas",
+        info=(f"Lo que va del traslado más las {_left} semanas que faltan, "
+              f"cada una como la peor, el promedio o la mejor de las últimas "
+              f"{_FWD.finish[0].pace_weeks} semanas completas, con los "
+              f"informes de hoy. Meta: la del liderazgo para el traslado "
+              f"entero, todas las áreas. Sin color: es una proyección."),
+    )
+    st.markdown(ranked_list([{
+        "name": k.label, "rank": "",
+        "sub": (f"termina en {_rng(k.low, k.high)}"
+                + (f" de {fmt_int(round(k.goal))}" if k.goal else "")
+                + (f" · hacen falta {fmt_int(round(k.needed_per_week))} por "
+                   f"semana, {fmt_number(k.factor, 1)}× su ritmo"
+                   if k.needed_per_week is not None and k.factor else "")),
+        "value": k.pct(k.mid) if k.goal else None,
+        "bar": k.pct(k.mid) if k.goal else None,
+    } for k in _FWD.finish], bar_max=100,
+        value_fmt=lambda v: NA if v is None else fmt_percent(v)),
+        unsafe_allow_html=True)
+
+if _FWD.year is not None:
+    _Y = _FWD.year
+    render_section_label(
+        f"Bautismos {_Y.year}: cómo cierra el año",
+        right=f"{_Y.source} · meses cerrados",
+        info=("Cierre probable: el mínimo y el máximo de cuatro cálculos — "
+              + " · ".join(f"{w} {fmt_int(round(v))}" for w, v in _Y.anchors)
+              + ". Sin color: es una proyección."),
+    )
+    _cards = [{"label": f"En lo que va de {_Y.year}", "value": _Y.total,
+               "note": f"{_Y.months} meses cerrados"}]
+    if _Y.low is not None:
+        _cards.append({"label": "Cierre probable",
+                       "value": _rng(_Y.low, _Y.high),
+                       "note": (f"de una meta de {fmt_int(round(_Y.goal))}"
+                                if _Y.goal else "sin meta")})
+    if _Y.needed_per_month is not None:
+        _cards.append({"label": "Hace falta por mes",
+                       "value": round(_Y.needed_per_month),
+                       "note": (f"el mejor mes fue {_Y.best[0]} ({_Y.best[1]})"
+                                if _Y.best else "")})
+    _prior = _Y.same_months(_Y.year - 1)
+    if _prior:
+        _cards.append({"label": f"Contra {_Y.year - 1}",
+                       "value": f"{(_Y.total - _prior) / _prior * 100:+.0f}%",
+                       "note": f"{_prior} en los mismos {_Y.months} meses"})
+    render_kpi_row(_cards)
+
+if _FWD.pipeline is not None:
+    _PL = _FWD.pipeline
+    render_section_label(
+        "Lo que viene: las fechas bautismales abiertas",
+        right="registros de Tableau · próximas 6 semanas",
+        info=("Cada fecha abierta (fijada en el último año, sin bautismo) "
+              "cuenta con la probabilidad con que las fechas de su misma edad "
+              "terminaron en bautismo dentro de seis semanas, medida en los "
+              "últimos 15 cierres de mes"
+              + (f"; en los últimos {_PL.backtests} el cálculo falló por un "
+                 f"{fmt_percent((_PL.miss or 0) * 100)} típico"
+                 if _PL.miss is not None else "")
+              + ". El rango es el 80% de lo esperable."),
+    )
+    render_kpi_row([
+        {"label": "Fechas abiertas", "value": _PL.open_dates,
+         "note": "fijadas en el último año, sin bautismo"},
+        {"label": "Bautismos esperados", "value": _rng(_PL.low, _PL.high),
+         "note": f"en 6 semanas · centro {fmt_int(round(_PL.expected))}"},
+        {"label": "Fijadas hace 60 días",
+         "value": sum(c for _, c, _p in _PL.by_bucket[:3]),
+         "note": "las que más probablemente se bauticen"},
+    ])
+    if _FWD.zones:
+        st.markdown(ranked_list([{
+            "name": name, "rank": "",
+            "sub": (f"{fmt_int(z.open_dates)} fechas abiertas · "
+                    + ("piloto de Compass" if pilot
+                       else "sin formularios de Compass")),
+            "value": z.expected, "bar": z.expected,
+            "change": _rng(z.low, z.high),
+        } for name, pilot, z in sorted(_FWD.zones,
+                                       key=lambda t: -t[2].expected)],
+            value_fmt=lambda v: NA if v is None else fmt_number(v, 1)),
+            unsafe_allow_html=True)
+
+
 # ── 2 · Semana a semana ───────────────────────────────────────────────────────
 
 render_section_label(

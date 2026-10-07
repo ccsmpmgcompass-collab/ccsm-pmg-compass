@@ -391,6 +391,33 @@ def productivity(rows, mission_rows) -> Productivity:
 
 
 @dataclass(frozen=True)
+class Forward:
+    """What is coming, for one unit — decision 48 (PLAN-2026-10-06 Phase 2).
+
+    ``finish`` is every Key Indicator's current transfer finished forward
+    (`forecast.KIFinish`), mission and zone. ``year`` is the year's baptisms
+    against the annual goal: certified at mission level, Tableau's person
+    records at zone level against the zone's share of 527 (P2). ``pipeline``
+    is the open baptismal dates and the baptisms they are likely to become in
+    six weeks. ``baptisms`` is a zone's or district's baptisms in the period,
+    from Tableau's records (decision 47). ``zones`` is the mission's pipeline
+    by Tableau zone, all ten — the one place the export's own zone column is
+    the authority (decision 24's precedent).
+    """
+
+    transfer: str = ""
+    finish: tuple = ()
+    year: object = None
+    pipeline: object = None
+    baptisms: object = None
+    zones: tuple = ()
+
+    @property
+    def present(self) -> bool:
+        return bool(self.finish or self.year or self.pipeline or self.baptisms)
+
+
+@dataclass(frozen=True)
 class LadderRow:
     """One rung of the comparison ladder: this unit, the unit above it, the
     mission — the same measure on every scale it can be read at.
@@ -503,6 +530,9 @@ class ReportModel:
 
     #: This unit's productivity index against the mission (decision 45).
     index: Productivity = field(default_factory=Productivity)
+
+    #: The forward view (decision 48). Empty at area level.
+    forward: Forward = field(default_factory=Forward)
 
     #: `{metric key: Series}` for the seven, week by week (decision 26).
     series: dict = field(default_factory=dict)
@@ -744,6 +774,24 @@ class ReportData:
                 f"{period.end.year:04d}-") else None),
             provisional_through=through,
         )
+
+    def tableau_dates(self) -> tuple:
+        """`(area names, date set, confirmation date, pipeline fit)` off the
+        export, parsed and fitted once for all 63 scopes — or () with no
+        export."""
+        if "tableau_dates" not in self._flags:
+            det = self.tableau_detail
+            if det is None or det.empty:
+                self._flags["tableau_dates"] = ()
+            else:
+                from app.analytics import finding_funnel as FF
+                from app.reports import forecast as F
+                set_d = FF.parse_dates(det, "first_baptism_goal_date_set")
+                conf = FF.parse_dates(det, "confirmation_date")
+                self._flags["tableau_dates"] = (
+                    TB._names(det, TB.AREA_COL), set_d, conf,
+                    F.fit_pipeline(set_d, conf, self.today))
+        return self._flags["tableau_dates"]
 
     @property
     def mission(self) -> S.Scope:
@@ -1682,6 +1730,88 @@ def _tableau_block(data: ReportData, scope: S.Scope, period: P.Period):
     )
 
 
+def _transfer_goals_full(data: ReportData, scope: S.Scope,
+                         cycle_start: date) -> tuple[dict, bool]:
+    """Leadership's goal for the WHOLE cycle, summed over the scope's areas,
+    and whether every area has one (decision 23's all-or-nothing)."""
+    df = data.transfer_goals
+    if df is None or df.empty or "area" not in df.columns:
+        return {}, False
+    rows = df[(df["transfer_start"].astype(str).str[:10] == cycle_start.isoformat())
+              & df["area"].astype(str).str.strip().isin(set(scope.areas))]
+    keys = [k for k in data.ki_keys if k in rows.columns]
+    if rows.empty or not keys:
+        return {}, False
+    values = rows[keys].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    with_goal = int((values.sum(axis=1) > 0).sum())
+    return ({k: float(values[k].sum()) for k in keys},
+            with_goal == scope.area_count)
+
+
+def _forward(data: ReportData, scope: S.Scope, period: P.Period) -> Forward:
+    """The forward view for one unit (decision 48). Mission and zone get the
+    four forecasts; a district gets its Tableau baptisms; an area nothing."""
+    from app.reports import forecast as F
+
+    if scope.level == S.AREA:
+        return Forward()
+    dates = data.tableau_dates()
+    names, set_d, conf, fit = dates if dates else (None, None, None, None)
+    mask = (names.isin(set(scope.areas))
+            if names is not None and scope.level != S.MISSION else None)
+
+    baptisms = None
+    if conf is not None and scope.level != S.MISSION:
+        baptisms = F.unit_baptisms(conf, mask, period.start,
+                                   min(period.end, data.today),
+                                   today=data.today,
+                                   annual_goal=data.annual_goal)
+    if scope.level == S.DISTRICT:
+        return Forward(baptisms=baptisms)
+
+    finish, label = (), ""
+    cycle = P.resolve(P.THIS_TRANSFER, data.today, data.cycles)
+    pace = P.resolve(P.LAST_6_WEEKS, data.today, data.cycles)
+    if cycle is not None:
+        start = cycle.start
+        label = next((str(c.get("number", "")) for c in data.cycles
+                      if c["start"] == start), cycle.label)
+        goals, complete = _transfer_goals_full(data, scope, start)
+        finish = F.transfer_finish(
+            data.weekly_ki, scope.areas, data.ki_keys, data.labels,
+            cycle_weeks=[w.isoformat() for w in cycle.weeks],
+            full_weeks=cycle.full_weeks,
+            pace_weeks_list=([w.isoformat() for w in pace.weeks]
+                             if pace is not None else []),
+            goals=goals, goals_complete=complete)
+
+    year = pipeline = None
+    zones = ()
+    if scope.level == S.MISSION:
+        month, count, _ = (data.baptisms_open or (None, None, None))
+        year = F.year_landing(data.baptisms_by_month, data.today.year,
+                              goal=data.annual_goal,
+                              open_count=(count if month and month.startswith(
+                                  f"{data.today.year:04d}-") else None),
+                              source="cifra certificada")
+        if fit is not None:
+            pipeline = F.pipeline(set_d, conf, data.today, fit)
+            zone_names = TB._names(data.tableau_detail, TB.ZONE_COL)
+            pilot = {s.name for s in S.children(data.roster, scope)}
+            zones = tuple(
+                (z, z in pilot, F.pipeline(set_d, conf, data.today, fit,
+                                           mask=zone_names == z))
+                for z in sorted(set(zone_names) - {"", "nan"}))
+    elif fit is not None:
+        pipeline = F.pipeline(set_d, conf, data.today, fit, mask=mask)
+        year = F.year_landing(F.monthly_counts(conf, mask, data.today),
+                              data.today.year,
+                              goal=baptisms.reference if baptisms else None,
+                              source="registros de Tableau")
+    return Forward(transfer=label, finish=finish, year=year,
+                   pipeline=pipeline, baptisms=baptisms, zones=zones)
+
+
 def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
                  data: ReportData) -> ReportModel:
     """One unit, one period, every number its pages need. Pure over `data`."""
@@ -1725,6 +1855,7 @@ def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
         siblings=_siblings(data, scope, period, comparison),
         areas_ranked=_areas_ranked(data, scope, period, comparison),
         index=_index_for(data, own, period, comparison),
+        forward=_forward(data, scope, period),
         series=_series(data, scope, period),
         strengths=strengths,
         growth=growth,
