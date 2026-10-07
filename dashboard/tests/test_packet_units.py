@@ -333,3 +333,44 @@ def test_the_page_budget_holds(models, peers):
         _, pages = PK._render(PK.unit_pages(model, {}, peers))
         budget = 1 if model.scope.level == S.DISTRICT else 2
         assert pages <= budget, (model.scope.name, pages)
+
+
+def test_a_section_shorter_than_the_floor_needs_only_its_own_height():
+    """2026-10-07: a zone's three-district table is shorter than the 140pt
+    floor, and the floor sent it to the next sheet and left a third of the
+    page above it blank."""
+    from reportlab.platypus import CondPageBreak, Spacer
+    short = [Spacer(0, 60)]
+    breaks = [f for f in PK.run_on([["a"], short])
+              if isinstance(f, CondPageBreak)]
+    assert breaks[0].height == pytest.approx(62)
+    tall = [Spacer(0, 400)]
+    breaks = [f for f in PK.run_on([["a"], tall])
+              if isinstance(f, CondPageBreak)]
+    assert breaks[0].height == PK.SECTION_FLOOR
+
+
+def test_quadrant_labels_do_not_sit_on_each_other_or_the_corner():
+    """2026-10-07: every label went to the right of its dot, so neighbours
+    stacked and "Collipulli 1" printed over the corner's own caption."""
+    from reportlab.graphics.shapes import String
+    from app.reports import packet_parts as PP
+    pts = [("Collipulli 1", 20, -84), ("Collipulli 2", 42, -3),
+           ("Alemania 2", 76, -6), ("Alemania 1", 104, -50),
+           ("Purén y Los Sauces", 98, -28), ("Cabrero 1", 50, -9),
+           ("Ñielol 1", 67, -8)]
+    d = PP.quadrant(520, 200, pts, corner="debajo de la misión y bajando")
+    names = {n for n, _, _ in pts} | {"debajo de la misión y bajando"}
+    boxes = []
+    for s in d.contents:
+        if isinstance(s, String) and s.text in names:
+            w = PP.width_of(s.text, PP.NOTE)
+            x0 = {"start": s.x, "end": s.x - w,
+                  "middle": s.x - w / 2}[s.textAnchor]
+            boxes.append((s.text, x0, s.y, x0 + w, s.y + PP.NOTE.size * 0.7))
+    assert len(boxes) == len(names)
+    for i, a in enumerate(boxes):
+        for b in boxes[i + 1:]:
+            apart = (a[3] <= b[1] or b[3] <= a[1]
+                     or a[4] <= b[2] or b[4] <= a[2])
+            assert apart, (a[0], b[0])

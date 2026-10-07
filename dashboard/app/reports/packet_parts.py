@@ -1817,8 +1817,21 @@ def quadrant(width: float, height: float, points, *, x_ref: float = 100.0,
                strokeWidth=0.6, strokeDashArray=[2, 2]))
     d.add(Line(left, py(0), left + w, py(0), strokeColor=INK_3,
                strokeWidth=0.6, strokeDashArray=[2, 2]))
-    if corner:
-        d.add(_string(left + 4, bottom + 4, corner, NOTE, STATUS["bad"]))
+    # Every label goes where it overlaps nothing already drawn (2026-10-07:
+    # always-to-the-right put "Collipulli 1" on the corner's own caption and
+    # stacked neighbours on one another). Boxes are (x0, y0, x1, y1).
+    taken = []
+
+    def box(x, y, s, anchor):
+        wd = width_of(s, NOTE)
+        x0 = {"start": x, "end": x - wd, "middle": x - wd / 2}[anchor]
+        return (x0 - 1, y - 2, x0 + wd + 1, y + NOTE.size * 0.8)
+
+    def overlap(a, b):
+        return max(0.0, min(a[2], b[2]) - max(a[0], b[0])) * max(
+            0.0, min(a[3], b[3]) - max(a[1], b[1]))
+
+
     for value in (0, x_ref, x_max):
         d.add(_string(px(value), bottom - 9, es_display.integer(value), NOTE,
                       INK_3, anchor="middle" if 0 < value < x_max else
@@ -1830,17 +1843,54 @@ def quadrant(width: float, height: float, points, *, x_ref: float = 100.0,
     if x_label:
         d.add(_string(left + w, bottom + h + 1, x_label, NOTE, INK_3,
                       anchor="end"))
+        taken.append(box(left + w, bottom + h + 1, x_label, "end"))
     if y_label:
         d.add(_string(left, bottom + h + 1, y_label, NOTE, INK_3))
-    for name, x, y in sorted(pts, key=lambda p: p[1]):
+        taken.append(box(left, bottom + h + 1, y_label, "start"))
+    ordered = sorted(pts, key=lambda p: p[1])
+    # The dots first, so no label is set over a dot drawn after it.
+    for name, x, y in ordered:
         focus = x < x_ref and y <= -y_flat
         cx, cy = px(x), py(y)
         d.add(Circle(cx, cy, 2.8, fillColor=STATUS["bad"] if focus else NAVY,
                      strokeColor=PAPER, strokeWidth=0.6))
+        taken.append((cx - 3, cy - 3, cx + 3, cy + 3))
+    if corner:
+        # The corner's name goes in whichever corner of the tint is clear.
+        spots = [(left + 4, bottom + 4, "start"),
+                 (px(x_ref) - 4, bottom + 4, "end"),
+                 (left + 4, py(-y_flat) - 9, "start"),
+                 (px(x_ref) - 4, py(-y_flat) - 9, "end")]
+        cost, tx, ty, anchor = min(
+            (sum(overlap(box(x, y, corner, a), t) for t in taken), x, y, a)
+            for x, y, a in spots)
+        d.add(_string(tx, ty, corner, NOTE, STATUS["bad"], anchor=anchor))
+        taken.append(box(tx, ty, corner, anchor))
+    for name, x, y in ordered:
+        focus = x < x_ref and y <= -y_flat
+        cx, cy = px(x), py(y)
         label = fit(name, NOTE, 80)
-        anchor = "start" if cx < left + w - 70 else "end"
-        d.add(_string(cx + (4 if anchor == "start" else -4), cy + 2, label,
-                      NOTE, INK if focus else INK_2, anchor=anchor))
+        tries = [(cx + 4, cy - 2, "start"), (cx - 4, cy - 2, "end"),
+                 (cx, cy + 4.5, "middle"), (cx, cy - 10, "middle"),
+                 (cx + 4, cy + 3, "start"), (cx + 4, cy - 8, "start"),
+                 (cx - 4, cy + 3, "end"), (cx - 4, cy - 8, "end")]
+        best = None
+        for tx, ty, anchor in tries:
+            b = box(tx, ty, label, anchor)
+            if b[0] < 0 or b[2] > width or b[1] < 0 or b[3] > height:
+                continue
+            cost = sum(overlap(b, t) for t in taken)
+            if best is None or cost < best[0]:
+                best = (cost, tx, ty, anchor, b)
+            if cost == 0:
+                break
+        if best is None:
+            best = (0, cx + 4, cy - 2, "start", box(cx + 4, cy - 2, label,
+                                                   "start"))
+        _, tx, ty, anchor, b = best
+        taken.append(b)
+        d.add(_string(tx, ty, label, NOTE, INK if focus else INK_2,
+                      anchor=anchor))
     return d
 
 

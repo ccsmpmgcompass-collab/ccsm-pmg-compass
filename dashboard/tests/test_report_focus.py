@@ -108,3 +108,21 @@ def test_a_leak_is_named_only_when_it_is_material():
     leaks = {r.name: r.leak for r in fn.rows}
     assert leaks["Z"] == "encontradas a intento"
     assert leaks["Y"] is None
+
+
+def test_a_named_leak_carries_its_own_step_and_the_mission_s():
+    """2026-10-07: the table printed 0% down the baptism column under a leak
+    named "fecha a bautismo" — the reader could not check it. The leak now
+    carries the step's conversion here and in the mission."""
+    today = date(2026, 10, 6)
+    n = 200
+    found = pd.Series(pd.to_datetime(["2026-05-01"] * n))
+    zone = pd.Series([i < 100 for i in range(n)])
+    hit = [i < 30 for i in range(100)] + [i < 90 for i in range(100)]
+    reached = pd.Series(pd.to_datetime(
+        ["2026-06-01" if h else None for h in hit]))
+    fn = FC.mature_funnel(found, [reached], ["Intento de Contacto"],
+                          [("Z", zone, True), ("Y", ~zone, True)], today)
+    steps = {r.name: r.leak_step for r in fn.rows}
+    assert steps["Z"] == pytest.approx((30.0, 60.0))
+    assert steps["Y"] is None

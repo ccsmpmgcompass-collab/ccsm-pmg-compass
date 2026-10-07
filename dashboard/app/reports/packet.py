@@ -1831,6 +1831,10 @@ def opening(model) -> list:
         if bits:
             lines.append("Lo que viene: " + "; ".join(bits)
                          + " (registros de Tableau, proyección sin color).")
+    if model.scope.level == S.ZONE:
+        mix = _mix_sentence(model)
+        if mix:
+            lines.append(mix)
     if model.scope.level == S.ZONE and model.children:
         silent = [a for c in model.children for a in c.areas_silent]
         lines.append(f"Quién informó: {model.compliance_label}"
@@ -1841,6 +1845,32 @@ def opening(model) -> list:
     for line in lines:
         flow.append(Paragraph(PP.text(line), st["body"]))
     return flow
+
+
+def _mix_sentence(model) -> str:
+    """A zone's "who found them" in one line of its opening — the mission's
+    page carries the full section; a zone's would cost it a third sheet."""
+    block = model.tableau
+    if block is None or not block.present or not block.mix or not block.found:
+        return ""
+    total = block.found
+    before_total = sum(m.before for m in block.mix if m.before is not None)
+    parts = []
+    for m in block.mix:
+        share = m.count / total * 100
+        if share < 1:
+            continue
+        bit = f"{m.label.lower()} {_pct(share)}"
+        if m.before is not None and before_total:
+            bit += f" (antes {_pct(m.before / before_total * 100)})"
+        parts.append(bit)
+    out = (f"Quién las encontró: {_int(total)} personas · "
+           + " · ".join(parts))
+    if block.sources:
+        top = block.sources[0]
+        out += (f"; la mayor fuente, {top.label.lower()} "
+                f"({_pct(top.count / total * 100)})")
+    return out + " (Tableau)."
 
 
 #: The Pareto table: rank, unit, the share bar, the share, the running total,
@@ -1936,7 +1966,10 @@ def focus_block(model) -> list:
 
 
 #: The mature funnel's columns: unit, cohort, six stages, the largest leak.
-FUNNEL_COLUMNS = (120.0, 56.0, 42.0, 42.0, 42.0, 42.0, 42.0, 42.0, 92.0)
+#: The leak column holds its step's two rates on the same line (148pt for
+#: "contacto a lecciones · 4,7% vs 6,8%", 120pt set): on a second line they
+#: grew every row and sent two zones' funnels onto a third sheet.
+FUNNEL_COLUMNS = (80.0, 40.0, 42.0, 42.0, 42.0, 42.0, 42.0, 42.0, 148.0)
 #: The rates' heads in a 70pt column — "Conversaciones Significativas" set
 #: in tracked capitals is twice that.
 RATE_HEADS = {"contact_rate": "Contacto", "mc_rate": "Conversación",
@@ -1968,15 +2001,31 @@ def levers_block(model) -> list:
             "Personas encontradas hace tres a seis meses y la parte que llegó "
             "a cada paso hasta hoy: con ese tiempo, la iglesia, la fecha y el "
             "bautismo ya tuvieron ocasión de ocurrir. La mayor fuga es el "
-            "paso que convierte menos del 85% de lo que convierte la misión. "
-            "Registros de Tableau por persona."), st["note"]))
+            "paso que convierte menos del 85% de lo que convierte la misión; "
+            "a su lado, qué parte de los que llegaron a ese paso pasó al "
+            "siguiente, aquí y en la misión. Registros de Tableau por "
+            "persona."), st["note"]))
         flow.append(Spacer(0, 3))
+
+        def share(v):
+            # A decimal under 10%: the lower funnel lives at 0,3-5%, and
+            # whole numbers printed "0%" in every row under a leak named
+            # "fecha a bautismo" that nobody could then check.
+            return es_display.percent(v, 1 if v < 10 else 0)
+
+        def leak(r, bold):
+            if not r.leak:
+                return "" if bold else "—"
+            if r.leak_step is None:
+                return r.leak
+            own, mission = r.leak_step
+            return f"{r.leak} · {share(own)} vs {share(mission)}"
 
         def line(r, bold=False):
             return ([r.name, _int(r.found)]
-                    + [(es_display.percent(r.pct(i), 0) if r.found else "")
+                    + [(share(r.pct(i)) if r.found else "")
                        for i in range(len(fn.stages))]
-                    + [r.leak or ("" if bold else "—")])
+                    + [leak(r, bold)])
 
         table = [line(fn.mission, True)] + [line(r) for r in fn.rows]
         flow.append(PP.table(
@@ -2039,6 +2088,60 @@ def levers_block(model) -> list:
                                        "una línea por zona", rule=False))
             for text in drivers:
                 flow.append(Paragraph(PP.text(text), st["note_lead"]))
+    return flow
+
+
+#: The sources table's columns: source, people, share now, share before, bar.
+SOURCES_COLUMNS = (200.0, 60.0, 60.0, 70.0, 130.0)
+
+
+def finding_mix_block(model) -> list:
+    """Who found the people of this period, and by what means — Tableau's
+    category and source columns, on the mission's pages (a zone gets the
+    same in one sentence of its opening, `_mix_sentence`).
+
+    Brought back 2026-10-07: Phase 3 retired it with the window-funnel pages
+    it lived on, which no decision asked for, and it is the one place the
+    packet says how little of the finding comes from members. The share in
+    the same number of days just before stands beside each source; shares,
+    not percentage changes, so a source of 20 people cannot read "+150%".
+    """
+    st = PP.styles()
+    block = model.tableau
+    if block is None or not block.present or not (block.mix or block.sources):
+        return []
+    W = PP.CONTENT_WIDTH
+    total = block.found or 0
+    before_total = (sum(m.before for m in block.mix
+                        if m.before is not None) if block.mix else 0)
+    flow = [PP.SectionHead("Quién las encontró y de dónde",
+                           f"{_int(total)} personas · {block.window.caption}")]
+    if block.mix:
+        flow += [PP.share_bar(W, [(m.label, m.count) for m in block.mix]),
+                 Spacer(0, 4)]
+    if block.sources and total:
+        def before_share(x):
+            if x.before is None or not before_total:
+                return es_display.NA
+            return _pct(x.before / before_total * 100)
+
+        rows = [[x.label, _int(x.count), _pct(x.count / total * 100),
+                 before_share(x),
+                 PP.bar_vs_goal(110, pct=x.count / total * 100,
+                                fill=PP.SERIES[0])]
+                for x in block.sources]
+        flow.append(PP.table(
+            rows, SOURCES_COLUMNS,
+            headers=(("Fuente", f"las {_int(len(block.sources))} más grandes"),
+                     "Personas", ("Del total", "este período"),
+                     ("Antes", "mismos días previos"), ""),
+            align=("l", "r", "r", "r", "l")))
+    note = ("Categoría y fuente de hallazgo de Tableau, sobre las personas "
+            "encontradas en el período, no sobre el año.")
+    if block.before is not None and block.before.usable:
+        note += (f" «Antes» es la misma parte en {block.before.label}.")
+    note += " " + block.scope_note
+    flow += [Spacer(0, 3), Paragraph(PP.text(note), st["note"])]
     return flow
 
 
@@ -2148,9 +2251,26 @@ def run_on(blocks, *, gap: float = 10.0, floor: float | None = None) -> list:
             continue
         if out:
             out.append(Spacer(0, gap))
-            out.append(CondPageBreak(floor))
+            # A section SHORTER than the floor needs only its own height
+            # (2026-10-07): a zone's three-district table is ~110pt, and the
+            # 140pt floor sent it to the next sheet and left a third of
+            # Angol's first page blank.
+            out.append(CondPageBreak(min(floor, _height(block) + 2)))
         out.extend(block)
     return out
+
+
+def _height(block) -> float:
+    """How tall a list of flowables sets at the content width — inf if any
+    of them cannot say, so the floor stands."""
+    total = 0.0
+    for f in block:
+        try:
+            total += f.wrap(PP.CONTENT_WIDTH, PP.PAGE_HEIGHT)[1]
+            total += f.getSpaceBefore() + f.getSpaceAfter()
+        except Exception:
+            return math.inf
+    return total
 
 
 def mission_pages(model, goals, peers=None) -> list:
@@ -2160,8 +2280,8 @@ def mission_pages(model, goals, peers=None) -> list:
     return run_on([
         tablero_block(model), focus_block(model),
         children_page(model) + reporting_block(model),
-        baptism_page(model), levers_block(model), trend_block(model),
-        nightly_page(model, goals),
+        baptism_page(model), levers_block(model), finding_mix_block(model),
+        trend_block(model), nightly_page(model, goals),
     ])
 
 
@@ -2447,9 +2567,11 @@ def data_note(models, goals=None) -> list:
         ["Organigrama", source("Organigrama de la misión", "MISSION_ORG"),
          "Zona, distrito y compañería. La pertenencia se decide aquí y nunca "
          "en la columna de una fila de datos."],
-        ["Hallazgo", source("Tableau, por persona", "TABLEAU_DETAIL"),
-         "Una fila por persona encontrada, con las fechas de sus hitos. "
-         "Cubre las 10 zonas; los formularios de Compass cubren 4."],
+        ["Personas encontradas", source("Tableau, por persona",
+                                        "TABLEAU_DETAIL"),
+         "Una fila por persona encontrada, con las fechas de sus hitos: quién "
+         "las encontró, el embudo maduro, las fechas abiertas y los bautismos "
+         "por zona. Cubre las 10 zonas; los formularios de Compass cubren 4."],
         ["Bautismos del año", source("Tableau, certificada por mes",
                                      "TABLEAU_BAPTISMS"),
          "La cifra certificada por mes. No es la que informa el formulario "

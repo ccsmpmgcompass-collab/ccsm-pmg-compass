@@ -789,14 +789,27 @@ if _model.funnel is not None and _model.funnel.mission is not None:
               "llegó a cada paso hasta hoy: con ese tiempo la iglesia, la "
               "fecha y el bautismo ya tuvieron ocasión de ocurrir. La mayor "
               "fuga es el paso que convierte menos del 85% de lo que convierte "
-              "la misión. Registros de Tableau por persona."),
+              "la misión; entre paréntesis, qué parte de los que llegaron a "
+              "ese paso pasó al siguiente, aquí y en la misión. Registros de "
+              "Tableau por persona."),
     )
+    def _share(v):
+        # A decimal under 10%, as in the packet: whole numbers read "0%"
+        # down the whole baptism column.
+        return fmt_percent(v, 1 if v < 10 else 0)
+
+    def _leak(r):
+        if not r.leak:
+            return ""
+        step = (f" ({_share(r.leak_step[0])} · misión "
+                f"{_share(r.leak_step[1])})" if r.leak_step else "")
+        return f" · mayor fuga: {r.leak}{step}"
+
     st.markdown(ranked_list([{
         "name": r.name, "rank": "",
-        "sub": (f"{fmt_int(r.found)} encontradas"
-                + (f" · mayor fuga: {r.leak}" if r.leak else "")),
+        "sub": f"{fmt_int(r.found)} encontradas" + _leak(r),
         "value": None,
-        "cells": [fmt_percent(r.pct(i)) if r.found else NA
+        "cells": [_share(r.pct(i)) if r.found else NA
                   for i in range(len(_FN.stages))],
     } for r in (_FN.mission,) + tuple(_FN.rows)],
         columns=list(_short[:len(_FN.stages)])),

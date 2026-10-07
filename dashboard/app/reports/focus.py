@@ -176,6 +176,11 @@ class FunnelRow:
     reached: tuple = ()          # count per stage after "found"
     pilot: bool = True
     leak: str | None = None
+    #: The leak's own step, as ``(this unit's %, the mission's %)`` of the
+    #: people entering it who went on — what the table prints beside the
+    #: name, so a reader can check the leak without dividing two shares of
+    #: the cohort by each other.
+    leak_step: tuple | None = None
 
     def pct(self, i: int) -> float | None:
         return self.reached[i] / self.found * 100 if self.found else None
@@ -222,7 +227,7 @@ def mature_funnel(found_d, stage_dates, stage_labels, groups, today: date,
     rows = []
     for name, mask, pilot in groups:
         r = row(name, mask, pilot)
-        leak = None
+        leak = step = None
         if r.found >= LEAK_MIN_FOUND:
             ratios = [(conv(r, i) / conv(mission, i), i)
                       for i in range(len(stage_labels))
@@ -232,7 +237,8 @@ def mature_funnel(found_d, stage_dates, stage_labels, groups, today: date,
                 if ratio < LEAK_RATIO:
                     leak = (f"{SHORT_STAGES.get(labels[i], labels[i].lower())}"
                             f" a {SHORT_STAGES.get(labels[i + 1], labels[i + 1].lower())}")
+                    step = (conv(r, i) * 100, conv(mission, i) * 100)
         rows.append(FunnelRow(name=r.name, found=r.found, reached=r.reached,
-                              pilot=pilot, leak=leak))
+                              pilot=pilot, leak=leak, leak_step=step))
     return MatureFunnel(start=start, end=end, stages=tuple(stage_labels),
                         rows=tuple(rows), mission=mission)

@@ -348,3 +348,33 @@ def test_no_page_speaks_developer_language():
     leftover = [m.group(0) for m in JARGON.finditer(text)
                 if not text[max(0, m.start() - 8):m.start()].endswith("pestaña ")]
     assert not leftover, leftover
+
+
+# ── Who found them, back on the president's pages (2026-10-07) ────────────────
+
+def test_the_mission_prints_who_found_them_and_from_where():
+    """Phase 3 retired it with the window-funnel pages and no decision asked
+    for that: it is the one place the packet says how little of the finding
+    comes from members."""
+    text = words(PK.finding_mix_block(of(S.MISSION)))
+    assert "Quién las encontró y de dónde" in text
+    assert "Miembro" in text
+    assert "10 zonas" in text          # the mission's block is all ten
+
+
+def test_a_zone_gets_who_found_them_as_one_sentence_not_a_section():
+    """A zone's section cost it a third sheet; its opening carries the same
+    in one line."""
+    zone = of(S.ZONE)
+    assert PK.finding_mix_block(zone) not in ([], None)   # data is there
+    assert "Quién las encontró y de dónde" not in words(PK.zone_pages(zone, None))
+    sentence = PK._mix_sentence(zone)
+    assert sentence.startswith("Quién las encontró:")
+    assert "miembros" in sentence and "(Tableau)." in sentence
+    assert sentence in words(PK.opening(zone))
+
+
+def test_no_finding_data_prints_no_mix():
+    built, _ = models(detail=people([]))
+    mission = next(m for m in built if m.scope.level == S.MISSION)
+    assert PK.finding_mix_block(mission) == []
