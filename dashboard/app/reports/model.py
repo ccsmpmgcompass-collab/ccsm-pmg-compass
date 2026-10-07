@@ -1789,11 +1789,30 @@ def _trend_for(data: ReportData, scope: S.Scope, period: P.Period):
     cache_key = ("trend", scope.key, period.key)
     if cache_key not in data._flags:
         tp = _trend_period(data, period)
-        weeks = [w.isoformat() for w in tp.weeks[-6:]] if tp else []
+        history = [w.isoformat() for w in tp.weeks] if tp else []
+        weeks = history[-6:]
         data._flags[cache_key] = FC.trend_change(
             data.weekly_ki, scope.areas, index_weights(data.ki_keys),
-            recent=weeks[3:], prior=weeks[:3])
+            recent=weeks[3:], prior=weeks[:3], history=history)
     return data._flags[cache_key]
+
+
+def _silent_goals(data: ReportData, scope: S.Scope, period: P.Period) -> dict:
+    """Leadership's goal for the area-weeks in the period that filed NOTHING
+    — the part of a unit's shortfall that is silence (PLAN 4A.2)."""
+    rows = _weekly_rows(data, scope, period)
+    filed = (set(zip(rows["_area"], rows["_week"])) if not rows.empty
+             else set())
+    out: dict = {}
+    for week in period.weeks:
+        key = week.isoformat()
+        for area in scope.areas:
+            if (area, key) in filed:
+                continue
+            goal = data.lead_week_goal(area, key)
+            for k, v in (goal or {}).items():
+                out[k] = out.get(k, 0.0) + v
+    return out
 
 
 def _focus(data: ReportData, scope: S.Scope, period: P.Period,
@@ -1811,7 +1830,8 @@ def _focus(data: ReportData, scope: S.Scope, period: P.Period,
     for unit in units:
         ki = _ki_rows_for(data, unit, period, comparison)
         rows.append((unit, ki, _index_for(data, ki, period, comparison).value,
-                     _trend_for(data, unit, period)))
+                     _trend_for(data, unit, period),
+                     _silent_goals(data, unit, period)))
     return FC.pareto(rows, index_weights(data.ki_keys))
 
 

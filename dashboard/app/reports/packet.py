@@ -1765,11 +1765,13 @@ def tablero_block(model) -> list:
             "meta que las compañerías se pusieron — se imprime y no da color. "
             "Meta: el porcentaje contra la meta del liderazgo sobre los "
             "informes que la tienen — es lo único con color. 12 semanas: su "
-            "forma, cada línea en su escala.")
+            "forma, cada línea en su escala, con la primera y la última "
+            "semana informadas debajo.")
     if model.scope.level != S.MISSION:
         note = ("Por comp.: por compañería y semana. Propia: su compromiso, "
                 "sin color. Meta: contra la del liderazgo, lo único con "
-                "color. 12 semanas: su forma."
+                "color. 12 semanas: su forma, con la primera y la última "
+                "cifra debajo."
                 + (" Termina en y falta: proyección al ritmo reciente, sin "
                    "color." if forecast else ""))
     elif forecast:
@@ -1875,7 +1877,7 @@ def _mix_sentence(model) -> str:
 
 #: The Pareto table: rank, unit, the share bar, the share, the running total,
 #: where the unit is shortest, its productivity and its trend.
-FOCUS_COLUMNS = (18.0, 138.0, 78.0, 40.0, 50.0, 108.0, 44.0, 44.0)
+FOCUS_COLUMNS = (18.0, 138.0, 78.0, 40.0, 50.0, 92.0, 44.0, 60.0)
 
 #: A Key Indicator in a cell too narrow for its full name — one line, so a
 #: ranked table keeps its 17pt rows.
@@ -1916,14 +1918,12 @@ def focus_block(model) -> list:
                          and trail else "")
         table.append([
             str(i), name,
-            PP.bar_vs_goal(FOCUS_COLUMNS[2] - 8, pct=r.share / biggest * 100,
-                           fill=PP.SERIES[0], track_color=PP.RULE_SOFT),
+            PP.split_bar(FOCUS_COLUMNS[2] - 8, pct=r.share / biggest * 100,
+                         part=r.silent / biggest * 100),
             es_display.percent(r.share, 0), es_display.percent(r.cumulative, 0),
-            (SHORT_KI.get(r.worst) or labels.get(r.worst, ""))
-            if r.worst else es_display.NA,
+            _focus_cause(r, labels),
             _idx(r.index),
-            (es_display.signed_percent(r.trend) if r.trend is not None
-             else es_display.NA)])
+            FC.trend_words(r.trend, es_display.signed_percent)])
     flow.append(PP.table(
         table, FOCUS_COLUMNS,
         headers=("", noun.capitalize(),
@@ -1937,12 +1937,20 @@ def focus_block(model) -> list:
     falling = [r.name for r in rows
                if FC.quadrant(r.index, r.trend) == "debajo y bajando"]
     flow.append(Spacer(0, 6))
-    flow.append(PP.quadrant(
-        PP.CONTENT_WIDTH, 150.0 if model.scope.level == S.MISSION else 130.0,
-        [(r.name, r.index, r.trend) for r in rows],
-        x_label="productividad, misión = 100",
-        y_label="tendencia de las últimas 6 semanas",
-        corner="debajo de la misión y bajando"))
+    readable = [r for r in rows if FC.trend_step(r.trend) is not None]
+    if readable:
+        flow.append(PP.quadrant(
+            PP.CONTENT_WIDTH, 150.0 if model.scope.level == S.MISSION else 130.0,
+            [(r.name, r.index,
+              FC.trend_value(r.trend) if FC.trend_step(r.trend) else 0.0,
+              bool(FC.trend_step(r.trend)))
+             for r in readable],
+            x_label="productividad, misión = 100",
+            y_label="tendencia de las últimas 6 semanas",
+            corner="debajo de la misión y bajando"))
+    # With every unit on too few reports (an area files at most three a
+    # side) the chart would be a row of hollow dots on the zero line — the
+    # picture of a measurement that was not made. It says so instead.
     flow.append(Spacer(0, 4))
     sentence = (f"Los primeros {es_display.integer(head)} {noun} suman el "
                 f"{es_display.percent(rows[head - 1].cumulative, 0)} de lo que "
@@ -1953,16 +1961,44 @@ def focus_block(model) -> list:
                      f"{noun} más con el "
                      f"{es_display.percent(100 - shown[-1].cumulative, 0)} "
                      f"restante: {', '.join(r.name for r in rest)}. ")
-    sentence += (("Debajo de la misión y bajando: " + ", ".join(falling) + ".")
-                 if falling else "Ninguno está debajo de la misión y bajando.")
-    flow.append(Paragraph(PP.text(sentence), st["note_lead"]))
+    if not readable:
+        sentence += (f"Ninguna de sus {noun} tiene informes suficientes para "
+                     f"leer una tendencia de seis semanas, así que no hay "
+                     f"gráfico de tendencia. ")
+    else:
+        sentence += (("Debajo de la misión y bajando: " + ", ".join(falling)
+                      + ". ") if falling else
+                     "Ninguno está debajo de la misión y bajando más allá de "
+                     "lo que varía de una semana a otra. ")
+    quiet = sum(r.silent for r in rows)
+    if quiet >= 1:
+        sentence += (f"El {es_display.percent(quiet, 0)} de lo que falta es "
+                     f"de semanas sin informe (la parte pálida de la barra): "
+                     f"ahí la conversación es sobre informar, no sobre el "
+                     f"trabajo.")
+    flow.append(Paragraph(PP.text(sentence.strip()), st["note_lead"]))
     flow.append(Paragraph(PP.text(
         "Parte de lo que falta: la meta del liderazgo de cada unidad (todas "
         "sus áreas, a prorrata del período) menos lo que informó, sumado por "
         "indicador con los pesos del índice; quien supera su meta no compensa "
-        "a nadie. Tendencia: las últimas tres semanas contra las tres "
-        "anteriores, por informe."), st["note"]))
+        "a nadie. «Sin informe» en la columna de al lado: más de la mitad de "
+        "su parte es de semanas que nadie informó. Tendencia: las últimas tres "
+        "semanas contra las tres anteriores, por informe; «estable» si el "
+        "cambio cabe en lo que la unidad varía de una semana a otra, «pocas "
+        "cifras» con menos de 6 informes por lado — en el gráfico, un punto "
+        "hueco sobre la línea del cero."), st["note"]))
     return flow
+
+
+def _focus_cause(row, labels) -> str:
+    """Where a unit's part of the shortfall comes from: silence, when more
+    than half of it is goal for weeks nobody filed (PLAN 4A.2), else the Key
+    Indicator it is shortest on."""
+    if row.mostly_silent:
+        return "Sin informe"
+    if not row.worst:
+        return es_display.NA
+    return SHORT_KI.get(row.worst) or labels.get(row.worst, "")
 
 
 #: The mature funnel's columns: unit, cohort, six stages, the largest leak.
@@ -2014,6 +2050,8 @@ def levers_block(model) -> list:
             return es_display.percent(v, 1 if v < 10 else 0)
 
         def leak(r, bold):
+            if not bold and r.thin:
+                return "pocas personas"
             if not r.leak:
                 return "" if bold else "—"
             if r.leak_step is None:
@@ -2048,17 +2086,14 @@ def levers_block(model) -> list:
                                   else es_display.NA for k in keys] + [""]]
         for zone, rates in model.child_rates:
             by = {r["key"]: r for r in rates}
-            gaps = [(by[k]["value"] - mission[k]["value"], k) for k in keys
-                    if by.get(k) and by[k]["value"] is not None
-                    and mission[k]["value"] is not None]
-            low = min(gaps) if gaps else None
+            low = FC.lowest_rate(rates, model.rates)
             table.append(
                 [zone.name] + [es_display.percent(by[k]["value"], 1)
                                if by.get(k) and by[k]["value"] is not None
                                else es_display.NA for k in keys]
                 + [(f"{heads[keys.index(low[1])].lower()} "
                     f"{es_display.number(low[0], 1)} pts")
-                   if low is not None and low[0] < 0 else "—"])
+                   if low is not None else "ninguna fuera del azar"])
         flow.append(PP.table(
             table, RATES_COLUMNS,
             headers=tuple(["Zona"] + heads
@@ -2080,7 +2115,9 @@ def levers_block(model) -> list:
             flow.append(Paragraph(PP.text(
                 "Qué divide a qué — " + " · ".join(divides) + ". Una tasa "
                 "es la razón de los totales de la zona, no el promedio de sus "
-                "áreas."), st["note"]))
+                "áreas. «Más baja» sólo nombra una tasa cuando la de la "
+                "misión queda fuera del rango que la zona daría por azar con "
+                "sus propias cifras (80%)."), st["note"]))
         drivers = _driver_lines(model)
         if drivers:
             flow.append(Spacer(0, 6))
@@ -2164,11 +2201,9 @@ def _driver_lines(model) -> list:
         bits = [f"{child.name}: donde menos produce es "
                 f"{labels.get(low_key, low_key)} ({_idx(low_ratio)})"]
         by = {r["key"]: r for r in rates.get(child.scope.key, ())}
-        gaps = [(by[k]["value"] - mission[k]["value"], k) for k in by
-                if k in mission and by[k]["value"] is not None
-                and mission[k]["value"] is not None]
-        if gaps and min(gaps)[0] < 0:
-            gap, key = min(gaps)
+        low = FC.lowest_rate(rates.get(child.scope.key, ()), model.rates)
+        if low is not None:
+            gap, key = low
             bits.append(f"su tasa más lejos de la misión es "
                         f"{(by[key].get('label') or key).lower()}, "
                         f"{es_display.percent(by[key]['value'], 1)} contra "

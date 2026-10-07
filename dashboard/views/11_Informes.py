@@ -756,14 +756,21 @@ if _model.focus:
         info=("La meta del liderazgo de cada unidad (todas sus áreas, a "
               "prorrata del período) menos lo que informó, sumado por "
               "indicador con los pesos del índice; quien supera su meta no "
-              "compensa a nadie. Tendencia: las últimas tres semanas contra "
-              "las tres anteriores, por informe."),
+              "compensa a nadie. «Sin informe»: más de la mitad de su parte "
+              "es de semanas que nadie informó. Tendencia: las últimas tres "
+              "semanas contra las tres anteriores, por informe; «estable» si "
+              "el cambio cabe en lo que la unidad varía de una semana a otra, "
+              "«pocas cifras» con menos de 6 informes por lado."),
     )
     st.markdown(ranked_list([{
         "name": f.name, "rank": i,
         "sub": (f"acumulado {fmt_percent(f.cumulative)} · donde más falta: "
-                f"{_SHORT_KI.get(f.worst, f.worst or NA)} · productividad "
-                f"{_idx(f.index)}"
+                + ("sin informe" if f.mostly_silent
+                   else _SHORT_KI.get(f.worst, f.worst or NA))
+                + (f" ({fmt_percent(f.silent)} de semanas sin informe)"
+                   if f.silent >= 1 else "")
+                + f" · productividad {_idx(f.index)} · tendencia "
+                + _FC.trend_words(f.trend, lambda v: f"{v:+.0f}%")
                 + (f" · {_FC.quadrant(f.index, f.trend)}"
                    if _FC.quadrant(f.index, f.trend) else "")),
         "value": f.share, "bar": f.share,
@@ -799,6 +806,8 @@ if _model.funnel is not None and _model.funnel.mission is not None:
         return fmt_percent(v, 1 if v < 10 else 0)
 
     def _leak(r):
+        if r is not _FN.mission and r.thin:
+            return " · pocas personas"
         if not r.leak:
             return ""
         step = (f" ({_share(r.leak_step[0])} · misión "

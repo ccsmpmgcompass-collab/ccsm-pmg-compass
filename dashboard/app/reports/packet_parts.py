@@ -613,7 +613,50 @@ def bar_vs_goal(width: float, *, pct: float | None, status: str | None = None,
     return d
 
 
+def split_bar(width: float, *, pct: float, part: float, height: float = 7.0,
+              fill: colors.Color | None = None) -> Drawing:
+    """A magnitude bar whose last ``part`` (same scale as ``pct``) is drawn
+    pale — the "Dónde enfocar" share with its silence set apart (PLAN
+    4A.2): solid is the gap the reporting areas left, pale is the goal of
+    the area-weeks nobody filed."""
+    base = fill if fill is not None else SERIES[0]
+    pct = max(0.0, min(100.0, float(pct)))
+    part = max(0.0, min(float(part), pct))
+    d = bar_vs_goal(width, pct=pct - part, fill=base, height=height)
+    quiet = part / 100.0 * width
+    if quiet > 0.3:
+        d.add(Rect((pct - part) / 100.0 * width, 0, quiet, height,
+                   fillColor=colors.Color(base.red, base.green, base.blue,
+                                          alpha=0.32),
+                   strokeColor=base, strokeWidth=0.4, rx=1.5, ry=1.5))
+    return d
+
+
 # ── 2 · A sparkline, with the transfer boundaries on it ───────────────────────
+
+def sparkline_with_ends(width: float, height: float, values, *,
+                        boundaries=()) -> Drawing:
+    """`sparkline` with its first and last reported week printed under the
+    ends, in NOTE (PLAN-2026-10-06 4A.4): a line with no number on it says
+    "up" without saying from what to what."""
+    vals = list(values or [])
+    nums = [(i, v) for i, v in enumerate(vals) if v is not None]
+    gap = NOTE.size + 1.0
+    d = Drawing(width, height + gap)
+    line = sparkline(width, height, vals, boundaries=boundaries)
+    holder = Group(*line.contents)
+    holder.transform = (1, 0, 0, 1, 0, gap)
+    d.add(holder)
+    if len(nums) >= 2:
+        def fmt(v):
+            v = float(v)
+            return (es_display.integer(round(v)) if abs(v - round(v)) < 0.05
+                    else es_display.number(v, 1))
+        d.add(_string(0, 0.5, fmt(nums[0][1]), NOTE, INK_3))
+        d.add(_string(width, 0.5, fmt(nums[-1][1]), NOTE, INK_2,
+                      anchor="end"))
+    return d
+
 
 def sparkline(width: float, height: float, values,
               *, boundaries=(), color: colors.Color | None = None,
@@ -1774,8 +1817,8 @@ def tablero_table(lines, *, headers, forecast: bool = True) -> Table:
                         track_color=RULE_SOFT),
             Paragraph(text(line.verdict), st["cell_right"]),
             change_chip(widths[6] - 8, line.change),
-            sparkline(widths[7] - 8, 9.0, list(line.spark),
-                      boundaries=line.boundaries),
+            sparkline_with_ends(widths[7] - 8, 9.0, list(line.spark),
+                                boundaries=line.boundaries),
         ]
         if forecast:
             row += [Paragraph(text(line.finish), st["cell_right"]),
@@ -1790,17 +1833,21 @@ def quadrant(width: float, height: float, points, *, x_ref: float = 100.0,
              corner: str = "") -> Drawing:
     """Productivity across, trend up — every unit a named dot.
 
-    ``points`` is ``[(name, x, y)]``. The lower-left corner (below the
-    reference and falling) is tinted and named: it is the focus list, and the
-    one part of the picture a council should not have to look for.
+    ``points`` is ``[(name, x, y)]`` or ``[(name, x, y, real)]``. The
+    lower-left corner (below the reference and falling) is tinted and named:
+    it is the focus list, and the one part of the picture a council should
+    not have to look for. A point whose move is not ``real`` — inside its own
+    noise, or on too few reports (PLAN-2026-10-06 4A.1) — is drawn hollow and
+    can never be in the corner.
     """
     d = Drawing(width, height)
-    pts = [(n, x, y) for n, x, y in points if x is not None and y is not None]
+    pts = [(p[0], p[1], p[2], p[3] if len(p) > 3 else True) for p in points
+           if p[1] is not None and p[2] is not None]
     left, bottom, top_pad, right_pad = 30.0, 16.0, 8.0, 8.0
     w = width - left - right_pad
     h = height - bottom - top_pad
-    x_max = max([200.0] + [x * 1.1 for _, x, _ in pts])
-    span = max([30.0] + [abs(y) * 1.15 for _, _, y in pts])
+    x_max = max([200.0] + [p[1] * 1.1 for p in pts])
+    span = max([30.0] + [abs(p[2]) * 1.15 for p in pts])
     span = 10.0 * math.ceil(span / 10.0)
 
     def px(x):
@@ -1849,12 +1896,20 @@ def quadrant(width: float, height: float, points, *, x_ref: float = 100.0,
         taken.append(box(left, bottom + h + 1, y_label, "start"))
     ordered = sorted(pts, key=lambda p: p[1])
     # The dots first, so no label is set over a dot drawn after it.
-    for name, x, y in ordered:
-        focus = x < x_ref and y <= -y_flat
+    for name, x, y, real in ordered:
+        focus = real and x < x_ref and y <= -y_flat
         cx, cy = px(x), py(y)
-        d.add(Circle(cx, cy, 2.8, fillColor=STATUS["bad"] if focus else NAVY,
-                     strokeColor=PAPER, strokeWidth=0.6))
+        if real:
+            d.add(Circle(cx, cy, 2.8,
+                         fillColor=STATUS["bad"] if focus else NAVY,
+                         strokeColor=PAPER, strokeWidth=0.6))
+        else:
+            d.add(Circle(cx, cy, 2.5, fillColor=PAPER, strokeColor=INK_3,
+                         strokeWidth=0.8))
         taken.append((cx - 3, cy - 3, cx + 3, cy + 3))
+    # The zero line is an obstacle too: since 4A.1 a steady unit sits ON it,
+    # and a label set along the dashes reads as struck through.
+    taken.append((left, py(0) - 1.2, left + w, py(0) + 1.2))
     if corner:
         # The corner's name goes in whichever corner of the tint is clear.
         spots = [(left + 4, bottom + 4, "start"),
@@ -1866,14 +1921,18 @@ def quadrant(width: float, height: float, points, *, x_ref: float = 100.0,
             for x, y, a in spots)
         d.add(_string(tx, ty, corner, NOTE, STATUS["bad"], anchor=anchor))
         taken.append(box(tx, ty, corner, anchor))
-    for name, x, y in ordered:
-        focus = x < x_ref and y <= -y_flat
+    for name, x, y, real in ordered:
+        focus = real and x < x_ref and y <= -y_flat
         cx, cy = px(x), py(y)
         label = fit(name, NOTE, 80)
         tries = [(cx + 4, cy - 2, "start"), (cx - 4, cy - 2, "end"),
                  (cx, cy + 4.5, "middle"), (cx, cy - 10, "middle"),
                  (cx + 4, cy + 3, "start"), (cx + 4, cy - 8, "start"),
-                 (cx - 4, cy + 3, "end"), (cx - 4, cy - 8, "end")]
+                 (cx - 4, cy + 3, "end"), (cx - 4, cy - 8, "end"),
+                 # A second ring for a crowded line of steady units.
+                 (cx + 4, cy + 10, "start"), (cx + 4, cy - 15, "start"),
+                 (cx - 4, cy + 10, "end"), (cx - 4, cy - 15, "end"),
+                 (cx, cy + 12, "middle"), (cx, cy - 18, "middle")]
         best = None
         for tx, ty, anchor in tries:
             b = box(tx, ty, label, anchor)

@@ -31,6 +31,12 @@ Carried from AUDIT §7.1. They continue the clarity pass's 36–43.
 | 49 | **About 45 pages** for a full transfer copy (from 104). | 25 |
 | 50 | The weekly packet keeps **the same structure** as the transfer packet. No short variant. | — |
 | 51 | **Both renderers change** — the Informes screen and the PDF. One model (decision 30 holds). | — |
+| 52 | (P6, 2026-10-07) **Same weeks in other years, Tableau only**, in its own block, never a tablero column (decision 34). | — |
+| 53 | (P7) **"Qué cambió" is recomputed** from today's sheet, not stored; it says "con los informes de hoy". | — |
+| 54 | (P8) **Lever sizing**: per zone, what closing its biggest leak to the mission's rate would add, a range, uncoloured, ranked; mission page + zone opening. | — |
+| 55 | (P9) **District pipeline** on the district page; under 15 open dates "pocas fechas", no range. | — |
+| 56 | (P10) **Goal sanity line**: leadership's transfer goal against the mission's best transfer; grading stays on leadership's goal (44 holds). | — |
+| 57 | (P11) **A one-page *Resumen* as page 2**; *Cómo leer* moves to page 3; **≈48 pages is fine** for a transfer copy. | 49's ≈45 |
 
 Decisions 1–43 still hold except where a row above names them.
 

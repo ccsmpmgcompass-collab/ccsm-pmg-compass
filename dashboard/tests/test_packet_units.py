@@ -374,3 +374,13 @@ def test_quadrant_labels_do_not_sit_on_each_other_or_the_corner():
             apart = (a[3] <= b[1] or b[3] <= a[1]
                      or a[4] <= b[2] or b[4] <= a[2])
             assert apart, (a[0], b[0])
+
+
+def test_the_tablero_spark_prints_its_first_and_last_week():
+    """PLAN 4A.4: a line with no number on it says "up" without saying from
+    what to what."""
+    from reportlab.graphics.shapes import String
+    from app.reports import packet_parts as PP
+    d = PP.sparkline_with_ends(52, 9, [None, 16, 30, 25, 209])
+    texts = [s.text for s in d.contents if isinstance(s, String)]
+    assert texts == ["16", "209"]

@@ -45,15 +45,26 @@ class FocusRow:
     gaps: tuple = ()
     worst: str | None = None
     index: float | None = None
-    trend: float | None = None
+    trend: "Trend | float | None" = None
+    #: The part of ``share`` that is goal for area-weeks NOBODY REPORTED
+    #: (PLAN-2026-10-06 4A.2). A district at the top of the list because an
+    #: area never filed is a reporting problem, not a work problem, and the
+    #: president goes there for a different conversation.
+    silent: float = 0.0
 
     @property
     def name(self) -> str:
         return self.scope.name
 
+    @property
+    def mostly_silent(self) -> bool:
+        """More than half of this unit's part is weeks nobody filed — its
+        cause reads "sin informe", in both renderers."""
+        return bool(self.share) and self.silent > self.share / 2
+
 
 def pareto(units, weights: dict) -> tuple:
-    """``units`` is ``[(scope, ki_rows, index value, trend)]``.
+    """``units`` is ``[(scope, ki_rows, index value, trend[, silent goals])]``.
 
     A unit's gap on a member is leadership's goal for the period over EVERY
     area in it — silent ones included, because a goal not met by a silent
@@ -61,34 +72,45 @@ def pareto(units, weights: dict) -> tuple:
     ahead of its goal does not cancel another's shortfall. Each member's gaps
     become shares of that member's total and are averaged with the index's
     weights.
+
+    ``silent goals`` (``{key: goal}``) is leadership's goal for the
+    area-weeks that filed nothing. That much of a gap — never more than the
+    gap — is silence and the rest is work; `FocusRow.silent` carries the
+    silence's part of the share.
     """
     totals: dict = {}
     per_unit = []
-    for scope, rows, index, trend in units:
-        gaps = {}
+    for unit in units:
+        scope, rows, index, trend = unit[:4]
+        quiet = unit[4] if len(unit) > 4 else {}
+        gaps, silent = {}, {}
         for r in rows:
             if r.key not in weights or r.leadership_goal is None:
                 continue
             gaps[r.key] = max(0.0, r.leadership_goal - (r.actual or 0.0))
+            silent[r.key] = min(gaps[r.key], max(0.0, quiet.get(r.key, 0.0)))
             totals[r.key] = totals.get(r.key, 0.0) + gaps[r.key]
-        per_unit.append((scope, gaps, index, trend))
+        per_unit.append((scope, gaps, silent, index, trend))
     keys = [k for k, v in totals.items() if v > 0]
     if not keys:
         return ()
     weight = sum(weights[k] for k in keys)
     rows = []
-    for scope, gaps, index, trend in per_unit:
+    for scope, gaps, silent, index, trend in per_unit:
         parts = {k: gaps.get(k, 0.0) / totals[k] for k in keys}
         share = 100 * sum(weights[k] * parts[k] for k in keys) / weight
+        quiet = 100 * sum(weights[k] * silent.get(k, 0.0) / totals[k]
+                          for k in keys) / weight
         worst = max(keys, key=lambda k: weights[k] * parts[k]) if share else None
         rows.append((share, scope, tuple((k, gaps.get(k, 0.0)) for k in keys),
-                     worst, index, trend))
+                     worst, index, trend, quiet))
     rows.sort(key=lambda r: (-r[0], r[1].name))
     out, run = [], 0.0
-    for share, scope, gaps, worst, index, trend in rows:
+    for share, scope, gaps, worst, index, trend, quiet in rows:
         run += share
         out.append(FocusRow(scope=scope, share=share, cumulative=run,
-                            gaps=gaps, worst=worst, index=index, trend=trend))
+                            gaps=gaps, worst=worst, index=index, trend=trend,
+                            silent=quiet))
     return tuple(out)
 
 
@@ -97,8 +119,78 @@ def pareto(units, weights: dict) -> tuple:
 #: A move smaller than this, in either direction, is "steady" on the quadrant.
 TREND_FLAT = 5.0
 
+#: Each half of the comparison needs this many weekly reports before the
+#: trend says anything (PLAN-2026-10-06 4A.1): a district of three areas with
+#: two silent compared a handful of reports and printed "−84%".
+TREND_MIN_REPORTS = 6
 
-def trend_change(weekly: pd.DataFrame, areas, weights: dict, recent, prior):
+#: The noise band is this many standard errors of one three-week mean against
+#: another — 1,28 is the two-sided 80% the forecasts already use.
+TREND_Z = 1.28
+
+
+@dataclass(frozen=True)
+class Trend:
+    """A unit's six-week move, and whether it is one.
+
+    ``value`` is the weighted change, last three weeks against the three
+    before, per reporting area-week. ``band`` is how large a move the unit's
+    own week-to-week wandering makes by chance; a move inside it (or inside
+    TREND_FLAT) is "estable". ``reports`` is the weekly reports behind each
+    half, and fewer than TREND_MIN_REPORTS on either side is "pocas cifras".
+    """
+
+    value: float
+    band: float = 0.0
+    reports: tuple = (0, 0)
+
+    @property
+    def thin(self) -> bool:
+        return min(self.reports) < TREND_MIN_REPORTS
+
+    @property
+    def direction(self) -> int:
+        if self.thin or abs(self.value) < max(TREND_FLAT, self.band):
+            return 0
+        return 1 if self.value > 0 else -1
+
+    @property
+    def words(self) -> str:
+        if self.thin:
+            return "pocas cifras"
+        return {1: "subiendo", -1: "bajando", 0: "estable"}[self.direction]
+
+
+def _noise_band(rows: pd.DataFrame, weights: dict, history) -> float:
+    """How large a three-weeks-against-three move the unit makes by chance.
+
+    Each week's level is the weighted mean of the members' per-report rates,
+    each over its own twelve-week mean; the band is TREND_Z standard errors
+    of the difference of two three-week means of that level, in percent. A
+    real trend inside the twelve weeks widens it a little, which errs toward
+    "estable" — the safe side for a list that sends the president somewhere.
+    """
+    hist = rows[rows["_week"].isin(set(history or ()))]
+    if hist.empty or hist["_week"].nunique() < 6:
+        return 0.0
+    vals = {k: pd.to_numeric(hist[k], errors="coerce").fillna(0.0)
+            for k in weights if k in hist.columns}
+    means = {k: float(v.mean()) for k, v in vals.items() if v.mean() > 0}
+    if not means:
+        return 0.0
+    weight = sum(weights[k] for k in means)
+    levels = [sum(weights[k] * float(vals[k].loc[idx].mean()) / means[k]
+                  for k in means) / weight
+              for _, idx in hist.groupby("_week").groups.items()]
+    level = np.asarray(levels, dtype=float)
+    centre = float(level.mean())
+    if len(level) < 2 or centre <= 0:
+        return 0.0
+    return TREND_Z * float(level.std(ddof=1)) * (2 / 3) ** 0.5 / centre * 100
+
+
+def trend_change(weekly: pd.DataFrame, areas, weights: dict, recent, prior,
+                 history=None) -> "Trend | None":
     """The weighted change, in percent, between two runs of weeks.
 
     Per REPORTING area-week on each side — rule 2 of the Informes layer:
@@ -107,6 +199,9 @@ def trend_change(weekly: pd.DataFrame, areas, weights: dict, recent, prior):
     end of a transfer where a third of the forms were filed. Members with
     nothing in the prior weeks are left out rather than read as infinite
     growth. None when no member can be measured.
+
+    ``history`` (the strip's twelve weeks) sets the noise band; without it
+    only TREND_FLAT applies.
     """
     if weekly is None or weekly.empty or not recent or not prior:
         return None
@@ -125,17 +220,55 @@ def trend_change(weekly: pd.DataFrame, areas, weights: dict, recent, prior):
             continue
         total += w * max(-100.0, min(100.0, (a - b) / b * 100))
         weight += w
-    return total / weight if weight else None
+    if not weight:
+        return None
+    return Trend(value=total / weight,
+                 band=_noise_band(rows, weights, history),
+                 reports=(len(now), len(before)))
 
 
-def quadrant(index: float | None, trend: float | None) -> str | None:
-    """Which corner of productivity × trend a unit sits in, in words."""
-    if index is None or trend is None:
+def trend_value(trend) -> float | None:
+    """The number a trend is, `Trend` or bare."""
+    if trend is None:
+        return None
+    return trend.value if isinstance(trend, Trend) else float(trend)
+
+
+def trend_step(trend) -> int | None:
+    """−1 · 0 · +1, or None when there are too few reports to say."""
+    if trend is None:
+        return None
+    if isinstance(trend, Trend):
+        return None if trend.thin else trend.direction
+    return -1 if trend <= -TREND_FLAT else (1 if trend >= TREND_FLAT else 0)
+
+
+def trend_words(trend, signed) -> str:
+    """What a trend cell prints: the move when it is one, otherwise why it
+    is not ("estable", "pocas cifras"). ``signed`` formats the number."""
+    step = trend_step(trend)
+    if trend is None:
+        return "—"
+    if step is None:
+        return "pocas cifras"
+    if step == 0:
+        return "estable"
+    return signed(trend_value(trend))
+
+
+def quadrant(index: float | None, trend) -> str | None:
+    """Which corner of productivity × trend a unit sits in, in words.
+
+    A `Trend` places a unit by its DIRECTION — a move inside its own noise
+    is "estable" — and one on too few reports is not placed at all. A bare
+    number is read against TREND_FLAT alone."""
+    step = trend_step(trend)
+    if index is None or step is None:
         return None
     below = index < 100
-    if trend <= -TREND_FLAT:
+    if step < 0:
         return "debajo y bajando" if below else "encima y bajando"
-    if trend >= TREND_FLAT:
+    if step > 0:
         return "debajo y subiendo" if below else "encima y subiendo"
     return "debajo y estable" if below else "encima y estable"
 
@@ -148,8 +281,10 @@ def quadrant(index: float | None, trend: float | None) -> str | None:
 MATURE_FROM, MATURE_TO = 180, 90
 
 #: A unit needs this many people in the cohort before its leak is named, and
-#: a step this many people entering it before it can be the leak.
-LEAK_MIN_FOUND = 30
+#: a step this many people entering it before it can be the leak. Under
+#: LEAK_MIN_FOUND the row prints "pocas personas" (PLAN-2026-10-06 4A.3):
+#: at 30, a district's 0,4% baptism step was three people.
+LEAK_MIN_FOUND = 100
 LEAK_MIN_STEP = 20
 
 #: And the step has to convert under this share of the mission's own rate to
@@ -184,6 +319,46 @@ class FunnelRow:
 
     def pct(self, i: int) -> float | None:
         return self.reached[i] / self.found * 100 if self.found else None
+
+    @property
+    def thin(self) -> bool:
+        """Too few people for its shares to mean much — "pocas personas"."""
+        return self.found < LEAK_MIN_FOUND
+
+
+# ── Conversion rates against the mission, outside chance ─────────────────────
+
+def wilson(num: float, den: float, z: float = 1.28) -> tuple | None:
+    """The 80% Wilson range of ``num / den``, in percent (0-100)."""
+    if not den or den <= 0:
+        return None
+    p = max(0.0, min(1.0, num / den))
+    centre = (p + z * z / (2 * den)) / (1 + z * z / den)
+    half = (z * ((p * (1 - p) / den + z * z / (4 * den * den)) ** 0.5)
+            / (1 + z * z / den))
+    return (max(0.0, centre - half) * 100, min(1.0, centre + half) * 100)
+
+
+def rate_gap(unit: dict | None, mission: dict | None) -> float | None:
+    """A unit's rate minus the mission's, in points — None when the
+    mission's rate sits inside the unit's own 80% range, so a zone is never
+    named for a gap its own counts could produce by chance (PLAN 4A.3)."""
+    if (not unit or not mission or unit.get("value") is None
+            or mission.get("value") is None):
+        return None
+    span = wilson(unit.get("numerator") or 0.0, unit.get("denominator") or 0.0)
+    if span is not None and span[0] <= mission["value"] <= span[1]:
+        return None
+    return unit["value"] - mission["value"]
+
+
+def lowest_rate(unit_rates, mission_rates) -> tuple | None:
+    """``(gap, key)`` of the rate furthest UNDER the mission's, outside
+    chance; None when no rate is."""
+    mission = {r["key"]: r for r in mission_rates}
+    gaps = [(g, r["key"]) for r in unit_rates
+            if (g := rate_gap(r, mission.get(r["key"]))) is not None and g < 0]
+    return min(gaps) if gaps else None
 
 
 @dataclass(frozen=True)
