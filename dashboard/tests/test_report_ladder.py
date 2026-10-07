@@ -250,7 +250,10 @@ def _ki_calls(data) -> list:
     calls, real = [], M._ki_rows
 
     def counted(*a, **kw):
-        calls.append(a[1].key)
+        # The build's own period by scope key alone; since Phase 4 (4B.3,
+        # 4D.1) a unit is also read over each whole transfer, named apart.
+        key, period = a[1].key, a[2].key
+        calls.append(key if period == P.THIS_TRANSFER else f"{key}@{period}")
         return real(*a, **kw)
 
     M._ki_rows = counted
@@ -308,3 +311,5 @@ def test_a_scope_is_reduced_once_per_build():
     assert calls.count("zone:Norte") == 1
     assert calls.count("district:Norte/D1") == 1
     assert calls.count("area:A1") == 1
+    # And every (unit, transfer) the history reads is cut once too.
+    assert len(calls) == len(set(calls))

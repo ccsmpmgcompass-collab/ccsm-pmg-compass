@@ -490,6 +490,26 @@ def _nightly_rows(rows) -> str:
     )
 
 
+# ── 0 · Resumen para el presidente (PLAN-2026-10-06 4E.1, decisión 57) ───────
+#
+# La misma página 2 del paquete, de `summary.summary`: cinco bloques de frases
+# armadas del modelo de la misión.
+
+from app.reports import packet as _PK
+from app.reports import summary as _SM
+
+_SUMMARY = _SM.summary(_model)
+if _SUMMARY:
+    render_section_label(
+        "Resumen para el presidente", right=_model.period.label,
+        info=("Cada frase sale de las secciones de abajo, donde está su cifra "
+              "con su método. Las proyecciones son rangos y no llevan color."),
+    )
+    for _heading, _lines in _SUMMARY:
+        st.markdown(f"**{_heading}**\n\n"
+                    + "\n".join(f"- {line}" for line in _lines))
+
+
 # ── 1 · Indicadores Clave ─────────────────────────────────────────────────────
 
 render_section_label(
@@ -509,6 +529,9 @@ if not _model.coverage.usable:
 else:
     render_kpi_row(_ki_cards())
     st.caption(_comparison_note())
+    _reach = _PK._goal_reach_line(_model)
+    if _reach:
+        st.caption(_reach)
 
 # The same drill-down Panel and Desgloses open (decisión 28), on this page's
 # own scope. It owns the metric; this page owns which areas.
@@ -588,6 +611,8 @@ if _FWD.finish and _FWD.finish[0].weeks_left > 0:
     } for k in _FWD.finish], bar_max=100,
         value_fmt=lambda v: NA if v is None else fmt_percent(v)),
         unsafe_allow_html=True)
+    if _PK._backtest_sentence(_model):
+        st.caption(_PK._backtest_sentence(_model).strip())
 
 if _FWD.year is not None:
     _Y = _FWD.year
@@ -596,7 +621,8 @@ if _FWD.year is not None:
         right=f"{_Y.source} · meses cerrados",
         info=("Cierre probable: el mínimo y el máximo de cuatro cálculos — "
               + " · ".join(f"{w} {fmt_int(round(v))}" for w, v in _Y.anchors)
-              + ". Sin color: es una proyección."),
+              + ". Sin color: es una proyección."
+              + _PK._year_check_sentence(_model)),
     )
     _cards = [{"label": f"En lo que va de {_Y.year}", "value": _Y.total,
                "note": f"{_Y.months} meses cerrados"}]
@@ -617,7 +643,10 @@ if _FWD.year is not None:
                        "note": f"{_prior} en los mismos {_Y.months} meses"})
     render_kpi_row(_cards)
 
-if _FWD.pipeline is not None:
+if _FWD.pipeline is not None and _model.scope.level == S.DISTRICT:
+    # 4C.3 (decisión 55): un distrito, en una línea; "pocas fechas" bajo 15.
+    st.caption(_PK._pipeline_sentence(_model))
+elif _FWD.pipeline is not None:
     _PL = _FWD.pipeline
     render_section_label(
         "Lo que viene: las fechas bautismales abiertas",
@@ -840,6 +869,93 @@ if _model.child_rates:
     } for name, rates in _rows],
         columns=[_rate_heads.get(r["key"], r["key"]) for r in _model.rates]),
         unsafe_allow_html=True)
+
+
+# ── 3a+ · De resultado a causa, cuánto vale cada fuga, otros años, qué cambió
+#         (PLAN-2026-10-06 Phase 4: 4C.4, 4C.2, 4B.1, 4B.2-4B.3) ─────────────
+#
+# Las frases son las del paquete (`packet._driver_sentence` y compañía): una
+# sola redacción para el papel y la pantalla.
+
+_DRIVERS = [s for s in (_PK._driver_sentence(d) for d in _model.drivers) if s]
+if _DRIVERS:
+    render_section_label(
+        "De resultado a causa",
+        right=("una línea por zona" if _model.scope.level == S.MISSION
+               else "una línea por distrito"),
+        info=("Lo que la unidad produce menos (índice, misión = 100), la "
+              "actividad nocturna detrás de ese resultado contra su meta, la "
+              "tasa de conversión más lejos de la misión (sólo zonas, y sólo "
+              "fuera de lo que daría el azar) y la mayor fuga de su embudo "
+              "maduro."),
+    )
+    for _line in _DRIVERS:
+        st.caption(_line)
+
+if _model.scope.level == S.MISSION and _FWD.levers:
+    render_section_label(
+        "Cuánto vale cada fuga",
+        right="si convirtiera como la misión · por traslado",
+        info=("Si el paso de su mayor fuga convirtiera como el de la misión: "
+              "cuántas fechas y bautismos más, llevados por los pasos "
+              "siguientes y repartidos en seis semanas de hallazgo. Un tamaño, "
+              "no un pronóstico. Registros de Tableau, las 10 zonas."),
+    )
+    st.markdown(ranked_list([{
+        "name": v.name, "rank": i,
+        "sub": (f"{v.leak} · "
+                + ("piloto de Compass" if v.pilot else "sin formularios")),
+        "value": None,
+        "cells": [_PK._lever_range(v.dates), _PK._lever_range(v.baptisms)],
+    } for i, v in enumerate(_FWD.levers, start=1)],
+        columns=[("fechas", "más por 6 semanas"),
+                 ("bautismos", "más por 6 semanas")]),
+        unsafe_allow_html=True)
+elif _model.scope.level == S.ZONE and _PK._lever_sentence(_model):
+    st.caption(_PK._lever_sentence(_model))
+
+if _model.years is not None and _model.years.rows:
+    _YR = _model.years
+    render_section_label(
+        "Las mismas semanas, otros años",
+        right=(f"registros de Tableau · {es_display.day_month(_YR.start)} - "
+               f"{es_display.day_month(_YR.end)}"),
+        info=("Hitos del registro de Tableau por persona en los mismos días de "
+              "cada año. No son los Indicadores Clave — el formulario semanal "
+              "empezó en agosto de 2026 — y nunca se suman con ellos."),
+    )
+    st.markdown(ranked_list([{
+        "name": label, "rank": "", "value": None,
+        "cells": [fmt_int(c) for c in counts]
+        + [_PK._year_change(counts[-1], counts[-2])],
+    } for label, counts in _YR.rows],
+        columns=[str(y) for y in _YR.years]
+        + [(f"{_YR.years[-1]}", f"contra {_YR.years[-2]}")]),
+        unsafe_allow_html=True)
+
+_CH = _model.changes
+if _CH is not None and _CH.history is not None \
+        and len(_CH.history.transfers) >= 2:
+    _H = _CH.history
+    render_section_label(
+        "Qué cambió", right="con los informes de hoy, también los atrasados",
+        info=("Productividad de cada traslado entero contra la misión de ese "
+              "traslado. «Debajo traslado tras traslado»: bajo "
+              f"{fmt_int(M.CHRONIC_BELOW)} en cada traslado con formulario."),
+    )
+    st.markdown(ranked_list([{
+        "name": scope.name + (" · zona" if scope.level == S.ZONE else ""),
+        "rank": "",
+        "sub": ("debajo de la misión traslado tras traslado"
+                if _H.chronic(values) else ""),
+        "value": None,
+        "cells": [_idx(v.value) for v in values],
+    } for scope, values in _H.rows],
+        columns=list(_H.transfers)), unsafe_allow_html=True)
+    for _line in (_SM.what_changed(_model) if _model.scope.level == S.MISSION
+                  else [_PK._change_sentence(_model)]):
+        if _line:
+            st.caption(_line)
 
 
 # ── 3b · Su fortaleza · Para crecer ──────────────────────────────────────────

@@ -465,3 +465,172 @@ def monthly_counts(conf_d: pd.Series, mask, today: date) -> dict:
         key = month.strftime("%Y-%m")
         out[key] = int(counts.get(key, 0))
     return out
+
+
+# ── The same weeks in other years (PLAN-2026-10-06 4B.1, decision 52) ────────
+
+#: What Tableau can carry back past the weekly form, which starts 2026-08-09:
+#: the person export's own milestone dates, under their own names — never
+#: the Key Indicators' (decision 34: a Tableau figure never shares a table
+#: with a form figure, and never borrows its name).
+OTHER_YEAR_ROWS = (
+    ("Personas encontradas", "event_date_selected"),
+    ("Asistieron a la iglesia por primera vez", "first_sacrament_date"),
+    ("Fecha bautismal fijada", "first_baptism_goal_date_set"),
+    ("Bautizados (fecha de confirmación)", "confirmation_date"),
+)
+
+
+@dataclass(frozen=True)
+class OtherYears:
+    """Tableau's milestones over the same calendar days in up to three years.
+
+    ``rows`` is ``((label, (count per year, oldest first)), ...)``; ``end``
+    is where the export stops, so the window never asks a year for days this
+    year cannot have yet.
+    """
+
+    start: date
+    end: date
+    years: tuple = ()
+    rows: tuple = ()
+
+    def last_two(self, label: str) -> tuple | None:
+        """``(this year, last year)`` for one row."""
+        for name, counts in self.rows:
+            if name == label and len(counts) >= 2:
+                return counts[-1], counts[-2]
+        return None
+
+
+def _same_day(day: date, year: int) -> date:
+    try:
+        return day.replace(year=year)
+    except ValueError:                      # 29 Feb
+        return day.replace(year=year, day=28)
+
+
+def other_years(columns, mask, start: date, end: date, *,
+                years: int = 3) -> OtherYears | None:
+    """``columns`` is ``[(label, parsed date Series)]``; ``mask`` the rows of
+    the unit (None = all). Counts each milestone dated inside [start, end]
+    and inside the same calendar days of the years before."""
+    if end < start or not columns:
+        return None
+    span = tuple(range(end.year - years + 1, end.year + 1))
+    rows = []
+    for label, dates in columns:
+        values = _ns(dates)
+        if mask is not None:
+            values = values[np.asarray(mask, dtype=bool)]
+        counts = []
+        for year in span:
+            shift = year - end.year
+            lo = _t(_same_day(start, start.year + shift))
+            hi = _t(_same_day(end, year) + timedelta(days=1))
+            counts.append(int(((values >= lo) & (values < hi)).sum()))
+        rows.append((label, tuple(counts)))
+    return OtherYears(start=start, end=end, years=span, rows=tuple(rows))
+
+
+# ── How good the forecasts have been (PLAN-2026-10-06 4C.1) ──────────────────
+
+@dataclass(frozen=True)
+class Backtest:
+    """The same forecast, made at the same point in earlier periods, against
+    what then happened. ``cases`` is ``((when, low, high, actual), ...)``;
+    ``hits`` how many actuals fell inside their range; ``miss`` the typical
+    (median) distance of the range's centre from the actual, in percent."""
+
+    cases: tuple = ()
+
+    @property
+    def hits(self) -> int:
+        return sum(1 for _, lo, hi, a in self.cases if lo <= a <= hi)
+
+    @property
+    def miss(self) -> float | None:
+        errs = [abs((lo + hi) / 2 - a) / a * 100 for _, lo, hi, a in self.cases
+                if a]
+        return float(np.median(errs)) if errs else None
+
+    @property
+    def sentence(self) -> str:
+        from app.config import es_display as ES
+        if not self.cases:
+            return ""
+        n = len(self.cases)
+        out = (f"Hecho igual en {ES.integer(n)} "
+               f"{'momento anterior' if n == 1 else 'momentos anteriores'}, "
+               f"el rango acertó {ES.integer(self.hits)} "
+               f"{'vez' if self.hits == 1 else 'veces'}")
+        if self.miss is not None:
+            out += f" y el centro erró por un {ES.percent(self.miss, 0)} típico"
+        return out + "."
+
+
+def landing_backtest(by_month: dict, year: int, closed: int) -> Backtest:
+    """`year_landing` made with only ``closed`` months of each earlier year
+    that is complete, against that year's real total — the same point of the
+    year as today's forecast."""
+    cases = []
+    for prior in (year - 1, year - 2):
+        months = _series(by_month, prior)
+        if any(v is None for v in months) or closed < 1:
+            continue
+        cut = {k: v for k, v in by_month.items()
+               if int(k[:4]) < prior
+               or (int(k[:4]) == prior and int(k[5:7]) <= closed)}
+        fit = year_landing(cut, prior, goal=None)
+        if fit is None or fit.low is None:
+            continue
+        cases.append((f"{MONTH_ABBR[closed - 1]} {prior}", fit.low, fit.high,
+                      int(sum(months))))
+    return Backtest(cases=tuple(cases))
+
+
+def finish_backtest(dates: pd.Series, asof: date, *, weeks_done: int,
+                    weeks_total: int = 6, pace_weeks: int = PACE_WEEKS,
+                    windows: int = 40) -> Backtest:
+    """The transfer finish's method — what is done plus the weeks left at
+    the worst and best of the last ``pace_weeks`` — run on Tableau's weekly
+    counts of one milestone (the form's history is nine weeks; Tableau's is
+    nearly three years). Each case is a six-week window ending before
+    ``asof``, forecast after ``weeks_done`` weeks."""
+    values = _ns(dates)
+    values = values[~np.isnat(values)]
+    if not len(values):
+        return Backtest()
+    end_week = asof - timedelta(days=(asof.weekday() + 1) % 7 + 7)
+    # Weekly counts in one pass, over at most the weeks the windows need: a
+    # stray 1900 date in the export must not walk the loop back a century.
+    span = windows * weeks_total + pace_weeks + weeks_total
+    first = max(pd.Timestamp(values.min()).date(),
+                end_week - timedelta(weeks=span))
+    edges = [end_week - timedelta(weeks=k) for k in range(span + 1)]
+    edges = [d for d in reversed(edges) if d >= first]
+    if len(edges) < pace_weeks + weeks_total + 1:
+        return Backtest()
+    bins = np.array([_t(d + timedelta(days=1)) for d in edges])
+    counts = np.histogram(values.astype("datetime64[ns]").astype("int64"),
+                          bins=bins.astype("datetime64[ns]").astype("int64"))[0]
+    weekly = {edges[k + 1]: int(c) for k, c in enumerate(counts)}
+    weeks = sorted(weekly)
+    cases = []
+    step = weeks_total
+    for i in range(len(weeks) - 1, pace_weeks + weeks_total - 1, -step):
+        window = weeks[i - weeks_total + 1:i + 1]
+        done = window[:weeks_done]
+        left = weeks_total - weeks_done
+        pace = [weekly[w] for w in weeks[i - weeks_total + 1 - pace_weeks
+                                          + weeks_done:i - weeks_total + 1
+                                          + weeks_done]]
+        if len(pace) < pace_weeks:
+            continue
+        so_far = sum(weekly[w] for w in done)
+        actual = sum(weekly[w] for w in window)
+        cases.append((window[-1].isoformat(), so_far + left * min(pace),
+                      so_far + left * max(pace), actual))
+        if len(cases) >= windows:
+            break
+    return Backtest(cases=tuple(cases))

@@ -412,6 +412,19 @@ def resolve(key: str, today: date,
     return None
 
 
+def transfer_period(cycles: list[dict], today: date,
+                    offset: int) -> Period | None:
+    """The whole transfer ``offset`` back from today's, as a period — the
+    current one runs to today. For a history across transfers (PLAN
+    2026-10-06 4B.3), where THIS_TRANSFER and LAST_TRANSFER stop."""
+    cyc = cycle_at(cycles, today, offset)
+    if not cyc:
+        return None
+    return _period(f"transfer_{offset}", _cycle_label(cyc, f"traslado -{offset}"),
+                   cyc["start"], min(today, cyc["end"]), today,
+                   full_end=cyc["end"], transfer=cyc.get("number"))
+
+
 def comparison_for(period: Period, today: date,
                    cycles: list[dict] | None = None,
                    against: str = COMPARE_PRIOR) -> Comparison:

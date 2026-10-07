@@ -411,10 +411,95 @@ class Forward:
     pipeline: object = None
     baptisms: object = None
     zones: tuple = ()
+    #: How the same forecasts did before (PLAN 4C.1): the year's landing made
+    #: at this month of earlier years, and the transfer finish's method run
+    #: on Tableau's weekly milestones — ``((label, Backtest), ...)``.
+    year_check: object = None
+    finish_check: tuple = ()
+    #: What closing each zone's largest leak to the mission's rate would add
+    #: (PLAN 4C.2, decision 54) — `focus.Lever`s, largest first.
+    levers: tuple = ()
 
     @property
     def present(self) -> bool:
         return bool(self.finish or self.year or self.pipeline or self.baptisms)
+
+
+#: Under this index in EVERY transfer shown, on enough figures each time, a
+#: unit is "debajo de la misión, traslado tras traslado" (PLAN 4B.3). The
+#: quadrant's corner cannot carry "chronic": its six-week trend is mostly
+#: noise at district level (4A.1); the index over a whole transfer is not.
+CHRONIC_BELOW = 90.0
+
+
+@dataclass(frozen=True)
+class IndexHistory:
+    """Each unit's productivity index in every transfer the weekly form
+    reaches (PLAN-2026-10-06 4B.3): ``transfers`` is the labels, oldest
+    first; ``rows`` is ``((scope, (Productivity, ...)), ...)`` in the same
+    order, least productive now first."""
+
+    transfers: tuple = ()
+    rows: tuple = ()
+
+    @staticmethod
+    def chronic(values) -> bool:
+        seen = [v for v in values if v is not None and v.value is not None]
+        return (len(seen) >= 2 and len(seen) == len(values)
+                and all(not v.thin and v.value < CHRONIC_BELOW for v in seen))
+
+    @property
+    def chronic_names(self) -> tuple:
+        return tuple(s.name for s, values in self.rows if self.chronic(values))
+
+
+@dataclass(frozen=True)
+class Changes:
+    """What moved since the period it is compared with (PLAN 4B.2, decision
+    53): recomputed from today's sheet, so "antes" is with today's reports,
+    late ones included — said on the page.
+
+    ``entered`` / ``left`` are the units that joined or dropped out of the
+    head of "Dónde enfocar" (the units carrying 80% of the shortfall).
+    ``landing_then`` is the year's landing as it read a closed month ago.
+    """
+
+    against: str = ""
+    history: IndexHistory | None = None
+    entered: tuple = ()
+    left: tuple = ()
+    landing_then: object = None
+    landing_then_label: str = ""
+
+
+#: The nightly activity a companionship controls behind each Key Indicator
+#: of the index (PLAN 4C.4): what to ask about when that result lags.
+NIGHTLY_INPUT = {
+    "ki_new_people_real": "contacts_made",
+    "ki_member_lessons_real": "lessons_member_present",
+    "ki_friends_sacrament_real": "church_invites",
+    "ki_friends_first_week_real": "church_invites",
+    "ki_baptismal_date_real": "baptismal_invitations",
+    "ki_rc_at_church_real": "rc_lessons",
+}
+
+
+@dataclass(frozen=True)
+class Driver:
+    """One unit a level down, read from result to cause (AUDIT M3, PLAN
+    4C.4): the index member it produces least of, the conversion rate
+    furthest under the mission's outside chance (zones only — decision 13),
+    its mature funnel's largest leak, and the nightly input behind the
+    lagging result against its goal."""
+
+    name: str
+    low_key: str | None = None
+    low_label: str = ""
+    low_ratio: float | None = None
+    rate: tuple | None = None        # (label, value, mission value)
+    leak: str | None = None
+    leak_step: tuple | None = None
+    input: tuple | None = None       # (label, per area-week, goal, pct)
 
 
 @dataclass(frozen=True)
@@ -564,6 +649,24 @@ class ReportModel:
     #: WEEKLY_BREAKDOWNS' own choice, read and never recomputed (§1.2).
     strengths: tuple[str, ...] = ()
     growth: str | None = None
+
+    #: Tableau's milestones over the same days of other years (PLAN 4B.1,
+    #: decision 52). Mission and zone.
+    years: object = None
+
+    #: What moved since the comparison period, and every unit's index by
+    #: transfer (PLAN 4B.2-4B.3, decision 53). Mission and zone.
+    changes: Changes | None = None
+
+    #: The goal sanity line (PLAN 4D.1, decision 56): ``{key: (ratio, best,
+    #: best label)}`` — leadership's goal for the period over the most the
+    #: unit did in any one transfer, pro-rated to the same weeks. Mission
+    #: and zone.
+    goal_reach: dict = field(default_factory=dict)
+
+    #: Result to cause, one per unit a level down (PLAN 4C.4). Mission and
+    #: zone.
+    drivers: tuple = ()
 
     # ── Filled by phase T ────────────────────────────────────────────────────
     tableau: object | None = None
@@ -1913,7 +2016,11 @@ def _forward(data: ReportData, scope: S.Scope, period: P.Period) -> Forward:
                                    today=data.today,
                                    annual_goal=data.annual_goal)
     if scope.level == S.DISTRICT:
-        return Forward(baptisms=baptisms)
+        # 4C.3 (decision 55): the district's open dates and what they are
+        # likely to become; the renderers say "pocas fechas" under 15.
+        return Forward(baptisms=baptisms, pipeline=(
+            F.pipeline(set_d, conf, data.today, fit, mask=mask)
+            if fit is not None else None))
 
     finish, label = (), ""
     cycle = P.resolve(P.THIS_TRANSFER, data.today, data.cycles)
@@ -1958,6 +2065,242 @@ def _forward(data: ReportData, scope: S.Scope, period: P.Period) -> Forward:
                    pipeline=pipeline, baptisms=baptisms, zones=zones)
 
 
+# ── History, change, levers and the goal's reach (PLAN-2026-10-06 Phase 4) ───
+
+def _other_years(data: ReportData, scope: S.Scope, period: P.Period):
+    """Tableau's milestones over the period's days in this year and the two
+    before (4B.1, decision 52): the mission's ten zones, a zone's roster
+    areas — decision 47's join, so it matches the zone's other Tableau
+    figures."""
+    from app.analytics import finding_funnel as FF
+    from app.reports import forecast as F
+    if scope.level not in (S.MISSION, S.ZONE):
+        return None
+    det, export = data.tableau_detail, data.tableau_export
+    if det is None or det.empty or export is None or export.last is None:
+        return None
+    if "other_year_cols" not in data._flags:
+        data._flags["other_year_cols"] = [
+            (label, FF.parse_dates(det, col)) for label, col in F.OTHER_YEAR_ROWS
+            if col in det.columns]
+    mask = (None if scope.level == S.MISSION
+            else TB._names(det, TB.AREA_COL).isin(set(scope.areas)))
+    return F.other_years(data._flags["other_year_cols"], mask, period.start,
+                         min(period.end, export.last))
+
+
+def _transfer_periods(data: ReportData) -> tuple:
+    """The transfers the weekly form reaches, oldest first, at most three —
+    the form starts 2026-08-09, so on CCSM today that is 2026-5 and 2026-6."""
+    if "transfer_periods" not in data._flags:
+        df = data.weekly_ki
+        first = (str(df["_week"].min()) if df is not None and not df.empty
+                 else None)
+        out = []
+        for offset in (2, 1, 0):
+            p = P.transfer_period(data.cycles, data.today, offset)
+            if (p is None or not p.weeks or first is None
+                    or p.weeks[-1].isoformat() < first):
+                continue
+            out.append(p)
+        data._flags["transfer_periods"] = tuple(out)
+    return data._flags["transfer_periods"]
+
+
+def _index_history(data: ReportData, scope: S.Scope) -> IndexHistory | None:
+    """Every zone and district (mission) or a zone's districts, by transfer."""
+    if scope.level == S.MISSION:
+        units = [u for z in S.children(data.roster, scope)
+                 for u in [z] + list(S.children(data.roster, z))]
+    elif scope.level == S.ZONE:
+        units = list(S.children(data.roster, scope))
+    else:
+        return None
+    periods = _transfer_periods(data)
+    if not periods:
+        return None
+    rows = []
+    for unit in units:
+        rows.append((unit, tuple(
+            _index_for(data, _ki_rows_for(data, unit, p, None), p, None)
+            for p in periods)))
+    rows.sort(key=lambda r: (r[1][-1].value is None, r[1][-1].value or 0.0,
+                             r[0].name))
+    return IndexHistory(transfers=tuple(p.label for p in periods),
+                        rows=tuple(rows))
+
+
+def _head(rows) -> set:
+    """The units carrying the first 80% of a Pareto."""
+    cut = next((i for i, r in enumerate(rows, start=1) if r.cumulative >= 80),
+               len(rows))
+    return {r.name for r in rows[:cut]}
+
+
+def _changes(data: ReportData, scope: S.Scope, period: P.Period,
+             comparison: P.Comparison | None, focus_now: tuple):
+    """4B.2 (decision 53): recomputed against the comparison period."""
+    from app.reports import forecast as F
+    if scope.level not in (S.MISSION, S.ZONE):
+        return None
+    entered = left = ()
+    against = ""
+    if (comparison is not None and comparison.period is not None
+            and comparison.period.weeks):
+        # A comparison period carries its period's KEY (periods.comparison_for)
+        # and every memo here is keyed on it: renamed, so the comparison's
+        # rows and trends can never be served for the period's own.
+        then = replace(comparison.period, key=f"{period.key}:antes")
+        before = _focus(data, scope, then, None)
+        if focus_now and before:
+            now_head, then_head = _head(focus_now), _head(before)
+            entered = tuple(sorted(now_head - then_head))
+            left = tuple(sorted(then_head - now_head))
+        against = comparison.period.label
+    landing_then, then_label = None, ""
+    if scope.level == S.MISSION and data.baptisms_by_month:
+        year = data.today.year
+        closed = sorted(k for k, v in data.baptisms_by_month.items()
+                        if v is not None and k.startswith(f"{year:04d}-")
+                        and k < f"{data.today:%Y-%m}")
+        if len(closed) >= 2:
+            cut = {k: v for k, v in data.baptisms_by_month.items()
+                   if k < closed[-1]}
+            landing_then = F.year_landing(cut, year, goal=data.annual_goal)
+            month = int(closed[-2][5:7])
+            then_label = f"a fin de {F.MONTH_ABBR[month - 1]}"
+    return Changes(against=against, history=_index_history(data, scope),
+                   entered=entered, left=left, landing_then=landing_then,
+                   landing_then_label=then_label)
+
+
+def _goal_reach(data: ReportData, scope: S.Scope, rows) -> dict:
+    """4D.1 (decision 56): leadership's goal per reporting area-week over the
+    best per-report rate the unit reached in any transfer the form covers.
+    Grading is untouched — this only says when the goal asks for more than
+    the unit has ever done."""
+    if scope.level not in (S.MISSION, S.ZONE):
+        return {}
+    periods = _transfer_periods(data)
+    if not periods:
+        return {}
+    best: dict = {}
+    for p in periods:
+        for r in _ki_rows_for(data, scope, p, None):
+            v = r.per_reporting_area_week
+            if v is not None and (r.key not in best or v > best[r.key][0]):
+                best[r.key] = (v, p.label)
+    out = {}
+    for r in rows:
+        if r.key in UNCOLOURED_KI or r.key not in best:
+            continue
+        goal, (top, label) = r.lead_goal_rate, best[r.key]
+        if goal and top:
+            out[r.key] = (goal / top, top, label)
+    return out
+
+
+def _nightly_rows_for(data: ReportData, scope: S.Scope, period: P.Period,
+                      comparison: P.Comparison | None) -> tuple:
+    """`_nightly_rows`, memoised: a zone's drivers and each district's own
+    page ask for the same rows."""
+    key = ("nightly", scope.key, period.key,
+           comparison.period.key
+           if comparison is not None and comparison.period is not None
+           else None)
+    if key not in data._flags:
+        data._flags[key] = tuple(_nightly_rows(
+            data, scope, period, comparison=comparison,
+            flags=data.nightly_goal_flags(period)))
+    return data._flags[key]
+
+
+def _drivers(data: ReportData, scope: S.Scope, period: P.Period,
+             comparison: P.Comparison | None, children, funnel,
+             child_rates, mission_rates) -> tuple:
+    """`Driver` per child: the mission's zones, a zone's districts."""
+    from app.reports import focus as FC
+    if scope.level not in (S.MISSION, S.ZONE):
+        return ()
+    leaks = ({r.name: r for r in funnel.rows} if funnel is not None else {})
+    rates = {z.key: rs for z, rs in child_rates}
+    out = []
+    for child in children:
+        members = [(r, k) for k, r in child.index.members if r is not None]
+        low_ratio, low_key = min(members) if members else (None, None)
+        labels = {m.key: m.label for m in child.metrics}
+        rate = None
+        low = FC.lowest_rate(rates.get(child.scope.key, ()), mission_rates)
+        if low is not None:
+            row = next(r for r in rates[child.scope.key] if r["key"] == low[1])
+            mission = next(r for r in mission_rates if r["key"] == low[1])
+            rate = ((row.get("label") or low[1]), row["value"],
+                    mission["value"])
+        f = leaks.get(child.name)
+        inp = None
+        night = NIGHTLY_INPUT.get(low_key)
+        if night:
+            n = next((r for r in _nightly_rows_for(data, child.scope, period,
+                                                   comparison)
+                      if r.key == night), None)
+            if n is not None and n.per_reporting_area_week is not None:
+                inp = (n.label, n.per_reporting_area_week,
+                       n.goal_per_area_week, n.grade.pct)
+        out.append(Driver(
+            name=child.name, low_key=low_key,
+            low_label=labels.get(low_key, low_key or ""), low_ratio=low_ratio,
+            rate=rate,
+            leak=(f.leak if f is not None and not f.thin else None),
+            leak_step=(f.leak_step if f is not None and not f.thin else None),
+            input=inp))
+    return tuple(out)
+
+
+def _forward_checks(data: ReportData, scope: S.Scope, period: P.Period,
+                    fwd: Forward, funnel) -> Forward:
+    """4C.1's backtests and 4C.2's levers, added onto a unit's Forward."""
+    from app.analytics import finding_funnel as FF
+    from app.reports import focus as FC
+    from app.reports import forecast as F
+    if scope.level not in (S.MISSION, S.ZONE):
+        return fwd
+    year_check = None
+    if fwd.year is not None:
+        by_month = (data.baptisms_by_month if scope.level == S.MISSION
+                    else None)
+        if by_month is None:
+            names = TB._names(data.tableau_detail, TB.AREA_COL)
+            dates = data.tableau_dates()
+            by_month = (F.monthly_counts(dates[2], names.isin(set(scope.areas)),
+                                         data.today) if dates else {})
+        year_check = F.landing_backtest(by_month, fwd.year.year,
+                                        fwd.year.months)
+    finish_check = ()
+    det = data.tableau_detail
+    cycle = P.resolve(P.THIS_TRANSFER, data.today, data.cycles)
+    if (scope.level == S.MISSION and det is not None and not det.empty
+            and cycle is not None and 0 < len(cycle.weeks) < cycle.full_weeks):
+        if "finish_check" not in data._flags:
+            data._flags["finish_check"] = tuple(
+                (label, F.finish_backtest(FF.parse_dates(det, col), data.today,
+                                          weeks_done=len(cycle.weeks),
+                                          weeks_total=cycle.full_weeks))
+                for label, col in (("Personas encontradas",
+                                    "event_date_selected"),
+                                   ("Fecha bautismal fijada",
+                                    "first_baptism_goal_date_set")))
+        finish_check = data._flags["finish_check"]
+    # A zone's lever is ITS row of the mission's funnel (decision 54: per
+    # zone); the zone's own funnel is by district, too small to size.
+    if "mission_levers" not in data._flags:
+        data._flags["mission_levers"] = FC.levers(_funnel(data, data.mission))
+    levers = data._flags["mission_levers"]
+    if scope.level == S.ZONE:
+        levers = tuple(v for v in levers if v.name == scope.name)
+    return replace(fwd, year_check=year_check, finish_check=finish_check,
+                   levers=levers)
+
+
 def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
                  data: ReportData) -> ReportModel:
     """One unit, one period, every number its pages need. Pure over `data`."""
@@ -1975,6 +2318,16 @@ def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
 
     strengths, growth = _strengths(data, scope, period)
     own = _ki_rows_for(data, scope, period, comparison)
+    focus = _focus(data, scope, period, comparison)
+    funnel = _funnel(data, scope)
+    children = _ranked_children_of(data, scope, period, comparison)
+    rates = _rates(data, scope, period, comparison)
+    child_rates = _child_rates(data, scope, period, comparison)
+    if scope.level == S.MISSION:
+        # The mission's funnel is already in hand: size its levers once here
+        # rather than refit it when each zone asks (`_forward_checks`).
+        from app.reports import focus as FC
+        data._flags["mission_levers"] = FC.levers(funnel)
 
     return ReportModel(
         scope=scope,
@@ -1991,26 +2344,30 @@ def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
         areas_reporting=tuple(sorted(reporting & in_scope)),
         areas_silent=tuple(sorted(in_scope - reporting)),
         key_indicators=own,
-        nightly_metrics=tuple(_nightly_rows(
-            data, scope, period, comparison=comparison,
-            flags=data.nightly_goal_flags(period))),
+        nightly_metrics=_nightly_rows_for(data, scope, period, comparison),
         scores=_scores(data, scope, period),
-        rates=_rates(data, scope, period, comparison),
-        children=_ranked_children_of(data, scope, period, comparison),
+        rates=rates,
+        children=children,
         ladder=_ladder(data, scope, period, comparison),
         siblings=_siblings(data, scope, period, comparison),
         areas_ranked=_areas_ranked(data, scope, period, comparison),
         index=_index_for(data, own, period, comparison),
-        forward=_forward(data, scope, period),
+        forward=_forward_checks(data, scope, period,
+                                _forward(data, scope, period), funnel),
         trend_series=(_series(data, scope, _trend_period(data, period))
                       if _trend_period(data, period) else {}),
         trend=_trend_for(data, scope, period),
-        focus=_focus(data, scope, period, comparison),
-        funnel=_funnel(data, scope),
-        child_rates=_child_rates(data, scope, period, comparison),
+        focus=focus,
+        funnel=funnel,
+        child_rates=child_rates,
         series=_series(data, scope, period),
         strengths=strengths,
         growth=growth,
+        years=_other_years(data, scope, period),
+        changes=_changes(data, scope, period, comparison, focus),
+        goal_reach=_goal_reach(data, scope, own),
+        drivers=_drivers(data, scope, period, comparison, children, funnel,
+                         child_rates, rates),
         tableau=_tableau_block(data, scope, period),
     )
 

@@ -316,6 +316,8 @@ class FunnelRow:
     #: name, so a reader can check the leak without dividing two shares of
     #: the cohort by each other.
     leak_step: tuple | None = None
+    #: The leak's step, as the index of the stage it fails to reach.
+    leak_index: int | None = None
 
     def pct(self, i: int) -> float | None:
         return self.reached[i] / self.found * 100 if self.found else None
@@ -402,7 +404,7 @@ def mature_funnel(found_d, stage_dates, stage_labels, groups, today: date,
     rows = []
     for name, mask, pilot in groups:
         r = row(name, mask, pilot)
-        leak = step = None
+        leak = step = at = None
         if r.found >= LEAK_MIN_FOUND:
             ratios = [(conv(r, i) / conv(mission, i), i)
                       for i in range(len(stage_labels))
@@ -413,7 +415,92 @@ def mature_funnel(found_d, stage_dates, stage_labels, groups, today: date,
                     leak = (f"{SHORT_STAGES.get(labels[i], labels[i].lower())}"
                             f" a {SHORT_STAGES.get(labels[i + 1], labels[i + 1].lower())}")
                     step = (conv(r, i) * 100, conv(mission, i) * 100)
+                    at = i
         rows.append(FunnelRow(name=r.name, found=r.found, reached=r.reached,
-                              pilot=pilot, leak=leak, leak_step=step))
+                              pilot=pilot, leak=leak, leak_step=step,
+                              leak_index=at))
     return MatureFunnel(start=start, end=end, stages=tuple(stage_labels),
                         rows=tuple(rows), mission=mission)
+
+
+# ── What each leak is worth (PLAN-2026-10-06 4C.2, decision 54) ──────────────
+
+#: The mature cohort spans this many days of finding; a lever is scaled from
+#: it to one transfer's six weeks.
+COHORT_DAYS = MATURE_FROM - MATURE_TO
+LEVER_DAYS = 42
+
+
+@dataclass(frozen=True)
+class Lever:
+    """If a unit's largest leak converted at the mission's rate: how many
+    more baptismal dates and baptisms per six weeks of finding, as ranges.
+
+    The range carries two uncertainties: the unit's own conversion at the
+    leak (its 80% Wilson range), and what happens downstream of it (the
+    unit's own later steps, or the mission's, whichever gives less and
+    more). Never coloured; a lever is a size, not a verdict.
+    """
+
+    name: str
+    leak: str
+    pilot: bool = True
+    dates: tuple | None = None          # (low, high) per six weeks
+    baptisms: tuple | None = None
+
+    @property
+    def size(self) -> float:
+        lo, hi = self.baptisms or (0.0, 0.0)
+        return (lo + hi) / 2
+
+
+def _step(r, i):
+    before = r.found if i == 0 else r.reached[i - 1]
+    return r.reached[i] / before if before else None
+
+
+def levers(funnel) -> tuple:
+    """Every unit with a named leak in a `MatureFunnel`, largest first."""
+    if funnel is None or funnel.mission is None:
+        return ()
+    labels = tuple(funnel.stages)
+    try:
+        date_i = labels.index("Fecha de Bautismo Fijada")
+        bapt_i = labels.index("Bautizados")
+    except ValueError:
+        return ()
+    m = funnel.mission
+    scale = LEVER_DAYS / COHORT_DAYS
+    out = []
+    for r in funnel.rows:
+        i = r.leak_index
+        if i is None or r.thin:
+            continue
+        entering = r.found if i == 0 else r.reached[i - 1]
+        own, target = _step(r, i), _step(m, i)
+        span = wilson(r.reached[i], entering)
+        if own is None or target is None or span is None:
+            continue
+        lo_extra = max(0.0, entering * (target - span[1] / 100))
+        hi_extra = max(0.0, entering * (target - span[0] / 100))
+
+        def carried(k):
+            if k < i:
+                return None
+            if k == i:
+                return (lo_extra * scale, hi_extra * scale)
+            factors = []
+            for row in (r, m):
+                f = 1.0
+                for j in range(i + 1, k + 1):
+                    c = _step(row, j)
+                    if c is None:
+                        c = _step(m, j) or 0.0
+                    f *= c
+                factors.append(f)
+            return (lo_extra * min(factors) * scale,
+                    hi_extra * max(factors) * scale)
+
+        out.append(Lever(name=r.name, leak=r.leak, pilot=r.pilot,
+                         dates=carried(date_i), baptisms=carried(bapt_i)))
+    return tuple(sorted(out, key=lambda v: (-v.size, v.name)))

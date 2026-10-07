@@ -316,24 +316,28 @@ def test_the_whole_packet_builds_without_streamlit():
 
 # ── Page 3: "Cómo leer este paquete" (C9, decision 40) ────────────────────────
 
-def test_page_two_is_the_rules_page(pdf):
-    """The print guide left page 2 for the back (AUDIT L1), so the rules come
-    straight after the cover."""
-    assert "CÓMO LEER ESTE PAQUETE" in _pages(pdf)[1].upper()
+def test_page_two_is_the_resumen_and_page_three_the_rules(pdf):
+    """The print guide left page 2 for the back (AUDIT L1); since decision 57
+    page 2 is the president's one page and the rules follow it."""
+    assert "RESUMEN PARA EL PRESIDENTE" in _pages(pdf)[1].upper()
+    assert "CÓMO LEER ESTE PAQUETE" in _pages(pdf)[2].upper()
     assert "GUÍA DE IMPRESIÓN" in _pages(pdf)[-1].upper()
 
 
 def test_the_contents_sends_the_reader_to_it_first(pdf):
     cover = _pages(pdf)[0]
     found = re.search(r"Cómo leer este paquete\s+(\d+)", cover)
-    assert found and found.group(1) == "2", cover
+    assert found and found.group(1) == "3", cover
+    resumen = re.search(r"Resumen para el presidente\s+(\d+)", cover)
+    assert resumen and resumen.group(1) == "2", cover
     assert cover.index("Cómo leer este paquete") < cover.index("La misión")
 
 
-def test_the_mission_now_opens_on_page_three(pdf):
+def test_the_mission_now_opens_on_page_four(pdf):
+    """Decision 57: the Resumen is page 2, so the rules are 3."""
     pages = _pages(pdf)
     claimed = re.search(r"La misión\s+(\d+)", pages[0])
-    assert claimed and claimed.group(1).startswith("3")
+    assert claimed and claimed.group(1).startswith("4")
 
 
 def test_the_rules_page_goes_in_the_full_copies_only(models):
@@ -341,7 +345,7 @@ def test_the_rules_page_goes_in_the_full_copies_only(models):
     The president and the assistants get it with the whole packet; a leader's
     own pages carry the one-line version of each rule."""
     starts = dict(zip([s.key for s in PK.sections_for(models)],
-                      (2, 3, 7, 8, 9, 10, 11)))
+                      (2, 3, 4, 8, 9, 10, 11, 12)))
     sections = [PK.replace(s, first_page=starts[s.key],
                            last_page=starts[s.key] + (2 if s.key == PK.MISSION
                                                       else 0))
@@ -350,7 +354,8 @@ def test_the_rules_page_goes_in_the_full_copies_only(models):
     rows = PK.hand_outs(sections, zones, ROSTER)
     leaders = [r for r in rows if r.who.startswith("Líderes")]
     assert leaders
-    assert all(not r.pages.startswith("2") for r in leaders)
+    # Neither the Resumen (2) nor the rules (3) goes in a leader's stack.
+    assert all(not r.pages.startswith(("2", "3")) for r in leaders)
     assert all(r.pages.startswith("1–") for r in rows[:2])
 
 
