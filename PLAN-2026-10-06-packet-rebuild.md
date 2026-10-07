@@ -662,3 +662,59 @@ found them. Built:
 
 **Not pushed** (14 commits ahead with this one). **Next: §5 Phase 4 — needs
 his word on P6–P11.** Round 4A needs none and can start on his go.
+
+
+### 2026-10-07 — Zackary: "P6-P11 as recommended, 48 is fine, go through Phase 4"
+
+Recorded as decisions 52–57 in §1 (P10 taken as built — it was "his call"
+in §5 and he took the set as recommended).
+
+### 2026-10-07 — PHASE 4 BUILT (4A–4C, 4D.1, 4E; 4D.2 dated) · `f838ee7`, `bc2ed87`
+
+**4A** (`f838ee7`) — `focus.Trend` with a noise band and a reports floor;
+the silence split (`FocusRow.silent`, pale bar, "Sin informe"); "pocas
+personas" under 100 in the funnel; Wilson ranges on zone rates
+(`focus.lowest_rate`); first/last week under each tablero spark.
+Measured on live data before choosing: the 6-week trend is mostly noise at
+district level (bands 29–76%); a 6-vs-6 window flipped the sign for 4 of 13
+districts, so 3-vs-3 stays and the band decides. Today: 1 district really
+moving (Los Huertos), 11 steady, every AREA "pocas cifras" (three reports a
+side at most) — a zone page prints no trend chart and says why. **52% of
+the mission's shortfall is weeks nobody reported.** Area-row sparks were NOT
+numbered (fixed 12pt drawn rows; the Real column sits beside them).
+
+**4B–4E** (`bc2ed87`) — model fields `years`, `changes` (`IndexHistory`),
+`goal_reach`, `drivers`; `Forward.year_check / finish_check / levers`;
+district `Forward.pipeline`; `summary.py` for the Resumen. New packet blocks
+`years_block`, `changes_block`, `levers_size_block`, `drivers_block`,
+`resumen_page`, zone/district opening sentences. Screen: top card, the same
+sections, sentences from the packet's own builders.
+Live, this transfer: same weeks 2025→2026 found 2.526→4.274, dates 56→118;
+chronic Cabrero 1 · Galvarino 1 · La Marina 1; landing 478–491 (end Aug) →
+443–467; finish method 13/20 and 14/20 hits, centre 4%/7%; year landing
+backtest sep 2025 374–395 (closed 403), sep 2024 382–395 (closed 385);
+largest lever Angol fecha→bautismo 1–4 baptisms per transfer; goal at most
+1,1× the best transfer.
+Found and fixed: `periods.comparison_for` gives a comparison period its
+period's KEY and every memo is keyed on it — `_changes` re-keys it
+(`…:antes`) so a comparison can never be served for the period itself.
+Page budget: first build 52 (zones spilled a third page, mission 8); zone
+notes now point at the mission's method, driver lines in note type, zone
+focus capped at 5 rows (`ZONE_FOCUS_ROWS`), "Qué cambió" lists zones +
+districts that moved ≥20 or stay under → **48 pages (last week 49), blank
+feet 12%**.
+
+Verified: suite **0 failed / 1947 passed / 1 skipped**; pages 2, 3, 4, 9,
+11, 14–16 read as images; Informes headless at mission, Angol and El
+Mirador with every new section present, no exceptions.
+
+**Re-scored on the audit's §1 rubric: ≈93/100** (trust 9.5 · yardstick 9.0
+· focus 9.5 · comparability 9.0 · history 9.0 · projection 9.5 · diagnosis
+9.5 · small numbers 9.5 · economy 9.0 · craft 9.0). What stands between it
+and 95: **4D.2** (dated — after 2026-11-29, test whether a district's index
+predicts its Tableau baptisms 6–12 weeks later; yardstick → 9.5) and a third
+transfer of form history (comparability and history → 9.5). Neither can be
+built today.
+
+**Not pushed** (17 commits ahead). After the push the deployed app needs a
+**Reboot**.
