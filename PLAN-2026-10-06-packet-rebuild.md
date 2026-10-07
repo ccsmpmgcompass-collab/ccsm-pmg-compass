@@ -238,6 +238,115 @@ print guide off page 2 (L1). 3.7 verify, page count measured against 45.
 
 ---
 
+## §5 — Phase 4: the road to 95 (PROPOSED 2026-10-07 — NOT started, needs his word on P6–P11)
+
+Zackary, 2026-10-07: *"what is your plan to get it to 95."* Scored on the
+audit's §1 rubric, live packet of 2026-10-07 after `954f650`:
+
+| # | Dimension | Weight | Was | Now | Target | Points | What closes the gap |
+|---|---|---:|---:|---:|---:|---:|---|
+| 1 | Trust | 15% | 6.5 | 8.5 | 9.5 | +1.5 | 4A.2 silence split · 4C.1 every forecast backtested |
+| 2 | The yardstick | 15% | 3.0 | 8.5 | 9.5 | +1.5 | 4D.1 goal sanity line · 4D.2 the index tested against baptisms |
+| 3 | Focus signal | 15% | 3.0 | 8.0 | 9.5 | +2.25 | 4A.1 trend noise rule · 4A.2 · 4B.2 what changed · 4E.1 the one page |
+| 4 | Comparability | 10% | 6.0 | 8.0 | 9.5 | +1.5 | 4B.1 same weeks last year · 4B.3 index over transfers |
+| 5 | Trend and history | 10% | 3.0 | 6.5 | 9.5 | +3.0 | 4B.1 · 4B.2 · 4B.3 · 4A.4 numbers on the sparks |
+| 6 | Projection | 12% | 1.5 | 8.0 | 9.5 | +1.8 | 4C.1 · 4C.2 lever sizing · 4C.3 district pipeline |
+| 7 | Diagnosis | 8% | 4.0 | 7.5 | 9.5 | +1.6 | 4C.2 · 4C.4 lead → lag inside zones |
+| 8 | Small numbers | 5% | 5.0 | 7.0 | 9.5 | +1.25 | 4A.1 · 4A.3 intervals and "pocas personas" |
+| 9 | Economy | 5% | 4.0 | 8.0 | 9.0 | +0.5 | 4E.1 (decision 50 caps this: a weekly packet stays full length) |
+| 10 | Visual craft | 5% | 8.5 | 8.5 | 9.5 | +0.5 | 4A.4 · 4A.5 blank feet under 15% |
+| | **Total** | | **41.5** | **≈79** | | **+15.4** | **≈95** |
+
+**Honest limits.** (a) The weekly form starts **2026-08-09**: no
+"same weeks last year" exists for a form-only Key Indicator, so 4B.1 uses the
+four Tableau carries (found, date set, first church attendance, baptisms).
+(b) 4D.2 needs three transfers of form data — it can run once **2026-7 closes
+(2026-11-29)**. Rounds 4A–4C and 4E get to ≈93–94; 4D.2 is the last point.
+(c) Decision 50 keeps a weekly packet at full length, so dimension 9 stops at 9.
+
+### Proposals P6–P11 (NOT decided)
+
+- **P6 — Same weeks last year, Tableau only (4B.1).** Its own small block
+  under the tablero, never a tablero column: decision 34 forbids a Tableau
+  figure sharing a table with a form figure. Four rows × 2024 · 2025 · 2026.
+  *Recommend: yes.*
+- **P7 — "Qué cambió" is recomputed, not stored (4B.2).** The prior period is
+  rebuilt from today's sheet (`build_all(prior)`), so no new tab. Cost: a
+  late report can make last packet's figure differ slightly from what was
+  printed then; the block says "con los informes de hoy". The alternative is
+  a `PACKET_SNAPSHOTS` tab written on every build. *Recommend: recompute.*
+- **P8 — Lever sizing (4C.2).** Per zone: if its biggest leak converted at
+  the mission's rate, how many more dates and baptisms in the next six weeks,
+  as a range, uncoloured, ranked. *Recommend: yes, mission page + zone
+  opening.*
+- **P9 — District pipeline (4C.3).** Expected baptisms in six weeks per
+  district, on the district page; under 15 open dates it prints "pocas
+  fechas" and no range. *Recommend: yes.*
+- **P10 — Goal sanity line (4D.1).** Beside each Key Indicator: leadership's
+  transfer goal against the mission's best transfer since forms began (and,
+  for the four Tableau carries, since 2024): "pide 1,4× el mejor traslado".
+  Grading stays on leadership's goal (decision 44 holds); this only says when
+  the goal itself is out of reach. It is a statement about leadership's goal
+  printed in leadership's own packet — *his call.*
+- **P11 — A one-page "Resumen" as page 2, about +2 pages total (4E.1).**
+  Five lines: where we are · the three units to visit and why · what is coming
+  · what changed · the question to ask each zone. *Cómo leer* moves to page 3.
+  With 4B.1 and 4B.2 the transfer copy lands ≈48 pages against decision 49's
+  ≈45. *Recommend: yes; confirm 48 is fine.*
+
+### Steps
+
+**Round 4A — small numbers and focus (no decision needed).**
+- 4A.1 Trend noise rule. `focus.trend_change` (`focus.py:101`) returns a
+  direction only when the change clears the unit's own week-to-week spread
+  over the 12 weeks AND each half has ≥ 6 reports; otherwise "estable" or
+  "pocas cifras". The quadrant draws those on the 0 line, hollow. Today it
+  prints Collipulli 1 −84% and El Mirador +47% on 3-area districts.
+- 4A.2 Silence split. `focus.pareto` splits each unit's share of the
+  shortfall into *por silencio* (area-weeks with no report × their goal) and
+  *por trabajo*; the bar draws both shades and silent rows carry "sin informe".
+  Today Los Confines is #1 partly because one area never reported.
+- 4A.3 Small samples. Funnel rows under 100 found print "pocas personas" and
+  name no leak; zone conversion rates get a Wilson 80% range in the note.
+- 4A.4 Numbers on the sparks: first and last value at each end of every
+  12-week line (tablero, area rows).
+- 4A.5 Blank feet: measure every page's empty foot; target < 15% average,
+  none > 40% except a section's last page.
+
+**Round 4B — history and change (needs P6, P7).**
+- 4B.1 *Las mismas semanas, otros años* (Tableau): mission and zone.
+- 4B.2 *Qué cambió desde el último período*: units that entered/left
+  "debajo y bajando", the five largest index moves, how each forecast moved.
+- 4B.3 Index over transfers: each zone and district's index for every
+  transfer with form data, and "crónico" when a unit sits in the focus corner
+  two transfers running.
+
+**Round 4C — forecasts proven and levers sized (needs P8, P9).**
+- 4C.1 Backtest the transfer finish and the year landing on Tableau history
+  (2024–2026) at the same point of the period/year; print the typical miss
+  beside each range, as the pipeline already does (8%).
+- 4C.2 Lever sizing per P8.
+- 4C.3 District pipeline per P9.
+- 4C.4 Lead → lag inside a zone: the result → cause line per district on zone
+  pages, and each lagging Key Indicator tied to its nightly input (member
+  lessons ↔ *Lecciones con Miembro Presente*).
+
+**Round 4D — the yardstick audited (P10; 4D.2 dated).**
+- 4D.1 Goal sanity line per P10.
+- 4D.2 **After 2026-11-29:** does a district's index predict its Tableau
+  baptisms 6–12 weeks later, member by member? Print the result on *Cómo
+  leer*. If the weights should move, take it to him MEASURED — decision 45 is
+  not reopened by the test itself.
+
+**Round 4E — the one page (P11).**
+- 4E.1 *Resumen* per P11, both renderers (the screen's top card).
+
+**4F — verify.** Suite against baseline; both live packets built, read as
+images; screen headless at mission/zone/district; re-score on the §1 rubric
+and record it here.
+
+---
+
 ## STATUS
 
 ### 2026-10-06 — the plan is written; Phase 0 starts
@@ -521,3 +630,29 @@ images; screen at mission, zone and district runs headless with no
 exceptions.
 
 **Nothing in the plan is outstanding.** Push, then Reboot the deployed app.
+
+### 2026-10-07 — before/after comparison, three follow-ups built · `954f650`
+
+Both packets built from the live sheet (before = `origin/main` via a temp
+worktree, removed after): 104 → 46 pages, ~40k → ~22k words; re-scored
+41.5 → ≈78. Zackary: fix the funnel bottom and the layout, bring back who
+found them. Built:
+- Mature funnel: shares under 10% print one decimal (the baptism column read
+  0% in every row); a named leak prints its step's rate against the
+  mission's on the same line ("fecha a bautismo · 8,0% vs 16%",
+  `FunnelRow.leak_step`, `FUNNEL_COLUMNS` leak column 148pt — on a second
+  line it grew two zones to three pages). Screen the same.
+- `finding_mix_block` on the mission's pages (category share bar + top 8
+  sources, share now and in the same days before). A zone gets it as one
+  sentence of its opening (`_mix_sentence`): the section cost every zone a
+  third sheet (measured: 50 pages).
+- Quadrant labels and corner caption take the first free spot
+  (`PP.quadrant`); `run_on` lets a section shorter than the 140pt floor start
+  with its own height free; data note "Hallazgo" → "Personas encontradas".
+- Verified: suite **0 failed / 1928 passed / 1 skipped** (+6); this
+  transfer and last week both **46 pages**; pages 7, 9, 10, 12 read as
+  images; Informes headless at mission and Angol, no exceptions. Re-scored
+  ≈79.
+
+**Not pushed** (14 commits ahead with this one). **Next: §5 Phase 4 — needs
+his word on P6–P11.** Round 4A needs none and can start on his go.
