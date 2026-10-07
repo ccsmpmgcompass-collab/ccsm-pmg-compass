@@ -365,3 +365,44 @@ recommended** (P1 weights 3·2·2·1·1·1 with form baptisms out; P2 a zone's
 share of 527 printed uncoloured; P3 as built; P4 the age-bucketed pipeline;
 P5 option (a), an area at a third of a page). Any fork the build hits that
 the plan did not foresee goes back to him measured, as before.
+
+### 2026-10-06 — PHASE 1 COMPLETE (1.1–1.6, one commit: the steps share every function they touch)
+
+- **1.1 Yardstick (decision 44).** `MetricRow.lead_goal / lead_actual /
+  lead_area_weeks`: leadership's AREA_TRANSFER_GOALS spread per area-week
+  (`ReportData.lead_week_goal`), summed over exactly the area-weeks that
+  REPORTED — rule 1, both sides one population. Graded only if ≥ 50% of the
+  reports carry a goal (`LEAD_MIN_SHARE`), else "sin meta del liderazgo".
+  **Deviation from the plan's text, on purpose:** the plan said "on the
+  active basis"; that would mix silence into the grade, which decision 45
+  gives its own list, so the grade is on the reporting basis. The
+  companionships' goal is `own_pct` and the new **Compromiso** column
+  (`PP.KI_COLUMNS`, 7 columns, 56pt). Form baptisms: percentage shown, never
+  coloured (`UNCOLOURED_KI`, decision 46).
+- **1.2** The Key Indicator flag is retired (`ki_goal_flags` deleted); the
+  nightly flag stays.
+- **1.3 Index (decision 45, P1).** `model.productivity` / `Productivity`,
+  `INDEX_WEIGHTS` 3·2·2·1·1·1, cap 250, "pocas cifras" under 20 events.
+  `ChildRow`, `LadderRow` and `ReportModel` carry `index`; ranking, ladder,
+  siblings and areas order on it. `mean_attainment`, `_mean_attainment` and
+  `attainment_per_active_area` are gone.
+- **1.4** `ReportModel.reporting_ranked` → "Quién informó" (packet
+  `reporting_block`, mission and zone; screen section under the children).
+- **1.5 Renderers.** Ranked tables show all six index members (fixes M6),
+  no grade dots, a 100 tick on a 0–200 bar; the strip plot gets index ticks
+  ("100 = misión"); unit pages say "Productividad: 94 — cada compañería
+  produce un 6% menos que el promedio de la misión"; area lines "Productividad
+  106 (misión = 100) · su distrito 108 · su zona 94". Page 3 rule 1, the
+  column glossary, GRADED/COMPARED/BASIS notes and the data note rewritten.
+  Screen: KI cards graded on leadership (violet tick = compromiso), index
+  tables, ladder, sibling sentence, reporting list.
+- **1.6 Verified.** Suite **0 failed / 1920 passed / 1 skipped** (26 old
+  tests rewritten to the new decisions, 12 added incl. `test_report_index`).
+  Live packet: 104 pages (no length change yet). Zones now **Temuco Ñielol 82
+  · Angol 94 · Los Angeles Norte 110 · San Pedro 114**; mission KIs against
+  leadership: new 81% · member lessons 70% · sacrament 87% · first week 104%
+  · dates 96% · RC 85% · baptisms 20% (uncoloured). Pages 4, 5, 9 and 81
+  read. Screen: mission checked live in the preview; zone and district run
+  headless through Streamlit's AppTest (the pane was hidden and would not
+  draw) with no exceptions — `scratchpad/apptest_informes.py rep_zone=Angol`
+  is the harness, query param `rep_<level>`.

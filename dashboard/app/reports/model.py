@@ -49,7 +49,7 @@ See PLAN-2026-09-21-informes.md §2 and §4 steps R3–R4.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 
 import pandas as pd
@@ -62,6 +62,12 @@ from app.reports import scope as S
 from app.reports.grading import (
     Grade, attainment, goal_is_unusable, grade_ki, grade_nightly,
 )
+
+#: Below this share of a row's reporting area-weeks carrying a leadership
+#: goal, the row is not graded at all — "sin meta del liderazgo" (decisions
+#: 23, 44). A period straddling a cycle nobody set goals for would otherwise
+#: be graded on a sliver of its weeks.
+LEAD_MIN_SHARE = 0.5
 
 #: How much DAILY_LOG history to pull. The `days` argument is a client-side
 #: filter — `read_tab` reads and caches the whole tab either way — so a wide
@@ -161,8 +167,8 @@ class MetricRow:
     actual: float | None = None
     actual_area_weeks: int = 0
 
-    #: The companionships' own summed goal for the period's weeks. The bar
-    #: fills against this (decision 11).
+    #: The companionships' own summed goal for the period's weeks — the
+    #: *compromiso*, printed and never coloured since decision 44.
     #:
     #: ``meta_area_weeks`` is the divisor: every area-week that FILED the form
     #: the goal was written on, whether or not it wrote a number in this
@@ -175,11 +181,21 @@ class MetricRow:
     meta_area_weeks: int = 0
     meta_set_by: int = 0
 
-    #: Leadership's AREA_TRANSFER_GOALS figure — the violet mark (decision 11),
-    #: pro-rated to the part of the cycle this period covers.
+    #: Leadership's AREA_TRANSFER_GOALS figure for EVERY area in scope,
+    #: pro-rated to the part of the cycle this period covers (the graded
+    #: figure is `lead_goal`, over the area-weeks that reported).
     leadership_goal: float | None = None
     leadership_goal_areas: int = 0
     leadership_goal_complete: bool = False
+
+    #: Leadership's goal over exactly the area-weeks that REPORTED and have a
+    #: goal, and the actual over those same area-weeks — the two sides the
+    #: row is graded on since decision 44 (PLAN-2026-10-06, 1.1). Rule 1 of
+    #: the Informes layer: both sides of a percentage rest on one population.
+    #: ``lead_area_weeks`` is that population's size.
+    lead_goal: float | None = None
+    lead_actual: float | None = None
+    lead_area_weeks: int = 0
 
     per_active_area_week: float | None = None
     per_reporting_area_week: float | None = None
@@ -197,17 +213,19 @@ class MetricRow:
         return self.meta / self.meta_area_weeks
 
     @property
-    def attainment_per_active_area(self) -> float | None:
-        """Attainment reduced over EVERY roster area, silent ones included.
+    def own_pct(self) -> float | None:
+        """The companionships' own *compromiso*, as a percentage — printed,
+        never coloured (decision 44). Per reporting area-week on both sides,
+        which is the population the goal form was filed by."""
+        return attainment(self.per_reporting_area_week,
+                          self.meta_per_area_week)
 
-        `grade.pct` is the unit's own reading, on the population that filed.
-        This is the cross-UNIT reading (decision 12), and the two are
-        different numbers: a zone where seven of eleven areas went quiet is at
-        59% of goal among those that reported and 26% of the zone. A table
-        comparing units has to use this one, or its rows do not add up to the
-        headline beside them.
-        """
-        return attainment(self.per_active_area_week, self.meta_per_area_week)
+    @property
+    def lead_goal_rate(self) -> float | None:
+        """Leadership's goal per reporting area-week, on the graded basis."""
+        if self.lead_goal is None or not self.lead_area_weeks:
+            return None
+        return self.lead_goal / self.lead_area_weeks
 
     @property
     def has_leadership_goal(self) -> bool:
@@ -286,24 +304,111 @@ class Series:
 
 
 @dataclass(frozen=True)
+class Productivity:
+    """The goal-free productivity index (decision 45, PLAN P1).
+
+    Output per ACTIVE companionship-week, each member as a percentage of the
+    mission's own rate, averaged with weights toward the results nearest
+    baptism. 100 is the mission; 120 is a unit producing a fifth more per
+    companionship than the mission does. It says nothing about goals, which
+    is the point: a unit that sets low goals cannot read well on it, and one
+    that aims high is not punished for it (AUDIT-2026-10-06 C1).
+
+    ``members`` is ``((key, ratio or None), ...)`` in catalogue order;
+    ``events`` the raw count behind the members, and ``thin`` says it is too
+    few to rank on with any confidence — printed, uncoloured.
+    """
+
+    value: float | None = None
+    members: tuple = ()
+    events: float = 0.0
+
+    @property
+    def thin(self) -> bool:
+        return self.events < INDEX_MIN_EVENTS
+
+    def ratio(self, key: str) -> float | None:
+        return next((r for k, r in self.members if k == key), None)
+
+
+#: P1, approved 2026-10-06. Baptismal dates weigh most: the result nearest
+#: baptism with volume enough to trust. The form's baptisms are not a member —
+#: seven events across the mission in a transfer (decision 37's reasoning).
+INDEX_WEIGHTS = {
+    "ki_baptismal_date_real": 3,
+    "ki_friends_sacrament_real": 2,
+    "ki_rc_at_church_real": 2,
+    "ki_member_lessons_real": 1,
+    "ki_new_people_real": 1,
+    "ki_friends_first_week_real": 1,
+}
+
+#: A member's ratio is capped, so one tiny count cannot carry a unit: an area
+#: with two baptismal dates where the mission averages 0,6 reads 330% on that
+#: member alone.
+INDEX_CAP = 250.0
+
+#: Fewer events than this behind a unit's index and it is printed "pocas
+#: cifras" — the same order of size as the small-count rule (25).
+INDEX_MIN_EVENTS = 20.0
+
+#: Never in the index, never coloured by leadership's transfer goal: the 527
+#: annual goal is the baptism target (decision 46).
+UNCOLOURED_KI = frozenset({"ki_baptized_confirmed_real"})
+
+
+def index_weights(keys) -> dict:
+    """`INDEX_WEIGHTS` over the keys a mission actually has. A catalogue
+    with none of them (a different mission's Key Indicators) weighs every key
+    but the form's baptisms equally, rather than having no index at all."""
+    present = {k: w for k, w in INDEX_WEIGHTS.items() if k in keys}
+    if present:
+        return present
+    return {k: 1 for k in keys if k not in UNCOLOURED_KI}
+
+
+def productivity(rows, mission_rows) -> Productivity:
+    """The index for one unit's Key Indicator rows against the mission's."""
+    mission = {r.key: r.per_active_area_week for r in mission_rows}
+    weights = index_weights([r.key for r in rows])
+    members, total, weight, events = [], 0.0, 0.0, 0.0
+    any_reading = False
+    for row in rows:
+        if row.key not in weights:
+            continue
+        base = mission.get(row.key)
+        ratio = None
+        if row.actual is not None:
+            any_reading = True
+            events += row.actual
+        if base and row.per_active_area_week is not None:
+            ratio = min(INDEX_CAP, row.per_active_area_week / base * 100)
+            total += weights[row.key] * ratio
+            weight += weights[row.key]
+        members.append((row.key, ratio))
+    value = total / weight if weight and any_reading else None
+    return Productivity(value=value, members=tuple(members), events=events)
+
+
+@dataclass(frozen=True)
 class LadderRow:
     """One rung of the comparison ladder: this unit, the unit above it, the
     mission — the same measure on every scale it can be read at.
 
-    The whole point of a unit's page. A zone at 54% is a fact about nothing
-    until the mission's 61% is printed beside it, and a district leader has no
-    way to know whether 73% is good until the zone reads 78 and the mission 76.
+    The whole point of a unit's page. Since decision 45 the measure is the
+    productivity index: a district at 92 is a fact about nothing until its
+    zone's 104 and the mission's 100 are printed beside it.
 
-    ``delta`` and ``deltas`` are THIS UNIT minus this rung, in percentage
-    points — computed here rather than in a renderer, so the screen and the
-    printed page cannot disagree about the sign of a gap (decision 30). Both
-    are None on the unit's own rung, which is nothing minus itself.
+    ``delta`` and ``deltas`` are THIS UNIT minus this rung, in index points —
+    the overall index and each member's ratio — computed here rather than in
+    a renderer, so the screen and the printed page cannot disagree about the
+    sign of a gap (decision 30). Both are None on the unit's own rung.
     """
 
     scope: S.Scope
     role: str
     is_self: bool = False
-    mean_attainment: float | None = None
+    index: Productivity = field(default_factory=Productivity)
     metrics: tuple[MetricRow, ...] = ()
     delta: float | None = None
     deltas: tuple[float | None, ...] = ()
@@ -315,20 +420,22 @@ class LadderRow:
 
 @dataclass(frozen=True)
 class ChildRow:
-    """One unit a level down, ranked and named (decisions 14, 15, 16).
+    """One unit a level down, ranked and named (decisions 15, 16, 45).
 
-    ``mean_attainment`` is the mean of the unit's Key Indicator percentages —
-    not Effectiveness. A council can be told "this zone is at 54% of the goals
-    its companionships set themselves"; nobody can explain a composite of a
-    composite out loud.
+    Ranked on the productivity ``index`` — output per companionship against
+    the mission's — and not on attainment of self-set goals, which on
+    2026-10-06 put the mission's least productive zone at the top of the
+    table because it set the lowest goals (AUDIT-2026-10-06 C1). It can be
+    said out loud: "Angol brings 27% more friends to sacrament per
+    companionship than the mission does."
 
-    ``rank`` is 1 for the WEAKEST, because that is the order the table prints
-    in and the order a council reads down.
+    ``rank`` is 1 for the LEAST productive, because that is the order the
+    table prints in and the order a council reads down.
     """
 
     scope: S.Scope
     rank: int
-    mean_attainment: float | None
+    index: Productivity = field(default_factory=Productivity)
     metrics: tuple[MetricRow, ...] = ()
     coverage: P.Coverage = None
     areas_silent: tuple[str, ...] = ()
@@ -394,6 +501,9 @@ class ReportModel:
     #: district level the areas are already `children`.
     areas_ranked: tuple = ()
 
+    #: This unit's productivity index against the mission (decision 45).
+    index: Productivity = field(default_factory=Productivity)
+
     #: `{metric key: Series}` for the seven, week by week (decision 26).
     series: dict = field(default_factory=dict)
 
@@ -440,15 +550,19 @@ class ReportModel:
         return " · ".join(bits)
 
     @property
-    def mean_attainment(self) -> float | None:
-        """The unit's own mean Key Indicator attainment per ACTIVE area.
-
-        The figure `ChildRow.mean_attainment` carries, for a unit that is
-        nobody's child on the page it is being drawn on — the mission has no
-        parent to be ranked under, and a unit comparing itself upward needs
-        its own.
-        """
-        return _mean_attainment(self.key_indicators)
+    def reporting_ranked(self) -> tuple:
+        """The units one level down, worst REPORTING first — decision 45's
+        separate list. Reporting stays out of the productivity index's
+        meaning (a silent area still counts zero there, on purpose), and gets
+        its own ranked list so "Angol: 2 areas silent all transfer" is said
+        as what it is rather than folded into a performance figure."""
+        def rate(c):
+            cov = c.coverage
+            return (cov.reporting_rate if cov is not None
+                    and cov.reporting_rate is not None else 0.0)
+        return tuple(sorted(self.children,
+                            key=lambda c: (rate(c), -len(c.areas_silent),
+                                           c.name)))
 
     def ki(self, key: str) -> MetricRow | None:
         return next((r for r in self.key_indicators if r.key == key), None)
@@ -631,23 +745,59 @@ class ReportData:
             provisional_through=through,
         )
 
-    def ki_goal_flags(self, period: P.Period) -> dict:
-        """Which Key Indicator goals are not yardsticks, judged at MISSION scope.
+    @property
+    def mission(self) -> S.Scope:
+        if "mission_scope" not in self._flags:
+            self._flags["mission_scope"] = S.mission_scope(self.roster,
+                                                           self.mission_name)
+        return self._flags["mission_scope"]
 
-        Asked once for the whole mission and handed down to every unit — see
-        `grading.goal_is_unusable`. Asked per area it would answer "the goal is
-        broken" every time a companionship had a bad fortnight.
+    def lead_week_goal(self, area: str, week: str) -> dict | None:
+        """Leadership's goal for one area for one week, or None.
+
+        The area's AREA_TRANSFER_GOALS row for the cycle the week falls in,
+        spread evenly over the cycle's weeks — `_leadership_goals`' own
+        pro-rating rule, applied per area-week so a row can be graded on
+        exactly the area-weeks that reported (decision 44, rule 1). None when
+        the area has no goal that cycle: "any of its seven non-zero" is
+        `goals_queries.areas_with_goals`' rule for having one.
         """
-        cache_key = ("ki", period.key)
-        if cache_key not in self._flags:
-            mission = S.mission_scope(self.roster, self.mission_name)
-            rows = _ki_rows(self, mission, period)
-            self._flags[cache_key] = {
-                r.key: goal_is_unusable(r.per_reporting_area_week,
-                                        r.meta_per_area_week)
-                for r in rows
-            }
-        return self._flags[cache_key]
+        if "lead_table" not in self._flags:
+            self._flags["lead_table"] = self._lead_table()
+            self._flags["week_cycle"] = {}
+        cycles = self._flags["week_cycle"]
+        if week not in cycles:
+            day = date.fromisoformat(str(week)[:10])
+            cycles[week] = next((c["start"].isoformat() for c in self.cycles
+                                 if c["start"] <= day <= c["end"]), None)
+        start = cycles[week]
+        if start is None:
+            return None
+        return self._flags["lead_table"].get((str(area).strip(), start))
+
+    def _lead_table(self) -> dict:
+        from app.analytics.transfer_year import weeks_in_cycle
+        df = self.transfer_goals
+        if df is None or df.empty or "area" not in df.columns:
+            return {}
+        spans = {c["start"].isoformat():
+                 (weeks_in_cycle(c["start"], c["end"]) or 1)
+                 for c in self.cycles}
+        keys = [k for k in self.ki_keys if k in df.columns]
+        out = {}
+        for _, row in df.iterrows():
+            start = str(row.get("transfer_start", "") or "").strip()[:10]
+            if start not in spans:
+                continue
+            values = {}
+            for key in keys:
+                value = pd.to_numeric(row.get(key), errors="coerce")
+                values[key] = 0.0 if pd.isna(value) else float(value)
+            if not any(values.values()):
+                continue
+            out[(str(row["area"]).strip(), start)] = {
+                k: v / spans[start] for k, v in values.items()}
+        return out
 
     def nightly_goal_flags(self, period: P.Period) -> dict:
         """The same verdict for the nightly `GOAL_*` numbers.
@@ -942,8 +1092,7 @@ def _leadership_goals(data: ReportData, scope: S.Scope,
 
 
 def _ki_rows(data: ReportData, scope: S.Scope, period: P.Period, *,
-             comparison: P.Comparison | None = None,
-             flags: dict | None = None) -> list[MetricRow]:
+             comparison: P.Comparison | None = None) -> list[MetricRow]:
     """The seven, always — present as a row even when nothing was reported.
 
     A Key Indicator that vanishes from the table because no one filed is a
@@ -962,6 +1111,26 @@ def _ki_rows(data: ReportData, scope: S.Scope, period: P.Period, *,
         before_area_weeks = len(before_rows)
 
     marks = _leadership_goals(data, scope, period)
+
+    # Leadership's goal over exactly the area-weeks that reported (decision
+    # 44), with the actual over the same area-weeks — an area-week with no
+    # goal leaves BOTH sides, so the percentage never mixes populations.
+    lead_goal: dict = {}
+    lead_actual: dict = {}
+    lead_weeks = 0
+    if not rows.empty:
+        for (area, week), group in rows.groupby(["_area", "_week"]):
+            goal = data.lead_week_goal(area, week)
+            if goal is None:
+                continue
+            lead_weeks += 1
+            for key in data.ki_keys:
+                lead_goal[key] = lead_goal.get(key, 0.0) + goal.get(key, 0.0)
+                if key in group.columns:
+                    lead_actual[key] = lead_actual.get(key, 0.0) + float(
+                        pd.to_numeric(group[key], errors="coerce").sum())
+    graded = (lead_weeks > 0
+              and lead_weeks >= LEAD_MIN_SHARE * reporting_area_weeks)
 
     # The companionships' own goals, summed across the period's weeks. Each
     # week's goal lives on the PREVIOUS week's form (queries.py's W-7 lookup).
@@ -996,8 +1165,22 @@ def _ki_rows(data: ReportData, scope: S.Scope, period: P.Period, *,
         # form, is a real commitment to zero — not a missing goal. Zero cannot
         # be graded against, so it reads 0 with no status, which is the truth.
         meta = metas.get(key, 0.0) if meta_area_weeks else None
-        meta_rate = meta / meta_area_weeks if meta else None
         mark, mark_areas, mark_complete = marks.get(key, (None, 0, False))
+
+        goal_sum = lead_goal.get(key) if graded else None
+        done_sum = lead_actual.get(key, 0.0) if graded else None
+        grade = grade_ki(
+            done_sum / lead_weeks if goal_sum else None,
+            goal_sum / lead_weeks if goal_sum else None,
+            before=before_rate, now=per_reporting,
+            # The raw counts behind the change, so a change on single digits
+            # prints as "+4" and a move inside Poisson noise prints without a
+            # direction (H5).
+            counts=(actual, reporting_area_weeks, before, before_area_weeks))
+        if key in UNCOLOURED_KI:
+            # Shown against leadership's transfer goal, never coloured by it:
+            # the 527 annual goal is the baptism target (decision 46).
+            grade = replace(grade, status=None)
 
         out.append(MetricRow(
             key=key,
@@ -1010,21 +1193,13 @@ def _ki_rows(data: ReportData, scope: S.Scope, period: P.Period, *,
             leadership_goal=mark,
             leadership_goal_areas=mark_areas,
             leadership_goal_complete=mark_complete,
+            lead_goal=goal_sum,
+            lead_actual=done_sum,
+            lead_area_weeks=lead_weeks if graded else 0,
             per_active_area_week=per_active,
             per_reporting_area_week=per_reporting,
             before_per_reporting_area_week=before_rate,
-            # Attainment and change are both on the per-reporting-area basis:
-            # the only one where a swing in how many areas filed cannot read as
-            # work. 39 areas set the goals for the week ending 2026-09-20 and 27
-            # filed results for it — dividing those two sums would be the 2.040%
-            # bug again.
-            grade=grade_ki(per_reporting, meta_rate, before=before_rate,
-                           flag=(flags or {}).get(key),
-                           # The raw counts behind the two rates, so a change
-                           # on single digits prints as "+4" and a move inside
-                           # Poisson noise prints without a direction (H5).
-                           counts=(actual, reporting_area_weeks, before,
-                                   before_area_weeks)),
+            grade=grade,
         ))
     return out
 
@@ -1235,31 +1410,15 @@ def _rates(data: ReportData, scope: S.Scope, period: P.Period,
 
 # ── Children, ranked weakest first (decisions 14, 15) ────────────────────────
 
-def _mean_attainment(rows) -> float | None:
-    """The mean of a unit's Key Indicator percentages, per ACTIVE area-week.
+def _mission_rows(data: ReportData, period: P.Period,
+                  comparison: P.Comparison | None) -> tuple:
+    """The mission's Key Indicator rows — every index's denominator."""
+    return _ki_rows_for(data, data.mission, period, comparison)
 
-    **Not `grade.pct`**, which rests on the area-weeks that filed. Ranking one
-    unit against another is exactly the comparison decision 12 reserves the
-    active basis for: a zone of two areas where one filed one week and did 30
-    reads 150% of goal per reporting area-week and would top the table, while
-    per active area-week it reads 37.5% and is last, which is the truth about
-    the zone. `zone_comparison`'s standing rule — a zone whose areas go silent
-    ranks lower, on purpose.
 
-    Only indicators that HAVE a percentage count. Treating an ungraded one as a
-    zero would rank a unit down for a goal its companionships never set, which
-    is a statement about the form and not about the work.
-
-    A FLAGGED goal is left out for the same reason one rung further on
-    (decision 22): `ki_friends_first_week_real` asks for 81 over a fortnight
-    against 12 achieved mission-wide, and a unit's headline should not be
-    dragged down for a goal nobody could have met. The rule lives here rather
-    than in a renderer so a unit's own headline and its row in its parent's
-    table cannot be two different numbers.
-    """
-    pcts = [r.attainment_per_active_area for r in rows
-            if r.attainment_per_active_area is not None and not r.grade.flag]
-    return sum(pcts) / len(pcts) if pcts else None
+def _index_for(data: ReportData, rows, period: P.Period,
+               comparison: P.Comparison | None) -> Productivity:
+    return productivity(rows, _mission_rows(data, period, comparison))
 
 
 #: What the ladder calls each rung. Only "distrito" is masculine, so the
@@ -1271,7 +1430,7 @@ LADDER_ABOVE = {S.MISSION: "la misión", S.ZONE: "su zona",
 
 
 def _ki_rows_for(data: ReportData, scope: S.Scope, period: P.Period,
-                 comparison: P.Comparison | None, flags: dict) -> tuple:
+                 comparison: P.Comparison | None) -> tuple:
     """`_ki_rows`, memoised on the scope and the period.
 
     Without it the ladder is the most expensive thing in the packet: 63 units
@@ -1285,22 +1444,21 @@ def _ki_rows_for(data: ReportData, scope: S.Scope, period: P.Period,
                  else None)
     if cache_key not in data._flags:
         data._flags[cache_key] = tuple(_ki_rows(
-            data, scope, period, comparison=comparison, flags=flags))
+            data, scope, period, comparison=comparison))
     return data._flags[cache_key]
 
 
 def _ladder(data: ReportData, scope: S.Scope, period: P.Period,
-            comparison: P.Comparison | None, flags: dict) -> tuple:
+            comparison: P.Comparison | None) -> tuple:
     """This unit against every scale above it, coarsest last.
 
-    Every figure on it is attainment per ACTIVE area (rule 2 of §1's three):
-    the cross-unit basis, so a zone whose areas went quiet does not outrank one
-    whose areas all filed. Reading a zone against the mission on the reporting
-    basis would compare two different populations and call the difference
-    performance.
+    Every figure on it is the productivity index (decision 45): output per
+    ACTIVE companionship-week against the mission's, so a zone whose areas
+    went quiet does not outrank one whose areas all filed, and a zone that set
+    itself low goals does not outrank one that worked harder.
 
-    Empty at mission level — the mission is the top of the ladder and a rung
-    against itself is a row of zeroes pretending to be a comparison.
+    Empty at mission level — the mission is the top of the ladder and is 100
+    by construction.
     """
     chain, node = [scope], scope
     while True:
@@ -1312,62 +1470,61 @@ def _ladder(data: ReportData, scope: S.Scope, period: P.Period,
     if len(chain) < 2:
         return ()
 
-    own_metrics = _ki_rows_for(data, scope, period, comparison, flags)
-    own_mean = _mean_attainment(own_metrics)
-    own_by_key = {r.key: r.attainment_per_active_area for r in own_metrics}
+    own_metrics = _ki_rows_for(data, scope, period, comparison)
+    own = _index_for(data, own_metrics, period, comparison)
 
     rows = []
     for rung in chain:
         is_self = rung.key == scope.key
         metrics = (own_metrics if is_self
-                   else _ki_rows_for(data, rung, period, comparison, flags))
-        mean = _mean_attainment(metrics)
+                   else _ki_rows_for(data, rung, period, comparison))
+        index = (own if is_self
+                 else _index_for(data, metrics, period, comparison))
         role = (LADDER_SELF.get(rung.level, "esta unidad") if is_self
                 else LADDER_ABOVE.get(rung.level, "la misión"))
         rows.append(LadderRow(
-            scope=rung, role=role, is_self=is_self, mean_attainment=mean,
+            scope=rung, role=role, is_self=is_self, index=index,
             metrics=metrics,
-            delta=(None if is_self or mean is None or own_mean is None
-                   else own_mean - mean),
+            delta=(None if is_self or index.value is None or own.value is None
+                   else own.value - index.value),
             deltas=() if is_self else tuple(
-                None if (own_by_key.get(r.key) is None
-                         or r.attainment_per_active_area is None)
-                else own_by_key[r.key] - r.attainment_per_active_area
-                for r in metrics),
+                None if (own.ratio(k) is None or index.ratio(k) is None)
+                else own.ratio(k) - index.ratio(k)
+                for k, _ in index.members),
         ))
     return tuple(rows)
 
 
 def _rank_scopes(data: ReportData, scopes: list, period: P.Period,
-                 comparison: P.Comparison | None, flags: dict) -> tuple:
-    """Units ranked weakest first — no top-N (decision 15).
+                 comparison: P.Comparison | None) -> tuple:
+    """Units ranked least productive first — no top-N (decisions 15, 45).
 
-    Ranked on mean Key Indicator attainment (decision 14). A unit with no
-    attainment at all sorts to the END rather than to the top: it is not the
-    weakest, it is unmeasured, and printing it first would put "no data" where
-    a council looks for its biggest problem.
+    A unit with no index at all sorts to the END rather than to the top: it
+    is not the least productive, it is unmeasured, and printing it first
+    would put "no data" where a council looks for its biggest problem. It
+    appears on the reporting list instead, which is where silence belongs.
     """
     out = []
     for child in scopes:
-        rows = _ki_rows_for(data, child, period, comparison, flags)
+        rows = _ki_rows_for(data, child, period, comparison)
         child_rows = _weekly_rows(data, child, period)
         reported = set(child_rows["_area"]) if not child_rows.empty else set()
         out.append(ChildRow(
-            scope=child, rank=0, mean_attainment=_mean_attainment(rows),
+            scope=child, rank=0,
+            index=_index_for(data, rows, period, comparison),
             metrics=rows,
             coverage=P.week_coverage(period, _reported_by_week(child_rows),
                                      child.area_count),
             areas_silent=tuple(sorted(set(child.areas) - reported)),
         ))
-    out.sort(key=lambda c: (c.mean_attainment is None,
-                            c.mean_attainment if c.mean_attainment is not None else 0,
+    out.sort(key=lambda c: (c.index.value is None,
+                            c.index.value if c.index.value is not None else 0,
                             c.scope.name))
-    from dataclasses import replace
     return tuple(replace(c, rank=i + 1) for i, c in enumerate(out))
 
 
 def _ranked_children_of(data: ReportData, parent: S.Scope, period: P.Period,
-                        comparison: P.Comparison | None, flags: dict) -> tuple:
+                        comparison: P.Comparison | None) -> tuple:
     """`_rank_scopes` over a unit's children, memoised on the PARENT.
 
     Every unit wants the same list twice over: once as its own `children`, and
@@ -1380,19 +1537,18 @@ def _ranked_children_of(data: ReportData, parent: S.Scope, period: P.Period,
                  else None)
     if cache_key not in data._flags:
         data._flags[cache_key] = _rank_scopes(
-            data, S.children(data.roster, parent), period, comparison, flags)
+            data, S.children(data.roster, parent), period, comparison)
     return data._flags[cache_key]
 
 
 def _siblings(data: ReportData, scope: S.Scope, period: P.Period,
-              comparison: P.Comparison | None, flags: dict) -> tuple:
+              comparison: P.Comparison | None) -> tuple:
     """Every unit at this level under the same parent, this one included.
 
-    What turns a percentage into a position. The ladder says how the unit
+    What turns an index into a position. The ladder says how the unit
     compares with the scale above it; this says how it compares with the units
-    beside it, which is the other half of "is 73% good" — and the half a
-    leader can do something about, because the unit two rows up is run by
-    somebody in the same room.
+    beside it — the half a leader can do something about, because the unit
+    two rows up is run by somebody in the same room.
 
     Empty at mission level, which has no siblings, and empty where a unit is
     an only child: a strip of one dot is a picture of nothing.
@@ -1400,14 +1556,14 @@ def _siblings(data: ReportData, scope: S.Scope, period: P.Period,
     parent = S.parent(data.roster, scope, data.mission_name)
     if parent is None:
         return ()
-    rows = _ranked_children_of(data, parent, period, comparison, flags)
+    rows = _ranked_children_of(data, parent, period, comparison)
     return rows if len(rows) > 1 else ()
 
 
 def _areas_ranked(data: ReportData, scope: S.Scope, period: P.Period,
-                  comparison: P.Comparison | None, flags: dict) -> tuple:
-    """Every AREA inside the unit, weakest first — §3.2's Z3, and the drawer
-    the mission page keeps 45 of them behind (decision 15).
+                  comparison: P.Comparison | None) -> tuple:
+    """Every AREA inside the unit, least productive first — §3.2's Z3, and
+    the drawer the mission page keeps 45 of them behind (decision 15).
 
     Empty at district level, where the areas ARE the children and the same
     list twice is noise, and at area level, which has no areas below it.
@@ -1416,8 +1572,7 @@ def _areas_ranked(data: ReportData, scope: S.Scope, period: P.Period,
         return ()
     scopes = S.area_scopes(data.roster,
                            zone=scope.zone if scope.level == S.ZONE else None)
-    return _rank_scopes(data, scopes, period, comparison, flags)
-
+    return _rank_scopes(data, scopes, period, comparison)
 
 # ── The week-by-week strip (decisions 9, 26) ─────────────────────────────────
 
@@ -1542,8 +1697,8 @@ def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
             _reported_by_week(_weekly_rows(data, scope, comparison.period)),
             scope.area_count)
 
-    ki_flags = data.ki_goal_flags(period)
     strengths, growth = _strengths(data, scope, period)
+    own = _ki_rows_for(data, scope, period, comparison)
 
     return ReportModel(
         scope=scope,
@@ -1559,17 +1714,17 @@ def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
             if comparison and comparison.period is not None else None),
         areas_reporting=tuple(sorted(reporting & in_scope)),
         areas_silent=tuple(sorted(in_scope - reporting)),
-        key_indicators=_ki_rows_for(data, scope, period, comparison, ki_flags),
+        key_indicators=own,
         nightly_metrics=tuple(_nightly_rows(
             data, scope, period, comparison=comparison,
             flags=data.nightly_goal_flags(period))),
         scores=_scores(data, scope, period),
         rates=_rates(data, scope, period, comparison),
-        children=_ranked_children_of(data, scope, period, comparison,
-                                     ki_flags),
-        ladder=_ladder(data, scope, period, comparison, ki_flags),
-        siblings=_siblings(data, scope, period, comparison, ki_flags),
-        areas_ranked=_areas_ranked(data, scope, period, comparison, ki_flags),
+        children=_ranked_children_of(data, scope, period, comparison),
+        ladder=_ladder(data, scope, period, comparison),
+        siblings=_siblings(data, scope, period, comparison),
+        areas_ranked=_areas_ranked(data, scope, period, comparison),
+        index=_index_for(data, own, period, comparison),
         series=_series(data, scope, period),
         strengths=strengths,
         growth=growth,

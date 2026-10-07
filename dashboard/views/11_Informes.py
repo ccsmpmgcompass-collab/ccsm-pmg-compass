@@ -243,17 +243,19 @@ def _ki_cards() -> list[dict]:
             # lands back on the same unit (`scope_selector.SCOPE_PARAMS`).
             "href": ki_href(row.key, _SCOPE_PARAMS),
         }
-        if row.meta:
-            card["goal"] = row.meta
-        if row.has_leadership_goal:
-            card["mark"] = row.leadership_goal
-            card["mark_label"] = "meta de liderazgo"
-        elif row.leadership_goal_areas or row.meta:
-            card["note"] = (f"sin meta de traslado · "
-                            f"{fmt_int(row.leadership_goal_areas)} de "
-                            f"{fmt_int(_model.scope.area_count)} áreas")
-        if row.grade.flag:
-            card["note"] = row.grade.flag_label
+        # Decision 44, the packet's rule: the bar is against LEADERSHIP's goal
+        # over the area-weeks that reported, and the companionships' own goal
+        # rides as the violet tick, labelled compromiso — never the colour.
+        if row.lead_goal:
+            card["value"] = row.lead_actual
+            card["goal"] = row.lead_goal
+            if row.meta_per_area_week:
+                card["mark"] = row.meta_per_area_week * row.lead_area_weeks
+                card["mark_label"] = "compromiso"
+            if row.key in M.UNCOLOURED_KI:
+                card["note"] = "sin color: manda la meta anual"
+        else:
+            card["note"] = "sin meta del liderazgo para estas semanas"
         # H5, the packet's rule: a small count moves in units, and a move
         # inside Poisson noise is drawn flat and grey.
         if comparable and row.grade.change_count is not None:
@@ -298,29 +300,51 @@ def _change_cell(row) -> str:
     return f"{arrow} {fmt_percent(abs(row.grade.change_pct))}"
 
 
+#: The index's members as ranked-list cells, in weight order (decision 45) —
+#: the packet's own heads, so the two surfaces name a column the same way.
+_INDEX_CELLS = [(k, short) for k, short in (
+    ("ki_baptismal_date_real", "Fecha"),
+    ("ki_friends_sacrament_real", "Sacr."),
+    ("ki_rc_at_church_real", "CR"),
+    ("ki_member_lessons_real", "Lecc."),
+    ("ki_new_people_real", "Nuevas"),
+    ("ki_friends_first_week_real", "1ª sem"),
+) if _model.ki(k) is not None]
+
+
+def _idx(value) -> str:
+    return NA if value is None else fmt_int(round(value))
+
+
+def _index_columns():
+    return [(short, _model.ki(k).label) for k, short in _INDEX_CELLS]
+
+
 def _ranked_units(units) -> str:
-    """Child units or areas as ranked rows, weakest first.
+    """Child units or areas, least productive first (decision 45).
 
     One function for both tables so a zone's districts and a zone's areas read
-    identically. Every cell is attainment per ACTIVE area — the same basis as
-    the headline beside it, so a row's cells average to its own value.
+    identically. The value is the productivity index — output per
+    companionship-week against the mission's, 100 = the mission — and every
+    cell is one of its members on the same scale.
     """
     return ranked_list([{
         "name": c.name,
-        "rank": c.rank,
+        "rank": c.rank if c.index.value is not None else "",
         "sub": (f"{c.coverage.label} · "
                 f"{fmt_percent((c.coverage.reporting_rate or 0) * 100)} de "
                 f"los informes"
                 + (f" · {fmt_int(len(c.areas_silent))} sin informar"
-                   if c.areas_silent else "")),
-        "value": c.mean_attainment,
-        "bar": c.mean_attainment,
-        "cells": [_pct(next((m.attainment_per_active_area
-                             for m in c.metrics if m.key == r.key), None))
-                  for r in _model.key_indicators],
+                   if c.areas_silent else "")
+                + (" · pocas cifras" if c.index.thin
+                   and c.index.value is not None else "")),
+        "value": c.index.value,
+        "bar": c.index.value,
+        "cells": [_idx(c.index.ratio(k)) for k, _ in _INDEX_CELLS],
     } for c in units],
-        value_fmt=lambda v: NA if v is None else fmt_percent(v),
-        columns=[(r.label[:14], r.label) for r in _model.key_indicators],
+        bar_max=200,
+        value_fmt=_idx,
+        columns=_index_columns(),
     )
 
 
@@ -336,20 +360,18 @@ def _ladder_rows() -> str:
         "name": r.scope.name,
         "rank": "",
         "sub": r.role,
-        "value": r.mean_attainment,
-        "bar": r.mean_attainment,
+        "value": r.index.value,
+        "bar": r.index.value,
         "change": (None if r.delta is None
                    else f"{'+' if r.delta >= 0 else '−'}"
                         f"{fmt_number(abs(r.delta), 0)} pts"),
         "change_color": (None if r.delta is None
                          else "good" if r.delta >= 0 else "bad"),
-        "cells": [_pct(next((m.attainment_per_active_area
-                             for m in r.metrics if m.key == k.key), None))
-                  for k in _model.key_indicators],
+        "cells": [_idx(r.index.ratio(k)) for k, _ in _INDEX_CELLS],
     } for r in _model.ladder],
-        bar_max=100,
-        value_fmt=lambda v: NA if v is None else fmt_percent(v),
-        columns=[(r.label[:14], r.label) for r in _model.key_indicators],
+        bar_max=200,
+        value_fmt=_idx,
+        columns=_index_columns(),
     )
 
 
@@ -364,17 +386,17 @@ def _gap_rows() -> str:
     parent = next((r for r in _model.ladder[1:] if not r.is_self), None)
     if parent is None or not any(d is not None for d in parent.deltas):
         return ""
-    pairs = sorted(zip(parent.metrics, parent.deltas),
+    pairs = sorted(zip([k for k, _ in parent.index.members], parent.deltas),
                    key=lambda pair: (pair[1] is None, pair[1] or 0))
     return ranked_list([{
-        "name": row.label,
+        "name": _model.ki(key).label if _model.ki(key) else key,
         "rank": "",
-        "sub": (f"{_pct(row.attainment_per_active_area)} en "
+        "sub": (f"{_idx(parent.index.ratio(key))} en "
                 f"{parent.scope.name}"),
         "value": delta,
         "bar": None if delta is None else abs(delta),
         "status": None if delta is None else "good" if delta >= 0 else "bad",
-    } for row, delta in pairs],
+    } for key, delta in pairs],
         value_fmt=lambda v: (NA if v is None else
                              f"{'+' if v >= 0 else '−'}"
                              f"{fmt_number(abs(v), 0)} pts"),
@@ -390,7 +412,7 @@ def _sibling_line() -> str:
     among peers running 31 to 38 has a mission problem; the same 34% among
     peers running 16 to 63 has a problem of its own.
     """
-    peers = [c for c in _model.siblings if c.mean_attainment is not None]
+    peers = [c for c in _model.siblings if c.index.value is not None]
     if len(peers) < 2:
         return ""
     mine = next((c for c in peers if c.name == _model.scope.name), None)
@@ -404,17 +426,17 @@ def _sibling_line() -> str:
                      "area": ("áreas", "la")}.get(_model.scope.level,
                                                   ("unidades", "la"))
     ending = "a" if article == "la" else "o"
-    low = min(c.mean_attainment for c in peers)
-    high = max(c.mean_attainment for c in peers)
-    if mine.mean_attainment >= high:
-        where = f"{article} más fuerte"
-    elif mine.mean_attainment <= low:
-        where = f"{article} más atrasad{ending}"
+    low = min(c.index.value for c in peers)
+    high = max(c.index.value for c in peers)
+    if mine.index.value >= high:
+        where = f"{article} más productiv{ending}"
+    elif mine.index.value <= low:
+        where = f"{article} menos productiv{ending}"
     else:
         where = (f"{article} númer{ending} {fmt_int(mine.rank)} contando "
-                 f"desde {article} más atrasad{ending}")
+                 f"desde {article} menos productiv{ending}")
     line = (f"{where} de {fmt_int(len(peers))} {noun}, que van de "
-            f"{fmt_percent(low)} a {fmt_percent(high)}")
+            f"{_idx(low)} a {_idx(high)} (misión = 100)")
     silent = len(_model.siblings) - len(peers)
     if silent:
         line += f" · {fmt_int(silent)} sin lectura"
@@ -472,13 +494,12 @@ def _nightly_rows(rows) -> str:
 
 render_section_label(
     "Indicadores Clave", right=_model.subtitle,
-    info=("Los siete, siempre, en cada nivel. La barra se llena contra la meta "
-          "que las compañías se pusieron en el formulario de la semana "
-          "anterior; la marca violeta es la meta del traslado que fija el "
-          "liderazgo. El porcentaje reduce ambos lados a un promedio por área "
-          "que informó antes de dividir — 39 áreas fijaron las metas de la "
-          "semana que terminó el 20 de septiembre y 27 entregaron resultados, "
-          "así que sumar y dividir daría un número sin sentido. "
+    info=("Los siete, siempre, en cada nivel. La barra y su color van contra "
+          "la meta de traslado del liderazgo, sobre las mismas semanas y "
+          "áreas que informaron, así que real y meta cuentan lo mismo. La "
+          "marca violeta es el compromiso: la meta que las compañerías se "
+          "pusieron, que se muestra y nunca da color. Los bautismos del "
+          "formulario no llevan color: la meta de bautismos es la anual. "
           + _comparison_note()),
 )
 
@@ -506,20 +527,18 @@ if _model.ladder:
     _head = ", ".join(_above[:-1])
     render_section_label(
         "Contra " + (f"{_head} y {_above[-1]}" if _head else _above[-1]),
-        right="cada celda por área activa",
-        info=("Un porcentaje no dice nada por sí solo: un 73% es bueno si la "
-              "zona va en 60 y malo si va en 85. Estas filas son la misma "
-              "medida en cada escala a la que se puede leer — por ÁREA "
-              "ACTIVA, la única base en la que dos unidades de distinto "
-              "tamaño se pueden comparar. Una unidad que no informó no tiene "
-              "lectura y no tiene diferencia: restarle su propio silencio "
-              "sería hablar del formulario, no del trabajo."),
+        right="productividad · misión = 100",
+        info=("El índice de productividad en cada escala: lo que produce cada "
+              "compañería por semana contra la misión, que es 100, con más "
+              "peso en lo más cercano al bautismo. No depende de ninguna meta, "
+              "así que una unidad que se pone metas bajas no sube por eso. Un "
+              "área que no informó cuenta como cero."),
     )
     st.markdown(_ladder_rows(), unsafe_allow_html=True)
     _gaps = _gap_rows()
     if _gaps:
         st.caption(f"Dónde está la diferencia con "
-                   f"{_model.ladder[1].scope.name}, en puntos porcentuales")
+                   f"{_model.ladder[1].scope.name}, en puntos del índice")
         st.markdown(_gaps, unsafe_allow_html=True)
     _beside = _sibling_line()
     if _beside:
@@ -577,15 +596,31 @@ _child_label = {"mission": "Zonas", "zone": "Distritos",
 
 if _model.children and _child_label:
     render_section_label(
-        _child_label, right="de la más débil a la más fuerte",
-        info=("Ordenadas por el promedio de sus siete indicadores contra las "
-              "metas de sus compañías, medido POR ÁREA ACTIVA — una unidad "
-              "donde la mitad de las áreas no informó baja en la tabla, a "
-              "propósito. No se corta la lista: aparecen todas. Una unidad sin "
-              "nada medido queda al final, no al principio: no es la más "
-              "débil, es la que no sabemos."),
+        _child_label, right="menos productiva primero · misión = 100",
+        info=("Ordenadas por su índice de productividad: lo que produce cada "
+              "compañería por semana contra la misión (100), sin ninguna meta. "
+              "Cada celda es un indicador del índice en la misma escala. No "
+              "se corta la lista. Una unidad sin nada medido queda al final: "
+              "no es la menos productiva, es la que no sabemos."),
     )
     st.markdown(_ranked_units(_model.children), unsafe_allow_html=True)
+    render_section_label(
+        "Quién informó", right="menos informes primero",
+        info=("Lo que antes iba escondido dentro del promedio: informes "
+              "semanales entregados contra los posibles, y qué áreas no "
+              "entregaron ninguno en todo el período."),
+    )
+    st.markdown(ranked_list([{
+        "name": c.name, "rank": i,
+        "sub": ("sin informe en todo el período: " + ", ".join(c.areas_silent)
+                if c.areas_silent else "todas sus áreas informaron"),
+        "value": (c.coverage.reporting_rate or 0) * 100,
+        "status": ("good" if (c.coverage.reporting_rate or 0) >= .9 else
+                   "warn" if (c.coverage.reporting_rate or 0) >= .6 else
+                   "bad"),
+    } for i, c in enumerate(_model.reporting_ranked, start=1)],
+        bar_max=100, value_fmt=lambda v: fmt_percent(v)),
+        unsafe_allow_html=True)
 
 
 # ── 3b · Su fortaleza · Para crecer ──────────────────────────────────────────
@@ -610,7 +645,7 @@ if _model.strengths or _model.growth:
 if _model.areas_ranked:
     render_section_label(
         "Todas las áreas", right=f"{fmt_int(len(_model.areas_ranked))} áreas",
-        info=("Cada área de la unidad, de la más débil a la más fuerte. Sin "
+        info=("Cada área de la unidad, de la menos productiva a la más. Sin "
               "cortes: aparecen todas, aunque en la misión sean cuarenta y "
               "cinco — por eso van detrás de un cajón y no en la página."),
     )

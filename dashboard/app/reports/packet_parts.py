@@ -945,7 +945,7 @@ STRIP_HEIGHT = 44.0
 
 def strip_plot(width: float, points, *, highlight: str = "",
                axis_max: float = 100.0, value_fmt=None,
-               caption: str = "") -> Drawing:
+               caption: str = "", ticks=None) -> Drawing:
     """Every peer as a dot on one axis, with this unit's dot named.
 
     The packet's only picture of a DISTRIBUTION, and the thing neither a bar
@@ -967,12 +967,17 @@ def strip_plot(width: float, points, *, highlight: str = "",
 
     axis_y = STRIP_HEIGHT - 26
     d.add(Line(0, axis_y, width, axis_y, strokeColor=RULE, strokeWidth=0.5))
-    for tick in (0, 25, 50, 75, 100):
+    # ``ticks`` as ``[(value, label)]``; the default is the percentage scale.
+    # The productivity index passes its own (0, 50, 100 = misión, ...), and a
+    # percent sign under an index would print a scale it is not on.
+    ticks = ticks or [(t, f"{t}%") for t in (0, 25, 50, 75, 100)]
+    last = ticks[-1][0]
+    for tick, label in ticks:
         x = width * min(1.0, tick / axis_max)
         d.add(Line(x, axis_y - 2.5, x, axis_y + 2.5, strokeColor=RULE_SOFT,
                    strokeWidth=0.5))
-        d.add(_string(x, axis_y - 11, f"{tick}%", NOTE, INK_3,
-                      anchor="middle" if 0 < tick < 100
+        d.add(_string(x, axis_y - 11, label, NOTE, INK_3,
+                      anchor="middle" if 0 < tick < last
                       else ("start" if tick == 0 else "end")))
 
     mine = None
@@ -1028,6 +1033,9 @@ class RankedSpec:
     bar_width: float = 46.0
     cell_width: float = 44.0
     sub: bool = True
+    #: False for a table that ranks without grading — the productivity index
+    #: (decision 45) has no goal, so a coloured dot would claim a verdict.
+    dots: bool = True
 
     @property
     def name_width(self) -> float:
@@ -1055,6 +1063,7 @@ class RankedSpec:
 def ranked_row(spec: RankedSpec, *, rank=None, name: str = "", sub: str = "",
                status: str | None = None, cells=(), value: str = "",
                bar: float | None = None, bar_max: float | None = None,
+               mark: float | None = None,
                header: bool = False, rule: bool = True) -> Drawing:
     """rank · dot · name · sub-line · measures · bar · value, as one Drawing.
 
@@ -1095,7 +1104,8 @@ def ranked_row(spec: RankedSpec, *, rank=None, name: str = "", sub: str = "",
     if rank is not None:
         d.add(_string(spec.rank_width - 5, base, str(rank), NOTE, INK_3,
                       anchor="end"))
-    d.add(dot(spec.rank_width + 4, base + 2.2, status))
+    if spec.dots:
+        d.add(dot(spec.rank_width + 4, base + 2.2, status))
     d.add(_string(spec.name_x, base, fit(name, CELL, spec.name_width), CELL,
                   INK))
     if sub:
@@ -1112,8 +1122,16 @@ def ranked_row(spec: RankedSpec, *, rank=None, name: str = "", sub: str = "",
                    rx=1, ry=1))
         if w > 0:
             d.add(Rect(spec.bar_x, base + 0.5, w, 5.0,
-                       fillColor=status_color(status), strokeColor=None,
-                       strokeWidth=0, rx=1, ry=1))
+                       fillColor=(status_color(status) if spec.dots
+                                  else SERIES[0]),
+                       strokeColor=None, strokeWidth=0, rx=1, ry=1))
+        if mark is not None:
+            # The reference a bar is read against — the mission's 100 on an
+            # index table — as a short dark tick through the track.
+            x = spec.bar_x + max(0.0, min(1.0, mark / float(full or 1.0))) * (
+                spec.bar_width - 8)
+            d.add(Line(x, base - 1.0, x, base + 7.0, strokeColor=INK,
+                       strokeWidth=0.8))
     if value:
         d.add(_string(spec.value_x, base, value, CELL, INK, anchor="end"))
     if rule:
@@ -1412,6 +1430,9 @@ class MetricLine:
     verdict: str = ""
     change: tuple | None = None
     note: str = ""
+    #: The companionships' own *compromiso* (decision 44): a seventh column,
+    #: printed and never coloured. Empty on tables that have no such column.
+    own: str = ""
 
 
 #: The metric table's columns at content width. The bar gets the most room of
@@ -1422,6 +1443,11 @@ class MetricLine:
 #: points come off the bar, which is the one column whose width is a scale and
 #: not a string.
 METRIC_COLUMNS = (150.0, 44.0, 44.0, 116.0, 96.0, 70.0)
+
+#: The Key Indicator table since decision 44: leadership's goal in META, the
+#: companionships' own in COMPROMISO (56pt: the tracked head sets at 50), the
+#: bar and the verdict against leadership's. Same 520pt.
+KI_COLUMNS = (126.0, 40.0, 42.0, 56.0, 90.0, 96.0, 70.0)
 
 
 def change_chip(width: float, change, *, height: float = 9.0) -> Drawing:
@@ -1457,6 +1483,10 @@ def change_chip(width: float, change, *, height: float = 9.0) -> Drawing:
 #: on one does not fit the column's 89.
 OWN_GOAL_HEAD = "Contra su\npropia meta"
 
+#: The Key Indicator verdict head since decision 44: the grade is against
+#: LEADERSHIP's goal, and "su propia meta" would now be false.
+LEAD_GOAL_HEAD = "Contra la meta\ndel liderazgo"
+
 #: A metric table's cell padding. 3,5pt until the clarity pass: its two-line
 #: heads (A2, A4, B7) made every table about 9pt taller, and on 2026-09-23 that
 #: pushed Catrihuala 2's last nightly row onto a page of its own — 94% blank.
@@ -1479,25 +1509,35 @@ def metric_table(lines, *, widths=METRIC_COLUMNS, headers=None) -> Table:
     st = styles()
     headers = headers or ("Métrica", "Real", "Meta", "", OWN_GOAL_HEAD,
                           "Cambio")
-    bar_width = widths[3] - 8
+    # Seven columns when the widths ask for them: the compromiso sits between
+    # the goal and the bar (decision 44).
+    own = len(widths) == 7
+    bar = 4 if own else 3
+    bar_width = widths[bar] - 8
     rows = []
     for line in lines:
         name = Paragraph(text(line.label), st["cell_bold"])
         if line.note:
             name = [name, Paragraph(text(line.note), st["note"])]
-        rows.append([
+        row = [
             name,
             Paragraph(text(line.value), st["cell_right"]),
             Paragraph(text(line.goal), st["cell_right"]),
+        ]
+        if own:
+            row.append(Paragraph(text(line.own), st["cell_right"]))
+        row += [
             bar_vs_goal(bar_width, pct=line.pct, status=line.status,
                         mark_pct=line.mark_pct, track_color=RULE_SOFT,
                         fill=SERIES[0] if line.magnitude else None),
             Paragraph(text(line.verdict), st["cell"]),
             line.spark if line.spark is not None
-            else change_chip(widths[5] - 8, line.change),
-        ])
-    return table(rows, widths, headers=headers, pad=METRIC_PAD,
-                 align=["l", "r", "r", "l", "l", "l"])
+            else change_chip(widths[-1] - 8, line.change),
+        ]
+        rows.append(row)
+    align = (["l", "r", "r", "r", "l", "l", "l"] if own
+             else ["l", "r", "r", "l", "l", "l"])
+    return table(rows, widths, headers=headers, pad=METRIC_PAD, align=align)
 
 
 #: Above this many complete weeks the value columns stop fitting and the strip
@@ -1522,8 +1562,8 @@ def area_metric_table(lines, *, widths=AREA_COLUMNS) -> Table:
     carries the drawing; the change chip takes the column when there is none.
     """
     return metric_table(lines, widths=widths,
-                        headers=("Métrica", "Real", "Meta", "",
-                                 OWN_GOAL_HEAD, "Semana a semana"))
+                        headers=("Métrica", "Real", ("Meta", "liderazgo"), "",
+                                 LEAD_GOAL_HEAD, "Semana a semana"))
 
 
 def companionship_line(names, *, width: float = CONTENT_WIDTH) -> Drawing:

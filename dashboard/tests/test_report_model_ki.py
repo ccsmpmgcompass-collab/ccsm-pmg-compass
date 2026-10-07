@@ -175,15 +175,50 @@ def test_the_two_bases_agree_when_every_area_reported_every_week(data, period):
 
 # ── The goal, and the population it rests on ─────────────────────────────────
 
-def test_attainment_reduces_both_sides_before_dividing(data, period):
+def test_the_compromiso_reduces_both_sides_before_dividing(data, period):
     """180 of goal over nine area-weeks is 20 per area-week; 80 of result over
-    five is 16. 80%, not the 44% the two raw sums would have given."""
+    five is 16. 80%, not the 44% the two raw sums would have given. Since
+    decision 44 this is the uncoloured compromiso, not the grade."""
     row = _report(data, period).ki(NEW)
     assert row.meta == 180
     assert row.meta_area_weeks == 9
     assert row.meta_per_area_week == pytest.approx(20)
-    assert row.grade.pct == pytest.approx(80)
-    assert row.grade.status == "warn"
+    assert row.own_pct == pytest.approx(80)
+
+
+def test_the_grade_is_against_leadership_on_the_area_weeks_that_reported(
+        data, period):
+    """Decision 44 on rule 1. Every area's 2026-6 goal is 30 new people over a
+    six-week cycle — 5 per area-week. Five area-weeks reported, so the goal is
+    25 against 80 done: 320%, al ritmo. The companionships' own 80% does not
+    colour it."""
+    row = _report(data, period).ki(NEW)
+    assert row.lead_area_weeks == 5
+    assert row.lead_goal == pytest.approx(25)
+    assert row.lead_actual == pytest.approx(80)
+    assert row.grade.pct == pytest.approx(320)
+    assert row.grade.status == "good"
+
+
+def test_an_area_week_with_no_leadership_goal_leaves_both_sides():
+    """B1 has no 2026-6 goal: its 30 leave the actual AND its weeks leave the
+    goal, so the percentage never mixes two populations."""
+    d = _data(transfer_goals=GOALS[~((GOALS["area"] == "B1")
+                                     & (GOALS["transfer_start"] == "2026-09-07"))])
+    row = _report(d, P.resolve(P.THIS_TRANSFER, TODAY, d.cycles)).ki(NEW)
+    assert row.lead_area_weeks == 4
+    assert row.lead_actual == pytest.approx(50)
+    assert row.lead_goal == pytest.approx(20)
+    assert row.grade.pct == pytest.approx(250)
+
+
+def test_too_few_area_weeks_with_a_goal_is_no_grade_at_all():
+    """Under half the reports carrying a goal, the row is "sin meta del
+    liderazgo" rather than graded on a sliver (decisions 23, 44)."""
+    d = _data(transfer_goals=GOALS[GOALS["area"] == "A3"])
+    row = _report(d, P.resolve(P.THIS_TRANSFER, TODAY, d.cycles)).ki(NEW)
+    assert row.lead_goal is None and row.grade.pct is None
+    assert row.grade.status is None
 
 
 def test_the_divisor_is_who_filed_the_form_not_who_filled_that_box(data, period):
@@ -209,29 +244,15 @@ def test_a_goal_nobody_set_reads_zero_rather_than_missing(data, period):
 
 # ── Decision 22: the flag is the mission's verdict, handed down ──────────────
 
-def test_an_unusable_goal_is_judged_at_mission_scope_but_sticks_only_where_true():
-    """The mission reaches a fifth of the lessons goal, which is not a
-    yardstick, so the mission's row is flagged rather than scored. A1 reaches
-    half of it — an ordinary percentage of a goal it can be measured against —
-    so A1 is graded, not told its goal needs revising (AUDIT-2026-10-06 H1;
-    until then the mission's verdict was pasted onto every unit)."""
-    data = _data()
-    period = P.resolve(P.THIS_TRANSFER, TODAY, data.cycles)
-    assert data.ki_goal_flags(period)[LESSONS] == "goal_too_high"
-
-    mission = _report(data, period).ki(LESSONS)
-    assert mission.grade.status is None
-    assert mission.grade.flag_label.startswith("meta no utilizable")
-
-    area = _report(data, period, S.AREA, area="A1").ki(LESSONS)
-    assert area.grade.pct == pytest.approx(50)
-    assert area.grade.flag is None
-    assert area.grade.status == "bad"
-
-
-def test_a_usable_goal_is_not_flagged_anywhere(data, period):
-    assert data.ki_goal_flags(period)[NEW] is None
-    assert _report(data, period, S.AREA, area="A1").ki(NEW).grade.flag is None
+def test_the_key_indicator_flag_is_retired(data, period):
+    """PLAN-2026-10-06 1.2. The companionships' lessons goal is a fifth of
+    what the mission did, which used to flag the row "meta no utilizable".
+    Leadership's goal is the yardstick now, so the row is simply graded; the
+    flag lives on for the nightly goals only."""
+    for level, where in ((None, {}), (S.AREA, {"area": "A1"})):
+        row = _report(data, period, level, **where).ki(LESSONS)
+        assert row.grade.flag is None
+        assert row.grade.status is not None
 
 
 # ── Decision 11 and 23: the leadership mark ─────────────────────────────────

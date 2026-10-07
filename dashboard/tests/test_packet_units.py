@@ -154,15 +154,16 @@ def test_a_unit_at_the_top_prints_no_comparison(peers):
 
 
 def test_every_rung_of_the_ladder_is_measured_the_same_way(district, peers):
-    """Each row is that unit's mean Key Indicator attainment per ACTIVE area.
-    Three rows on three different bases would be three numbers that cannot be
-    compared, printed in a table whose whole purpose is comparison."""
-    for unit in (district, peers["zone:Norte"], peers["mission"]):
-        by_hand = [r.attainment_per_active_area for r in unit.key_indicators
-                   if r.attainment_per_active_area is not None
-                   and not r.grade.flag]
-        assert unit.mean_attainment == pytest.approx(
-            sum(by_hand) / len(by_hand))
+    """Each rung is that unit's productivity index (decision 45) against the
+    same mission. Three rows on three different bases would be three numbers
+    that cannot be compared, in a table whose whole purpose is comparison."""
+    mission = peers["mission"]
+    for rung in district.ladder:
+        unit = peers[rung.scope.key] if rung.scope.key in peers else district
+        assert rung.index.value == pytest.approx(
+            M.productivity(unit.key_indicators,
+                           mission.key_indicators).value)
+    assert district.ladder[-1].index.value == pytest.approx(100)
 
 
 def test_a_units_rung_and_its_row_in_its_parents_table_agree(district, peers):
@@ -171,17 +172,18 @@ def test_a_units_rung_and_its_row_in_its_parents_table_agree(district, peers):
     ways, three pages apart."""
     row = next(c for c in peers["zone:Norte"].children
                if c.scope.key == district.scope.key)
-    assert row.mean_attainment == pytest.approx(district.mean_attainment)
+    assert row.index.value == pytest.approx(district.index.value)
 
 
-def test_a_flagged_goal_is_left_out_of_the_mean(district):
-    """It would drag the unit's headline for the goal's sake, not the work's."""
-    rows = list(district.key_indicators)
+def test_no_goal_moves_the_index(district, peers):
+    """Decision 45: the ranking cannot be bought with a low goal. Change every
+    goal and grade on the rows and the index does not move."""
     from app.reports import grading as G
-    rows[0] = replace(rows[0], grade=G.Grade(pct=2.0, flag=G.GOAL_TOO_HIGH))
-    with_flag = replace(district, key_indicators=tuple(rows)).mean_attainment
-    assert with_flag == pytest.approx(replace(
-        district, key_indicators=tuple(rows[1:])).mean_attainment)
+    mission = peers["mission"]
+    rows = [replace(r, meta=1.0, grade=G.Grade(pct=999.0, status="good"))
+            for r in district.key_indicators]
+    assert M.productivity(rows, mission.key_indicators).value == \
+        pytest.approx(district.index.value)
 
 
 # ── A ranked table and what it refuses to claim ───────────────────────────────
@@ -190,11 +192,11 @@ def test_a_unit_nobody_reported_keeps_its_place_and_loses_its_number(zone):
     """It is not the third-best district; it is a district nobody can rank."""
     spec = PP.RankedSpec(width=520.0, cells=PK._child_cells(zone))
     rows = PK.ranked_unit_rows(zone.children, zone, spec)
-    silent = [c for c in zone.children if c.mean_attainment is None]
+    silent = [c for c in zone.children if c.index.value is None]
     assert silent, "the fixture's D2 should have reported nothing"
     said = [list(_strings(row)) for row in rows[1:]]
     for child, texts in zip(zone.children, said):
-        if child.mean_attainment is None:
+        if child.index.value is None:
             assert str(child.rank) not in texts
             assert any("sin informes" in t for t in texts)
         else:

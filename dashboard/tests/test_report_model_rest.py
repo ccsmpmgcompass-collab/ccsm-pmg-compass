@@ -301,16 +301,17 @@ def test_the_rates_stop_at_zone_level(data, period):
 # ── Decisions 14, 15, 16: the children ───────────────────────────────────────
 
 def test_children_are_ranked_weakest_first_and_none_is_cut(data, period):
-    """Decision 15 — every child, no top-N, weakest first.
+    """Decisions 15 and 45 — every child, no top-N, least productive first.
 
-    Sur is last on the basis that matters. One of its two areas filed, in one
-    of two weeks, and did 30 — which per REPORTING area-week is 150% of goal
-    and would put Sur top. Per ACTIVE area-week it is 37.5%, against Norte's
-    41.7%, and that is the zone."""
+    Sur is first on the basis that matters. One of its two areas filed, in one
+    of two weeks, and did 30 — per REPORTING area-week the most in the
+    mission. Per ACTIVE area-week it is 7,5 against the mission's 8 (index
+    94), and Norte's 50 over six is 8,33 (104)."""
     kids = _report(data, period).children
     assert [c.name for c in kids] == ["Sur", "Norte"]
     assert [c.rank for c in kids] == [1, 2]
-    assert kids[0].mean_attainment == pytest.approx(37.5)
+    assert kids[0].index.value == pytest.approx(7.5 / 8 * 100)
+    assert kids[1].index.value == pytest.approx(50 / 6 / 8 * 100)
 
 
 def test_a_child_with_nothing_measured_sorts_last_not_first(data, period):
@@ -321,7 +322,7 @@ def test_a_child_with_nothing_measured_sorts_last_not_first(data, period):
     assert [c.name for c in kids] == ["D3"]
     empty = _report(data, period, S.DISTRICT, zone="Sur", district="D3").children
     assert [c.name for c in empty] == ["B1", "B2"]
-    assert empty[-1].mean_attainment is None      # B2 filed nothing
+    assert empty[-1].index.value is None          # B2 filed nothing
 
 
 def test_each_child_names_its_own_silent_areas(data, period):
@@ -335,14 +336,14 @@ def test_every_area_is_ranked_under_the_mission_and_under_a_zone(data, period):
     """§3.2's Z3 and the drawer the mission page keeps 45 areas behind. Same
     ranking rule as the children — weakest first, unmeasured last.
 
-    Per active area-week against a goal of 20: A3 8/2 = 20%, A2 20/2 = 50%,
-    A1 22/2 = 55%, B1 30/2 = 75%. B1 filed once and did the most that week, and
-    it still ranks above A1, which filed twice — one area IS its own active
-    count, so the two bases coincide and nothing is being flattered here.
+    Per active area-week against the mission's 8: A3 8/2 = 50, A2 20/2 =
+    125, A1 22/2 = 138, B1 30/2 = 188. B1 filed once and did the most that
+    week, and it still ranks above A1, which filed twice — one area IS its own
+    active count, so the two bases coincide and nothing is being flattered.
     """
     mission = _report(data, period)
     assert [c.name for c in mission.areas_ranked] == ["A3", "A2", "A1", "B1", "B2"]
-    assert mission.areas_ranked[-1].mean_attainment is None    # B2 filed nothing
+    assert mission.areas_ranked[-1].index.value is None    # B2 filed nothing
 
     norte = _report(data, period, S.ZONE, zone="Norte")
     assert [c.name for c in norte.areas_ranked] == ["A3", "A2", "A1"]
@@ -352,7 +353,7 @@ def test_a_district_does_not_list_its_areas_twice(data, period):
     """At district level the areas ARE the children, and the same list under
     two headings is noise."""
     d = _report(data, period, S.DISTRICT, zone="Norte", district="D1")
-    assert [c.name for c in d.children] == ["A2", "A1"]      # 50% then 55%
+    assert [c.name for c in d.children] == ["A2", "A1"]      # 125 then 138
     assert d.areas_ranked == ()
 
 

@@ -70,6 +70,15 @@ SCORES = pd.DataFrame([
 ])
 
 
+#: Leadership's 2026-6 goals (decision 44): per area-week 20 new people, 8
+#: friends at sacrament and one baptism. Three area-weeks reported, so the
+#: grade is 60 of 60 new people (100%), 12 of 24 friends (50%) and one of
+#: three baptisms (33%, never coloured — decision 46).
+LEAD_GOALS = pd.DataFrame([
+    {"area": a, "transfer_start": "2026-09-07", NEW: 120, SACR: 48, BAUT: 6}
+    for a in ("A1", "A2", "B1")])
+
+
 def _ki_goals(week, areas=None):
     """Three areas filed the source form; the goals are round numbers."""
     return ({NEW: 90.0, SACR: 30.0, BAUT: 3.0},
@@ -87,7 +96,7 @@ def _data(**over) -> M.ReportData:
                       "contacts_attempted": "Intentos de Contacto",
                       "roleplays": "Prácticas de Enseñanza"},
               mission_name="Misión de Prueba", today=TODAY, anchor=W2,
-              ki_goals_fn=_ki_goals)
+              transfer_goals=LEAD_GOALS, ki_goals_fn=_ki_goals)
     kw.update(over)
     return M.ReportData(**kw)
 
@@ -118,23 +127,40 @@ def test_the_bar_fills_against_the_companionships_own_goal(mission):
     assert line.pct == pytest.approx(row.grade.pct)
 
 
-def test_the_violet_mark_is_the_leadership_goal_on_the_same_scale(mission):
-    """A mark drawn against a different denominator from the bar beside it is
-    two numbers pretending to be comparable."""
-    row = _row(mission, NEW)
-    marked = replace(row, leadership_goal=45.0, leadership_goal_complete=True)
-    model = replace(mission, key_indicators=(marked,))
-    line = PK.ki_lines(model, comparable=False)[0]
-    assert line.mark_pct == pytest.approx(45.0 / row.meta * 100)
+def test_the_grade_is_leadership_s_and_the_compromiso_is_its_own_column(
+        mission):
+    """Decision 44: META is leadership's goal over the area-weeks that
+    reported, and the companionships' own summed goal is the uncoloured
+    COMPROMISO beside it — no violet mark on the bar any more."""
+    rows = {l.label: l for l in PK.ki_lines(mission, comparable=False)}
+    new, sacr = rows["Nuevas Personas"], rows["Amigos en Sacramental"]
+    assert (new.value, new.goal, new.pct) == ("60", "60", pytest.approx(100))
+    assert new.status == "good"
+    assert (sacr.goal, sacr.pct, sacr.status) == ("24", pytest.approx(50),
+                                                  "bad")
+    assert new.own == "180"                  # 90 a week, two weeks
+    assert new.mark_pct is None
 
 
-def test_a_unit_with_no_transfer_goal_says_so_instead_of_drawing_a_mark(mission):
-    """Decision 23 — 44 of 45 areas have no 2026-5 goal, and a bar marked with
-    a goal nobody set would be a fabricated figure wearing the unit's name."""
+def test_the_form_s_baptisms_carry_a_percentage_and_no_colour(mission):
+    """Decision 46: 527 is the baptism target, so leadership's transfer goal
+    is shown and never colours the row."""
     line = next(l for l in PK.ki_lines(mission, comparable=False)
+                if l.label == "Bautizados y Confirmados")
+    assert line.pct == pytest.approx(100 / 3)
+    assert line.status is None
+    assert "meta anual" in line.note
+
+
+def test_a_unit_with_no_transfer_goal_says_so_and_is_not_graded():
+    """Decision 23 — 44 of 45 areas had no 2026-5 goal, and a grade against a
+    goal nobody set would be a fabricated figure wearing the unit's name."""
+    bare = M.build_all(data=_data(transfer_goals=pd.DataFrame()))[0]
+    line = next(l for l in PK.ki_lines(bare, comparable=False)
                 if l.label == "Nuevas Personas")
-    assert line.mark_pct is None
-    assert "sin meta de traslado" in line.note
+    assert line.pct is None and line.status is None
+    assert line.goal == "—"
+    assert "sin meta del liderazgo" in line.note
 
 
 def test_a_flagged_goal_prints_the_flag_instead_of_a_grade(mission):
@@ -451,7 +477,8 @@ def test_the_graded_note_never_says_nothing_compares():
 
 def test_under_a_ladder_it_names_the_exception():
     assert PK.graded_note(compared=True).endswith(
-        "La sección de arriba es la única que la compara con otra.")
+        "La sección de arriba la compara con otras por productividad, sin "
+        "ninguna meta: la misión es 100.")
     assert "sección de arriba" not in PK.graded_note(compared=False)
 
 
@@ -478,12 +505,13 @@ def test_the_nightly_heads_say_what_each_figure_is_measured_in(mission):
     assert meta[0].label == "Meta" and "área/sem" in meta[1].text
 
 
-def test_the_key_indicator_heads_are_left_as_they_were(mission):
-    """Both of its figures ARE period totals — only the nightly table needed
-    its own heads."""
+def test_the_key_indicator_heads_name_whose_goal_each_column_is(mission):
+    """Decision 44: META is leadership's, COMPROMISO the companionships'."""
     heads = _heads(PK.key_indicator_page(mission, weekly_ok=True,
                                          weekly_sure=True))
-    assert heads[1].label == "Real" and heads[2].label == "Meta"
+    assert heads[1].label == "Real"
+    assert heads[2][0].label == "Meta" and "liderazgo" in heads[2][1].text
+    assert heads[3].label == "Compromiso"
 
 
 def test_the_unit_lines_fit_their_columns():

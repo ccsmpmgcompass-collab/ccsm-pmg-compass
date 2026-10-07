@@ -130,20 +130,19 @@ def test_the_first_rung_is_the_unit_itself(data, period):
 
 # ── The numbers on it ────────────────────────────────────────────────────────
 
-def test_every_rung_reads_per_active_area(data, period):
-    """Rule 2: the cross-unit basis, divided by every roster area-week and not
-    only the ones that filed.
+def test_every_rung_is_the_productivity_index_per_active_area(data, period):
+    """Decision 45 on rule 2's cross-unit basis: output per ROSTER area-week,
+    against the mission's. This fixture's only index member is new people.
 
-    D1's four area-weeks all filed and all hit the goal — 100%. Norte's 90 new
-    people spread over six active area-weeks is 15 a week against 20 (75%),
-    and its 16 friends over six is 2,67 against 4 (67%). The mission's 95 over
-    eight is 11,875 (59%) and its 16 over eight is 2 (50%).
+    D1: 80 over four active area-weeks is 20. Norte: 90 over six is 15. The
+    mission: 95 over eight is 11,875 — so D1 reads 168, Norte 126, and the
+    mission 100 by construction.
     """
     m = _report(data, period, S.DISTRICT, zone="Norte", district="D1")
     own, zone, mission = m.ladder
-    assert own.mean_attainment == pytest.approx(100.0)
-    assert zone.mean_attainment == pytest.approx((75 + 100 * (16 / 6) / 4) / 2)
-    assert mission.mean_attainment == pytest.approx((59.375 + 50) / 2)
+    assert own.index.value == pytest.approx(20 / 11.875 * 100)
+    assert zone.index.value == pytest.approx(15 / 11.875 * 100)
+    assert mission.index.value == pytest.approx(100.0)
 
 
 def test_the_units_own_rung_repeats_its_own_key_indicators(data, period):
@@ -160,7 +159,7 @@ def test_the_delta_is_this_unit_minus_the_rung(data, period):
     own, mission = m.ladder
     assert own.delta is None
     assert mission.delta == pytest.approx(
-        own.mean_attainment - mission.mean_attainment)
+        own.index.value - mission.index.value)
     assert mission.delta > 0          # Norte files; Sur does not
 
 
@@ -178,31 +177,29 @@ def test_a_unit_that_filed_nothing_has_no_gap_to_report(data, period):
     quiet = _data(weekly_ki=WEEKLY_KI[WEEKLY_KI["_area"] != "B1"])
     m = _report(quiet, P.resolve(P.THIS_TRANSFER, TODAY, quiet.cycles),
                 S.ZONE, zone="Sur")
-    assert m.ladder[0].mean_attainment is None
+    assert m.ladder[0].index.value is None
     assert m.ladder[1].delta is None
 
 
-def test_there_is_one_delta_per_key_indicator_in_order(data, period):
-    """`deltas` lines up with the rung's own metrics, so a renderer can print
-    a gap beside each indicator without doing arithmetic of its own."""
+def test_there_is_one_delta_per_index_member_in_order(data, period):
+    """`deltas` lines up with the rung's index members, so a renderer can
+    print a gap beside each without doing arithmetic of its own."""
     m = _report(data, period, S.DISTRICT, zone="Norte", district="D1")
     zone = m.ladder[1]
-    assert len(zone.deltas) == len(zone.metrics) == 2
-    for delta, row in zip(zone.deltas, zone.metrics):
-        own = m.ki(row.key)
-        assert delta == pytest.approx(own.attainment_per_active_area
-                                      - row.attainment_per_active_area)
+    assert len(zone.deltas) == len(zone.index.members) == 1
+    for delta, (key, ratio) in zip(zone.deltas, zone.index.members):
+        assert delta == pytest.approx(m.index.ratio(key) - ratio)
     assert m.ladder[0].deltas == ()
 
 
-def test_an_indicator_nobody_can_grade_gets_no_delta(data, period):
-    """A missing percentage is not a zero: subtracting from None would invent
-    a gap out of a goal that was never set."""
+def test_the_index_needs_no_goal_at_all(data, period):
+    """Decision 45: a unit whose companionships set no goals still has a
+    productivity, and still has a gap to the unit above it."""
     d = _data(ki_goals_fn=lambda week, areas=None: ({}, {}, date(2026, 9, 6), 0))
     m = _report(d, P.resolve(P.THIS_TRANSFER, TODAY, d.cycles),
                 S.ZONE, zone="Norte")
-    assert all(x is None for x in m.ladder[1].deltas)
-    assert m.ladder[1].delta is None
+    assert m.ladder[1].delta is not None
+    assert all(x is not None for x in m.ladder[1].deltas)
 
 
 # ── Sideways: the units beside this one ──────────────────────────────────────
@@ -238,7 +235,7 @@ def test_a_sibling_carries_the_same_figure_as_its_own_page(data, period):
     zone = _report(data, period, S.ZONE, zone="Norte")
     for child in zone.siblings:
         own = _report(data, period, S.ZONE, zone=child.name)
-        assert child.mean_attainment == own.mean_attainment
+        assert child.index.value == own.index.value
 
 
 # ── What it costs ────────────────────────────────────────────────────────────
@@ -305,9 +302,9 @@ def test_a_scope_is_reduced_once_per_build():
     """`build_all` ranks every zone twice over — once as the mission's child
     and once as its own model — and the memo means the frame is cut once."""
     calls = _ki_calls(_data())
-    # The mission alone is asked twice: `ki_goal_flags` grades the goals at
-    # mission scope, against no comparison, before any unit is built.
-    assert calls.count("mission") == 2
+    # Once: since decision 45 retired the Key Indicator flag, nothing asks
+    # for the mission against no comparison any more.
+    assert calls.count("mission") == 1
     assert calls.count("zone:Norte") == 1
     assert calls.count("district:Norte/D1") == 1
     assert calls.count("area:A1") == 1

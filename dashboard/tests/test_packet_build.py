@@ -223,11 +223,13 @@ def test_the_data_note_names_the_areas_that_reported_nothing(reader):
     assert "no informaron" in note
 
 
-def test_the_data_note_names_the_goals_that_are_not_yardsticks(reader):
-    """CCSM has exactly one such Key Indicator today, and it is a finding for
-    the council rather than a footnote."""
+def test_the_data_note_no_longer_flags_key_indicator_goals(reader):
+    """PLAN-2026-10-06 1.2: leadership's goal is the Key Indicator yardstick,
+    so the companionships' own goal is never "no utilizable" — it is the
+    uncoloured compromiso."""
     note = _pages(reader)[-1]
-    assert "Meta no utilizable: Amigos en Sacramental" in note
+    assert "Meta no utilizable: Amigos en Sacramental" not in note
+    assert "productividad" in note
 
 
 def test_the_data_note_says_why_there_is_no_finding_section(reader):

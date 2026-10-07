@@ -373,9 +373,10 @@ def test_the_grades_are_the_thresholds_the_packet_grades_with():
 
 def test_the_column_glossary_names_the_heads_the_tables_print():
     names = [row[0] for row in PK.COLUMN_GLOSSARY]
-    assert names[:2] == ["Real", "Meta"]
-    assert "Contra su propia meta" in names and "Cambio" in names
-    assert PP.OWN_GOAL_HEAD.replace("\n", " ").lower() == "contra su propia meta"
+    assert names[:3] == ["Real", "Meta", "Compromiso"]
+    assert "Contra la meta del liderazgo" in names and "Cambio" in names
+    assert (PK.LEAD_GOAL_HEAD.replace("\n", " ").lower()
+            == "contra la meta del liderazgo")
 
 
 def _strings_of(flow):

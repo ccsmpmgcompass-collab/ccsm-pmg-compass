@@ -38,7 +38,8 @@ from app.config import es_display
 from app.reports import packet_parts as PP
 from app.reports import periods as P
 from app.reports import scope as S
-from app.reports.model import EFFORT_SCORE
+from app.reports.model import (EFFORT_SCORE, INDEX_WEIGHTS,
+                               UNCOLOURED_KI)
 
 #: How the packet is ordered and what each block of pages is for. The keys are
 #: stable; the titles and audiences are what the print guide prints.
@@ -504,15 +505,20 @@ def how_to_read(mission, sections) -> list:
     rules = []
 
     rules.append((
-        "Contra qué se mide cada porcentaje",
-        f"«Contra su propia meta» es la unidad contra la meta que sus propias "
-        f"compañerías se pusieron en el formulario: {_band_sentence()}. La "
-        f"marca violeta en la barra es otra meta, la de traslado del "
-        f"liderazgo, prorrateada a las semanas del período. «Cambio» compara "
-        f"con otro período y su encabezado dice con cuál; una raya bajo «sin "
-        f"base este período» quiere decir que no hay con qué comparar, no que "
-        f"nada cambió. Las tablas que ponen unidades lado a lado cuentan por "
-        f"área activa: un área que no informó cuenta."))
+        "Contra qué se mide cada porcentaje, y cómo se ordenan las unidades",
+        f"Cada Indicador Clave se colorea contra la meta del liderazgo, la de "
+        f"traslado, sobre las mismas semanas y áreas que informaron: "
+        f"{_band_sentence()}. La columna «Compromiso» es la meta que las "
+        f"compañerías se pusieron; se imprime y nunca da color. Los bautismos "
+        f"del formulario no llevan color: la meta de bautismos es la anual. "
+        f"Las unidades se ordenan por su índice de productividad: lo que "
+        f"produce cada compañería por semana contra la misión, que es 100, "
+        f"con más peso en lo más cercano al bautismo (fechas 3, sacramental y "
+        f"conversos recientes 2, lo demás 1). No depende de ninguna meta, y "
+        f"un área que no informó cuenta como cero. «Cambio» compara con otro "
+        f"período y su encabezado dice con cuál; una raya bajo «sin base este "
+        f"período» quiere decir que no hay con qué comparar, no que nada "
+        f"cambió."))
 
     silent = sorted(mission.areas_silent)
     who = f"Cumplimiento del período: {mission.compliance_label}. "
@@ -602,15 +608,16 @@ COLUMN_GLOSSARY = (
     ("Real", "Lo que las compañerías informaron en el período, sumado. En "
              "el trabajo nocturno, lo que un área hace en una semana de "
              "noches informadas: su encabezado dice «área/sem»."),
-    ("Meta", "La suma de las metas que las compañerías se pusieron. En el "
-             "trabajo nocturno, la meta de un área para una semana, en la "
-             "misma escala que su real."),
-    ("La barra", "Real contra meta. La marca violeta es la meta de traslado "
-                 "del liderazgo, y la línea bajo el nombre dice cuánto es."),
-    ("Contra su propia meta", "El porcentaje de la barra y su calificación. "
-                              "«Meta no utilizable» cuando la meta está tan "
-                              "lejos de lo real que no sirve para medir: la "
-                              "cifra es real, la meta hay que revisarla."),
+    ("Meta", "En los Indicadores Clave, la meta de traslado del liderazgo "
+             "para las semanas y áreas que informaron, así que real y meta "
+             "cuentan lo mismo. En el trabajo nocturno, la meta de un área "
+             "para una semana, en la misma escala que su real."),
+    ("Compromiso", "La suma de las metas que las compañerías se pusieron en "
+                   "el formulario. Se imprime; nunca da color."),
+    ("La barra", "Real contra la meta, con el color de la calificación."),
+    ("Contra la meta del liderazgo", "El porcentaje de la barra y su "
+                                     "calificación. En el trabajo nocturno, "
+                                     "contra la meta del sector, sin color."),
     ("Cambio", "Contra el período que nombra su encabezado, por área que "
                "informó. Con cifras chicas va en unidades («+4»), no en "
                "porcentaje, y el triángulo sólo aparece cuando el movimiento "
@@ -793,37 +800,51 @@ def leadership_note(goal: float, period) -> str:
 
 
 def ki_lines(model, *, comparable: bool, confident: bool = True) -> list:
-    """The seven Key Indicators as printable rows (decision 10).
+    """The seven Key Indicators as printable rows (decisions 10, 44, 46).
 
-    The bar fills against the companionships' own summed meta and the violet
-    mark is leadership's transfer goal on that same scale (decision 11) — the
-    identical statement the KPI card makes on the screen, so the two surfaces
-    cannot disagree about what a bar means.
+    The bar and its colour are against LEADERSHIP's transfer goal, over the
+    area-weeks that reported — so REAL and META count the same thing. The
+    companionships' own goal is the uncoloured COMPROMISO beside it. The
+    form's baptisms show their percentage and never take a colour: the 527
+    annual goal is the baptism target. The screen's card makes the identical
+    statement.
     """
     lines = []
     for row in model.key_indicators:
-        mark = None
         note = ""
-        if row.has_leadership_goal:
-            # The figure as well as the mark. The mark is a position on a bar
-            # scaled to the companionships' own meta, and leadership's goal is
-            # routinely larger than that — pinned to the track's end, four
-            # different goals would all read as "exactly at the line".
-            note = leadership_note(row.leadership_goal, model.period)
-            if row.meta:
-                mark = row.leadership_goal / row.meta * 100
-        elif row.leadership_goal_areas or row.meta:
-            note = (f"sin meta de traslado · "
-                    f"{es_display.integer(row.leadership_goal_areas)} de "
-                    f"{es_display.integer(model.scope.area_count)} áreas")
+        real = row.actual
+        if row.lead_goal is None:
+            note = "sin meta del liderazgo para estas semanas"
+        else:
+            if row.lead_area_weeks < row.actual_area_weeks:
+                # Graded on the reports that have a goal; REAL follows them so
+                # the two columns still count the same area-weeks.
+                real = row.lead_actual
+                note = (f"sobre {es_display.integer(row.lead_area_weeks)} de "
+                        f"{es_display.integer(row.actual_area_weeks)} "
+                        f"informes, los que tienen meta")
+            if row.key in UNCOLOURED_KI:
+                note = "sin color: los bautismos se miden contra la meta anual"
         lines.append(PP.MetricLine(
-            label=row.label, value=_count(row.actual),
-            goal=_count(row.meta) if row.meta else es_display.NA,
-            pct=row.grade.pct, mark_pct=mark, status=row.grade.status,
+            label=row.label, value=_count(real),
+            goal=(es_display.integer(round(row.lead_goal))
+                  if row.lead_goal else es_display.NA),
+            own=_count(row.meta) if row.meta else es_display.NA,
+            pct=row.grade.pct, status=row.grade.status,
             verdict=_verdict(row),
             change=_change(row, comparable=comparable, confident=confident),
             note=note))
     return lines
+
+
+LEAD_GOAL_HEAD = PP.LEAD_GOAL_HEAD
+
+
+def _ki_headers(*, based: bool, against: str = "") -> tuple:
+    """The Key Indicator table's seven heads (decision 44)."""
+    change = _metric_headers(based=based, against=against)[-1]
+    return ("Métrica", "Real", ("Meta", "liderazgo"), "Compromiso", "",
+            LEAD_GOAL_HEAD, change)
 
 
 def nightly_lines(model, goals, *, comparable: bool) -> list:
@@ -881,26 +902,53 @@ def _per_week(value) -> str:
             else es_display.number(value, 1))
 
 
-#: Which three Key Indicators get a column of their own in a ranked table, and
-#: what they are called there. Three, not seven: seven columns at 50pt each
-#: would leave 70pt for a unit's name. The abbreviations are written out rather
-#: than trimmed off the catalogue's labels, because "Amigos en la Reunión
-#: Sacramental" cut to nine characters is "Amigos en", which names nothing.
+#: The cells of a ranked table: every member of the productivity index, in
+#: weight order, each on the index's own scale (mission = 100). Until
+#: 2026-10-06 the table showed three Key Indicators beside a mean of all
+#: seven, so four of the figures driving the ranking were invisible
+#: (AUDIT-2026-10-06 M6). The abbreviations are written out rather than
+#: trimmed off the catalogue's labels: "Amigos en la Reunión Sacramental" cut
+#: to nine characters is "Amigos en", which names nothing.
 CHILD_COLUMNS = (
-    ("ki_new_people_real", "Nuevas"),
+    ("ki_baptismal_date_real", "Fecha"),
     ("ki_friends_sacrament_real", "Sacr."),
-    ("ki_baptized_confirmed_real", "Baut."),
+    ("ki_rc_at_church_real", "CR"),
+    ("ki_member_lessons_real", "Lecc."),
+    ("ki_new_people_real", "Nuevas"),
+    ("ki_friends_first_week_real", "1ª sem"),
 )
+
+#: An index cell is three digits; 40pt holds "250" with room for its head.
+INDEX_CELL_WIDTH = 40.0
 
 
 def _child_keys(model) -> tuple:
-    """The three above, or the unit's own first three if a key is not in use."""
+    """The index's members as `(key, short head)`, or the unit's own keys
+    when a mission's catalogue does not carry them."""
     present = {r.key for r in model.key_indicators}
     chosen = [(k, short) for k, short in CHILD_COLUMNS if k in present]
-    if len(chosen) == len(CHILD_COLUMNS):
+    if chosen:
         return tuple(chosen)
-    return tuple((r.key, PP.fit(r.label, PP.CELL_HEAD, 44))
-                 for r in model.key_indicators[:3])
+    return tuple((r.key, PP.fit(r.label, PP.CELL_HEAD, 34))
+                 for r in model.key_indicators
+                 if r.key not in UNCOLOURED_KI)[:6]
+
+
+def _index_spec(model) -> PP.RankedSpec:
+    """The geometry every index table draws against: no grade dots, because
+    the index has no goal to grade against (decision 45)."""
+    return PP.RankedSpec(width=PP.CONTENT_WIDTH, cells=_child_cells(model),
+                         cell_width=INDEX_CELL_WIDTH, dots=False)
+
+
+def _idx(value) -> str:
+    """An index or a member's ratio, as a whole number — "94", "—"."""
+    return es_display.NA if value is None else es_display.integer(value)
+
+
+#: Where the index bar's track ends. 200 puts the mission's 100 in the middle
+#: of every bar, so a row is read left or right of one line.
+INDEX_BAR_MAX = 200.0
 
 
 def child_rows(model, spec: PP.RankedSpec) -> list:
@@ -926,19 +974,15 @@ def _attainment_status(pct) -> str | None:
 # ── The mission's pages ───────────────────────────────────────────────────────
 
 #: The sentence under every unit's opening grades. Provo's, in intent: it says
-#: what the percentage is AND what it is not, because "74%" beside another
-#: unit's "89%" reads as a league table whether or not one was meant.
-#:
-#: R3.2 (C11): the bands' thresholds went to page 3, once; every page's footer
-#: already names the three colours. What stays here is the one sentence a
-#: leader holding only their own pages cannot read the percentages without.
-GRADED_NOTE = "Cada porcentaje es esta unidad contra su propia meta."
+#: what the percentage is AND what it is not. Since decision 44 the grade is
+#: against leadership's goal; the companionships' own is printed beside it.
+GRADED_NOTE = ("Cada porcentaje es esta unidad contra la meta del liderazgo; "
+               "el compromiso de sus compañerías va al lado, sin color.")
 
-#: What it adds when the page above it DOES compare (finding A3). It used to
-#: end "Nada aquí compara un área, distrito o zona con otra" — true when it was
-#: written, and false from Phase V on, printed directly under the section that
-#: holds a zone against the mission and an area against its district.
-COMPARED_NOTE = " La sección de arriba es la única que la compara con otra."
+#: What it adds when the page above it DOES compare (finding A3), now on the
+#: productivity index rather than on goals (decision 45).
+COMPARED_NOTE = (" La sección de arriba la compara con otras por "
+                 "productividad, sin ninguna meta: la misión es 100.")
 
 
 def graded_note(*, compared: bool) -> str:
@@ -946,8 +990,9 @@ def graded_note(*, compared: bool) -> str:
     the page is the exception."""
     return GRADED_NOTE + (COMPARED_NOTE if compared else "")
 
-BASIS_NOTE = ("La marca violeta es la meta de traslado del liderazgo; la línea "
-              "bajo cada nombre dice cuánto es.")
+BASIS_NOTE = ("Meta: la de traslado del liderazgo para las semanas y áreas "
+              "que informaron. Compromiso: lo que se propusieron las "
+              "compañerías, sin color.")
 
 
 def _heading(model) -> list:
@@ -1152,13 +1197,13 @@ def ladder_rows(model, spec: PP.RankedSpec) -> list:
         return []
     out = [PP.ranked_row(spec, name="unidad", header=True)]
     for rung in model.ladder:
-        by_key = {r.key: r.attainment_per_active_area for r in rung.metrics}
+        sub = rung.role + (" · pocas cifras" if rung.index.thin
+                           and rung.index.value is not None else "")
         out.append(PP.ranked_row(
-            spec, rank=None, name=rung.scope.name, sub=rung.role,
-            status=_attainment_status(rung.mean_attainment),
-            cells=[_pct(by_key.get(key)) for key in keys],
-            value=_pct(rung.mean_attainment), bar=rung.mean_attainment,
-            bar_max=100))
+            spec, rank=None, name=rung.scope.name, sub=sub,
+            cells=[_idx(rung.index.ratio(key)) for key in keys],
+            value=_idx(rung.index.value), bar=rung.index.value,
+            bar_max=INDEX_BAR_MAX, mark=100.0))
     return out
 
 
@@ -1175,7 +1220,9 @@ def gap_rows(model, *, limit: int | None = None,
     parent = next((r for r in model.ladder[1:] if not r.is_self), None)
     if parent is None or not any(v is not None for v in parent.deltas):
         return []
-    rows = [(r.label, d) for r, d in zip(parent.metrics, parent.deltas)]
+    labels = {r.key: r.label for r in parent.metrics}
+    rows = [(labels.get(k, k), d)
+            for (k, _), d in zip(parent.index.members, parent.deltas)]
     if limit is not None:
         # Widest gap first, and an ungraded indicator is not a gap of zero —
         # it goes to the end and falls off the short list rather than
@@ -1198,15 +1245,14 @@ def ladder_block(model) -> list:
     district — and a reader who has read one has read them all.
     """
     st = PP.styles()
-    W = PP.CONTENT_WIDTH
-    spec = PP.RankedSpec(width=W, cells=_child_cells(model))
+    spec = _index_spec(model)
     rows = ladder_rows(model, spec)
     if not rows:
         return []
     above = next((r.scope.name for r in model.ladder[1:] if not r.is_self), "")
     flow = [Spacer(0, 10),
             PP.SectionHead(_ladder_title(model),
-                           "cada celda por área activa")]
+                           "productividad por compañería · misión = 100")]
     flow.extend(rows)
     gaps = gap_rows(model)
     if gaps:
@@ -1218,11 +1264,12 @@ def ladder_block(model) -> list:
         flow.extend(strip)
     flow.append(Spacer(0, 4))
     flow.append(Paragraph(PP.text(
-        f"Abajo, cuánto separa a esta unidad de {above} en cada Indicador "
-        f"Clave, en puntos porcentuales."
+        f"Lo que produce cada compañería por semana, contra la misión (100). "
+        f"Abajo, cuántos puntos separan a esta unidad de {above} en cada "
+        f"indicador del índice."
         if gaps else
-        "La misma medida en cada escala, para que el número de arriba tenga "
-        "contra qué leerse."), st["note"]))
+        "Lo que produce cada compañería por semana, contra la misión (100), "
+        "en cada escala."), st["note"]))
     return flow
 
 
@@ -1238,7 +1285,7 @@ def sibling_strip(model) -> list:
     The same 34% among districts running 16 to 63 has a district problem. No
     table of percentages shows the difference and this does it in 44 points.
     """
-    peers = [(c.name, c.mean_attainment) for c in model.siblings]
+    peers = [(c.name, c.index.value) for c in model.siblings]
     if len([1 for _, v in peers if v is not None]) < 2:
         return []
     # And no strip at all when THIS unit has no reading: its dot would be the
@@ -1258,8 +1305,13 @@ def sibling_strip(model) -> list:
     if silent:
         caption += (f" · {es_display.integer(silent)} sin lectura, "
                     f"sin punto en la línea")
+    top = max([v for _, v in peers if v is not None] + [INDEX_BAR_MAX])
+    top = 50.0 * math.ceil(top / 50.0)
+    ticks = [(t, "100 = misión" if t == 100 else es_display.integer(t))
+             for t in range(0, int(top) + 1, 50)]
     return [PP.strip_plot(PP.CONTENT_WIDTH, peers, highlight=model.scope.name,
-                          value_fmt=lambda v: _pct(v), caption=caption)]
+                          axis_max=top, value_fmt=_idx, caption=caption,
+                          ticks=ticks)]
 
 
 def _level_plural(level: str) -> str:
@@ -1293,23 +1345,23 @@ def at_a_glance(model, *, weekly_ok: bool, weekly_sure: bool) -> list:
     if best is not None:
         flow.append(Paragraph(
             PP.text(f"Lo más fuerte: {best.label} va en {_pct(best.grade.pct)} "
-                    f"de la meta — {_count(best.actual)} contra "
-                    f"{_count(best.meta)}."), st["body"]))
+                    f"de la meta del liderazgo — {_count(best.lead_actual)} "
+                    f"contra {_count(round(best.lead_goal))}."), st["body"]))
     if worst is not None:
         flow.append(Paragraph(
             PP.text(f"Lo que hay que mover: {worst.label} es lo más atrasado, "
-                    f"en {_pct(worst.grade.pct)} — {_count(worst.actual)} "
-                    f"contra {_count(worst.meta)}."), st["body"]))
+                    f"en {_pct(worst.grade.pct)} — {_count(worst.lead_actual)} "
+                    f"contra {_count(round(worst.lead_goal))}."), st["body"]))
     if best is None and worst is None:
         flow.append(Paragraph(PP.text(
             "Ningún Indicador Clave tiene con qué medirse en este período: "
-            "o no hay meta, o nadie informó."), st["body"]))
-    for row in [r for r in model.key_indicators if r.grade.flag]:
-        flow.append(Paragraph(
-            PP.text(f"{row.label}: {row.grade.flag_label}. "
-                    f"{_count(row.actual)} contra una meta declarada de "
-                    f"{_count(row.meta)}. La cifra es real; la meta hay que "
-                    f"revisarla."), st["note_lead"]))
+            "o no hay meta del liderazgo, o nadie informó."), st["body"]))
+    if model.index.value is not None and model.scope.level != S.MISSION:
+        flow.append(Paragraph(PP.text(
+            f"Productividad: {_idx(model.index.value)} — cada compañería "
+            f"produce {_index_words(model.index.value)} que el promedio de la "
+            f"misión" + (", sobre pocas cifras" if model.index.thin else "")
+            + "."), st["body"]))
     flow.append(Spacer(0, 8))
     flow.append(PP.stat_tiles(W, _headline_tiles(model)))
     # A zone reads against the mission, an area against its district — the
@@ -1325,10 +1377,10 @@ def at_a_glance(model, *, weekly_ok: bool, weekly_sure: bool) -> list:
         # table was the same rows printed twice for 85pt — and the ORDER was
         # the only thing it added, which a sentence carries.
         flow.append(Paragraph(PP.text(
-            "Los más atrasados, en orden: "
+            "Los más atrasados contra la meta del liderazgo, en orden: "
             + " · ".join(f"{r.label} {_pct(r.grade.pct)}" for r in behind)
-            + ". De los Indicadores Clave con una meta utilizable; los "
-            "bautismos tienen su propia página, con la cifra certificada."),
+            + ". Los bautismos tienen su propia página, con la cifra "
+            "certificada."),
             st["note_lead"]))
     flow.append(Spacer(0, 4))
     flow.append(Paragraph(PP.text(graded_note(compared=bool(ladder))),
@@ -1343,7 +1395,8 @@ def key_indicator_page(model, *, weekly_ok: bool, weekly_sure: bool) -> list:
                        f"los siete · {model.compliance_label}"),
         PP.metric_table(ki_lines(model, comparable=weekly_ok,
                                  confident=weekly_sure),
-                        headers=_metric_headers(
+                        widths=PP.KI_COLUMNS,
+                        headers=_ki_headers(
                             based=weekly_ok and weekly_sure,
                             against=_against_label(model))),
         Spacer(0, 6),
@@ -1383,16 +1436,70 @@ def week_page(model) -> list:
 def children_page(model) -> list:
     """The units one level down, weakest first (decisions 14, 15, 16)."""
     st = PP.styles()
-    W = PP.CONTENT_WIDTH
-    spec = PP.RankedSpec(width=W, cells=_child_cells(model))
+    spec = _index_spec(model)
     flow = [PP.SectionHead(
         _children_title(model),
-        "más atrasada primero · cada celda por área activa")]
+        "menos productiva primero · misión = 100")]
     flow.extend(child_rows(model, spec))
     flow.append(Spacer(0, 6))
+    flow.append(Paragraph(PP.text(INDEX_NOTE), st["note"]))
+    return flow
+
+
+#: Under every index table: what the number is, in a sentence a council can
+#: repeat (decision 45).
+INDEX_NOTE = ("A la derecha, el índice de productividad: lo que produce cada "
+              "compañería por semana contra la misión, que es 100, sin "
+              "ninguna meta. Cada celda es un indicador del índice en la "
+              "misma escala. Un área que no informó cuenta como cero; quién "
+              "no informó está en su propia lista.")
+
+
+def _index_words(value: float) -> str:
+    """"un 27% más" / "un 6% menos" / "lo mismo" — the index said out loud."""
+    gap = round(value - 100)
+    if gap == 0:
+        return "lo mismo"
+    word = "más" if gap > 0 else "menos"
+    return f"un {es_display.integer(abs(gap))}% {word}"
+
+
+def reporting_block(model) -> list:
+    """Who reported — decision 45's separate list, worst first.
+
+    Silence is not folded into a performance figure any more; it is said here,
+    with the areas named, at mission and zone level (district pages carry the
+    silent areas in their own areas table).
+    """
+    st = PP.styles()
+    units = model.reporting_ranked
+    if not units or model.scope.level not in (S.MISSION, S.ZONE):
+        return []
+    spec = PP.RankedSpec(width=PP.CONTENT_WIDTH, cells=("Informes",),
+                         cell_width=64.0)
+    flow = [PP.SectionHead(f"Quién informó · {_children_title(model).lower()}",
+                           "menos informes primero")]
+    flow.append(PP.ranked_row(spec, name=_children_title(model).lower(),
+                              header=True))
+    for i, child in enumerate(units, start=1):
+        cov = child.coverage
+        rate = (cov.reporting_rate or 0) * 100 if cov is not None else 0
+        silent = child.areas_silent
+        sub = ("sin informe en todo el período: " + ", ".join(silent)
+               if silent else "todas sus áreas informaron")
+        out_of = (f"{es_display.integer(cov.area_weeks_reported)} de "
+                  f"{es_display.integer(cov.area_weeks_expected)}"
+                  if cov is not None else es_display.NA)
+        flow.append(PP.ranked_row(
+            spec, rank=i, name=child.name, sub=sub,
+            status=_attainment_status(rate), cells=[out_of],
+            value=_pct(rate), bar=rate, bar_max=100))
+    flow.append(Spacer(0, 4))
     flow.append(Paragraph(PP.text(
-        "A la derecha, el promedio de los siete contra sus propias metas, "
-        "por área activa: un área que no informó cuenta."), st["note"]))
+        "Informes semanales entregados contra los posibles en las semanas "
+        "completas del período. Un área sin informe cuenta como cero en la "
+        "productividad de arriba, a propósito: esta lista dice cuánto de ese "
+        "cero es silencio."), st["note"]))
     return flow
 
 
@@ -1409,9 +1516,11 @@ def _child_sub(child, model) -> str:
     """
     trail = [part for part in child.scope.trail if part != model.scope.name]
     bits = [" · ".join(trail)] if trail else []
-    if child.mean_attainment is None:
+    if child.index.value is None:
         bits.append("sin informes en el período")
-    elif child.coverage is not None:
+    elif child.index.thin:
+        bits.append("pocas cifras")
+    if child.index.value is not None and child.coverage is not None:
         bits.append(child.coverage.label)
         if child.areas_silent:
             bits.append(f"{es_display.integer(len(child.areas_silent))} "
@@ -1431,15 +1540,12 @@ def ranked_unit_rows(units, model, spec: PP.RankedSpec, *,
     keys = [k for k, _ in _child_keys(model)]
     out = [PP.ranked_row(spec, name=header, header=True)]
     for child in units:
-        cells = [_pct(next((m.attainment_per_active_area
-                            for m in child.metrics if m.key == key), None))
-                 for key in keys]
         out.append(PP.ranked_row(
-            spec, rank=child.rank if child.mean_attainment is not None else None,
+            spec, rank=child.rank if child.index.value is not None else None,
             name=child.name, sub=_child_sub(child, model),
-            status=_attainment_status(child.mean_attainment), cells=cells,
-            value=_pct(child.mean_attainment), bar=child.mean_attainment,
-            bar_max=100))
+            cells=[_idx(child.index.ratio(key)) for key in keys],
+            value=_idx(child.index.value), bar=child.index.value,
+            bar_max=INDEX_BAR_MAX, mark=100.0))
     return out
 
 
@@ -1450,13 +1556,12 @@ def areas_page(model) -> list:
     ARE the children, and the same list under two headings is noise.
     """
     st = PP.styles()
-    W = PP.CONTENT_WIDTH
     if not model.areas_ranked:
         return []
-    spec = PP.RankedSpec(width=W, cells=_child_cells(model))
+    spec = _index_spec(model)
     flow = [PP.SectionHead(
         f"Las {es_display.integer(len(model.areas_ranked))} áreas",
-        "más atrasada primero · cada celda por área activa")]
+        "menos productiva primero · misión = 100")]
     flow.extend(ranked_unit_rows(model.areas_ranked, model, spec,
                                  header="área"))
     flow.append(Spacer(0, 6))
@@ -2072,7 +2177,7 @@ def mission_pages(model, goals, peers=None) -> list:
     return run_on([
         at_a_glance(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
         key_indicator_page(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
-        week_page(model), children_page(model),
+        week_page(model), children_page(model), reporting_block(model),
         nightly_page(model, goals), baptism_page(model),
         finding_page(model), rates_and_scores(model),
     ])
@@ -2102,8 +2207,8 @@ def zone_pages(model, goals, peers=None) -> list:
     return run_on([
         at_a_glance(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
         key_indicator_page(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
-        week_page(model), children_page(model), areas_page(model),
-        nightly_page(model, goals), finding_page(model),
+        week_page(model), children_page(model), reporting_block(model),
+        areas_page(model), nightly_page(model, goals), finding_page(model),
         rates_and_scores(model),
     ])
 
@@ -2293,9 +2398,14 @@ def area_ladder_line(model) -> str:
     behind the people around us. Three signed figures answer it in the space
     a sentence takes.
     """
-    bits = [f"{r.role} {_signed(r.delta)}" for r in model.ladder[1:]
-            if not r.is_self and r.delta is not None]
-    return ("Contra " + " · ".join(bits)) if bits else ""
+    own = model.index
+    if own.value is None:
+        return ""
+    bits = [f"{r.role} {_idx(r.index.value)}" for r in model.ladder[1:]
+            if not r.is_self and r.index.value is not None]
+    line = (f"Productividad {_idx(own.value)} (misión = 100)"
+            + (" · pocas cifras" if own.thin else ""))
+    return line + (" · " + " · ".join(bits) if bits else "")
 
 
 def _signed(points: float) -> str:
@@ -2438,18 +2548,27 @@ def data_note(models, goals=None) -> list:
             f"informaron ninguna semana completa del período: "
             f"{', '.join(sorted(silent))}. Cuentan en cada denominador por "
             f"área activa, y no aparecen en ninguna suma.")
-    flagged = [r for r in mission.key_indicators if r.grade.flag]
-    if flagged:
-        names = ", ".join(r.label for r in flagged)
-        sentences.append(
-            f"Meta no utilizable: {names}. La cifra es real y la meta no da "
-            f"para medirla, así que la fila se muestra sin calificar en vez "
-            f"de pintarse de rojo. Hay que revisar la meta, no el trabajo.")
+    sentences.append(
+        "Los Indicadores Clave se califican contra la meta de traslado del "
+        "liderazgo, sobre las semanas y áreas que informaron; la meta de las "
+        "compañerías se imprime como compromiso y no da color. Los bautismos "
+        "del formulario no llevan color: la meta de bautismos es la anual.")
+    labels = {r.key: r.label for r in mission.key_indicators}
+    weights = " · ".join(f"{labels[k]} {w}" for k, w in INDEX_WEIGHTS.items()
+                         if k in labels)
+    sentences.append(
+        "Índice de productividad: lo que produce cada compañería por semana "
+        "activa, contra la misión, que es 100; un área que no informó cuenta "
+        "como cero. Cada indicador pesa distinto, más cuanto más cerca del "
+        f"bautismo: {weights}. Cada uno se topa en 250, para que una cifra "
+        "chica no cargue con toda la unidad, y una unidad con menos de 20 "
+        "eventos dice «pocas cifras».")
     nightly_flags = [r for r in mission.nightly_metrics if r.grade.flag]
     if nightly_flags:
         names = ", ".join(r.label for r in nightly_flags)
         sentences.append(
-            f"Lo mismo en el trabajo nocturno: {names}.")
+            f"Meta nocturna no utilizable: {names}. La cifra es real y la "
+            f"meta no da para medirla.")
     sentences.append(
         "El trabajo nocturno se mide contra su meta por noche informada, y "
         "sus filas se califican por su movimiento, no por su distancia a la "
