@@ -450,3 +450,74 @@ the export once and fits the pipeline once for all 63 scopes.
   Timestamp, and `pd.date_range`, raise a DeprecationWarning from inside
   pandas — 758 per suite run — so the forecast works on `datetime64[ns]`
   arrays and builds month-ends from plain dates.
+
+### 2026-10-07 — PHASE 3 COMPLETE (3.1–3.7) · THE REBUILD IS BUILT
+
+**The full transfer copy is 46 pages (from 104); 74 sheets a run (from 148).**
+Measured on the live sheet for four periods (this transfer, last week, last
+transfer, calendar month): every one lands at mission 6 · each zone 2 · each
+district 1 · areas three to a page (15) · front 2 · data note + print guide 2.
+P5 (a) as recommended — no further cut was needed.
+
+What the packet is now, page by page:
+
+1. **Cover**, then **Cómo leer** (page 2; the print guide moved to the last
+   page, AUDIT L1). Rule 5 now describes the forecasts, the Tableau-record
+   baptisms below mission and the mature funnel (it described the old window
+   funnel, which no longer prints).
+2. **Mission (6)**: *Dónde estamos* + **El tablero** (3.1 — the seven, real,
+   per companionship-week, *Propia* = the compromiso, the bar and % against
+   leadership's goal, the change, a 12-week spark, the transfer's finish range
+   and what each week left would need); **Dónde enfocar** (3.2 — the
+   shortfall Pareto by district, a productivity × trend quadrant with the
+   "debajo y bajando" corner tinted, and the list); the zones by index and
+   **Quién informó**; **Bautismos: el año y lo que viene** (3.3 — the period's
+   certified figure, the year with 2024/2025 and the 527 pace, the pipeline
+   by age and by all ten zones); **Palancas** (3.4 — the mature funnel by
+   zone with each zone's largest leak, the four rates by zone with what each
+   divides by, and one result → cause line per pilot zone, M3); **Las
+   últimas 12 semanas** (3.5); the nightly work.
+3. **Zone (2)**: the same opening (with "lo que viene" and "quién informó" as
+   sentences), the tablero, the ladder against the mission with the sibling
+   strip, its districts, *Dónde enfocar* among its areas (cut at 80% with the
+   rest named; falls back to every area by index when no goal exists), its
+   mature funnel by district.
+4. **District (1)**: opening, tablero (no forecast columns), the ladder rows,
+   its areas by index.
+5. **Area (⅓)**: drawn fixed-height rows (`PP.area_ki_rows`) with the
+   compromiso and twelve-week sparks, the productivity line against its
+   district/zone/mission, its own nights per week against its goals (M5),
+   the agents' strength line, and its scores with its rank in the district
+   (M1: scores kept only where they have a comparator).
+
+New code: `app/reports/focus.py` (pareto, trend_change per REPORTING
+area-week, quadrant, mature_funnel — leak only when a step converts < 85% of
+the mission's); model fields `trend_series` (12 weeks), `trend`,
+`ChildRow.trend`, `focus`, `funnel`, `child_rates`, rate
+`numerator_label`; packet_parts `TableroLine`/`tablero_table`, `quadrant`,
+`area_ki_rows`, `week_table(columns=)`. The screen got "Dónde enfocar",
+"Palancas" and "Tasas de conversión por zona" from the same fields.
+
+Removed as dead once nothing called them (each found by an AST scan of
+app/ + views/): at_a_glance, key_indicator_page, week_page, finding_page and
+its funnel/mix/units blocks, rates_and_scores, score_tiles, rate_lines,
+_headline_tiles, furthest_behind, finish_block, leadership_note,
+GRADED/COMPARED/BASIS notes, the KI_COLUMNS seven-column metric table. Their
+tests were ported to the new blocks where the behaviour survives (tablero,
+trend strip, levers, pipeline, data note) and retired with the function where
+it does not (the window-funnel pages, headline tiles, graded notes, score
+tiles, leadership notes) — 31 retired, 20 added.
+
+Found and fixed during Phase 3: the 6-week trend first read every zone
+"rising" because it compared raw sums across weeks of very different
+reporting; the tablero first had no compromiso column (decision 44) — caught
+by the dead-code scan flagging the unused `_ki_headers`; a tiny leadership
+goal printed "0" beside a 400% row; the funnel note widowed onto a page of
+its own until it moved above its table.
+
+Verified: suite **0 failed / 1922 passed / 1 skipped**; both live packets
+(this transfer, last week) 46 pages, pages 1–7, 9–10, 17, 30, 45–46 read as
+images; screen at mission, zone and district runs headless with no
+exceptions.
+
+**Nothing in the plan is outstanding.** Push, then Reboot the deployed app.

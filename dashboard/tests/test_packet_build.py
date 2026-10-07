@@ -91,6 +91,11 @@ def reader(pdf):
     return PdfReader(io.BytesIO(pdf))
 
 
+def _note(reader):
+    """The data note — the page before the print guide, which is last."""
+    return _pages(reader)[-2]
+
+
 def _pages(reader):
     return [(p.extract_text() or "") for p in reader.pages]
 
@@ -209,7 +214,7 @@ def test_the_packet_holds_every_unit_of_the_mission(reader, data):
 # ── The data note ─────────────────────────────────────────────────────────────
 
 def test_the_data_note_names_every_source_it_used(reader):
-    note = _pages(reader)[-1]
+    note = _note(reader)
     for tab in ("WEEKLY_KI", "AREA_TRANSFER_GOALS", "DAILY_LOG",
                 "WEEKLY_BREAKDOWNS", "SCORES", "MISSION_ORG"):
         assert tab in note
@@ -218,7 +223,7 @@ def test_the_data_note_names_every_source_it_used(reader):
 def test_the_data_note_names_the_areas_that_reported_nothing(reader):
     """They count in every per-active-area denominator and appear in no sum;
     a reader is owed the list rather than the arithmetic alone."""
-    note = _pages(reader)[-1]
+    note = _note(reader)
     assert "N3" in note and "S3" in note
     assert "no informaron" in note
 
@@ -227,7 +232,7 @@ def test_the_data_note_no_longer_flags_key_indicator_goals(reader):
     """PLAN-2026-10-06 1.2: leadership's goal is the Key Indicator yardstick,
     so the companionships' own goal is never "no utilizable" — it is the
     uncoloured compromiso."""
-    note = _pages(reader)[-1]
+    note = _note(reader)
     assert "Meta no utilizable: Amigos en Sacramental" not in note
     assert "productividad" in note
 
@@ -235,12 +240,12 @@ def test_the_data_note_no_longer_flags_key_indicator_goals(reader):
 def test_the_data_note_says_why_there_is_no_finding_section(reader):
     """Decision 32: a packet dated November showing August finding data is
     worse than one with no finding section, and the absence has to be stated."""
-    note = _pages(reader)[-1]
+    note = _note(reader)
     assert "Tableau" in note
 
 
 def test_the_data_note_states_the_period_and_the_compliance(reader, data):
-    note = _pages(reader)[-1]
+    note = _note(reader)
     mission = M.build_all(data=data)[0]
     assert mission.period.window_label in note
     assert mission.compliance_label in note

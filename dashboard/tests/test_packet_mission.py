@@ -317,8 +317,8 @@ def test_the_furthest_behind_excludes_a_goal_that_is_not_a_yardstick(mission):
     rows = list(mission.key_indicators)
     rows[0] = replace(rows[0], grade=G.Grade(pct=3.0, flag=G.GOAL_TOO_HIGH))
     model = replace(mission, key_indicators=tuple(rows))
-    named = PK.furthest_behind(model)
-    assert rows[0].label not in {r.label for r in named}
+    best, worst = PK._best_and_worst(model)
+    assert rows[0].label not in {r.label for r in (best, worst) if r}
 
 
 def test_the_best_and_the_worst_are_the_ends_of_the_same_ordering(mission):
@@ -352,14 +352,14 @@ def test_nor_the_one_that_has_to_move(mission):
     model = _with_baptisms_at(mission, 0.5)
     _, worst = PK._best_and_worst(model)
     assert worst is not None and worst.key != BAPTIZED
-    assert BAPTIZED not in {r.key for r in PK.furthest_behind(model)}
 
 
 def test_the_baptism_row_itself_stays_on_the_page(mission):
-    """Only the opening sentences lose it — the tile and the row keep it."""
+    """Only the opening sentences lose it — the tablero's row keeps it."""
     model = _with_baptisms_at(mission, 999.0)
     assert BAPTIZED in {r.key for r in model.key_indicators}
-    labels = {t.label for t in PK._headline_tiles(model)}
+    labels = {l.label for l in PK.tablero_lines(model, comparable=False,
+                                                confident=False)}
     assert model.ki(BAPTIZED).label in labels
 
 
@@ -367,16 +367,6 @@ def test_a_mission_with_nothing_graded_names_neither(mission):
     blank = replace(mission, key_indicators=tuple(
         replace(r, grade=G.Grade()) for r in mission.key_indicators))
     assert PK._best_and_worst(blank) == (None, None)
-    assert PK.furthest_behind(blank) == []
-
-
-def test_the_headline_tiles_fall_back_rather_than_coming_out_empty(mission):
-    """The four named Key Indicators are CCSM's; a mission whose catalogue
-    differs still gets a band rather than a blank strip."""
-    odd = replace(mission, key_indicators=tuple(
-        replace(r, key=f"other_{i}") for i, r in
-        enumerate(mission.key_indicators)))
-    assert len(PK._headline_tiles(odd)) == min(4, len(odd.key_indicators))
 
 
 # ── The week table ────────────────────────────────────────────────────────────
@@ -426,8 +416,10 @@ def test_the_missions_sections_run_in_order_down_the_pages(models):
     pdf = PK.build_packet(models, ROSTER, _data().nightly_goals)
     pages = [(p.extract_text() or "").upper()
              for p in PdfReader(io.BytesIO(pdf)).pages]
-    heads = ["DÓNDE ESTAMOS", "INDICADORES CLAVE", "SEMANA A SEMANA", "ZONAS",
-             "TODO EL TRABAJO NOCTURNO", "PUNTAJES"]
+    # PLAN-2026-10-06 Phase 3: the tablero opens, then the zones and who
+    # reported, the twelve weeks and the nights.
+    heads = ["DÓNDE ESTAMOS", "EL TABLERO", "ZONAS", "QUIÉN INFORMÓ",
+             "LAS ÚLTIMAS 12 SEMANAS", "TODO EL TRABAJO NOCTURNO"]
     at, found = 0, []
     for head in heads:
         at = next((i for i in range(at, len(pages)) if head in pages[i]), None)
@@ -470,25 +462,6 @@ def test_every_string_the_mission_pages_print_survives_the_encoding(mission):
 
 # ── A3: the note under the grades no longer denies the section above it ─────
 
-def test_the_graded_note_never_says_nothing_compares():
-    for compared in (True, False):
-        assert "Nada aquí compara" not in PK.graded_note(compared=compared)
-
-
-def test_under_a_ladder_it_names_the_exception():
-    assert PK.graded_note(compared=True).endswith(
-        "La sección de arriba la compara con otras por productividad, sin "
-        "ninguna meta: la misión es 100.")
-    assert "sección de arriba" not in PK.graded_note(compared=False)
-
-
-def test_the_mission_has_no_ladder_so_its_note_does_not_point_at_one(mission):
-    text = " ".join(p.text for p in PK.at_a_glance(
-        mission, weekly_ok=False, weekly_sure=False)
-        if hasattr(p, "text") and isinstance(p.text, str))
-    assert "sección de arriba" not in text
-
-
 # ── A4: the nightly table says its two figures are not on the same footing ────
 
 def _heads(flow):
@@ -505,13 +478,14 @@ def test_the_nightly_heads_say_what_each_figure_is_measured_in(mission):
     assert meta[0].label == "Meta" and "área/sem" in meta[1].text
 
 
-def test_the_key_indicator_heads_name_whose_goal_each_column_is(mission):
-    """Decision 44: META is leadership's, COMPROMISO the companionships'."""
-    heads = _heads(PK.key_indicator_page(mission, weekly_ok=True,
-                                         weekly_sure=True))
-    assert heads[1].label == "Real"
-    assert heads[2][0].label == "Meta" and "liderazgo" in heads[2][1].text
-    assert heads[3].label == "Compromiso"
+def test_the_tablero_heads_name_whose_goal_each_column_is(mission):
+    """Decision 44: META is leadership's, PROPIA the companionships'
+    compromiso, printed beside it."""
+    lines = PK.tablero_lines(mission, comparable=False, confident=False)
+    new = next(l for l in lines if l.label == "Nuevas Personas")
+    assert new.own == "180"
+    text = " ".join(_notes(PK.tablero_block(mission), "note"))
+    assert "Propia" in text and "compromiso" in text
 
 
 def test_the_unit_lines_fit_their_columns():
@@ -529,24 +503,6 @@ def _period(key, today=date(2026, 9, 23)):
               {"number": "2026-6", "start": date(2026, 9, 7),
                "end": date(2026, 10, 18), "weeks": 6}]
     return P.resolve(key, today, cycles)
-
-
-def test_a_transfer_in_progress_says_how_much_of_it_the_goal_covers():
-    from app.reports import periods as P
-    assert PK.leadership_note(679.33, _period(P.THIS_TRANSFER)) == (
-        "meta del traslado · 2 de 6 semanas: 679")
-
-
-def test_a_whole_transfer_prints_the_goal_itself():
-    from app.reports import periods as P
-    assert PK.leadership_note(2038.0, _period(P.LAST_TRANSFER)) == (
-        "meta del traslado: 2.038")
-
-
-def test_a_period_across_cycles_says_it_is_pro_rated():
-    from app.reports import periods as P
-    note = PK.leadership_note(1150.4, _period(P.LAST_6_WEEKS))
-    assert note == "meta de traslado, a prorrata de 6 semanas: 1.150"
 
 
 def test_no_leadership_note_carries_a_decimal(mission):
@@ -664,13 +620,8 @@ def _notes(flow, style):
             and f.style.name == style]
 
 
-def test_the_grades_note_no_longer_carries_the_bands():
-    """They are on page 3 once, and in every page's footer as colours."""
-    assert "90%" not in PK.GRADED_NOTE and "60" not in PK.GRADED_NOTE
-
-
 def test_the_week_table_explains_itself_in_one_line_not_two(mission):
-    notes = _notes(PK.week_page(mission), "note")
+    notes = _notes(PK.trend_block(mission), "note")
     assert len(notes) == 1
     assert "sumas sin dividir" not in notes[0]
 
@@ -679,12 +630,13 @@ def test_no_how_to_read_note_runs_past_two_lines():
     """Measured in points at the content width, the note style's leading."""
     from reportlab.platypus import Paragraph
     st = PP.styles()
-    for text in (PK.GRADED_NOTE, PK.BASIS_NOTE):
+    for text in (PK.INDEX_NOTE_SHORT,):
         _, h = Paragraph(text, st["note"]).wrap(PP.CONTENT_WIDTH, 1000)
         assert h <= 2 * st["note"].leading, text
 
 
-def test_what_is_true_of_this_unit_prints_darker_than_how_to_read_it(mission):
-    flow = PK.key_indicator_page(mission, weekly_ok=False, weekly_sure=False)
-    assert PK._comparison_note(mission) in _notes(flow, "note_lead")
-    assert PK.BASIS_NOTE in _notes(flow, "note")
+def test_the_mission_s_tablero_says_what_its_change_is_against(mission):
+    """Below the mission the change column's head says it; the mission's
+    tablero also prints the sentence, with the window's dates."""
+    flow = PK.tablero_block(mission)
+    assert PK._comparison_note(mission) in _notes(flow, "note")

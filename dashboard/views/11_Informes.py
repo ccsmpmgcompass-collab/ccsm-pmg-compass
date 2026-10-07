@@ -732,6 +732,94 @@ if _model.children and _child_label:
         unsafe_allow_html=True)
 
 
+# ── 3a · Dónde enfocar y palancas (PLAN-2026-10-06 Phase 3) ──────────────────
+#
+# Lo mismo que el paquete, del mismo modelo: qué unidades cargan lo que le
+# falta a la misión o a la zona, cuáles están debajo de la misión y bajando, y
+# el embudo maduro con la mayor fuga de cada unidad.
+
+from app.reports import focus as _FC
+
+_SHORT_KI = {"ki_new_people_real": "Nuevas personas",
+             "ki_member_lessons_real": "Lecciones c/ miembros",
+             "ki_friends_sacrament_real": "Sacramental",
+             "ki_friends_first_week_real": "Primera semana",
+             "ki_baptismal_date_real": "Fecha bautismal",
+             "ki_baptized_confirmed_real": "Bautismos",
+             "ki_rc_at_church_real": "Conversos recientes"}
+
+if _model.focus:
+    _noun = "distritos" if _model.scope.level == "mission" else "áreas"
+    render_section_label(
+        "Dónde enfocar", right=f"lo que falta para la meta del liderazgo, por "
+                               f"{_noun[:-1]}",
+        info=("La meta del liderazgo de cada unidad (todas sus áreas, a "
+              "prorrata del período) menos lo que informó, sumado por "
+              "indicador con los pesos del índice; quien supera su meta no "
+              "compensa a nadie. Tendencia: las últimas tres semanas contra "
+              "las tres anteriores, por informe."),
+    )
+    st.markdown(ranked_list([{
+        "name": f.name, "rank": i,
+        "sub": (f"acumulado {fmt_percent(f.cumulative)} · donde más falta: "
+                f"{_SHORT_KI.get(f.worst, f.worst or NA)} · productividad "
+                f"{_idx(f.index)}"
+                + (f" · {_FC.quadrant(f.index, f.trend)}"
+                   if _FC.quadrant(f.index, f.trend) else "")),
+        "value": f.share, "bar": f.share,
+        "status": ("bad" if _FC.quadrant(f.index, f.trend)
+                   == "debajo y bajando" else None),
+    } for i, f in enumerate(_model.focus, start=1)],
+        value_fmt=lambda v: NA if v is None else fmt_percent(v)),
+        unsafe_allow_html=True)
+    _falling = [f.name for f in _model.focus
+                if _FC.quadrant(f.index, f.trend) == "debajo y bajando"]
+    st.caption("Debajo de la misión y bajando: " + ", ".join(_falling) + "."
+               if _falling else "Ninguno está debajo de la misión y bajando.")
+
+if _model.funnel is not None and _model.funnel.mission is not None:
+    _FN = _model.funnel
+    _short = ("Intento", "Contacto", "Lecciones", "Iglesia", "Fecha",
+              "Bautismo")
+    render_section_label(
+        "Palancas: el embudo maduro",
+        right=(f"encontradas del {es_display.day_month(_FN.start)} al "
+               f"{es_display.day_month(_FN.end, with_year=True)}"),
+        info=("Personas encontradas hace tres a seis meses y la parte que "
+              "llegó a cada paso hasta hoy: con ese tiempo la iglesia, la "
+              "fecha y el bautismo ya tuvieron ocasión de ocurrir. La mayor "
+              "fuga es el paso que convierte menos del 85% de lo que convierte "
+              "la misión. Registros de Tableau por persona."),
+    )
+    st.markdown(ranked_list([{
+        "name": r.name, "rank": "",
+        "sub": (f"{fmt_int(r.found)} encontradas"
+                + (f" · mayor fuga: {r.leak}" if r.leak else "")),
+        "value": None,
+        "cells": [fmt_percent(r.pct(i)) if r.found else NA
+                  for i in range(len(_FN.stages))],
+    } for r in (_FN.mission,) + tuple(_FN.rows)],
+        columns=list(_short[:len(_FN.stages)])),
+        unsafe_allow_html=True)
+
+if _model.child_rates:
+    _rate_heads = {"contact_rate": "Contacto", "mc_rate": "Conversación",
+                   "lesson_rate": "Lecciones", "close_rate": "Invitación"}
+    render_section_label(
+        "Tasas de conversión por zona", right="la razón de los totales",
+        info="Cada zona contra la misión, en la misma tasa.",
+    )
+    _rows = [("la misión", _model.rates)] + [(z.name, r)
+                                              for z, r in _model.child_rates]
+    st.markdown(ranked_list([{
+        "name": name, "rank": "", "value": None,
+        "cells": [fmt_number(x["value"], 1) + "%" if x["value"] is not None
+                  else NA for x in rates],
+    } for name, rates in _rows],
+        columns=[_rate_heads.get(r["key"], r["key"]) for r in _model.rates]),
+        unsafe_allow_html=True)
+
+
 # ── 3b · Su fortaleza · Para crecer ──────────────────────────────────────────
 
 if _model.strengths or _model.growth:

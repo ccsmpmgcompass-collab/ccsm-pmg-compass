@@ -104,49 +104,12 @@ def of(level):
 
 # ── The finding page ──────────────────────────────────────────────────────────
 
-def test_the_page_opens_with_the_window_it_rests_on_and_the_export_behind_it():
-    text = words(PK.finding_page(of(S.MISSION)))
-    assert "fuente: Tableau" in text
-    assert "17 de sep de 2026" in text          # where the export reaches
-    assert "11 de 15 días del período" in text  # and how short of the period
-
-
 def test_the_mission_page_says_it_counts_ten_zones_and_the_rest_count_four():
     """Decision 34's hard case. Nothing else in the packet changes population
     from one page to the next, so it is said outright."""
-    assert "10 zonas" in words(PK.finding_page(of(S.MISSION)))
-    assert "organigrama" in words(PK.finding_page(of(S.ZONE)))
-
-
-def test_an_area_gets_no_finding_page():
-    assert PK.finding_page(of(S.AREA)) == []
-
-
-def test_a_refused_window_prints_the_reason_where_the_section_would_have_been():
-    built, _ = models(export=T.read_export(span("2024-01-01", "2026-08-03")))
-    text = words(PK.finding_page(built[0]))
-    assert "Sin sección de hallazgo" in text
-    assert "no alcanza este período" in text
-    assert "no se estiman ni se rellenan" in text
-
-
-def test_the_refusal_still_says_how_far_the_export_reaches():
-    """A reader who notices the gap should not have to guess whether it is a
-    bug."""
-    built, _ = models(export=T.read_export(span("2024-01-01", "2026-08-03")))
-    assert "3 de ago de 2026" in words(PK.finding_page(built[0]))
-
-
-def test_the_unit_ranking_marks_the_zones_that_run_no_compass_forms():
-    text = words(PK.finding_page(of(S.MISSION)))
-    assert "sin formularios de Compass" in text
-    assert "zona piloto de Compass" in text
-
-
-def test_a_zone_ranks_its_own_children_and_never_the_export_s():
-    """`Pucón` is in the export under a zone the roster does not carry; a
-    zone's page must not pick it up."""
-    assert "Pucón" not in words(PK.finding_page(of(S.ZONE)))
+    text = words(PK.data_note(models()[0]))
+    assert "Tableau las 10" in text
+    assert "sólo sus áreas del organigrama" in text
 
 
 # ── The funnel's maturity, on the page ───────────────────────────────────────
@@ -215,9 +178,9 @@ def test_the_two_figures_differ_by_scope_not_by_missionaries_skipping_it():
 
 def test_the_open_month_is_kept_out_of_the_year_s_total_on_the_page():
     text = words(PK.baptism_page(of(S.MISSION)))
-    assert "319 bautismos certificados hasta agosto" in text
+    assert "319" in text          # the closed months; tile labels are tracked
     assert "sin cerrar" in text
-    assert "no en esta barra ni en el ritmo" in text
+    assert "no en el ritmo ni en la proyección" in text
 
 
 # ── M6 · the period leads (decisions 41, 42) ──────────────────────────────────
@@ -249,7 +212,8 @@ def test_the_page_leads_with_the_period_s_own_certified_figure():
 def test_the_year_follows_as_context_under_its_own_head():
     flow = PK.baptism_page(_mission(windows=TRANSFER_WINDOW))
     heads = [f.label for f in flow if isinstance(f, PP.SectionHead)]
-    assert heads[:2] == ["Bautismos · 2026-6", "El año 2026 contra su meta"]
+    assert heads[:2] == ["Bautismos · 2026-6",
+                         "Bautismos 2026: cómo cierra el año"]
 
 
 def test_a_period_with_no_capture_prints_a_dash_and_says_why():
@@ -287,14 +251,6 @@ def test_the_data_note_says_where_the_period_s_baptisms_came_from():
     assert "decisión" not in text
 
 
-@pytest.mark.parametrize("gap,expected", [
-    (10.0, "good"), (-32.3, "warn"), (-90.0, "bad"), (None, None),
-])
-def test_a_year_behind_by_one_month_s_work_is_amber_not_red(gap, expected):
-    """32 behind of 527 in September is a year to push, not a year lost."""
-    assert PK._pace_status(gap) == expected
-
-
 def test_a_mission_with_no_certified_month_gets_no_baptism_page_figures():
     built, _ = models(baptisms={})
     text = words(PK.baptism_page(built[0]))
@@ -313,16 +269,17 @@ def test_the_data_note_no_longer_claims_there_is_no_tableau_data():
 def test_the_data_note_carries_the_four_things_that_make_the_rest_safe():
     text = words(PK.data_note(models()[0]))
     assert "hasta el 17 de sep de 2026" in text            # where it reaches
-    assert "Nunca se suman ni comparten una tabla" in text  # decision 34
+    assert "nunca se suma ni comparte una tabla" in text    # decision 34
     assert "no están en el organigrama" in text             # decision 35
     assert "por nombre de área" in text                     # how they match
 
 
-def test_the_data_note_explains_an_absent_section_rather_than_omitting_it():
+def test_the_data_note_says_how_far_an_old_export_reaches():
+    """Decision 32's point, kept: a reader must be able to see the export
+    stops short."""
     built, _ = models(export=T.read_export(span("2024-01-01", "2026-08-03")))
     text = words(PK.data_note(built))
-    assert "Sin sección de hallazgo en este paquete" in text
-    assert "no alcanza este período" in text
+    assert "hasta el 3 de ago de 2026" in text
 
 
 def test_the_sources_table_names_the_two_tableau_tabs():
@@ -346,7 +303,8 @@ def test_no_tableau_page_ever_builds_a_metric_table(monkeypatch):
     monkeypatch.setattr(PP, "metric_table",
                         lambda *a, **k: calls.append(a) or Spacer(0, 0))
     for model in built:
-        PK.finding_page(model)
+        PK.pipeline_block(model)
+        PK.levers_block(model)
         PK.baptism_page(model)
     assert calls == []
 
@@ -359,10 +317,9 @@ def test_the_form_s_pages_never_build_a_tableau_block(monkeypatch):
         monkeypatch.setattr(T, name,
                             lambda *a, _n=name, **k: calls.append(_n) or ())
     for model in built:
-        PK.at_a_glance(model, weekly_ok=True, weekly_sure=True)
-        PK.key_indicator_page(model, weekly_ok=True, weekly_sure=True)
+        PK.tablero_block(model)
         PK.nightly_page(model, data.nightly_goals)
-        PK.week_page(model)
+        PK.trend_block(model)
     assert calls == []
 
 

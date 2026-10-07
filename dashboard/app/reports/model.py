@@ -464,6 +464,10 @@ class ChildRow:
     rank: int
     index: Productivity = field(default_factory=Productivity)
     metrics: tuple[MetricRow, ...] = ()
+    #: The weighted change of the index's members, last three complete weeks
+    #: against the three before (`focus.trend_change`) — the quadrant's other
+    #: axis (PLAN-2026-10-06 Phase 3).
+    trend: float | None = None
     coverage: P.Coverage = None
     areas_silent: tuple[str, ...] = ()
 
@@ -533,6 +537,25 @@ class ReportModel:
 
     #: The forward view (decision 48). Empty at area level.
     forward: Forward = field(default_factory=Forward)
+
+    #: `{metric key: Series}` over the last TWELVE complete weeks, whatever
+    #: the period — the trend strip every unit page carries (AUDIT H3). A
+    #: weekly packet's "trend" used to be one column.
+    trend_series: dict = field(default_factory=dict)
+
+    #: This unit's own 6-week trend (`ChildRow.trend`'s figure).
+    trend: float | None = None
+
+    #: Where the shortfall against leadership's goal sits: the mission's
+    #: districts, a zone's areas (`focus.pareto`). Empty below zone level.
+    focus: tuple = ()
+
+    #: The mature-cohort funnel (`focus.mature_funnel`): the mission's ten
+    #: Tableau zones, a zone's districts. None without an export.
+    funnel: object = None
+
+    #: The mission's zones with their conversion rates, for the levers page.
+    child_rates: tuple = ()
 
     #: `{metric key: Series}` for the seven, week by week (decision 26).
     series: dict = field(default_factory=dict)
@@ -1449,9 +1472,10 @@ def _rates(data: ReportData, scope: S.Scope, period: P.Period,
             totals(rows), totals(prior), data.agent_config,
             current_days=int(rows["_day"].nunique()) if not rows.empty else 0,
             prior_days=prior_days):
-        den = row["metric"].denominator
+        num, den = row["metric"].numerator, row["metric"].denominator
         out.append({**row,
                     "label": data.labels.get(row["key"], row["key"]),
+                    "numerator_label": data.labels.get(num, num),
                     "denominator_label": data.labels.get(den, den)})
     return tuple(out)
 
@@ -1560,6 +1584,7 @@ def _rank_scopes(data: ReportData, scopes: list, period: P.Period,
         out.append(ChildRow(
             scope=child, rank=0,
             index=_index_for(data, rows, period, comparison),
+            trend=_trend_for(data, child, period),
             metrics=rows,
             coverage=P.week_coverage(period, _reported_by_week(child_rows),
                                      child.area_count),
@@ -1730,6 +1755,107 @@ def _tableau_block(data: ReportData, scope: S.Scope, period: P.Period):
     )
 
 
+# ── Phase 3: trend, focus and levers (PLAN-2026-10-06) ───────────────────────
+
+#: How many complete weeks the trend strip covers, whatever the period.
+TREND_WEEKS = 12
+
+
+def _trend_weeks(data: ReportData, period: P.Period) -> tuple:
+    """The last twelve complete weeks ending with the period's last one."""
+    end = period.weeks[-1] if period.weeks else None
+    if end is None:
+        last = P.resolve(P.LAST_WEEK, data.today, data.cycles)
+        end = last.weeks[-1] if last is not None and last.weeks else None
+    if end is None:
+        return ()
+    return tuple(end - timedelta(weeks=i) for i in reversed(range(TREND_WEEKS)))
+
+
+def _trend_period(data: ReportData, period: P.Period) -> P.Period | None:
+    cache_key = ("trend_period", period.key)
+    if cache_key not in data._flags:
+        weeks = _trend_weeks(data, period)
+        data._flags[cache_key] = (P.Period(
+            key="trend", label="12 semanas", start=weeks[0] - timedelta(days=6),
+            end=weeks[-1], weeks=weeks, full_end=weeks[-1],
+            full_weeks=len(weeks)) if weeks else None)
+    return data._flags[cache_key]
+
+
+def _trend_for(data: ReportData, scope: S.Scope, period: P.Period):
+    """`focus.trend_change` over the trend strip's last six weeks."""
+    from app.reports import focus as FC
+    cache_key = ("trend", scope.key, period.key)
+    if cache_key not in data._flags:
+        tp = _trend_period(data, period)
+        weeks = [w.isoformat() for w in tp.weeks[-6:]] if tp else []
+        data._flags[cache_key] = FC.trend_change(
+            data.weekly_ki, scope.areas, index_weights(data.ki_keys),
+            recent=weeks[3:], prior=weeks[:3])
+    return data._flags[cache_key]
+
+
+def _focus(data: ReportData, scope: S.Scope, period: P.Period,
+           comparison: P.Comparison | None) -> tuple:
+    """The shortfall by unit: the mission's districts, a zone's areas."""
+    from app.reports import focus as FC
+    if scope.level == S.MISSION:
+        units = [d for z in S.children(data.roster, scope)
+                 for d in S.children(data.roster, z)]
+    elif scope.level == S.ZONE:
+        units = list(S.area_scopes(data.roster, zone=scope.zone))
+    else:
+        return ()
+    rows = []
+    for unit in units:
+        ki = _ki_rows_for(data, unit, period, comparison)
+        rows.append((unit, ki, _index_for(data, ki, period, comparison).value,
+                     _trend_for(data, unit, period)))
+    return FC.pareto(rows, index_weights(data.ki_keys))
+
+
+def _funnel(data: ReportData, scope: S.Scope):
+    """The mature-cohort funnel: the mission's Tableau zones (all ten), a
+    zone's districts by roster area."""
+    from app.analytics import finding_funnel as FF
+    from app.reports import focus as FC
+    if scope.level not in (S.MISSION, S.ZONE):
+        return None
+    det = data.tableau_detail
+    if det is None or det.empty:
+        return None
+    if "funnel_dates" not in data._flags:
+        stages = [(TB.STAGE_LABELS.get(label, label), FF.parse_dates(det, col))
+                  for label, col in FF.FUNNEL_STAGES if col is not None]
+        data._flags["funnel_dates"] = (
+            FF.parse_dates(det, "event_date_selected"), stages)
+    found, stages = data._flags["funnel_dates"]
+    if scope.level == S.MISSION:
+        zone_col = TB._names(det, TB.ZONE_COL)
+        pilot = {z.name for z in S.children(data.roster, scope)}
+        groups = [(z, zone_col == z, z in pilot)
+                  for z in sorted(set(zone_col) - {"", "nan"})]
+    else:
+        area_col = TB._names(det, TB.AREA_COL)
+        groups = [(d.name, area_col.isin(set(d.areas)), True)
+                  for d in S.children(data.roster, scope)]
+    return FC.mature_funnel(found, [s for _, s in stages],
+                            [label for label, _ in stages], groups, data.today,
+                            found_label=TB.STAGE_LABELS.get("Found",
+                                                            "Encontradas"))
+
+
+def _child_rates(data: ReportData, scope: S.Scope, period: P.Period,
+                 comparison: P.Comparison | None) -> tuple:
+    """Each zone's conversion rates, for the mission's levers page. Zones
+    only: below them a rate is a ratio of two small integers (decision 13)."""
+    if scope.level != S.MISSION:
+        return ()
+    return tuple((z, _rates(data, z, period, comparison))
+                 for z in S.children(data.roster, scope))
+
+
 def _transfer_goals_full(data: ReportData, scope: S.Scope,
                          cycle_start: date) -> tuple[dict, bool]:
     """Leadership's goal for the WHOLE cycle, summed over the scope's areas,
@@ -1856,6 +1982,12 @@ def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
         areas_ranked=_areas_ranked(data, scope, period, comparison),
         index=_index_for(data, own, period, comparison),
         forward=_forward(data, scope, period),
+        trend_series=(_series(data, scope, _trend_period(data, period))
+                      if _trend_period(data, period) else {}),
+        trend=_trend_for(data, scope, period),
+        focus=_focus(data, scope, period, comparison),
+        funnel=_funnel(data, scope),
+        child_rates=_child_rates(data, scope, period, comparison),
         series=_series(data, scope, period),
         strengths=strengths,
         growth=growth,

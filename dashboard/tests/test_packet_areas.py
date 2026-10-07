@@ -226,12 +226,14 @@ def test_one_reported_week_draws_no_line_rather_than_a_point(areas):
 
 # ── Two to a page ─────────────────────────────────────────────────────────────
 
-def test_an_areas_block_fits_a_half_page(areas):
-    """Two to a page (§3.2) is only true if each block fits the half."""
+def test_an_areas_block_fits_a_third_of_a_page(areas):
+    """Three to a page (P5 (a), decision 49) is only true if each block fits
+    a third, less the two dividers."""
+    third = (PP.CONTENT_HEIGHT - 24) / PK.AREAS_PER_PAGE
     for model in areas:
         height = sum(f.wrap(PP.CONTENT_WIDTH, PP.CONTENT_HEIGHT)[1]
                      for f in PK.area_block(model))
-        assert height <= PK.AREA_BLOCK_HEIGHT, model.scope.name
+        assert height <= third, model.scope.name
 
 
 def test_the_areas_really_do_print_two_to_a_page(pdf, areas):

@@ -35,6 +35,7 @@ from reportlab.platypus import (BaseDocTemplate, CondPageBreak, Flowable,
                                 Paragraph, Spacer)
 
 from app.config import es_display
+from app.reports import focus as FC
 from app.reports import forecast as F
 from app.reports import packet_parts as PP
 from app.reports import periods as P
@@ -47,6 +48,7 @@ from app.reports.model import (EFFORT_SCORE, INDEX_WEIGHTS,
 #: Namespaced, because `Scope.key` for the whole mission is also "mission" and
 #: both live in the same `Pagination.starts`.
 HOW_TO_READ = "sec:how_to_read"
+PRINT_GUIDE = "sec:print_guide"
 MISSION = "sec:mission"
 ZONES = "sec:zones"
 DISTRICTS = "sec:districts"
@@ -368,6 +370,8 @@ def sections_for(models) -> list:
                 unit_noun="área", feminine=True),
         Section(DATA_NOTE, "Nota de datos",
                 "Quien pregunte de dónde sale una cifra", "Referencia"),
+        Section(PRINT_GUIDE, "Guía de impresión",
+                "Quien imprime y reparte el paquete", "Referencia"),
     ]
 
 
@@ -399,6 +403,10 @@ def _titled(section) -> str:
         return section.title
     each = section.page_count / section.units
     agree = "cada una" if section.feminine else "cada uno"
+    if section.key == AREAS:
+        words = {2: "dos", 3: "tres", 4: "cuatro"}.get(AREAS_PER_PAGE,
+                                                      str(AREAS_PER_PAGE))
+        return f"{section.title}, {words} por página"
     if each <= 0.6:
         return f"{section.title}, dos por página"
     if each == int(each):
@@ -410,13 +418,12 @@ def _titled(section) -> str:
 
 def front_matter(mission, sections, units, roster, *, total_pages: int,
                  pagination: "Pagination | None" = None) -> list:
-    """The cover, the print guide and "Cómo leer" — pages 1 to 3 (decisions 4,
-    40).
+    """The cover and "Cómo leer" — pages 1 and 2 (decisions 4, 40).
 
-    On the first pass every range is a dash and the total is zero; the guide
-    still lays out at very nearly its true length, which is what lets the next
-    pass be right. It is the one part of the packet built from the packet
-    rather than from a `ReportModel`.
+    The print guide used to be page 2 of the president's own copy (AUDIT
+    L1); it is the last page now (`print_guide_pages`), where the person who
+    prints the packet finds it and the president does not have to turn past
+    it. The contents still lists it.
     """
     period = mission.period
     facts = [
@@ -425,6 +432,38 @@ def front_matter(mission, sections, units, roster, *, total_pages: int,
         ("Semanas completas", period.progress_label),
         ("Cumplimiento", mission.compliance_label),
     ]
+    sections = describe(sections)
+    return (
+        PP.cover_page(
+            kicker="Consejo de liderazgo misional",
+            title="Paquete del Consejo",
+            standfirst=f"{mission.mission_name} — dónde está la misión, dónde "
+                       f"enfocar y qué viene, en este período.",
+            facts=facts,
+            contents=[(s.title, s.page_label) for s in sections],
+            note="Generado por PMG Compass desde la hoja de datos de la misión el "
+                 f"{es_display.long_date(mission.today)}. Cada cifra viene de lo "
+                 f"que las compañerías informaron o de Tableau; la nota de datos "
+                 f"al final dice qué falta y por qué.")
+        + [PageBreak(),
+           PP.SetFurniture(PP.Furniture(
+               eyebrow=mission.mission_name, period=period.window_label,
+               mission=mission.mission_name, key=True))]
+        + ([SectionStart(HOW_TO_READ, pagination)] if pagination else [])
+        + how_to_read(mission, sections)
+    )
+
+
+def print_guide_pages(mission, sections, units, roster, *, total_pages: int,
+                      pagination: "Pagination | None" = None) -> list:
+    """The run sheet, as the packet's last page (AUDIT L1).
+
+    On the first pass every range is a dash and the total is zero; the guide
+    still lays out at very nearly its true length, which is what lets the
+    next pass be right. It is the one part of the packet built from the packet
+    rather than from a `ReportModel`.
+    """
+    period = mission.period
     sections = describe(sections)
     rows = hand_outs(sections, units, roster)
     paper = sheets(rows)
@@ -443,21 +482,10 @@ def front_matter(mission, sections, units, roster, *, total_pages: int,
             f"decida a mano a quién entregarla.")
     sheets_per_copy = math.ceil(total_pages / 2) if total_pages else 0
     return (
-        PP.cover_page(
-            kicker="Consejo de liderazgo misional",
-            title="Paquete del Consejo",
-            standfirst=f"{mission.mission_name} — el rendimiento de cada "
-                       f"zona, distrito y área en este período.",
-            facts=facts,
-            contents=[(s.title, s.page_label) for s in sections],
-            note="Generado por PMG Compass desde la hoja de datos de la misión el "
-                 f"{es_display.long_date(mission.today)}. Cada cifra viene de lo "
-                 f"que las compañerías informaron; la nota de datos al final "
-                 f"dice qué falta y por qué.")
-        + [PageBreak(),
-           PP.SetFurniture(PP.Furniture(
-               eyebrow=mission.mission_name, period=period.window_label,
-               mission=mission.mission_name, key=False))]
+        [PP.SetFurniture(PP.Furniture(
+            eyebrow="Guía de impresión", period=period.window_label,
+            mission=mission.mission_name, key=False))]
+        + ([SectionStart(PRINT_GUIDE, pagination)] if pagination else [])
         + PP.print_guide(
             heading_note=f"Paquete del consejo · {total_pages or 0} páginas",
             intro=(
@@ -470,12 +498,6 @@ def front_matter(mission, sections, units, roster, *, total_pages: int,
                       for s in sections],
             handouts=[[r.who, r.pages, str(r.copies), r.note] for r in rows],
             closing=closing)
-        + [PageBreak(),
-           PP.SetFurniture(PP.Furniture(
-               eyebrow=mission.mission_name, period=period.window_label,
-               mission=mission.mission_name, key=True))]
-        + ([SectionStart(HOW_TO_READ, pagination)] if pagination else [])
-        + how_to_read(mission, sections)
     )
 
 
@@ -552,25 +574,8 @@ def how_to_read(mission, sections) -> list:
 
     rules.append(("Dos cifras de bautismos", _two_baptism_figures(mission)))
 
-    block = getattr(mission, "tableau", None)
-    if block is not None and block.present:
-        finding = (
-            f"Sale de Tableau, {block.window.label}. La página de la misión "
-            f"cuenta las 10 zonas; cada zona, distrito y área cuenta sólo sus "
-            f"áreas del roster. Cada embudo sigue a las personas encontradas "
-            f"en la ventana y dice hasta dónde han llegado desde entonces — "
-            f"una cohorte, no lo que pasó en la ventana —, así que los pasos "
-            f"que tardan más que la ventana van sin porcentaje. La mezcla de "
-            f"categorías y de fuentes dice de dónde viene el trabajo, no si "
-            f"fue bueno.")
-    elif block is not None:
-        finding = (f"Este paquete no tiene sección de hallazgo: "
-                   f"{block.reason}. No se estima ni se rellena con el "
-                   f"período anterior.")
-    else:
-        finding = ("Este paquete no tiene sección de hallazgo: se generó sin "
-                   "acceso a la exportación de Tableau.")
-    rules.append(("Qué cubre la sección de hallazgo", finding))
+    rules.append(("Proyecciones, dónde enfocar y palancas", _forward_rule(
+        mission)))
 
     note = next((s for s in sections if s.key == DATA_NOTE), None)
     where = (f"en la página {note.page_label}" if note is not None
@@ -599,6 +604,29 @@ def how_to_read(mission, sections) -> list:
              PP.table(COLUMN_GLOSSARY, (150.0, PP.CONTENT_WIDTH - 150.0),
                       headers=("Columna", "Qué es"))]
     return flow
+
+
+def _forward_rule(mission) -> str:
+    """Rule 5: what the forward pages are, and what they rest on."""
+    fwd = mission.forward
+    bits = ["Toda proyección va como rango, con su método al lado, y sin "
+            "color: no es una calificación."]
+    if fwd.year is not None and fwd.year.low is not None:
+        bits.append(f"El año cierra entre {_range(fwd.year.low, fwd.year.high)} "
+                    f"bautismos según cuatro cálculos; harían falta "
+                    f"{_int(fwd.year.needed_per_month)} por mes para la meta.")
+    if fwd.pipeline is not None:
+        bits.append(f"Las {_int(fwd.pipeline.open_dates)} fechas bautismales "
+                    f"abiertas valen entre {_range(fwd.pipeline.low, fwd.pipeline.high)} "
+                    f"bautismos en seis semanas, por lo que fechas de su misma "
+                    f"edad dieron antes.")
+    bits.append("Debajo de la misión, los bautismos son registros de Tableau "
+                "por área del organigrama: no hay cifra certificada por zona. "
+                "«Dónde enfocar» reparte lo que le falta a la misión entre sus "
+                "unidades, y las palancas siguen a quienes se encontraron "
+                "hace tres a seis meses, cuando la iglesia, la fecha y el "
+                "bautismo ya tuvieron tiempo de ocurrir.")
+    return " ".join(bits)
 
 
 #: The metric table's columns, named as its heads print them (finding B7: four
@@ -780,26 +808,6 @@ def _verdict(row, *, graded: bool = True) -> str:
     return f"{word} · {pct}"
 
 
-def leadership_note(goal: float, period) -> str:
-    """The line under a Key Indicator's name that gives leadership's goal
-    (finding B5).
-
-    It used to read "meta de traslado 679,3" — a decimal no goal was ever set
-    at, under the name of a goal that is 2.038. The figure is the transfer
-    goal PRO-RATED to the weeks this period holds (`model._leadership_goals`),
-    so the note says so, and rounds: a third of a person is not a target.
-    """
-    value = es_display.integer(round(goal))
-    weeks = period.weeks_elapsed
-    if period.key == P.THIS_TRANSFER and weeks < period.full_weeks:
-        return (f"meta del traslado · {weeks} de {period.full_weeks} "
-                f"semanas: {value}")
-    if period.key in (P.THIS_TRANSFER, P.LAST_TRANSFER):
-        return f"meta del traslado: {value}"
-    noun = "semana" if weeks == 1 else "semanas"
-    return f"meta de traslado, a prorrata de {weeks} {noun}: {value}"
-
-
 def ki_lines(model, *, comparable: bool, confident: bool = True) -> list:
     """The seven Key Indicators as printable rows (decisions 10, 44, 46).
 
@@ -828,8 +836,7 @@ def ki_lines(model, *, comparable: bool, confident: bool = True) -> list:
                 note = "sin color: los bautismos se miden contra la meta anual"
         lines.append(PP.MetricLine(
             label=row.label, value=_count(real),
-            goal=(es_display.integer(round(row.lead_goal))
-                  if row.lead_goal else es_display.NA),
+            goal=(_goal(row.lead_goal) if row.lead_goal else es_display.NA),
             own=_count(row.meta) if row.meta else es_display.NA,
             pct=row.grade.pct, status=row.grade.status,
             verdict=_verdict(row),
@@ -839,13 +846,6 @@ def ki_lines(model, *, comparable: bool, confident: bool = True) -> list:
 
 
 LEAD_GOAL_HEAD = PP.LEAD_GOAL_HEAD
-
-
-def _ki_headers(*, based: bool, against: str = "") -> tuple:
-    """The Key Indicator table's seven heads (decision 44)."""
-    change = _metric_headers(based=based, against=against)[-1]
-    return ("Métrica", "Real", ("Meta", "liderazgo"), "Compromiso", "",
-            LEAD_GOAL_HEAD, change)
 
 
 def nightly_lines(model, goals, *, comparable: bool) -> list:
@@ -974,28 +974,6 @@ def _attainment_status(pct) -> str | None:
 
 # ── The mission's pages ───────────────────────────────────────────────────────
 
-#: The sentence under every unit's opening grades. Provo's, in intent: it says
-#: what the percentage is AND what it is not. Since decision 44 the grade is
-#: against leadership's goal; the companionships' own is printed beside it.
-GRADED_NOTE = ("Cada porcentaje es esta unidad contra la meta del liderazgo; "
-               "el compromiso de sus compañerías va al lado, sin color.")
-
-#: What it adds when the page above it DOES compare (finding A3), now on the
-#: productivity index rather than on goals (decision 45).
-COMPARED_NOTE = (" La sección de arriba la compara con otras por "
-                 "productividad, sin ninguna meta: la misión es 100.")
-
-
-def graded_note(*, compared: bool) -> str:
-    """`GRADED_NOTE`, and — when the ladder printed above it — which part of
-    the page is the exception."""
-    return GRADED_NOTE + (COMPARED_NOTE if compared else "")
-
-BASIS_NOTE = ("Meta: la de traslado del liderazgo para las semanas y áreas "
-              "que informaron. Compromiso: lo que se propusieron las "
-              "compañerías, sin color.")
-
-
 def _heading(model) -> list:
     st = PP.styles()
     return [Paragraph(PP.text(model.scope.name), st["title"]),
@@ -1049,30 +1027,6 @@ def _nightly_comparable(model) -> bool:
     return cov is not None and cov.usable and not cov.thin
 
 
-def _headline_tiles(model) -> list:
-    """The band at the foot of M1: the outcomes, largest first.
-
-    Baptisms lead because that is the number the council opens with, and the
-    three that follow are the Key Indicators furthest along the teaching path.
-    Each carries its own verdict, so the band is not four numbers without a
-    scale.
-    """
-    wanted = ("ki_baptized_confirmed_real", "ki_new_people_real",
-              "ki_friends_sacrament_real", "ki_baptismal_date_real")
-    tiles = []
-    for key in wanted:
-        row = model.ki(key)
-        if row is None:
-            continue
-        tiles.append(PP.Tile(label=row.label, value=_count(row.actual),
-                             note=_verdict(row), status=row.grade.status))
-    if not tiles:
-        tiles = [PP.Tile(label=r.label, value=_count(r.actual),
-                         note=_verdict(r), status=r.grade.status)
-                 for r in model.key_indicators[:4]]
-    return tiles
-
-
 #: Decision 37. The weekly form's baptism Key Indicator is the figure the
 #: packet trusts least — a handful of events a transfer, so one baptism moves
 #: it by a third — so it is
@@ -1105,80 +1059,6 @@ def _best_and_worst(model):
 
 
 # ── Blocks every level shares ─────────────────────────────────
-
-def rate_lines(model) -> list:
-    """The four conversion rates as printable rows (decision 13).
-
-    Empty below zone level, because the model leaves them empty there: a close
-    rate over one companionship's three lessons is a ratio of two small
-    integers wearing a percentage sign.
-
-    The bar fills against the rate's own target rather than against 100, so
-    "44,7% de contacto" reads as 89% of a 50% target and not as half of
-    nothing. That is the same statement the screen's card makes.
-    """
-    lines = []
-    for rate in model.rates:
-        value, target = rate.get("value"), rate.get("target")
-        pct = rate.get("pct_of_target")
-        den = rate.get("denominator_label") or ""
-        lines.append(PP.MetricLine(
-            label=rate.get("label") or rate.get("key", ""),
-            value=es_display.percent(value, 1),
-            goal=es_display.percent(target, 0) if target else es_display.NA,
-            pct=pct, status=_attainment_status(pct), magnitude=pct is None,
-            verdict=(f"{PP.STATUS_WORD[_attainment_status(pct)]} · "
-                     f"{_pct(pct)} de la meta") if pct is not None else "sin meta",
-            change=_rate_change(rate),
-            note=(f"{es_display.integer(rate.get('numerator'))} de "
-                  f"{es_display.integer(rate.get('denominator'))}"
-                  + (f" {den.lower()}" if den else ""))))
-    return lines
-
-
-def _rate_change(rate) -> tuple:
-    """A rate's move in percentage POINTS, as `(direction, "+2,3 pp")`.
-
-    `rate_metrics.rate_row` has always computed it (`point_delta`, which
-    already refuses a window with too few reporting days and already holds a
-    two-point band for "flat"); the packet never printed it. Points, never a
-    percent of a percent: close_rate going 7,4% to 9,7% is "+2,3 pp", not
-    "+31%".
-    """
-    change = rate.get("change")
-    if not change or change.get("points") is None:
-        return (0, es_display.NA)
-    points = float(change["points"])
-    # `signed_percent`'s convention: "+" written out, the minus from the
-    # number itself — the packet's fonts have no U+2212.
-    return (int(change.get("direction") or 0),
-            f"{'+' if points > 0 else ''}{es_display.number(points, 1)} pp")
-
-
-def _rates_based(model) -> bool:
-    """Whether any rate carries a change — the head says "sin base" if not."""
-    return any((r.get("change") or {}).get("points") is not None
-               for r in model.rates)
-
-
-def score_tiles(model) -> list:
-    """The four scores as a tile band (decision 18).
-
-    Ungraded on purpose: these are the scoring agent's own composites on a
-    0-100 scale that is not a percentage of a goal, and colouring them with the
-    90/60 bands would claim they are. The rank line beneath says where the unit
-    sits, which is the comparison that means something.
-    """
-    scores = model.scores
-    if scores is None or not scores.measured:
-        return []
-    pairs = (("Esfuerzo", scores.effort), ("Habilidad", scores.skill),
-             ("Indicadores Clave", scores.ki),
-             ("Efectividad", scores.effectiveness))
-    return [PP.Tile(label=label, value=es_display.number(value, 1),
-                    note="de 100")
-            for label, value in pairs if value is not None]
-
 
 def ladder_rows(model, spec: PP.RankedSpec) -> list:
     """This unit against the unit above it and against the mission.
@@ -1238,7 +1118,7 @@ def gap_rows(model, *, limit: int | None = None,
                         note=f"contra {parent.role}")]
 
 
-def ladder_block(model) -> list:
+def ladder_block(model, *, gaps: bool = True, strip: bool = True) -> list:
     """The whole comparison section: the three scales, then the seven gaps.
 
     One block so every level that carries it carries the same thing — a zone
@@ -1251,15 +1131,14 @@ def ladder_block(model) -> list:
     if not rows:
         return []
     above = next((r.scope.name for r in model.ladder[1:] if not r.is_self), "")
-    flow = [Spacer(0, 10),
-            PP.SectionHead(_ladder_title(model),
+    flow = [PP.SectionHead(_ladder_title(model),
                            "productividad por compañería · misión = 100")]
     flow.extend(rows)
-    gaps = gap_rows(model)
+    gaps = gap_rows(model) if gaps else []
     if gaps:
         flow.append(Spacer(0, 6))
         flow.extend(gaps)
-    strip = sibling_strip(model)
+    strip = sibling_strip(model) if strip else []
     if strip:
         flow.append(Spacer(0, 6))
         flow.extend(strip)
@@ -1331,112 +1210,6 @@ def _ladder_title(model) -> str:
     return "Contra " + (f"{head} y {names[-1]}" if head else names[-1])
 
 
-def at_a_glance(model, *, weekly_ok: bool, weekly_sure: bool) -> list:
-    """The unit's first page: what is strongest, what to move, the headlines.
-
-    Identical at every level, because the question is. Provo opens a zone page
-    and a district page the same way it opens the mission's, and a leader who
-    has read one has read them all.
-    """
-    st = PP.styles()
-    W = PP.CONTENT_WIDTH
-    best, worst = _best_and_worst(model)
-    flow = _heading(model)
-    flow.append(PP.SectionHead("Dónde estamos", model.period.window_label))
-    if best is not None:
-        flow.append(Paragraph(
-            PP.text(f"Lo más fuerte: {best.label} va en {_pct(best.grade.pct)} "
-                    f"de la meta del liderazgo — {_count(best.lead_actual)} "
-                    f"contra {_count(round(best.lead_goal))}."), st["body"]))
-    if worst is not None:
-        flow.append(Paragraph(
-            PP.text(f"Lo que hay que mover: {worst.label} es lo más atrasado, "
-                    f"en {_pct(worst.grade.pct)} — {_count(worst.lead_actual)} "
-                    f"contra {_count(round(worst.lead_goal))}."), st["body"]))
-    if best is None and worst is None:
-        flow.append(Paragraph(PP.text(
-            "Ningún Indicador Clave tiene con qué medirse en este período: "
-            "o no hay meta del liderazgo, o nadie informó."), st["body"]))
-    if model.index.value is not None and model.scope.level != S.MISSION:
-        flow.append(Paragraph(PP.text(
-            f"Productividad: {_idx(model.index.value)} — cada compañería "
-            f"produce {_index_words(model.index.value)} que el promedio de la "
-            f"misión" + (", sobre pocas cifras" if model.index.thin else "")
-            + "."), st["body"]))
-    baptisms = unit_baptism_line(model)
-    if baptisms:
-        flow.append(Paragraph(PP.text(baptisms), st["body"]))
-    flow.append(Spacer(0, 8))
-    flow.append(PP.stat_tiles(W, _headline_tiles(model)))
-    # A zone reads against the mission, an area against its district — the
-    # same section the district page has carried since P4, now at every level
-    # that has something above it (Zackary, 2026-09-23). The mission's ladder
-    # is empty and the block is simply absent.
-    ladder = ladder_block(model)
-    flow.extend(ladder)
-    behind = furthest_behind(model)
-    if behind:
-        # A sentence, not the three-row table this used to be. The full seven
-        # are now a few centimetres below on the same page (Phase V), so the
-        # table was the same rows printed twice for 85pt — and the ORDER was
-        # the only thing it added, which a sentence carries.
-        flow.append(Paragraph(PP.text(
-            "Los más atrasados contra la meta del liderazgo, en orden: "
-            + " · ".join(f"{r.label} {_pct(r.grade.pct)}" for r in behind)
-            + ". Los bautismos tienen su propia página, con la cifra "
-            "certificada."),
-            st["note_lead"]))
-    flow.append(Spacer(0, 4))
-    flow.append(Paragraph(PP.text(graded_note(compared=bool(ladder))),
-                          st["note"]))
-    return flow
-
-
-def key_indicator_page(model, *, weekly_ok: bool, weekly_sure: bool) -> list:
-    st = PP.styles()
-    return [
-        PP.SectionHead("Indicadores Clave",
-                       f"los siete · {model.compliance_label}"),
-        PP.metric_table(ki_lines(model, comparable=weekly_ok,
-                                 confident=weekly_sure),
-                        widths=PP.KI_COLUMNS,
-                        headers=_ki_headers(
-                            based=weekly_ok and weekly_sure,
-                            against=_against_label(model))),
-        Spacer(0, 6),
-        Paragraph(PP.text(BASIS_NOTE), st["note"]),
-        Paragraph(PP.text(_comparison_note(model)), st["note_lead"]),
-    ]
-
-
-def week_page(model) -> list:
-    st = PP.styles()
-    weeks, rows, boundaries, reporting = _week_rows(model)
-    if not rows:
-        return [PP.SectionHead("Semana a semana", "solo semanas completas"),
-                Paragraph(PP.text(
-                    "Sin semanas completas informadas en este período."),
-                    st["body"])]
-    flow = [
-        PP.SectionHead("Semana a semana", "solo semanas completas"),
-        PP.week_table(PP.CONTENT_WIDTH, weeks, rows, boundaries=boundaries,
-                      footer=("Áreas que informaron, de "
-                              f"{es_display.integer(model.scope.area_count)}",
-                              reporting, "")),
-        Spacer(0, 6),
-        Paragraph(PP.text(
-            "Cada línea tiene su propia escala; la regla punteada es el día "
-            "de traslado, y una semana que nadie informó corta la línea."),
-            st["note"]),
-    ]
-    if len(weeks) > PP.WEEK_COLUMN_LIMIT:
-        flow.append(Paragraph(PP.text(
-            f"El período tiene {es_display.integer(len(weeks))} semanas "
-            f"completas, más de las que caben en columnas; queda la línea."),
-            st["note"]))
-    return flow
-
-
 def children_page(model) -> list:
     """The units one level down, weakest first (decisions 14, 15, 16)."""
     st = PP.styles()
@@ -1446,7 +1219,9 @@ def children_page(model) -> list:
         "menos productiva primero · misión = 100")]
     flow.extend(child_rows(model, spec))
     flow.append(Spacer(0, 6))
-    flow.append(Paragraph(PP.text(INDEX_NOTE), st["note"]))
+    flow.append(Paragraph(PP.text(
+        INDEX_NOTE if model.scope.level == S.MISSION else INDEX_NOTE_SHORT),
+        st["note"]))
     return flow
 
 
@@ -1457,6 +1232,12 @@ INDEX_NOTE = ("A la derecha, el índice de productividad: lo que produce cada "
               "ninguna meta. Cada celda es un indicador del índice en la "
               "misma escala. Un área que no informó cuenta como cero; quién "
               "no informó está en su propia lista.")
+
+
+#: Below the mission: the one line a leader holding only their own pages
+#: needs, the full sentence being on the mission's page.
+INDEX_NOTE_SHORT = ("A la derecha, la productividad: lo que produce cada "
+                    "compañería por semana, misión = 100, sin ninguna meta.")
 
 
 def _index_words(value: float) -> str:
@@ -1632,319 +1413,9 @@ def nightly_page(model, goals) -> list:
     return flow
 
 
-def rates_and_scores(model) -> list:
-    """The four conversion rates and the four scores, where each belongs.
-
-    Rates at mission and zone (decision 13); scores wherever the agent wrote
-    any (decision 18), with the area's rank in its district when it has one.
-    """
-    st = PP.styles()
-    W = PP.CONTENT_WIDTH
-    flow = []
-    if model.rates:
-        flow.append(PP.SectionHead("Tasas de conversión",
-                                   "la razón de los totales de la unidad"))
-        based = _rates_based(model)
-        against = _against_label(model)
-        flow.append(PP.metric_table(
-            rate_lines(model),
-            headers=("Tasa", "Real", "Meta", "", "Contra la meta",
-                     (("Cambio", f"vs {against}") if based and against
-                      else "Cambio" if based else NO_BASE_HEAD))))
-        flow.append(Spacer(0, 4))
-        flow.append(Paragraph(PP.text(
-            "La razón de los totales de la unidad, no el promedio de las de "
-            "sus áreas; bajo cada nombre, qué divide a qué. El cambio va en "
-            "puntos porcentuales. Un denominador en cero no es 0%: no hubo "
-            "qué medir."),
-            st["note"]))
-    tiles = score_tiles(model)
-    if tiles:
-        flow.append(Spacer(0, 10))
-        scores = model.scores
-        flow.append(PP.SectionHead(
-            "Puntajes",
-            f"{es_display.integer(scores.areas_scored)} áreas calificadas en "
-            f"{es_display.integer(scores.weeks)} semanas"))
-        flow.append(PP.stat_tiles(W, tiles))
-        note = ("Promedio de las semanas del período, sin color: una escala "
-                "de 0 a 100, no una meta. Un área sin calificar no cuenta "
-                "como cero.")
-        if scores.rank:
-            note = (f"{model.scope.name} va {es_display.integer(scores.rank)} "
-                    f"de {es_display.integer(scores.of)} en su distrito, por "
-                    f"efectividad. ") + note
-        flow.append(Spacer(0, 4))
-        flow.append(Paragraph(PP.text(note), st["note"]))
-    return flow
-
-
 # ── The Tableau pages (M6, M7, Z4) ───────────────────────────────
 
-#: Every Tableau block opens with this, and it is not optional (decision 32).
-#: A reader who does not know how far the export reaches cannot weigh a single
-#: figure under it.
-def _freshness(model) -> str:
-    block = model.tableau
-    return block.export.freshness_label(model.today)
-
-
-def _finding_absent(model, title: str) -> list:
-    """The refusal, printed where the section would have been.
-
-    Decision 32: a packet with no finding section is better than one quietly
-    showing August. The reason is printed rather than the section silently
-    disappearing, because a reader who notices the gap should not have to
-    guess whether it is a bug.
-    """
-    st = PP.styles()
-    block = model.tableau
-    return [
-        PP.SectionHead(title, "sin datos"),
-        Paragraph(PP.text(f"Sin sección de hallazgo: {block.reason}."),
-                  st["body"]),
-        Spacer(0, 4),
-        Paragraph(PP.text(_freshness(model)), st["note"]),
-        Paragraph(PP.text(
-            "Las cifras de Tableau no se estiman ni se rellenan con el "
-            "período anterior. Cuando la exportación no alcanza, la sección "
-            "no se imprime y esta página dice por qué."), st["note"]),
-    ]
-
-
-def _stage_change(stage) -> tuple | None:
-    """`(direction, text)` for a funnel stage, or None.
-
-    Only a mature stage carries one. `Stage.change` already refuses for an
-    immature one; this is the formatting.
-    """
-    pct = stage.change
-    if pct is None:
-        return None
-    direction = 0 if abs(pct) < 1 else (1 if pct > 0 else -1)
-    return (direction, es_display.signed_percent(pct))
-
-
-def funnel_block(model) -> list:
-    """The cohort funnel, its channel mix and its top sources.
-
-    The three answer one question in three grains: how far the people found in
-    this window have travelled, who found them, and by what means.
-    """
-    st = PP.styles()
-    W = PP.CONTENT_WIDTH
-    block = model.tableau
-    stages = block.stages
-    flow = [
-        PP.stage_bars(W, [(s.label, s.count) for s in stages],
-                      mature=[s.mature for s in stages],
-                      changes=[_stage_change(s) for s in stages]),
-        Spacer(0, 6),
-        Paragraph(PP.text(
-            "Una cohorte: las personas encontradas en esta ventana, y hasta "
-            "dónde han llegado desde entonces. Entre barras, cuántas del "
-            "paso anterior siguieron."), st["note"]),
-    ]
-    # One note, not two. The pair said "el embudo sigue a las personas
-    # encontradas en esta ventana" twice, and these seven lines print on all
-    # 18 finding sections — they have to travel with every page, because a
-    # zone leader is handed their own pages and nothing else, so the saving
-    # has to come out of the words rather than out of the page.
-    if block.maturity_note:
-        flow.append(Paragraph(PP.text(block.maturity_note), st["note"]))
-
-    if any(_stage_change(s) for s in stages):
-        flow.append(Paragraph(PP.text(
-            f"La columna de la derecha compara con los mismos "
-            f"{es_display.integer(block.window.days)} días justo antes "
-            f"({block.before.label}), para que las dos ventanas midan lo "
-            f"mismo."), st["note_lead"]))
-    return flow
-
-
-def mix_block(model) -> list:
-    """Who found these people, and by what means."""
-    st = PP.styles()
-    W = PP.CONTENT_WIDTH
-    block = model.tableau
-    flow = []
-    if block.mix:
-        flow += [
-            KeepTogether([
-                PP.SectionHead("Quién las encontró", "categoría de hallazgo"),
-                PP.share_bar(W, [(m.label, m.count) for m in block.mix])]),
-        ]
-    if block.sources:
-        total = block.found or 1
-        rows = [[s.label, es_display.integer(s.count),
-                 es_display.percent(s.count / total * 100),
-                 PP.bar_vs_goal(90, pct=s.count / total * 100,
-                                fill=PP.SERIES[0])]
-                for s in block.sources]
-        flow += [
-            Spacer(0, 10),
-            KeepTogether([
-                PP.SectionHead(
-                    "De dónde salieron",
-                    f"las {es_display.integer(len(block.sources))} fuentes "
-                    f"más grandes"),
-                PP.table(rows, (210.0, 60.0, 60.0, 110.0),
-                         headers=("fuente", "personas", "del total", ""),
-                         align=("l", "r", "r", "l"))]),
-            Spacer(0, 4),
-            Paragraph(PP.text(
-                "Sobre las personas encontradas en esta ventana, no sobre el "
-                "año."), st["note"]),
-        ]
-    return flow
-
-
-def finding_units_block(model) -> list:
-    """The unit ranking under a finding section — zones at mission level, the
-    unit's own children below it.
-
-    Ranked by CONTACT RATE rather than by people found, weakest first. Found
-    is a size: a big zone finds more people and that is not a verdict on it.
-    What a council can act on is the share of those people the missionaries
-    got to talk to, which is the same reasoning `zone_comparison` applies to
-    every other cross-unit table in this app.
-    """
-    st = PP.styles()
-    W = PP.CONTENT_WIDTH
-    block = model.tableau
-    if not block.units:
-        return []
-    # 44pt (the default) clipped both headers to "ENCON..." / "ENSEÑ...".
-    spec = PP.RankedSpec(width=W, cells=("encontradas", "enseñándose"),
-                         cell_width=64.0)
-    title = ("Las zonas de la misión" if block.whole_mission
-             else f"Sus {block.unit_noun}")
-    sub = "menor tasa de contacto primero"
-    # The head, the column header and the first rows travel together: without
-    # it a district's page ended with "SUS ÁREAS" and an empty column header
-    # at the foot and every row on the next sheet. Three rows rather than all
-    # of them, so a ten-zone table can still break where it has to.
-    # The notes sit ABOVE the rows rather than under them. Measured after the
-    # density pass: a closing paragraph left alone at the top of a sheet made
-    # eight pages of 116 that were 98% blank, and tying it to the last two
-    # rows with `KeepTogether` cost five whole pages — 60pt that jumps takes
-    # a page with it. Above the table it explains the bar before the reader
-    # meets it and can never be widowed, because the head is already keeping
-    # the first rows company.
-    notes = [Paragraph(PP.text(
-        "La barra es la tasa de contacto, y el orden va por ella, no por "
-        "cuántas se encontraron."), st["note"])]
-    if block.whole_mission:
-        notes.append(Paragraph(PP.text(
-            "Las seis zonas sin formularios de Compass no aparecen en "
-            "ninguna otra página de este paquete. Aquí sí, porque Tableau las "
-            "cubre y el consejo dirige a toda la misión."), st["note"]))
-    opening, flow = ([PP.SectionHead(title, sub)] + notes
-                     + [Spacer(0, 2),
-                        PP.ranked_row(spec,
-                                      name=block.unit_noun.rstrip("s") or "unidad",
-                                      header=True)]), []
-    for i, unit in enumerate(block.units, start=1):
-        marks = []
-        if block.whole_mission:
-            marks.append("zona piloto de Compass" if unit.roster
-                         else "sin formularios de Compass")
-        if not unit.found:
-            marks.append("nadie encontrado en la ventana")
-        flow.append(PP.ranked_row(
-            spec, rank=(i if unit.found else None), name=unit.name,
-            sub=" · ".join(marks),
-            cells=(es_display.integer(unit.found),
-                   es_display.integer(unit.teaching)),
-            value=(_pct(unit.contact_rate) if unit.contact_rate is not None
-                   else es_display.NA),
-            bar=unit.contact_rate, bar_max=100))
-    return [KeepTogether(opening + flow[:3])] + flow[3:]
-
-
-def finding_page(model) -> list:
-    """M7 · Z4 · the district's finding pages (decisions 20, 24, 32, 34).
-
-    Runs to whatever length the content needs (decision 25); the pagination is
-    generated, so nothing downstream cares how many pages it turns out to be.
-    """
-    st = PP.styles()
-    block = model.tableau
-    if block is None:
-        return []
-    title = "Hallazgo"
-    if not block.present:
-        return _finding_absent(model, title)
-
-    flow = [
-        PP.SectionHead(title, block.window.caption),
-        Paragraph(PP.text(_freshness(model)), st["note_lead"]),
-        # Decision 34: every finding page says which population it counts.
-        # The mission's is the one that differs, so it prints darker.
-        Paragraph(PP.text(block.scope_note),
-                  st["note_lead" if block.whole_mission else "note"]),
-        Spacer(0, 8),
-    ]
-    flow.extend(funnel_block(model))
-    # The three blocks run on rather than each starting a sheet. Forcing a
-    # break between them printed three pages of finding behind every one of
-    # the 18 units and took the packet from 108 to 163 — for a district, three
-    # pages about fifty people. Same reasoning as P4 (h): platypus breaks
-    # where it has to and a zone of three districts does not need two thirds
-    # of a sheet left blank to prove it.
-    for part in (mix_block(model), finding_units_block(model)):
-        if part:
-            flow.append(Spacer(0, 12))
-            flow.extend(part)
-    return flow
-
-
 # ── M6 · the year against its goal ───────────────────────────────
-
-#: A year behind its pace by less than this many baptisms is amber, not red.
-#: Roughly one month's work on CCSM's own run rate (36-47 a month), which is
-#: the distance a mission can still make up inside a year. Painting a year at
-#: 61% of its goal in September entirely red says "lost" about a year that is
-#: 32 baptisms behind.
-PACE_WARN_BAPTISMS = 40.0
-
-
-def _pace_status(gap: float | None) -> str | None:
-    if gap is None:
-        return None
-    if gap >= 0:
-        return "good"
-    return "warn" if gap > -PACE_WARN_BAPTISMS else "bad"
-
-
-def _baptism_tiles(bap) -> list:
-    tiles = [PP.Tile(label="Bautismos certificados",
-                     value=(es_display.integer(bap.total)
-                            if bap.total is not None else es_display.NA),
-                     note=(f"{es_display.integer(bap.months)} meses cerrados"
-                           if bap.months else "sin meses cerrados"))]
-    if bap.goal:
-        tiles.append(PP.Tile(label="Meta anual",
-                             value=es_display.integer(bap.goal),
-                             note=(f"{_pct(bap.attainment)} alcanzado"
-                                   if bap.attainment is not None else "")))
-    gap = bap.gap
-    if gap is not None:
-        tiles.append(PP.Tile(
-            label="Contra el ritmo de la meta",
-            value=es_display.number(gap, 0) if gap < 0
-            else f"+{es_display.number(gap, 0)}",
-            note="a esta altura del año",
-            status=_pace_status(gap)))
-    landing = bap.landing
-    if landing:
-        tiles.append(PP.Tile(
-            label="Si el año sigue así",
-            value=es_display.integer(round(landing["value"])),
-            note=(f"proyección sobre {es_display.integer(landing['months'])} "
-                  f"meses")))
-    return tiles
-
 
 def _period_tiles(bap, period) -> list:
     """The band that leads M6: the selected period's own certified figure
@@ -1993,98 +1464,43 @@ def _period_sentence(bap, period) -> str:
 
 
 def baptism_page(model) -> list:
-    """M6 — the period's baptisms, then the year against its one annual goal.
-
-    The period leads (decisions 41, 42): switch the period and the headline
-    changes with it, and it is the CERTIFIED figure for exactly those days or
-    no figure. The year below is context and is unchanged: its pace, its
-    projection and its month table stay on closed months, because a month half
-    counted drawn as a point makes the year look like it is collapsing.
-
-    Certified figures only (decision 21). The weekly form's own baptism Key
-    Indicator is on M2 and does not agree with this; both are named here
-    rather than reconciled into a number that is neither.
+    """"Bautismos: el año y lo que viene" (AUDIT §5 item 3): the period's
+    CERTIFIED figure first (decisions 41, 42), then the year against the 527
+    with its landing range and the two years before it, then the open
+    baptismal dates. Certified figures only for the mission (decision 21);
+    the form's own figure is named in the closing note and never summed.
     """
     st = PP.styles()
     W = PP.CONTENT_WIDTH
+    if model.scope.level != S.MISSION:
+        return []
     block = model.tableau
     bap = block.baptisms if block is not None else None
-    if bap is None:
-        return []
-
-    flow = [PP.SectionHead(f"Bautismos · {model.period.label}",
-                           "cifra certificada · fuente: Tableau"),
-            PP.stat_tiles(W, _period_tiles(bap, model.period)),
-            Spacer(0, 4),
-            Paragraph(PP.text(_period_sentence(bap, model.period)),
-                      st["note_lead"]),
-            PP.SectionHead(f"El año {bap.year} contra su meta",
-                           "meses cerrados · fuente: Tableau"),
-            PP.stat_tiles(W, _baptism_tiles(bap)), Spacer(0, 10)]
-
-    if bap.goal and bap.attainment is not None:
-        pace = bap.pace
-        mark = None
-        if pace and bap.months:
-            mark = pace[bap.months - 1] / float(bap.goal) * 100
-        flow += [
-            PP.bar_vs_goal(W, pct=bap.attainment, height=11.0,
-                           status=_pace_status(bap.gap), mark_pct=mark),
-            Spacer(0, 5),
-            Paragraph(PP.text(
-                f"{bap.certified_label} de una meta de "
-                f"{es_display.integer(bap.goal)}. La marca violeta es dónde "
-                f"debería ir el año a esta altura, a un doceavo de la meta "
-                f"por mes."), st["note"]),
-        ]
-    if bap.total is None:
+    flow = []
+    if bap is not None:
+        flow += [PP.SectionHead(f"Bautismos · {model.period.label}",
+                                "cifra certificada · fuente: Tableau"),
+                 PP.stat_tiles(W, _period_tiles(bap, model.period)),
+                 Spacer(0, 4),
+                 Paragraph(PP.text(_period_sentence(bap, model.period)),
+                           st["note_lead"]),
+                 Spacer(0, 8)]
+    year = year_block(model)
+    if year:
+        flow += year + [Spacer(0, 8)]
+    elif bap is not None:
         flow.append(Paragraph(PP.text(
-            f"{bap.certified_label}: Tableau no tiene capturado ningún mes "
-            f"cerrado de {bap.year}, así que el año no se dibuja contra su "
-            f"meta. No es un año sin bautismos; es un año sin captura."),
-            st["note"]))
-    if bap.provisional_label:
-        flow.append(Paragraph(PP.text(
-            f"{bap.provisional_label}. Está en lo que va del año, arriba, pero "
-            f"no en esta barra ni en el ritmo: un mes a medio contar dibujado "
-            f"como punto hace que el año parezca desplomarse cada vez que se "
-            f"genera el paquete."),
-            st["note"]))
-
-    months = [(es_display.MONTHS_ABBR[i], bap.certified.get(
-        f"{bap.year:04d}-{i + 1:02d}")) for i in range(12)]
-    shown = [(name, value) for name, value in months if value is not None]
-    if shown:
-        biggest = max(value for _, value in shown) or 1
-        rows = [[name, es_display.integer(value),
-                 PP.bar_vs_goal(120, pct=value / biggest * 100,
-                                fill=PP.SERIES[0])]
-                for name, value in shown]
-        flow += [
-            Spacer(0, 12),
-            PP.SectionHead("Mes a mes", "sólo meses cerrados"),
-            PP.table(rows, (120.0, 60.0, 140.0),
-                     headers=("mes", "bautismos", ""),
-                     align=("l", "r", "l")),
-        ]
-
-    # The note is unconditional. It is the packet's statement about WHICH of
-    # two figures it used, and that is worth saying even in a period where the
-    # form happened to report nothing.
-    #
-    # It used to say the two disagree because "los misioneros no siempre
-    # anotan el campo". That was retracted on 2026-10-02 (PLAN-2026-10-02-
-    # goals.md §2.5): the certified figure counts all ten zones and the form
-    # only the pilot's, and like for like they agree (6 against 5). A council
-    # packet must not tell its readers something false about the missionaries
-    # they lead (AUDIT-2026-10-06 C3).
-    flow += [
-        Spacer(0, 10),
-        Paragraph(PP.text(
+            f"Bautismos {model.today.year}: sin meses certificados todavía, "
+            f"así que el año no se dibuja ni se proyecta. No es un año sin "
+            f"bautismos; es un año sin captura."), st["note_lead"]))
+    pipe = pipeline_block(model)
+    if pipe:
+        flow += pipe
+    if bap is not None:
+        flow += [Spacer(0, 8), Paragraph(PP.text(
             f"Sobre la cifra de bautismos. Arriba está la cifra CERTIFICADA "
             f"de Tableau, que es la que cuenta. "
-            f"{_form_baptisms_sentence(model)}"), st["note_lead"]),
-    ]
+            f"{_form_baptisms_sentence(model)}"), st["note_lead"])]
     return flow
 
 
@@ -2108,7 +1524,8 @@ def _form_baptisms_sentence(model) -> str:
     The certified figure counts every zone of the mission; the weekly form is
     filled only in the pilot zones. Two different populations — so the two
     are never compared and never summed (decisions 21, 34), and neither is
-    evidence about whether companionships fill the field.
+    evidence about whether companionships fill the field (the sentence that
+    said so was retracted on 2026-10-02; AUDIT-2026-10-06 C3).
     """
     ki = model.ki("ki_baptized_confirmed_real")
     pilot = _pilot_zones(model)
@@ -2118,14 +1535,21 @@ def _form_baptisms_sentence(model) -> str:
     return (f"{said}La certificada cuenta todas las zonas de la misión y el "
             f"formulario sólo {pilot}, así que las dos cifras no se comparan, "
             f"y nunca se suman. La del formulario aparece en los Indicadores "
-            f"Clave "
-            f"bajo su propio nombre.")
+            f"Clave bajo su propio nombre.")
+
 
 
 # ── What is coming (decision 48, PLAN-2026-10-06 Phase 2) ─────────────────────
 #
 # Every figure here is a projection, printed as a range with its method in one
 # line and never coloured: a forecast is not a grade.
+
+def _goal(value) -> str:
+    """A goal on a printed row: whole from 10 up, one decimal below — a
+    goal of 0,4 is not "0" beside a row reading 400%."""
+    return (es_display.integer(round(value)) if abs(value) >= 10
+            else es_display.number(value, 1))
+
 
 def _int(value) -> str:
     return es_display.NA if value is None else es_display.integer(round(value))
@@ -2137,65 +1561,6 @@ def _range(low, high) -> str:
         return es_display.NA
     a, b = round(low), round(high)
     return _int(a) if a == b else f"{_int(a)}-{_int(b)}"
-
-
-#: The finish table's columns: name, so far, goal, the range, the range as a
-#: share of the goal, what each week left would need, and how many times the
-#: recent pace that is.
-FINISH_COLUMNS = (150.0, 50.0, 56.0, 84.0, 64.0, 64.0, 52.0)
-
-
-def finish_block(model) -> list:
-    """Where each Key Indicator finishes the transfer at recent pace, and
-    what it would need per week — the president's "where will this transfer
-    finish?" (AUDIT-2026-10-06 C4(a))."""
-    st = PP.styles()
-    fwd = model.forward
-    rows = fwd.finish
-    if not rows:
-        return []
-    left = rows[0].weeks_left
-    pace = rows[0].pace_weeks
-    flow = [PP.SectionHead(
-        f"Cómo termina el traslado {fwd.transfer}",
-        f"proyección · faltan {es_display.integer(left)} "
-        f"{'semana' if left == 1 else 'semanas'}")]
-    if left <= 0:
-        flow.append(Paragraph(PP.text(
-            "El traslado ya terminó: no queda nada que proyectar."),
-            st["note_lead"]))
-        return flow
-    table = []
-    for k in rows:
-        lo, hi = k.pct(k.low), k.pct(k.high)
-        table.append([
-            k.label, _int(k.actual),
-            _int(k.goal) if k.goal else es_display.NA,
-            _range(k.low, k.high),
-            (f"{_int(lo)}-{_int(hi)}%" if lo is not None and round(lo) != round(hi)
-             else (f"{_int(lo)}%" if lo is not None else es_display.NA)),
-            _int(k.needed_per_week),
-            (f"{es_display.number(k.factor, 1)}×" if k.factor is not None
-             else es_display.NA)])
-    flow.append(PP.table(
-        table, FINISH_COLUMNS,
-        headers=("Indicador", ("Hasta hoy", "real"), ("Meta", "traslado"),
-                 ("Termina en", "rango"), ("De la meta", "rango"),
-                 ("Hace falta", "por semana"), ("Veces", "su ritmo")),
-        align=("l", "r", "r", "r", "r", "r", "r")))
-    flow.append(Spacer(0, 4))
-    goal_note = ("" if all(k.goal_complete for k in rows) else
-                 " Falta la meta de alguna área, así que la meta es parcial.")
-    flow.append(Paragraph(PP.text(
-        f"Método: lo que va del traslado más las {es_display.integer(left)} "
-        f"semanas que faltan, cada una como la peor, el promedio o la mejor "
-        f"de las últimas {es_display.integer(pace)} semanas completas, con los "
-        f"informes de hoy (un área que no informa sigue sin sumar). Meta: la "
-        f"del liderazgo para el traslado entero, todas las áreas.{goal_note} "
-        f"«Veces su ritmo» es lo que haría falta cada semana dividido por la "
-        f"semana promedio reciente. Sin color: es una proyección, no una "
-        f"calificación."), st["note"]))
-    return flow
 
 
 def year_block(model) -> list:
@@ -2211,8 +1576,8 @@ def year_block(model) -> list:
     mission = model.scope.level == S.MISSION
     flow = [PP.SectionHead(f"Bautismos {yl.year}: cómo cierra el año",
                            f"{yl.source} · meses cerrados")]
-    tiles = [PP.Tile(label=f"En lo que va de {yl.year}", value=_int(yl.total),
-                     note=f"{es_display.integer(yl.months)} meses cerrados")]
+    tiles = [PP.Tile(label=f"Meses cerrados de {yl.year}", value=_int(yl.total),
+                     note=f"{es_display.integer(yl.months)} meses")]
     if yl.low is not None:
         tiles.append(PP.Tile(label="Cierre probable",
                              value=_range(yl.low, yl.high),
@@ -2260,9 +1625,14 @@ def year_block(model) -> list:
                 f"misión, la misma que tuvo de sus bautismos en los últimos "
                 f"doce meses ({es_display.percent(b.share * 100, 1)}); se "
                 f"imprime y no da color. ")
+    open_month = ""
+    if mission and yl.open_count:
+        open_month = (f"{_int(yl.open_count)} más en el mes en curso, "
+                      f"todavía sin cerrar: cuentan en lo que va del año, "
+                      f"no en el ritmo ni en la proyección. ")
     flow.append(Paragraph(PP.text(
-        f"{lead}Cierre probable: el mínimo y el máximo de cuatro cálculos — "
-        f"{anchors}. Sin color: es una proyección."), st["note"]))
+        f"{lead}{open_month}Cierre probable: el mínimo y el máximo de cuatro "
+        f"cálculos — {anchors}. Sin color: es una proyección."), st["note"]))
     return flow
 
 
@@ -2323,17 +1693,423 @@ def pipeline_block(model) -> list:
     return flow
 
 
-def forward_pages(model) -> list:
-    """The three forward blocks, as one run-on section."""
-    return run_on([finish_block(model), year_block(model),
-                   pipeline_block(model)])
+# ── The president's front section (PLAN-2026-10-06 Phase 3) ──────────────────
+
+def _spark_of(model, key) -> tuple:
+    """`(values, boundary fractions)` of a Key Indicator's twelve weeks."""
+    series = model.trend_series.get(key)
+    if series is None or not series.points:
+        return (), ()
+    weeks = [p.week for p in series.points]
+    span = max(1, (weeks[-1] - weeks[0]).days)
+    bounds = tuple(max(0.0, min(1.0, (day - weeks[0]).days / span))
+                   for day, _ in series.boundaries)
+    return tuple(p.actual for p in series.points), bounds
 
 
-def unit_baptism_line(model) -> str:
-    """A zone's or district's baptisms in the period, from Tableau's records
-    (decision 47) — the only baptism figure below the mission."""
-    b = model.forward.baptisms
-    return b.sentence if b is not None else ""
+def tablero_lines(model, *, comparable: bool, confident: bool) -> list:
+    """The seven, one line each, for the tablero (AUDIT §5 item 1)."""
+    finish = {k.key: k for k in model.forward.finish}
+    lines = []
+    for row in model.key_indicators:
+        values, bounds = _spark_of(model, row.key)
+        k = finish.get(row.key)
+        need = ""
+        if k is not None and k.needed_per_week is not None:
+            need = _int(k.needed_per_week) + (
+                f" · {es_display.number(k.factor, 1)}×" if k.factor else "")
+        lines.append(PP.TableroLine(
+            label=row.label, real=_count(row.actual),
+            own=_count(row.meta) if row.meta else es_display.NA,
+            per_comp=(es_display.number(row.per_active_area_week, 1)
+                      if row.per_active_area_week is not None
+                      else es_display.NA),
+            pct=row.grade.pct, status=row.grade.status,
+            verdict=_pct(row.grade.pct),
+            change=_change(row, comparable=comparable, confident=confident),
+            spark=values, boundaries=bounds,
+            finish=(_range(k.low, k.high) if k is not None and k.weeks_left > 0
+                    else ""),
+            need=need))
+    return lines
+
+
+def tablero_block(model) -> list:
+    """The unit's opening: where it stands in two sentences, and the seven
+    Key Indicators on one table — real, per companionship, against
+    leadership's goal, how they moved, their twelve weeks and, at mission and
+    zone level, where the transfer finishes and what it would need."""
+    st = PP.styles()
+    weekly_ok = _weekly_comparable(model)
+    weekly_sure = _weekly_confident(model)
+    forecast = bool(model.forward.finish) and model.forward.finish[0].weeks_left > 0
+    against = _against_label(model)
+    based = weekly_ok and weekly_sure
+    change = (("Cambio", f"vs {against}") if based and against
+              else "Cambio" if based else NO_BASE_HEAD)
+    heads = ["Indicador", "Real", ("Por", "comp./sem"),
+             ("Propia", "compromiso"), "", ("Meta", "liderazgo"), change,
+             ("12", "semanas")]
+    if forecast:
+        heads += [("Termina", "en"), ("Falta", "por semana")]
+    flow = opening(model)
+    flow += [
+        PP.SectionHead("El tablero", f"los siete · {model.compliance_label}"),
+        PP.tablero_table(tablero_lines(model, comparable=weekly_ok,
+                                       confident=weekly_sure),
+                         headers=tuple(heads), forecast=forecast),
+        Spacer(0, 4),
+    ]
+    note = ("Real: lo informado en el período. Por comp.: por compañería y "
+            "semana, contando a quien no informó. Propia: el compromiso, la "
+            "meta que las compañerías se pusieron — se imprime y no da color. "
+            "Meta: el porcentaje contra la meta del liderazgo sobre los "
+            "informes que la tienen — es lo único con color. 12 semanas: su "
+            "forma, cada línea en su escala.")
+    if model.scope.level != S.MISSION:
+        note = ("Por comp.: por compañería y semana. Propia: su compromiso, "
+                "sin color. Meta: contra la del liderazgo, lo único con "
+                "color. 12 semanas: su forma."
+                + (" Termina en y falta: proyección al ritmo reciente, sin "
+                   "color." if forecast else ""))
+    elif forecast:
+        k = model.forward.finish[0]
+        note += (f" Termina en: lo que va del traslado {model.forward.transfer} "
+                 f"más las {es_display.integer(k.weeks_left)} semanas que "
+                 f"faltan como la peor y la mejor de las últimas "
+                 f"{es_display.integer(k.pace_weeks)}; falta por semana: lo "
+                 f"que haría falta para la meta del traslado y cuántas veces "
+                 f"el ritmo de hoy. Proyecciones, sin color.")
+    flow.append(Paragraph(PP.text(note), st["note"]))
+    if model.comparison is not None and model.scope.level == S.MISSION:
+        flow.append(Paragraph(PP.text(_comparison_note(model)), st["note"]))
+    return flow
+
+
+def opening(model) -> list:
+    """The unit's name and the sentences a reader needs before the table:
+    strongest and weakest against leadership's goal, its productivity, its
+    baptisms where the mission is not the unit, and — at zone level — what is
+    coming."""
+    st = PP.styles()
+    best, worst = _best_and_worst(model)
+    flow = _heading(model)
+    lines = []
+    if best is not None:
+        lines.append(f"Lo más fuerte: {best.label} va en {_pct(best.grade.pct)} "
+                     f"de la meta del liderazgo — {_count(best.lead_actual)} "
+                     f"contra {_count(round(best.lead_goal))}.")
+    if worst is not None:
+        lines.append(f"Lo que hay que mover: {worst.label}, en "
+                     f"{_pct(worst.grade.pct)} — {_count(worst.lead_actual)} "
+                     f"contra {_count(round(worst.lead_goal))}.")
+    if best is None and worst is None:
+        lines.append("Ningún Indicador Clave tiene con qué medirse en este "
+                     "período: o no hay meta del liderazgo, o nadie informó.")
+    if model.index.value is not None and model.scope.level != S.MISSION:
+        lines.append(
+            f"Productividad: {_idx(model.index.value)} — cada compañería "
+            f"produce {_index_words(model.index.value)} que el promedio de la "
+            f"misión" + (", sobre pocas cifras" if model.index.thin else "")
+            + (f"; {FC.quadrant(model.index.value, model.trend)} en las "
+               f"últimas seis semanas" if FC.quadrant(model.index.value,
+                                                      model.trend) else "")
+            + ".")
+    fwd = model.forward
+    if fwd.baptisms is not None:
+        lines.append(fwd.baptisms.sentence)
+    if model.scope.level == S.ZONE:
+        bits = []
+        if fwd.year is not None and fwd.year.low is not None:
+            bits.append(f"cierre probable del año {_range(fwd.year.low, fwd.year.high)}"
+                        + (f" contra su parte de la meta, {_int(fwd.year.goal)}"
+                           if fwd.year.goal else ""))
+        if fwd.pipeline is not None:
+            bits.append(f"{_int(fwd.pipeline.open_dates)} fechas bautismales "
+                        f"abiertas, {_range(fwd.pipeline.low, fwd.pipeline.high)} "
+                        f"bautismos esperados en seis semanas")
+        if bits:
+            lines.append("Lo que viene: " + "; ".join(bits)
+                         + " (registros de Tableau, proyección sin color).")
+    if model.scope.level == S.ZONE and model.children:
+        silent = [a for c in model.children for a in c.areas_silent]
+        lines.append(f"Quién informó: {model.compliance_label}"
+                     + (f"; sin informe en todo el período: "
+                        f"{', '.join(silent)}." if silent else
+                        "; todas sus áreas informaron."))
+    flow.append(PP.SectionHead("Dónde estamos", model.period.window_label))
+    for line in lines:
+        flow.append(Paragraph(PP.text(line), st["body"]))
+    return flow
+
+
+#: The Pareto table: rank, unit, the share bar, the share, the running total,
+#: where the unit is shortest, its productivity and its trend.
+FOCUS_COLUMNS = (18.0, 138.0, 78.0, 40.0, 50.0, 108.0, 44.0, 44.0)
+
+#: A Key Indicator in a cell too narrow for its full name — one line, so a
+#: ranked table keeps its 17pt rows.
+SHORT_KI = {"ki_new_people_real": "Nuevas personas",
+            "ki_member_lessons_real": "Lecciones c/ miembros",
+            "ki_friends_sacrament_real": "Sacramental",
+            "ki_friends_first_week_real": "Primera semana",
+            "ki_baptismal_date_real": "Fecha bautismal",
+            "ki_baptized_confirmed_real": "Bautismos",
+            "ki_rc_at_church_real": "Conversos recientes"}
+
+
+def focus_block(model) -> list:
+    """"Dónde enfocar" (AUDIT-2026-10-06 H6): which units hold the shortfall,
+    and which of them are below the mission and falling."""
+    st = PP.styles()
+    rows = model.focus
+    if not rows:
+        return []
+    noun = {S.MISSION: "distritos", S.ZONE: "áreas"}[model.scope.level]
+    labels = {r.key: r.label for r in model.key_indicators}
+    flow = [PP.SectionHead("Dónde enfocar",
+                           f"lo que falta para la meta del liderazgo, por "
+                           f"{noun[:-1]}")]
+    table = []
+    biggest = max(r.share for r in rows) or 1.0
+    shown = rows
+    if model.scope.level == S.ZONE:
+        # Every row up to 80% of the shortfall, and the rest in one line: the
+        # zone's two pages (decision 49) cannot carry thirteen areas twice,
+        # and the full list is in the areas' own pages.
+        cut = next((i for i, r in enumerate(rows, start=1)
+                    if r.cumulative >= 80), len(rows))
+        shown = rows[:cut]
+    for i, r in enumerate(shown, start=1):
+        trail = [p for p in r.scope.trail if p != model.scope.name]
+        name = r.name + (f" · {trail[0]}" if model.scope.level == S.MISSION
+                         and trail else "")
+        table.append([
+            str(i), name,
+            PP.bar_vs_goal(FOCUS_COLUMNS[2] - 8, pct=r.share / biggest * 100,
+                           fill=PP.SERIES[0], track_color=PP.RULE_SOFT),
+            es_display.percent(r.share, 0), es_display.percent(r.cumulative, 0),
+            (SHORT_KI.get(r.worst) or labels.get(r.worst, ""))
+            if r.worst else es_display.NA,
+            _idx(r.index),
+            (es_display.signed_percent(r.trend) if r.trend is not None
+             else es_display.NA)])
+    flow.append(PP.table(
+        table, FOCUS_COLUMNS,
+        headers=("", noun.capitalize(),
+                 ("Parte de", "lo que falta"), "", "Acumulado",
+                 ("Donde más", "le falta"), ("Produc-", "tividad"),
+                 ("Tendencia", "6 semanas")),
+        align=("r", "l", "l", "r", "r", "l", "r", "r")))
+    head = next((i for i, r in enumerate(rows, start=1) if r.cumulative >= 80),
+                len(rows))
+    rest = rows[len(shown):]
+    falling = [r.name for r in rows
+               if FC.quadrant(r.index, r.trend) == "debajo y bajando"]
+    flow.append(Spacer(0, 6))
+    flow.append(PP.quadrant(
+        PP.CONTENT_WIDTH, 150.0 if model.scope.level == S.MISSION else 130.0,
+        [(r.name, r.index, r.trend) for r in rows],
+        x_label="productividad, misión = 100",
+        y_label="tendencia de las últimas 6 semanas",
+        corner="debajo de la misión y bajando"))
+    flow.append(Spacer(0, 4))
+    sentence = (f"Los primeros {es_display.integer(head)} {noun} suman el "
+                f"{es_display.percent(rows[head - 1].cumulative, 0)} de lo que "
+                f"le falta a {'la misión' if model.scope.level == S.MISSION else 'la zona'} "
+                f"para la meta del liderazgo en este período. ")
+    if rest:
+        sentence += (f"Fuera de la tabla, {es_display.integer(len(rest))} "
+                     f"{noun} más con el "
+                     f"{es_display.percent(100 - shown[-1].cumulative, 0)} "
+                     f"restante: {', '.join(r.name for r in rest)}. ")
+    sentence += (("Debajo de la misión y bajando: " + ", ".join(falling) + ".")
+                 if falling else "Ninguno está debajo de la misión y bajando.")
+    flow.append(Paragraph(PP.text(sentence), st["note_lead"]))
+    flow.append(Paragraph(PP.text(
+        "Parte de lo que falta: la meta del liderazgo de cada unidad (todas "
+        "sus áreas, a prorrata del período) menos lo que informó, sumado por "
+        "indicador con los pesos del índice; quien supera su meta no compensa "
+        "a nadie. Tendencia: las últimas tres semanas contra las tres "
+        "anteriores, por informe."), st["note"]))
+    return flow
+
+
+#: The mature funnel's columns: unit, cohort, six stages, the largest leak.
+FUNNEL_COLUMNS = (120.0, 56.0, 42.0, 42.0, 42.0, 42.0, 42.0, 42.0, 92.0)
+#: The rates' heads in a 70pt column — "Conversaciones Significativas" set
+#: in tracked capitals is twice that.
+RATE_HEADS = {"contact_rate": "Contacto", "mc_rate": "Conversación",
+              "lesson_rate": "Lecciones", "close_rate": "Invitación"}
+
+#: The rates-by-zone columns.
+RATES_COLUMNS = (130.0, 70.0, 70.0, 70.0, 70.0, 110.0)
+
+
+def levers_block(model) -> list:
+    """"Palancas" (AUDIT §5 item 4, M2, M3): the mature funnel by unit
+    against the mission with each unit's largest leak named, and — at mission
+    level — the conversion rates by zone and a result-to-driver line per
+    pilot zone."""
+    st = PP.styles()
+    fn = model.funnel
+    flow = []
+    if fn is not None and fn.mission is not None:
+        short = ("Intento", "Contacto", "Lecc.", "Iglesia", "Fecha",
+                 "Bautismo")
+        flow.append(PP.SectionHead(
+            "Palancas: el embudo maduro",
+            f"encontradas del {es_display.day_month(fn.start)} al "
+            f"{es_display.day_month(fn.end, with_year=True)}, seguidas hasta hoy"))
+
+        # The note ABOVE the table (Phase V's rule): under it, it was widowed
+        # onto a page of its own behind a zone's two pages.
+        flow.append(Paragraph(PP.text(
+            "Personas encontradas hace tres a seis meses y la parte que llegó "
+            "a cada paso hasta hoy: con ese tiempo, la iglesia, la fecha y el "
+            "bautismo ya tuvieron ocasión de ocurrir. La mayor fuga es el "
+            "paso que convierte menos del 85% de lo que convierte la misión. "
+            "Registros de Tableau por persona."), st["note"]))
+        flow.append(Spacer(0, 3))
+
+        def line(r, bold=False):
+            return ([r.name, _int(r.found)]
+                    + [(es_display.percent(r.pct(i), 0) if r.found else "")
+                       for i in range(len(fn.stages))]
+                    + [r.leak or ("" if bold else "—")])
+
+        table = [line(fn.mission, True)] + [line(r) for r in fn.rows]
+        flow.append(PP.table(
+            table, FUNNEL_COLUMNS,
+            headers=("", ("Encon-", "tradas")) + tuple(
+                (s, "%") for s in short[:len(fn.stages)]) + (
+                ("Mayor fuga", "vs la misión"),),
+            align=("l", "r") + ("r",) * len(fn.stages) + ("l",)))
+    if model.child_rates:
+        flow.append(Spacer(0, 8))
+        flow.append(PP.SectionHead("Tasas de conversión por zona",
+                                   "la razón de los totales · en puntos contra la misión"))
+        mission = {r["key"]: r for r in model.rates}
+        keys = [r["key"] for r in model.rates]
+        heads = [RATE_HEADS.get(r["key"], (r.get("label") or r["key"])
+                                .replace("Tasa de ", ""))
+                 for r in model.rates]
+        table = [["la misión"] + [es_display.percent(mission[k]["value"], 1)
+                                  if mission[k]["value"] is not None
+                                  else es_display.NA for k in keys] + [""]]
+        for zone, rates in model.child_rates:
+            by = {r["key"]: r for r in rates}
+            gaps = [(by[k]["value"] - mission[k]["value"], k) for k in keys
+                    if by.get(k) and by[k]["value"] is not None
+                    and mission[k]["value"] is not None]
+            low = min(gaps) if gaps else None
+            table.append(
+                [zone.name] + [es_display.percent(by[k]["value"], 1)
+                               if by.get(k) and by[k]["value"] is not None
+                               else es_display.NA for k in keys]
+                + [(f"{heads[keys.index(low[1])].lower()} "
+                    f"{es_display.number(low[0], 1)} pts")
+                   if low is not None and low[0] < 0 else "—"])
+        flow.append(PP.table(
+            table, RATES_COLUMNS,
+            headers=tuple(["Zona"] + heads
+                          + [("Más baja", "contra la misión")]),
+            align=("l", "r", "r", "r", "r", "l")))
+        # What each rate divides by (AUDIT-2026-10-06 H2): Lecciones is over
+        # contact ATTEMPTS, which nobody guesses.
+        divides = []
+        for r in model.rates:
+            metric = r.get("metric")
+            if metric is None:
+                continue
+            divides.append(
+                f"{RATE_HEADS.get(r['key'], r['key'])}: "
+                f"{(r.get('numerator_label') or metric.numerator).lower()} "
+                f"entre {(r.get('denominator_label') or metric.denominator).lower()}")
+        if divides:
+            flow.append(Spacer(0, 3))
+            flow.append(Paragraph(PP.text(
+                "Qué divide a qué — " + " · ".join(divides) + ". Una tasa "
+                "es la razón de los totales de la zona, no el promedio de sus "
+                "áreas."), st["note"]))
+        drivers = _driver_lines(model)
+        if drivers:
+            flow.append(Spacer(0, 6))
+            flow.append(PP.SectionHead("De resultado a causa",
+                                       "una línea por zona", rule=False))
+            for text in drivers:
+                flow.append(Paragraph(PP.text(text), st["note_lead"]))
+    return flow
+
+
+def _driver_lines(model) -> list:
+    """M3: per pilot zone, the result it is shortest on, the conversion rate
+    furthest under the mission's, and its largest leak — one line, so a
+    lagging Key Indicator arrives with the activity behind it."""
+    mission = {r["key"]: r for r in model.rates}
+    labels = {r.key: r.label for r in model.key_indicators}
+    leaks = ({r.name: r.leak for r in model.funnel.rows}
+             if model.funnel is not None else {})
+    rates = dict((z.key, rs) for z, rs in model.child_rates)
+    out = []
+    for child in model.children:
+        idx = child.index
+        members = [(r, k) for k, r in idx.members if r is not None]
+        if not members:
+            continue
+        low_ratio, low_key = min(members)
+        bits = [f"{child.name}: donde menos produce es "
+                f"{labels.get(low_key, low_key)} ({_idx(low_ratio)})"]
+        by = {r["key"]: r for r in rates.get(child.scope.key, ())}
+        gaps = [(by[k]["value"] - mission[k]["value"], k) for k in by
+                if k in mission and by[k]["value"] is not None
+                and mission[k]["value"] is not None]
+        if gaps and min(gaps)[0] < 0:
+            gap, key = min(gaps)
+            bits.append(f"su tasa más lejos de la misión es "
+                        f"{(by[key].get('label') or key).lower()}, "
+                        f"{es_display.percent(by[key]['value'], 1)} contra "
+                        f"{es_display.percent(mission[key]['value'], 1)}")
+        if leaks.get(child.name):
+            bits.append(f"en el embudo maduro pierde más en el paso de "
+                        f"{leaks[child.name]}")
+        out.append("; ".join(bits) + ".")
+    return out
+
+
+def trend_block(model) -> list:
+    """The last twelve complete weeks, whatever the period (AUDIT H3): the
+    shape of all twelve, the figures of the last six, and how many areas
+    filed each week under them."""
+    st = PP.styles()
+    series = [model.trend_series.get(r.key) for r in model.key_indicators]
+    series = [s for s in series if s is not None and s.points]
+    if not series:
+        return []
+    weeks = [p.week for p in series[0].points]
+    boundaries = []
+    for day, _ in series[0].boundaries:
+        after = [i for i, w in enumerate(weeks) if w >= day]
+        if after and after[0] > 0:
+            boundaries.append(after[0])
+    rows = [(s.label, [p.actual for p in s.points],
+             _count(sum(p.actual for p in s.points if p.actual is not None)))
+            for s in series]
+    reporting = [p.reporting for p in series[0].points]
+    return [
+        PP.SectionHead("Las últimas 12 semanas",
+                       "la forma de doce, las cifras de seis"),
+        PP.week_table(PP.CONTENT_WIDTH, weeks, rows, boundaries=boundaries,
+                      columns=6, spark_width=110.0,
+                      footer=("Áreas que informaron, de "
+                              f"{es_display.integer(model.scope.area_count)}",
+                              reporting, "")),
+        Spacer(0, 4),
+        Paragraph(PP.text(
+            "Cada línea en su propia escala; la regla punteada es un día de "
+            "traslado y una semana que nadie informó corta la línea. Total: "
+            "las doce semanas."), st["note"]),
+    ]
 
 
 # ── The pages of one unit ────────────────────────────────────
@@ -2378,93 +2154,39 @@ def run_on(blocks, *, gap: float = 10.0, floor: float | None = None) -> list:
 
 
 def mission_pages(model, goals, peers=None) -> list:
-    """M1-M7: where we stand, the seven, the weeks, the zones, the nights, the
-    year's baptisms, the finding.
-
-    M6 and M7 sit where §3.2 numbered them — after the nightly work and before
-    the scores — rather than being promoted for being outcomes. The baptism
-    figure is already the first tile on M1, so M6 is the year's ARC, which is
-    context and reads better once the council knows what the fortnight held.
-    """
-    weekly_ok = _weekly_comparable(model)
-    weekly_sure = _weekly_confident(model)
-    # Outcomes, then activity, then process — §3.2's order within every unit,
-    # and the reason the scores come last rather than first: they are a
-    # judgement about how the work was done, and a council reads them after it
-    # knows what the work was.
+    """The president's section (AUDIT-2026-10-06 §5): the tablero, where to
+    focus, the zones and who reported, the baptisms and what is coming, the
+    levers, the twelve-week strip, and the nightly work."""
     return run_on([
-        at_a_glance(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
-        key_indicator_page(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
-        finish_block(model), year_block(model), pipeline_block(model),
-        week_page(model), children_page(model), reporting_block(model),
-        nightly_page(model, goals), baptism_page(model),
-        finding_page(model), rates_and_scores(model),
+        tablero_block(model), focus_block(model),
+        children_page(model) + reporting_block(model),
+        baptism_page(model), levers_block(model), trend_block(model),
+        nightly_page(model, goals),
     ])
 
 
 def zone_pages(model, goals, peers=None) -> list:
-    """Z1-Z3 plus the week-by-week: at a glance, the seven, its districts and
-    every one of its areas, the nights.
-
-    The same order as the mission's, because the reader is the same reader one
-    rung down and Provo's zone page opens exactly like its mission page.
-
-    The area roster is the page a zone leader actually uses — Provo's "EVERY
-    AREA IN KINGS PEAK — ALL 8" — and it is every area, not a top five
-    (decision 15). It runs on from the district table rather than starting its
-    own page: a zone of three districts left two thirds of a sheet blank, and
-    platypus breaks the list wherever it has to.
-
-    Z4 is the finding section, roster-scoped: a zone's pages count the zone's
-    own areas, never the export's idea of which zone an area is in.
-    """
-    weekly_ok = _weekly_comparable(model)
-    weekly_sure = _weekly_confident(model)
-    # §3.2's order, unchanged. The district's tail had to be rearranged to
-    # save a sheet; measured, the same move here saved nothing and put two of
-    # the four zones at 51% blank instead of 41.
+    """Two pages (decision 49): the tablero with the transfer's finish and
+    its twelve weeks, the productivity ladder against the mission, its
+    districts, where its shortfall sits among its areas, and its levers."""
     return run_on([
-        at_a_glance(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
-        key_indicator_page(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
-        finish_block(model), year_block(model), pipeline_block(model),
-        week_page(model), children_page(model), reporting_block(model),
-        areas_page(model), nightly_page(model, goals), finding_page(model),
-        rates_and_scores(model),
+        tablero_block(model), ladder_block(model, gaps=False),
+        children_page(model),
+        # Every area by productivity when there is no shortfall to divide —
+        # a cycle nobody set goals for — so the zone's areas never vanish.
+        focus_block(model) or areas_page(model), levers_block(model),
     ])
 
 
 def district_pages(model, goals, peers=None) -> list:
-    """The same shape as the zone's, one rung down.
-
-    The comparison is the whole reason this page exists. A district leader has
-    no way to know whether 73% is good until they can see the zone at 78 and
-    the mission at 76 — the audit's own words, and the thing nothing in
-    Compass did before. Since Phase V it is `at_a_glance`'s own ladder block,
-    so it is the same section a zone reads against the mission.
-
-    It has no "todas las áreas" section: at district level the areas ARE the
-    children, and the same list under two headings is noise.
-    """
-    weekly_ok = _weekly_comparable(model)
-    weekly_sure = _weekly_confident(model)
-    # The scores ride with the children rather than closing the unit. §3.2
-    # put them last so a council reads a judgement about HOW the work was done
-    # after it knows what the work was — which held while every section had a
-    # page of its own. Now they are all one document four sheets long, and
-    # measured on the live packet the four score tiles alone were taking a
-    # fifth sheet that was 84% blank in all thirteen districts.
-    # The nightly table closes the district, and the finding section comes
-    # before it — §3.2's own order (outcomes, finding, nightly work), and the
-    # only block long enough to SPLIT across the last page boundary rather
-    # than jumping it. Measured: the finding section closing the unit put
-    # seven of thirteen districts on a fifth sheet that was 84% blank.
+    """One page (decision 49): the tablero (its twelve weeks are the spark
+    column), the ladder to its zone and the mission, and its areas by
+    productivity."""
     return run_on([
-        at_a_glance(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
-        children_page(model), rates_and_scores(model),
-        key_indicator_page(model, weekly_ok=weekly_ok, weekly_sure=weekly_sure),
-        week_page(model),
-        finding_page(model), nightly_page(model, goals),
+        tablero_block(model), ladder_block(model, gaps=False, strip=False),
+        children_page(model),
     ])
+
 
 
 def _children_title(model) -> str:
@@ -2501,41 +2223,51 @@ def _week_rows(model):
     return weeks, rows, boundaries, reporting
 
 
-def furthest_behind(model, limit: int = 3) -> list:
-    """The Key Indicators furthest from their own goal, weakest first.
-
-    Provo's "THE SIX FURTHEST BEHIND", at CCSM's scale. The same candidates as
-    the two sentences above it on the page (`_verdict_candidates`): a list of
-    the most behind is the same claim as "lo que hay que mover", three times,
-    and decision 37's reason applies to it word for word.
-    """
-    graded = _verdict_candidates(model)
-    return sorted(graded, key=lambda r: r.grade.pct)[:limit]
-
 # ── An area, which is a companionship ───────────────────────────
 
-#: How tall one area's block is allowed to be, so two fit on a page with a
-#: rule between them. Measured against the frame rather than guessed: 688pt of
-#: content, less 12pt for the divider, halved.
-AREA_BLOCK_HEIGHT = (PP.CONTENT_HEIGHT - 12) / 2
+AREAS_PER_PAGE = 3
 
 
 def _area_spark(model, row) -> object:
-    """One Key Indicator's complete weeks, as a drawing for its own row."""
-    series = model.series.get(row.key)
-    if series is None or len(series.points) < 2:
+    """One Key Indicator's last twelve weeks, as a drawing for its own row."""
+    values, bounds = _spark_of(model, row.key)
+    if len([v for v in values if v is not None]) < 2:
         return None
-    first = series.points[0].week
-    span = max(1, (series.points[-1].week - first).days)
-    boundaries = [max(0.0, min(1.0, (day - first).days / span))
-                  for day, _ in series.boundaries]
-    return PP.sparkline(AREA_COLUMNS_SPARK, 9.0,
-                        [p.actual for p in series.points],
-                        boundaries=boundaries)
+    return PP.sparkline(AREA_COLUMNS_SPARK, 8.0, list(values),
+                        boundaries=bounds)
 
 
-#: The width the spark gets inside the area table's last column.
-AREA_COLUMNS_SPARK = PP.AREA_COLUMNS[5] - 10
+#: The width the spark gets inside the area rows' last column.
+AREA_COLUMNS_SPARK = PP.AREA_ROW_COLUMNS[5] - 6
+
+#: The nightly inputs a companionship controls (AUDIT M5), in the words the
+#: area line prints them with.
+AREA_NIGHTLY = (("contacts_attempted", "intentos de contacto"),
+                ("friend_lessons", "lecciones con amigos"),
+                ("lessons_member_present", "con miembro presente"),
+                ("baptismal_invitations", "invitaciones al bautismo"),
+                ("church_invites", "invitaciones a la iglesia"))
+
+
+def area_nightly_line(model) -> str:
+    """The companionship's own nights, per week against its goal."""
+    rows = {r.key: r for r in model.nightly_metrics}
+    bits = []
+    for key, words in AREA_NIGHTLY:
+        r = rows.get(key)
+        if r is None or r.per_reporting_area_week is None:
+            continue
+        goal = (f" de {_per_week(r.goal_per_area_week)}"
+                if r.goal_per_area_week else "")
+        bits.append(f"{words} {_per_week(r.per_reporting_area_week)}{goal}")
+    cov = model.nightly_coverage
+    if not bits:
+        return ("Noches: ninguna informada en el período." if cov is not None
+                else "")
+    head = "Noches, por semana"
+    if cov is not None:
+        head += f" ({cov.label} informados)"
+    return head + ": " + " · ".join(bits) + "."
 
 
 def area_lines(model) -> list:
@@ -2546,30 +2278,26 @@ def area_lines(model) -> list:
 
 
 def area_block(model) -> list:
-    """One area's half page: who they are, their seven, what they are good at.
-
-    §3.2's list, in the order a companionship reads it. Their names first
-    (decision 27 — this is the one thing the old page never had), then the
-    seven against the goal they set themselves, then the two lines the agents
-    already chose for them, then their scores and where they sit in their
-    district.
-
-    "Su fortaleza / Para crecer" is READ, never recomputed: WEEKLY_BREAKDOWNS
-    stores `strength1_metric`, `strength2_metric` and `growth_metric` per area
-    per week, picked by the Apps Script agents, and a second opinion printed
-    beside the agents' own would be two answers to one question.
-    """
+    """One area's third of a page (P5 (a)): who they are, their seven against
+    leadership's goal with their twelve weeks, their own nights against
+    their goals (AUDIT M5), their productivity against their district, zone
+    and mission, and what the agents chose as their strength."""
     st = PP.styles()
     W = PP.CONTENT_WIDTH
     trail = " · ".join(model.scope.trail)
     flow = [
         Paragraph(PP.text(model.scope.name), st["area_title"]),
         PP.companionship_line(model.scope.companions),
-        Paragraph(PP.text(" · ".join(x for x in (trail, model.compliance_label)
+        Paragraph(PP.text(" · ".join(x for x in (trail, model.compliance_label,
+                                                 area_ladder_line(model))
                                      if x)), st["note"]),
-        Spacer(0, 4),
-        PP.area_metric_table(area_lines(model)),
+        Spacer(0, 2),
+        PP.area_ki_rows(W, area_lines(model)),
+        Spacer(0, 2),
     ]
+    nights = area_nightly_line(model)
+    if nights:
+        flow.append(Paragraph(PP.text(nights), st["note"]))
     strong = ", ".join(model.strengths)
     grow = model.growth or ""
     if strong or grow:
@@ -2578,16 +2306,17 @@ def area_block(model) -> list:
             bits.append(f"Su fortaleza: {strong}")
         if grow:
             bits.append(f"Para crecer: {grow}")
-        flow.append(Spacer(0, 3))
-        flow.append(Paragraph(PP.text(" · ".join(bits)), st["note_lead"]))
+        flow.append(Paragraph(PP.text(" · ".join(bits)), st["note"]))
     else:
-        flow.append(Spacer(0, 3))
         flow.append(Paragraph(PP.text(
             "Sin fortaleza ni meta de crecimiento esta semana — el análisis "
             "de los agentes va una semana atrás de los Indicadores Clave."),
             st["note"]))
     scores = model.scores
     if scores is not None and scores.measured:
+        # Kept on the area, where it has a comparator (its rank in its
+        # district); gone from mission and zone pages, where it had none
+        # (AUDIT-2026-10-06 M1).
         parts = [f"{name} {es_display.number(value, 1)}"
                  for name, value in (("Esfuerzo", scores.effort),
                                      ("Habilidad", scores.skill),
@@ -2600,14 +2329,8 @@ def area_block(model) -> list:
                      f"{es_display.integer(scores.of)} en su distrito, por "
                      f"efectividad")
         flow.append(Paragraph(PP.text(line), st["note"]))
-    ladder = area_ladder_line(model)
-    if ladder:
-        flow.append(Paragraph(PP.text(ladder), st["note_lead"]))
-    # The half page had 68pt of air under it, measured. This is what goes
-    # there: where the companionship sits among the other areas of their own
-    # district, which is the comparison they can actually see happening.
-    flow.extend(sibling_strip(model))
     return flow
+
 
 
 def area_ladder_line(model) -> str:
@@ -2626,12 +2349,6 @@ def area_ladder_line(model) -> str:
     line = (f"Productividad {_idx(own.value)} (misión = 100)"
             + (" · pocas cifras" if own.thin else ""))
     return line + (" · " + " · ".join(bits) if bits else "")
-
-
-def _signed(points: float) -> str:
-    """A gap in percentage points, with the sign a reader needs to see."""
-    sign = "+" if points >= 0 else "-"
-    return f"{sign}{es_display.number(abs(points), 0)} pts"
 
 
 # ── The body ──────────────────────────────────────────────
@@ -2804,42 +2521,35 @@ def data_note(models, goals=None) -> list:
 
 
 def _tableau_sentences(mission) -> list:
-    """What the data note says about the finding figures (decisions 32, 34, 35).
+    """What the data note says about the Tableau figures (decisions 32, 34,
+    35, 47).
 
-    Four things, and the packet is not safe to hand out without any of them:
-    where the export reaches, that its pages count a different set of zones
-    from every other page, which names it carries that the roster does not,
-    and — when there is no section at all — why.
+    Where the export reaches, which pages count all ten zones and which only
+    the roster's, the names it carries that the roster does not, and what the
+    forecasts and the mature funnel rest on.
     """
     block = getattr(mission, "tableau", None)
     if block is None:
-        return ["Sin sección de hallazgo: este paquete se generó sin acceso "
-                "a la exportación de Tableau."]
+        return ["Sin exportación de Tableau: este paquete no tiene bautismos "
+                "por zona, ni fechas abiertas, ni embudo maduro."]
 
     out = [block.export.freshness_label(mission.today) + "."]
     source = block.export.source_label()
     if source:
         out[-1] = out[-1][:-1] + f", cargada por {source}."
-
-    if not block.present:
-        out.append(f"Sin sección de hallazgo en este paquete: {block.reason}. "
-                   f"Las cifras de Tableau no se estiman ni se rellenan con "
-                   f"el período anterior.")
-        return out + _baptism_sentences(mission, block.baptisms)
-
-    window = block.window
     out.append(
-        f"Las páginas de hallazgo se apoyan en {window.label}"
-        + (f", que son {window.shortfall_label}: la exportación termina antes "
-           f"de que termine el período, y esas páginas no cubren los últimos "
-           f"días." if window.clipped else ", el período completo.")
-    )
+        "Toda cifra de Tableau va con su nombre y nunca se suma ni comparte "
+        "una tabla con las de los formularios de Compass: los formularios "
+        "cubren las 4 zonas del piloto y Tableau las 10. Las fechas abiertas "
+        "y el embudo maduro de la misión cuentan las diez zonas; los de cada "
+        "zona y distrito, sólo sus áreas del organigrama.")
     out.append(
-        "Toda cifra de hallazgo viene de Tableau y toda cifra de Indicadores "
-        "Clave y de trabajo nocturno viene de los formularios de Compass. "
-        "Nunca se suman ni comparten una tabla: los formularios cubren las 4 "
-        "zonas del piloto y Tableau cubre las 10, y la página de hallazgo de "
-        "la misión es la única del paquete que cuenta las diez.")
+        "Debajo de la misión, los bautismos son registros de Tableau por "
+        "persona (la fecha de confirmación), por área del organigrama: no "
+        "existe cifra certificada por zona, y los registros quedan algo por "
+        "debajo de la certificada. La parte de 527 de cada zona es la parte "
+        "de los bautismos de la misión que tuvo en los últimos doce meses "
+        "cerrados.")
     rec = block.reconciliation
     if rec is not None and rec.note:
         out.append(rec.note)
@@ -2922,13 +2632,13 @@ def _body(models, goals, pagination: Pagination) -> list:
         flow.append(PageBreak())
         flow.append(SectionStart(AREAS, pagination))
         for i, model in enumerate(areas):
-            if i and i % 2 == 0:
+            if i and i % AREAS_PER_PAGE == 0:
                 flow.append(PageBreak())
             elif i:
                 flow.append(Spacer(0, 6))
                 flow.append(PP.HairRule(color=PP.RULE, space_before=0,
                                         space_after=6))
-            if i % 2 == 0:
+            if i % AREAS_PER_PAGE == 0:
                 flow.append(PP.SetFurniture(furniture_for(model)))
             flow.append(SectionStart(model.scope.key, pagination))
             flow.append(KeepTogether(area_block(model)))
@@ -2981,7 +2691,10 @@ def build_packet(models, roster, goals=None) -> bytes:
         total = max((s.last_page for s in resolved if s.present), default=0)
         flow = (front_matter(mission, resolved, units, roster,
                              total_pages=total, pagination=measured)
-                + _body(models, goals, measured))
+                + _body(models, goals, measured)
+                + [PageBreak()]
+                + print_guide_pages(mission, resolved, units, roster,
+                                    total_pages=total, pagination=measured))
         pdf, measured.total = _render(flow)
         if measured.same_as(given):
             break

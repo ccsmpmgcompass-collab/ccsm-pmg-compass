@@ -1444,12 +1444,6 @@ class MetricLine:
 #: not a string.
 METRIC_COLUMNS = (150.0, 44.0, 44.0, 116.0, 96.0, 70.0)
 
-#: The Key Indicator table since decision 44: leadership's goal in META, the
-#: companionships' own in COMPROMISO (56pt: the tracked head sets at 50), the
-#: bar and the verdict against leadership's. Same 520pt.
-KI_COLUMNS = (126.0, 40.0, 42.0, 56.0, 90.0, 96.0, 70.0)
-
-
 def change_chip(width: float, change, *, height: float = 9.0) -> Drawing:
     """A direction and a size, right-aligned: a drawn triangle and its number.
 
@@ -1509,35 +1503,25 @@ def metric_table(lines, *, widths=METRIC_COLUMNS, headers=None) -> Table:
     st = styles()
     headers = headers or ("Métrica", "Real", "Meta", "", OWN_GOAL_HEAD,
                           "Cambio")
-    # Seven columns when the widths ask for them: the compromiso sits between
-    # the goal and the bar (decision 44).
-    own = len(widths) == 7
-    bar = 4 if own else 3
-    bar_width = widths[bar] - 8
+    bar_width = widths[3] - 8
     rows = []
     for line in lines:
         name = Paragraph(text(line.label), st["cell_bold"])
         if line.note:
             name = [name, Paragraph(text(line.note), st["note"])]
-        row = [
+        rows.append([
             name,
             Paragraph(text(line.value), st["cell_right"]),
             Paragraph(text(line.goal), st["cell_right"]),
-        ]
-        if own:
-            row.append(Paragraph(text(line.own), st["cell_right"]))
-        row += [
             bar_vs_goal(bar_width, pct=line.pct, status=line.status,
                         mark_pct=line.mark_pct, track_color=RULE_SOFT,
                         fill=SERIES[0] if line.magnitude else None),
             Paragraph(text(line.verdict), st["cell"]),
             line.spark if line.spark is not None
-            else change_chip(widths[-1] - 8, line.change),
-        ]
-        rows.append(row)
-    align = (["l", "r", "r", "r", "l", "l", "l"] if own
-             else ["l", "r", "r", "l", "l", "l"])
-    return table(rows, widths, headers=headers, pad=METRIC_PAD, align=align)
+            else change_chip(widths[5] - 8, line.change),
+        ])
+    return table(rows, widths, headers=headers, pad=METRIC_PAD,
+                 align=["l", "r", "r", "l", "l", "l"])
 
 
 #: Above this many complete weeks the value columns stop fitting and the strip
@@ -1582,7 +1566,7 @@ def companionship_line(names, *, width: float = CONTENT_WIDTH) -> Drawing:
 
 
 def week_table(width: float, weeks, rows, *, boundaries=(), footer=None,
-               spark_width: float = 70.0) -> Drawing:
+               spark_width: float = 70.0, columns: int | None = None) -> Drawing:
     """A metric per line: its name, its shape, every week's figure, the total.
 
     Provo prints the weeks' own numbers and is right to: over a transfer there
@@ -1615,6 +1599,16 @@ def week_table(width: float, weeks, rows, *, boundaries=(), footer=None,
     rows, weeks = list(rows), list(weeks)
     if not rows:
         return Drawing(width, 1)
+    # ``columns``: print only the trailing weeks as figures while the spark
+    # draws them all — the twelve-week trend strip (AUDIT-2026-10-06 H3)
+    # shows twelve weeks of shape and the last six weeks' numbers.
+    all_weeks = weeks
+    skip = 0
+    if columns is not None and len(weeks) > columns:
+        skip = len(weeks) - columns
+        weeks = weeks[skip:]
+        rows = [(label, values, total) for label, values, total in rows]
+        boundaries = [i - skip for i in (boundaries or ()) if i - skip > 0]
     show_weeks = 0 < len(weeks) <= WEEK_COLUMN_LIMIT
     total_w = 48.0
     label_w = 150.0
@@ -1659,7 +1653,7 @@ def week_table(width: float, weeks, rows, *, boundaries=(), footer=None,
         holder.transform = (1, 0, 0, 1, label_w, top - WEEK_ROW_HEIGHT + 2)
         d.add(holder)
         if show_weeks:
-            for n, value in enumerate(values[:len(weeks)]):
+            for n, value in enumerate(values[skip:skip + len(weeks)]):
                 right = weeks_x + n * week_w + week_w - 4
                 shown = es_display.NA if value is None else es_display.integer(value)
                 d.add(_string(right, base, shown, CELL,
@@ -1685,7 +1679,7 @@ def week_table(width: float, weeks, rows, *, boundaries=(), footer=None,
         d.add(_string(0, base, fit(label, CELL, label_w + spark_width), CELL,
                       INK_2))
         if show_weeks:
-            for n, value in enumerate(values[:len(weeks)]):
+            for n, value in enumerate(values[skip:skip + len(weeks)]):
                 right = weeks_x + n * week_w + week_w - 4
                 d.add(_string(right, base, es_display.integer(value), CELL,
                               INK, anchor="end"))
@@ -1734,3 +1728,171 @@ __all__ = [
     "bar_vs_goal", "sparkline", "stage_bars", "share_bar", "ranked_row",
     "RankedSpec",
 ]
+
+
+# ── 8 · The president's front section (PLAN-2026-10-06 Phase 3) ─────────────
+
+@dataclass(frozen=True)
+class TableroLine:
+    """One Key Indicator on the tablero: the whole story of the row on one
+    line — what was done, per companionship, against leadership's goal, how
+    it moved, its twelve weeks, and where the transfer is heading."""
+
+    label: str
+    real: str
+    per_comp: str
+    #: The companionships' own goal — decision 44's *compromiso*, printed and
+    #: never coloured.
+    own: str = ""
+    pct: float | None = None
+    status: str | None = None
+    verdict: str = ""
+    change: tuple | None = None
+    spark: tuple = ()
+    boundaries: tuple = ()
+    finish: str = ""
+    need: str = ""
+
+
+#: The tablero's columns, with and without the forecast (a district has no
+#: transfer forecast of its own).
+TABLERO_COLUMNS = (100.0, 34.0, 40.0, 44.0, 46.0, 38.0, 50.0, 60.0, 56.0, 52.0)
+TABLERO_COLUMNS_SHORT = (188.0, 36.0, 40.0, 44.0, 52.0, 38.0, 54.0, 68.0)
+
+
+def tablero_table(lines, *, headers, forecast: bool = True) -> Table:
+    st = styles()
+    widths = TABLERO_COLUMNS if forecast else TABLERO_COLUMNS_SHORT
+    rows = []
+    for line in lines:
+        row = [
+            Paragraph(text(line.label), st["cell_bold"]),
+            Paragraph(text(line.real), st["cell_right"]),
+            Paragraph(text(line.per_comp), st["cell_right"]),
+            Paragraph(text(line.own), st["cell_right"]),
+            bar_vs_goal(widths[4] - 8, pct=line.pct, status=line.status,
+                        track_color=RULE_SOFT),
+            Paragraph(text(line.verdict), st["cell_right"]),
+            change_chip(widths[6] - 8, line.change),
+            sparkline(widths[7] - 8, 9.0, list(line.spark),
+                      boundaries=line.boundaries),
+        ]
+        if forecast:
+            row += [Paragraph(text(line.finish), st["cell_right"]),
+                    Paragraph(text(line.need), st["cell_right"])]
+        rows.append(row)
+    align = ["l", "r", "r", "r", "l", "r", "l", "l"] + (["r", "r"] if forecast else [])
+    return table(rows, widths, headers=headers, pad=METRIC_PAD, align=align)
+
+
+def quadrant(width: float, height: float, points, *, x_ref: float = 100.0,
+             y_flat: float = 5.0, x_label: str = "", y_label: str = "",
+             corner: str = "") -> Drawing:
+    """Productivity across, trend up — every unit a named dot.
+
+    ``points`` is ``[(name, x, y)]``. The lower-left corner (below the
+    reference and falling) is tinted and named: it is the focus list, and the
+    one part of the picture a council should not have to look for.
+    """
+    d = Drawing(width, height)
+    pts = [(n, x, y) for n, x, y in points if x is not None and y is not None]
+    left, bottom, top_pad, right_pad = 30.0, 16.0, 8.0, 8.0
+    w = width - left - right_pad
+    h = height - bottom - top_pad
+    x_max = max([200.0] + [x * 1.1 for _, x, _ in pts])
+    span = max([30.0] + [abs(y) * 1.15 for _, _, y in pts])
+    span = 10.0 * math.ceil(span / 10.0)
+
+    def px(x):
+        return left + max(0.0, min(1.0, x / x_max)) * w
+
+    def py(y):
+        return bottom + (max(-span, min(span, y)) + span) / (2 * span) * h
+
+    d.add(Rect(left, bottom, px(x_ref) - left, py(-y_flat) - bottom,
+               fillColor=TINT, strokeColor=None, strokeWidth=0))
+    d.add(Rect(left, bottom, w, h, fillColor=None, strokeColor=RULE,
+               strokeWidth=0.5))
+    d.add(Line(px(x_ref), bottom, px(x_ref), bottom + h, strokeColor=INK_3,
+               strokeWidth=0.6, strokeDashArray=[2, 2]))
+    d.add(Line(left, py(0), left + w, py(0), strokeColor=INK_3,
+               strokeWidth=0.6, strokeDashArray=[2, 2]))
+    if corner:
+        d.add(_string(left + 4, bottom + 4, corner, NOTE, STATUS["bad"]))
+    for value in (0, x_ref, x_max):
+        d.add(_string(px(value), bottom - 9, es_display.integer(value), NOTE,
+                      INK_3, anchor="middle" if 0 < value < x_max else
+                      ("start" if value == 0 else "end")))
+    for value in (-span, 0, span):
+        d.add(_string(left - 3, py(value) - 2,
+                      ("+" if value > 0 else "") + es_display.integer(value)
+                      + "%", NOTE, INK_3, anchor="end"))
+    if x_label:
+        d.add(_string(left + w, bottom + h + 1, x_label, NOTE, INK_3,
+                      anchor="end"))
+    if y_label:
+        d.add(_string(left, bottom + h + 1, y_label, NOTE, INK_3))
+    for name, x, y in sorted(pts, key=lambda p: p[1]):
+        focus = x < x_ref and y <= -y_flat
+        cx, cy = px(x), py(y)
+        d.add(Circle(cx, cy, 2.8, fillColor=STATUS["bad"] if focus else NAVY,
+                     strokeColor=PAPER, strokeWidth=0.6))
+        label = fit(name, NOTE, 80)
+        anchor = "start" if cx < left + w - 70 else "end"
+        d.add(_string(cx + (4 if anchor == "start" else -4), cy + 2, label,
+                      NOTE, INK if focus else INK_2, anchor=anchor))
+    return d
+
+
+#: One area's Key Indicator rows, drawn — the third-of-a-page block (P5).
+AREA_ROW_HEIGHT = 12.0
+AREA_ROW_COLUMNS = (150.0, 32.0, 32.0, 36.0, 80.0, 88.0, 102.0)
+
+
+def area_ki_rows(width: float, lines) -> Drawing:
+    """The seven as fixed-height drawn rows: name, real, leadership's goal,
+    the bar, the verdict and the area's own weeks. A drawn row cannot wrap,
+    which is what lets three areas share a page."""
+    cols = AREA_ROW_COLUMNS
+    xs = [sum(cols[:i]) for i in range(len(cols))]
+    height = (len(lines) + 1) * AREA_ROW_HEIGHT
+    d = Drawing(width, height)
+    g = Group()
+    head_y = height - 8.5
+    for i, label in enumerate(("Indicador", "Real", "Meta", "Propia", "",
+                               "Contra la meta", "Semanas")):
+        if not label:
+            continue
+        right = i in (1, 2, 3)
+        _tracked(g, xs[i] + (cols[i] - 4 if right else 0), head_y,
+                 label.upper(), CELL_HEAD, INK_3,
+                 anchor="end" if right else "start")
+    d.add(g)
+    d.add(Line(0, height - AREA_ROW_HEIGHT + 1, width, height - AREA_ROW_HEIGHT + 1,
+               strokeColor=RULE, strokeWidth=0.5))
+    for n, line in enumerate(lines):
+        top = height - (n + 1) * AREA_ROW_HEIGHT
+        base = top - 9
+        d.add(_string(xs[0], base, fit(line.label, CELL, cols[0] - 6), CELL,
+                      INK))
+        d.add(_string(xs[1] + cols[1] - 4, base, line.value, CELL, INK,
+                      anchor="end"))
+        d.add(_string(xs[2] + cols[2] - 4, base, line.goal, CELL, INK_2,
+                      anchor="end"))
+        d.add(_string(xs[3] + cols[3] - 4, base, line.own, CELL, INK_3,
+                      anchor="end"))
+        bar = bar_vs_goal(cols[4] - 10, pct=line.pct, status=line.status,
+                          track_color=RULE_SOFT, height=5.0)
+        holder = Group(*bar.contents)
+        holder.transform = (1, 0, 0, 1, xs[4] + 4, base)
+        d.add(holder)
+        d.add(_string(xs[5], base, fit(line.verdict, CELL, cols[5] - 4), CELL,
+                      INK_2))
+        if line.spark is not None:
+            spark = Group(*line.spark.contents)
+            spark.transform = (1, 0, 0, 1, xs[6], base - 1)
+            d.add(spark)
+        if n:
+            d.add(Line(0, top, width, top, strokeColor=RULE_SOFT,
+                       strokeWidth=0.4))
+    return d

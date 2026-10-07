@@ -157,7 +157,7 @@ def test_the_run_sheet_sends_a_zone_leader_to_their_own_zones_pages(models, pdf)
     follows the mission directly, two joined by "+" when it does not — and
     every page it names has to carry what the row promises."""
     pages = _pages(pdf)
-    guide = pages[1]
+    guide = pages[-1]          # the print guide is the last page (AUDIT L1)
     row = re.search(r"Líderes de zona · Norte\s+([\d–+ ]+?)\s+\d+\s", guide)
     assert row, guide
     named = []
@@ -173,7 +173,7 @@ def test_the_run_sheet_sends_a_zone_leader_to_their_own_zones_pages(models, pdf)
 def test_the_last_page_number_the_guide_promises_is_the_last_page(pdf):
     pages = _pages(pdf)
     total = len(pages)
-    assert f"1–{total}" in pages[1]
+    assert f"1–{total}" in pages[-1]
     assert f"Página {total}" in pages[-1]
 
 
@@ -220,7 +220,7 @@ def test_a_district_with_no_leader_asks_for_no_copies_and_says_why():
 
 
 def test_that_note_reaches_the_printed_guide(pdf):
-    guide = _pages(pdf)[1]
+    guide = _pages(pdf)[-1]
     assert "Sin líder de distrito en el organigrama" in guide
     assert "2 de 3 distritos" in guide
 
@@ -271,7 +271,7 @@ def test_the_cover_states_the_period_the_progress_and_the_compliance(models, pdf
 def test_the_guide_tells_the_printer_not_to_scale_the_page(pdf):
     """Decision 25's acceptance in one sentence: "Fit to page" clips the
     footers, and the person at the printer is not the person who built it."""
-    guide = _pages(pdf)[1]
+    guide = _pages(pdf)[-1]
     assert "Tamaño real" in guide and "Ajustar a la página" in guide
 
 
@@ -316,21 +316,24 @@ def test_the_whole_packet_builds_without_streamlit():
 
 # ── Page 3: "Cómo leer este paquete" (C9, decision 40) ────────────────────────
 
-def test_page_three_is_the_rules_page(pdf):
-    assert "CÓMO LEER ESTE PAQUETE" in _pages(pdf)[2].upper()
+def test_page_two_is_the_rules_page(pdf):
+    """The print guide left page 2 for the back (AUDIT L1), so the rules come
+    straight after the cover."""
+    assert "CÓMO LEER ESTE PAQUETE" in _pages(pdf)[1].upper()
+    assert "GUÍA DE IMPRESIÓN" in _pages(pdf)[-1].upper()
 
 
 def test_the_contents_sends_the_reader_to_it_first(pdf):
     cover = _pages(pdf)[0]
     found = re.search(r"Cómo leer este paquete\s+(\d+)", cover)
-    assert found and found.group(1) == "3", cover
+    assert found and found.group(1) == "2", cover
     assert cover.index("Cómo leer este paquete") < cover.index("La misión")
 
 
-def test_the_mission_now_opens_on_page_four(pdf):
+def test_the_mission_now_opens_on_page_three(pdf):
     pages = _pages(pdf)
     claimed = re.search(r"La misión\s+(\d+)", pages[0])
-    assert claimed and claimed.group(1).startswith("4")
+    assert claimed and claimed.group(1).startswith("3")
 
 
 def test_the_rules_page_goes_in_the_full_copies_only(models):
@@ -338,7 +341,7 @@ def test_the_rules_page_goes_in_the_full_copies_only(models):
     The president and the assistants get it with the whole packet; a leader's
     own pages carry the one-line version of each rule."""
     starts = dict(zip([s.key for s in PK.sections_for(models)],
-                      (3, 4, 7, 8, 9, 10)))
+                      (2, 3, 7, 8, 9, 10, 11)))
     sections = [PK.replace(s, first_page=starts[s.key],
                            last_page=starts[s.key] + (2 if s.key == PK.MISSION
                                                       else 0))
@@ -347,7 +350,7 @@ def test_the_rules_page_goes_in_the_full_copies_only(models):
     rows = PK.hand_outs(sections, zones, ROSTER)
     leaders = [r for r in rows if r.who.startswith("Líderes")]
     assert leaders
-    assert all(not r.pages.startswith("3") for r in leaders)
+    assert all(not r.pages.startswith("2") for r in leaders)
     assert all(r.pages.startswith("1–") for r in rows[:2])
 
 

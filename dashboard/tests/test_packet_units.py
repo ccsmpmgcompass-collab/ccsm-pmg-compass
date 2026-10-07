@@ -226,41 +226,7 @@ def test_the_conversion_rates_stop_below_zone_level(district, zone):
     """Decision 13. A close rate over one companionship's three lessons is a
     ratio of two small integers wearing a percentage sign."""
     assert district.rates == ()
-    assert PK.rate_lines(district) == []
-
-
-def test_a_rate_line_prints_its_name_its_denominator_and_its_move(zone):
-    """AUDIT-2026-10-06 H2: never the key, always what it divides by, and the
-    change `point_delta` computed and the packet used to drop — in points."""
-    from dataclasses import replace
-    from app.analytics.period_delta import UP
-    row = {"key": "lesson_rate", "label": "Tasa de Lecciones",
-           "denominator_label": "Intentos de Contacto", "value": 9.5,
-           "target": 20.0, "pct_of_target": 47.5, "numerator": 95,
-           "denominator": 1000,
-           "change": {"points": 2.3, "direction": UP, "show": "points"}}
-    line = PK.rate_lines(replace(zone, rates=(row,)))[0]
-    assert line.label == "Tasa de Lecciones"
-    assert line.note == "95 de 1.000 intentos de contacto"
-    assert line.change == (UP, "+2,3 pp")
-    no_move = PK.rate_lines(replace(zone, rates=({**row, "change": None},)))[0]
-    assert no_move.change == (0, "—")
-
-
-def test_the_scores_print_ungraded(models):
-    """They are the agent's own 0-100 composites, not a percentage of a goal,
-    and the 90/60 bands would claim they were."""
-    scores = pd.DataFrame([
-        {"_week": "2026-09-13", "_area": "A1", "Effort_Score": 59.4,
-         "Skill_Score": 69.7, "KI_Score": 37.6, "Effectiveness_Score": 55.4}])
-    scored = M.build_all(data=_data(scores=scores))[0]
-    tiles = PK.score_tiles(scored)
-    assert [t.value for t in tiles] == ["59,4", "69,7", "37,6", "55,4"]
-    assert all(t.status is None for t in tiles)
-
-
-def test_a_unit_the_agent_never_scored_gets_no_score_band(district):
-    assert PK.score_tiles(district) == []
+    assert PK.levers_block(district) == []
 
 
 # ── The pages themselves ──────────────────────────────────────────────────────
@@ -297,15 +263,11 @@ def test_a_district_page_carries_the_three_way_comparison(pdf):
 
 
 def test_the_contents_says_how_many_pages_a_unit_really_took(pdf):
-    """§3.2 planned one page per district; they print several, because
-    decision 10 gives every unit all seven Key Indicators and decision 17 all
-    twenty-two nightly metrics. The contents describes the document that was
-    built, not the one that was sketched."""
+    """Decision 49: a district is one page and an area a third of one. The
+    contents describes the document that was built, not the one sketched."""
     cover = _pages(pdf)[0]
-    row = re.search(r"Cada distrito . [0-9]+, ([0-9]+) páginas cada uno",
-                    cover)
-    assert row, cover
-    assert int(row.group(1)) > 1
+    assert re.search(r"Cada distrito . [0-9]+, una página cada uno", cover), cover
+    assert re.search(r"Cada área . [0-9]+, tres por página", cover), cover
 
 
 def test_every_unit_page_names_its_unit_in_the_running_head(pdf):
@@ -359,3 +321,15 @@ def test_a_district_now_shares_its_pages(district):
     from reportlab.platypus import PageBreak
     assert not any(isinstance(f, PageBreak)
                    for f in PK.district_pages(district, _data().nightly_goals))
+
+
+def test_the_page_budget_holds(models, peers):
+    """Decision 49, P5 (a): a district is one page and a zone at most two.
+    Measured on the live sheet on 2026-10-06 for four periods: the full
+    transfer copy is 46 pages, from 104."""
+    for model in models:
+        if model.scope.level not in (S.ZONE, S.DISTRICT):
+            continue
+        _, pages = PK._render(PK.unit_pages(model, {}, peers))
+        budget = 1 if model.scope.level == S.DISTRICT else 2
+        assert pages <= budget, (model.scope.name, pages)
