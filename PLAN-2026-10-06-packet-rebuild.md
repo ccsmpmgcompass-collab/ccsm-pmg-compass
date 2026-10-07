@@ -357,3 +357,11 @@ where an administrator has to act on it.
 
 **Next: Phase 1** — needs his word on **P1** (index members and weights)
 first.
+
+### 2026-10-06 — Zackary: "Go through the rest of the packet rebuild!!"
+
+Taken as the go for Phases 1–3 in one run, and as approval of P1–P5 **as
+recommended** (P1 weights 3·2·2·1·1·1 with form baptisms out; P2 a zone's
+share of 527 printed uncoloured; P3 as built; P4 the age-bucketed pipeline;
+P5 option (a), an area at a third of a page). Any fork the build hits that
+the plan did not foresee goes back to him measured, as before.
