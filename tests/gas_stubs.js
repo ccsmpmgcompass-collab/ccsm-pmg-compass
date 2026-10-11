@@ -148,7 +148,18 @@ function makeGasEnv(options = {}) {
       return this;
     }
 
-    // Formatting is not modeled beyond being no-ops that return `this` for chaining.
+    // Number formats are recorded per cell ("row,col" -> format) on the sheet
+    // record, so a test can check that text is written as text ('@').
+    setNumberFormat(fmt) {
+      const rec = this._sheet;
+      rec.numberFormats = rec.numberFormats || {};
+      for (let r = 0; r < this._numRows; r++) {
+        for (let c = 0; c < this._numCols; c++) rec.numberFormats[(this._row + r) + ',' + (this._col + c)] = fmt;
+      }
+      return this;
+    }
+
+    // Other formatting is not modeled beyond no-ops that return `this` for chaining.
     setFontWeight() { return this; }
     setBackground() { return this; }
     setFontColor() { return this; }

@@ -116,6 +116,17 @@ function runAgent1A() {
     var weekStart = a1a_getWeekStart(weekEnd);
     Logger.log('Agent1A: Week ' + weekStart + ' to ' + weekEnd);
 
+    // R1 (PLAN-2026-10-10-ki-autosend.md K3, K4): read the weekly forms as they
+    // stand NOW, not as Agent5A left WEEKLY_KI at noon -- that lag put the empty
+    // "No recibimos su informe" box in 16-25 letters a week, 4-9 of them for
+    // forms already sent. This moment is the week's cutoff, taken before the
+    // read: the Monday job builds the leaders' KI PDFs from the forms stamped
+    // up to it, so the letter and the PDFs count the same forms. A form sent
+    // later waits for next week in both.
+    var kiCutoff = Utilities.formatDate(new Date(), _tz, 'yyyy-MM-dd HH:mm:ss');
+    notes.push(a1a_refreshWeeklyKi_());
+    notes.push(a1a_requestKiPdfs_(weekEnd, kiCutoff));
+
     // Each sector's own nightly goals (PLAN-2026-10-02-goals.md, G11). The
     // week being graded is held to the goals that were in force FOR that
     // week -- AREA_WEEKLY_GOALS' row for its Monday -- and the email also
@@ -152,7 +163,7 @@ function runAgent1A() {
 
     // Weekly Key Indicators (WEEKLY_KI) -- the 7 real/meta pairs the coaching
     // letter now leads with. Separate from everything above, which is nightly.
-    var weeklyKi = a1a_loadWeeklyKi(weekEnd);
+    var weeklyKi = a1a_loadWeeklyKi(weekEnd, true);
     Logger.log('Agent1A: WEEKLY_KI rows for ' + weekEnd + ': ' +
                (weeklyKi === null ? 'TAB UNAVAILABLE' : Object.keys(weeklyKi).length));
 
@@ -228,7 +239,7 @@ function runAgent1A() {
     // Who filed the weekly form in each of those same four weeks. One more
     // read of WEEKLY_KI, not four: the compliance block wants a boolean per
     // area per week, and the two loads above carry a week's numbers each.
-    var weeklyFilings = a1a_loadWeeklyFilings_(trendWeeks);
+    var weeklyFilings = a1a_loadWeeklyFilings_(trendWeeks, weekEnd);
     Logger.log('Agent1A: WEEKLY_KI filing history over ' + trendWeeks.length + ' weeks: ' +
                (weeklyFilings === null ? 'TAB UNAVAILABLE' : Object.keys(weeklyFilings).length + ' areas'));
 
@@ -475,6 +486,54 @@ var A1A_TREND_COUNT_KEYS = (function() {
 var A1A_TREND_WEEKS = 4;
 
 /**
+ * Rebuilds WEEKLY_KI from WEEKLY_FORM_RAW right now, with Agent5A's own writer
+ * (a5a_writeWeeklyKI), so the letter sees every form sent before it was built
+ * (R1). If the rebuild fails, the letter reads WEEKLY_KI as Agent5A last wrote
+ * it -- older, never wrong -- and the run log says so. Returns a note.
+ */
+function a1a_refreshWeeklyKi_() {
+  try {
+    var rows = a5a_writeWeeklyKI(a5a_loadMissionOrg(), a5a_getSheetData('WEEKLY_FORM_RAW'));
+    Logger.log('Agent1A: WEEKLY_KI rebuilt from WEEKLY_FORM_RAW -- ' + rows + ' rows');
+    return 'WEEKLY_KI rebuilt from the forms (' + rows + ' rows)';
+  } catch (e) {
+    Logger.log('Agent1A WARNING: could not rebuild WEEKLY_KI -- ' + e.message);
+    return 'WARNING: WEEKLY_KI not rebuilt (' + e.message + '); read as Agent5A left it';
+  }
+}
+
+// KI_PDF_OUTBOX: the handshake with the Monday GitHub job that builds the KI
+// PDFs (dashboard/app/ingestion/ki_pdf_runner.py -- the header must match its
+// OUTBOX_HEADER). Agent1A writes a REQUEST row; the job adds one PDF row per
+// document; Agent1C attaches them.
+var A1A_KI_OUTBOX_TAB    = 'KI_PDF_OUTBOX';
+var A1A_KI_OUTBOX_HEADER = ['Kind', 'Week_End', 'Scope', 'File_Name', 'Stamp', 'Pages', 'Parts'];
+
+/**
+ * Starts the week's KI PDFs: replaces KI_PDF_OUTBOX with this week's REQUEST
+ * row (week end + the cutoff the forms were read at), creating the tab the
+ * first time. Written as plain text, so Sheets never turns the dates into
+ * Date cells the job would read back in another format. Returns a note; a
+ * failure here costs only the attachments, never the letter.
+ */
+function a1a_requestKiPdfs_(weekEnd, cutoff) {
+  try {
+    var ss = getSpreadsheet();
+    var sheet = ss.getSheetByName(A1A_KI_OUTBOX_TAB) || ss.insertSheet(A1A_KI_OUTBOX_TAB);
+    var rows = [A1A_KI_OUTBOX_HEADER, ['REQUEST', weekEnd, '', '', cutoff, '', '']];
+    sheet.clearContents();
+    var range = sheet.getRange(1, 1, rows.length, A1A_KI_OUTBOX_HEADER.length);
+    range.setNumberFormat('@');
+    range.setValues(rows);
+    SpreadsheetApp.flush();
+    return 'KI PDFs requested for ' + weekEnd + ' (forms read at ' + cutoff + ')';
+  } catch (e) {
+    Logger.log('Agent1A WARNING: could not request the KI PDFs -- ' + e.message);
+    return 'WARNING: KI PDFs not requested (' + e.message + ')';
+  }
+}
+
+/**
  * Per-area weekly Key Indicators for `weekEnd`, as
  *   { areaName: [{ key, display, real, meta }, ...] }
  *
@@ -487,8 +546,14 @@ var A1A_TREND_WEEKS = 4;
  * can tell "this companionship didn't submit the weekly form" apart from
  * "the source is unavailable" and word the gap correctly instead of blaming
  * the missionaries for a system problem.
+ *
+ * takeLaterSlips: for the week being graded only. On Monday night no week
+ * after it is over, so a row dated later is a date-entry slip for this week
+ * (two sectors typed 11 Oct on 4 Oct's form) and counts as this week when the
+ * area has no row for it -- the KI PDFs' rule (PLAN-2026-10-10-ki-autosend.md
+ * K4). Never for an earlier week: there a later row is simply the next week.
  */
-function a1a_loadWeeklyKi(weekEnd) {
+function a1a_loadWeeklyKi(weekEnd, takeLaterSlips) {
   var out  = {};
   var data = a1a_getSheetData('WEEKLY_KI');
   if (!data || data.length < 2) return null;
@@ -503,13 +568,8 @@ function a1a_loadWeeklyKi(weekEnd) {
     cols[d.key] = { real: headers.indexOf(d.key + '_real'), meta: headers.indexOf(d.key + '_meta') };
   });
 
-  for (var i = 1; i < data.length; i++) {
-    var row = data[i];
-    if (a1a_toDateString(row[dateIdx]) !== weekEnd) continue;
-    var area = String(row[areaIdx] || '').trim();
-    if (!area) continue;
-
-    out[area] = A1A_KI_DEFS.map(function(d) {
+  function indicators(row) {
+    return A1A_KI_DEFS.map(function(d) {
       var c = cols[d.key];
       return {
         key:     d.key,
@@ -519,6 +579,22 @@ function a1a_loadWeeklyKi(weekEnd) {
       };
     });
   }
+
+  var slips = {};
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var we = a1a_toDateString(row[dateIdx]);
+    var area = String(row[areaIdx] || '').trim();
+    if (!area) continue;
+    if (we === weekEnd) out[area] = indicators(row);
+    else if (takeLaterSlips && we && we > weekEnd) slips[area] = row;
+  }
+  Object.keys(slips).forEach(function(area) {
+    if (out[area]) return;
+    out[area] = indicators(slips[area]);
+    Logger.log('Agent1A: ' + area + ' dated its weekly form after ' + weekEnd +
+               ' -- counted as the week ending ' + weekEnd);
+  });
   return out;
 }
 
@@ -549,8 +625,11 @@ function a1a_kiMetaMap_(kiRow) {
  * Returns NULL when the tab is missing or unreadable, matching
  * a1a_loadWeeklyKi -- "nobody filed" and "we cannot see the tab" are different
  * sentences in the letter, and only one of them is the missionaries' doing.
+ *
+ * slipWeek: the week being graded. A row dated after it counts as filed for
+ * it, the same date-slip rule a1a_loadWeeklyKi(weekEnd, true) applies.
  */
-function a1a_loadWeeklyFilings_(weekEnds) {
+function a1a_loadWeeklyFilings_(weekEnds, slipWeek) {
   var data = a1a_getSheetData('WEEKLY_KI');
   if (!data || data.length < 2) return null;
 
@@ -568,6 +647,7 @@ function a1a_loadWeeklyFilings_(weekEnds) {
     // as a 'yyyy-MM-dd' string, but a date-formatted cell comes back as a Date
     // and comparing the two raw silently matches nothing.
     var we = a1a_toDateString(data[i][dateIdx]);
+    if (slipWeek && we && we > slipWeek) we = slipWeek;
     if (!we || !wanted[we]) continue;
     var area = String(data[i][areaIdx] || '').trim();
     if (!area) continue;
