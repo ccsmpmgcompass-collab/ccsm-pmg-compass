@@ -4,6 +4,8 @@ PLAN-2026-10-10-ki-autosend.md (K3, K5). Runs in GitHub Actions
 (`.github/workflows/ki-pdfs.yml`), scheduled Monday evening, BEFORE the letter
 chain starts. The handshake goes through one sheet tab, KI_PDF_OUTBOX:
 
+  0. This job creates the tab if it is missing — its existence is how Agent1A
+     knows the job is set up (no tab: no request, the letters go as before).
   1. Agent1A (Monday ~21:30) reads the weekly forms for the letter and writes a
      REQUEST row: the week end and the cutoff — the moment it read them.
   2. This job waits for that row, builds the mission document and every zone's
@@ -132,13 +134,19 @@ def main() -> None:
     week_end = (date.fromisoformat(args.week_end) if args.week_end
                 else last_sunday(_mission_now(cfg).date()))
 
+    # The tab tells Agent1A this job is set up: it requests PDFs only when the
+    # tab exists. Create it before waiting, so the first week works too.
+    if not args.dry_run and not grid_of(sh, OUTBOX_TAB):
+        overwrite(sh, OUTBOX_TAB, [OUTBOX_HEADER])
+        _status(f"Created {OUTBOX_TAB}")
+
     cutoff = None
     if not args.now:
         _status(f"Waiting up to {args.wait_minutes} min for the letter's request, week ending {week_end}")
         deadline = time.monotonic() + args.wait_minutes * 60
         while True:
             cutoff = find_request(grid_of(sh, OUTBOX_TAB), week_end)
-            if cutoff or time.monotonic() > deadline:
+            if cutoff or time.monotonic() >= deadline:
                 break
             time.sleep(60)
         if not cutoff:

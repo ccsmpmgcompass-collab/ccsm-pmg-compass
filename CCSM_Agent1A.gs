@@ -511,15 +511,20 @@ var A1A_KI_OUTBOX_HEADER = ['Kind', 'Week_End', 'Scope', 'File_Name', 'Stamp', '
 
 /**
  * Starts the week's KI PDFs: replaces KI_PDF_OUTBOX with this week's REQUEST
- * row (week end + the cutoff the forms were read at), creating the tab the
- * first time. Written as plain text, so Sheets never turns the dates into
- * Date cells the job would read back in another format. Returns a note; a
- * failure here costs only the attachments, never the letter.
+ * row (week end + the cutoff the forms were read at). Written as plain text,
+ * so Sheets never turns the dates into Date cells the job would read back in
+ * another format. Returns a note; a failure here costs only the attachments,
+ * never the letter.
+ *
+ * The tab is the job's to create (it does, each Monday evening, before it
+ * waits): no tab means the job is not set up, so nothing is requested and
+ * Agent1C sends the letters as it always has instead of waiting for PDFs
+ * that will never come.
  */
 function a1a_requestKiPdfs_(weekEnd, cutoff) {
   try {
-    var ss = getSpreadsheet();
-    var sheet = ss.getSheetByName(A1A_KI_OUTBOX_TAB) || ss.insertSheet(A1A_KI_OUTBOX_TAB);
+    var sheet = getSpreadsheet().getSheetByName(A1A_KI_OUTBOX_TAB);
+    if (!sheet) return 'KI PDFs not requested: no ' + A1A_KI_OUTBOX_TAB + ' tab (the Monday job creates it)';
     var rows = [A1A_KI_OUTBOX_HEADER, ['REQUEST', weekEnd, '', '', cutoff, '', '']];
     sheet.clearContents();
     var range = sheet.getRange(1, 1, rows.length, A1A_KI_OUTBOX_HEADER.length);

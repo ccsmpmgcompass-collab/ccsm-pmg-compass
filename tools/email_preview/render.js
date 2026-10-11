@@ -26,7 +26,7 @@
  * --ki-pdfs DIR  play the Monday KI PDF job (PLAN-2026-10-10-ki-autosend.md):
  *           after Agent1A's REQUEST row, put every Indicadores_clave_*.pdf in DIR
  *           into KI_PDF_OUTBOX, so the APs' and zone leaders' letters carry them.
- *           Without it the request is withdrawn, so Agent1C never waits here.
+ *           Without it there is no KI_PDF_OUTBOX, so nothing is requested.
  */
 
 'use strict';
@@ -348,13 +348,11 @@ function reportPayloads(label) {
 }
 
 // The Monday job's half of KI_PDF_OUTBOX: PDF rows carrying the REQUEST row's
-// week and cutoff (dashboard/app/ingestion/ki_pdf_runner.py pdf_rows), or no
-// request at all when --ki-pdfs is not given.
+// week and cutoff (dashboard/app/ingestion/ki_pdf_runner.py pdf_rows).
 function kiOutbox() {
   const grid = GRIDS.KI_PDF_OUTBOX;
-  if (!grid || grid.length < 2) return;
+  if (!KI_PDFS || !grid || grid.length < 2) return;
   const req = grid[1];
-  if (!KI_PDFS) { grid.length = 1; return; }
   const files = fs.readdirSync(KI_PDFS).filter((f) => /^Indicadores_clave_.*\.pdf$/.test(f));
   files.sort((a, b) => (/_mision_/.test(b) ? 1 : 0) - (/_mision_/.test(a) ? 1 : 0));
   files.forEach((f) => {
@@ -371,6 +369,9 @@ function kiOutbox() {
 }
 
 console.log(`\nLoaded ${FILES.length} agent files. Gemini: ${USE_GEMINI ? 'LIVE' : 'placeholder'}\n`);
+// The job creates KI_PDF_OUTBOX before Agent1A runs; without the tab Agent1A
+// requests nothing, which is the preview's default.
+if (KI_PDFS) ctx.SpreadsheetApp.getActiveSpreadsheet().insertSheet('KI_PDF_OUTBOX');
 if (!run('runAgent1A')) process.exit(1);
 reportPayloads('after 1A');
 kiOutbox();

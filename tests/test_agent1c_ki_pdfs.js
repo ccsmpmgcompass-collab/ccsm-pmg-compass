@@ -19,7 +19,8 @@ const geminiEnvelope = JSON.stringify({
   candidates: [{ content: { parts: [{ text: JSON.stringify({ Arauco: 'Narrativa de prueba.' }) }] } }],
 });
 
-function chain() {
+function chain(opts) {
+  opts = opts || {};
   const calls = { gemini: 0 };
   const env = makeGasEnv({
     urlFetch: () => { calls.gemini++; return { getResponseCode: () => 200, getContentText: () => geminiEnvelope }; },
@@ -46,6 +47,7 @@ function chain() {
     ['AP Uno', 'ap.uno@missionary.org', 'assistant', 'TRUE', ''],
   ]);
 
+  if (!opts.noJob) ss.insertSheet('KI_PDF_OUTBOX');   // the Monday job creates it
   scope.runAgent1A();
   scope.runAgent1B();
   return { env, scope, ss, calls };
@@ -130,10 +132,9 @@ const names = (e) => (e.attachments || []).map((b) => b.getName());
   assert.ok(!(key in env.state.props.script), 'the wait counter is cleared');
 }
 
-// ── 3. No request at all (Agent1A could not write it): no wait, no PDFs. ──────
+// ── 3. No job set up (no KI_PDF_OUTBOX): no request, no wait, no PDFs. ────────
 {
-  const { env, scope, ss } = chain();
-  ss.getSheetByName('KI_PDF_OUTBOX').clearContents();
+  const { env, scope, ss } = chain({ noJob: true });
   scope.runAgent1C();
   assert.ok(env.state.emails.length > 0, 'letters go at once');
   assert.deepStrictEqual(names(byTo(env, 'ap.uno@missionary.org')), []);

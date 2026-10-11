@@ -5,7 +5,8 @@
 // it, so a form sent after Agent5A's noon run is in the letter; (b) count a
 // form dated after the graded week as the graded week when the area has no
 // row for it; (c) write KI_PDF_OUTBOX = header + one REQUEST row (week end,
-// cutoff) as plain text, for the Monday job.
+// cutoff) as plain text, for the Monday job — but only when the tab exists:
+// the job creates it, so no tab means no job and nothing to wait for.
 //
 // Agent1A computes its week from the real clock (most recent Sunday), so the
 // forms are dated relative to today, like test_agent1ab.js.
@@ -52,6 +53,13 @@ addWeeklyRaw(env, ss, [
 // WEEKLY_KI as Agent5A left it at noon: empty. The letter must not care.
 assert.strictEqual(ss.getSheetByName('WEEKLY_KI').getLastRow() <= 1, true);
 
+// No KI_PDF_OUTBOX yet (the Monday job not set up): the letter is read as
+// usual and nothing is requested or created.
+scope.runAgent1A();
+assert.strictEqual(ss.getSheetByName('KI_PDF_OUTBOX'), null, 'Agent1A never creates the tab');
+assert.ok(env.state.logs.some((l) => /KI PDFs not requested: no KI_PDF_OUTBOX tab/.test(l)));
+
+ss.insertSheet('KI_PDF_OUTBOX');   // what the job does each Monday evening
 scope.runAgent1A();
 
 // (a) WEEKLY_KI was rebuilt from the raw forms.
@@ -72,7 +80,7 @@ assert.deepStrictEqual(ki('Cañete 1'), [], 'an area with no form still reads as
 
 // (c) The REQUEST row.
 const outbox = ss.getSheetByName('KI_PDF_OUTBOX');
-assert.ok(outbox, 'KI_PDF_OUTBOX is created on the first run');
+assert.ok(outbox, 'KI_PDF_OUTBOX is there');
 const grid = outbox.getDataRange().getValues();
 assert.deepStrictEqual(grid[0], ['Kind', 'Week_End', 'Scope', 'File_Name', 'Stamp', 'Pages', 'Parts']);
 assert.strictEqual(grid.length, 2, 'header + one REQUEST row');

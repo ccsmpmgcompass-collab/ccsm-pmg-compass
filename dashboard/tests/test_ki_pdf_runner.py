@@ -122,6 +122,54 @@ def test_outbox_keeps_this_weeks_request_and_drops_old_weeks():
     assert not R.already_built(grid, W2, "2026-10-05 22:00:00")
 
 
+class FakeSheet:
+    def __init__(self, tabs):
+        self.tabs = {k: [list(r) for r in v] for k, v in tabs.items()}
+        self.writes = []
+
+    def io(self):
+        def grid_of(_sh, tab):
+            return [list(r) for r in self.tabs.get(tab, [])]
+
+        def overwrite(_sh, tab, rows):
+            self.writes.append(tab)
+            self.tabs[tab] = [list(r) for r in rows]
+        return (lambda: self), grid_of, overwrite
+
+
+def run_main(monkeypatch, sheet, *argv):
+    monkeypatch.setattr(R, "_sheet_io", sheet.io)
+    monkeypatch.setattr("sys.argv", ["ki_pdf_runner", *argv])
+    R.main()
+
+
+def test_the_job_creates_the_tab_then_builds_for_the_request(monkeypatch):
+    tabs = dict(raw(), AGENT_CONFIG=[["Key", "Value"]])
+    sheet = FakeSheet(tabs)
+    # No tab yet and no request: it creates the tab, then gives up waiting.
+    with pytest.raises(SystemExit):
+        run_main(monkeypatch, sheet, "--week-end", "2026-10-04", "--wait-minutes", "0")
+    assert sheet.tabs[R.OUTBOX_TAB] == [R.OUTBOX_HEADER]
+    # Agent1A's request arrives; the next run builds from its cutoff.
+    sheet.tabs[R.OUTBOX_TAB].append(["REQUEST", "2026-10-04", "", "", "2026-10-05 21:31:07"])
+    run_main(monkeypatch, sheet, "--week-end", "2026-10-04", "--wait-minutes", "0")
+    grid = sheet.tabs[R.OUTBOX_TAB]
+    assert [r[0] for r in grid[1:]] == ["REQUEST", "PDF", "PDF", "PDF"]
+    assert {r[2] for r in grid[2:]} == {"MISSION", "Norte", "Sur"}
+    assert all(r[4] == "2026-10-05 21:31:07" for r in grid[2:])
+    assert R.decode(grid[2]).startswith(b"%PDF")
+    # A second run for the same request does nothing.
+    n = len(sheet.writes)
+    run_main(monkeypatch, sheet, "--week-end", "2026-10-04", "--wait-minutes", "0")
+    assert len(sheet.writes) == n
+
+
+def test_a_dry_run_writes_nothing(monkeypatch):
+    sheet = FakeSheet(dict(raw(), AGENT_CONFIG=[["Key", "Value"]]))
+    run_main(monkeypatch, sheet, "--week-end", "2026-10-04", "--now", "--dry-run")
+    assert sheet.writes == [] and R.OUTBOX_TAB not in sheet.tabs
+
+
 def test_no_streamlit_on_the_job_path():
     import subprocess
     import sys
