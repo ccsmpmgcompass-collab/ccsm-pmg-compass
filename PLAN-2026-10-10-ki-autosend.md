@@ -114,3 +114,9 @@ d2c7ba9 (5b) · fd4325f (6).
 (NP 235/294 vs 203/267) because the letter grades a sector that set no goal
 last week against this week's own goal, while the PDF leaves it SIN META.
 Not changed: it is a rule choice, not stale data.
+
+**2026-10-11 — dress rehearsal PASSED on the live system** (`CCSM_KiRehearsal.gs`, commit
+1058400): step 1 rebuilt WEEKLY_KI (39 sectors for 2026-10-04, 3 date slips caught) and wrote the
+REQUEST row; the "Weekly KI PDFs" job (manual run 38179848129) went green; step 2 sent the AP and ZL
+test emails through the relay with their PDFs attached, and both opened. Left: verify the first
+real run, Mon 2026-10-12 (checklist above).
