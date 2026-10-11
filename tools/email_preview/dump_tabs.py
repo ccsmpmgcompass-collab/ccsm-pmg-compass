@@ -43,6 +43,7 @@ TABS = [
     "WEEKLY_BREAKDOWNS",
     "SCORES",
     "LIVE_SNAPSHOT",
+    "TABLEAU_BAPTISMS",    # the APs' headline: certified baptisms this year (letter v2)
 ]
 
 
@@ -74,7 +75,10 @@ def main() -> int:
             # replaced with an unmistakable placeholder (headers from
             # CcsmData.gs CCSM_TAB_SPECS).
             print("  MESSAGE_BANK           no access - coaching text will be a PLACEHOLDER")
-            keys = [r[0] for r in have["QUESTIONS_CONFIG"].get_all_values()[1:] if r and r[0]]
+            # Metric_Key (column D), not Question_ID: the bank is keyed by
+            # metric, and keying it by question id matched nothing but the
+            # rate keys below, so most coaching paragraphs rendered empty.
+            keys = [r[3] for r in have["QUESTIONS_CONFIG"].get_all_values()[1:] if len(r) > 3 and r[3]]
             keys += ["contact_rate", "mc_rate", "lesson_rate", "close_rate", "effort_score"]
             hdr = ["Message_ID", "Category", "Metric", "Subcategory", "Subject_Line",
                    "Body_Text", "PMG_Chapter", "PMG_Description", "Scripture",

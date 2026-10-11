@@ -27,6 +27,11 @@
  *           after Agent1A's REQUEST row, put every Indicadores_clave_*.pdf in DIR
  *           into KI_PDF_OUTBOX, so the APs' and zone leaders' letters carry them.
  *           Without it there is no KI_PDF_OUTBOX, so nothing is requested.
+ * --now ISO  run the chain as if the clock read ISO (e.g. 2026-10-05T21:30:00),
+ *           so a past Monday's letters can be rendered from today's dump.
+ * --forms-until ISO  keep the weekly forms stamped up to ISO (default: --now).
+ *           A later cutoff shows a past week with the forms that came in late.
+ * --payload FILE  also write Agent1B's A1B_DATA payload (what 1C builds from).
  */
 
 'use strict';
@@ -45,6 +50,12 @@ const outIdx = argv.indexOf('--out');
 const OUT = path.resolve(outIdx >= 0 ? argv[outIdx + 1] : path.join(HERE, '.data', 'out'));
 const kiIdx = argv.indexOf('--ki-pdfs');
 const KI_PDFS = kiIdx >= 0 ? path.resolve(argv[kiIdx + 1]) : null;
+const nowIdx = argv.indexOf('--now');
+const NOW = nowIdx >= 0 ? new Date(argv[nowIdx + 1]) : null;
+const fuIdx = argv.indexOf('--forms-until');
+const FORMS_UNTIL = fuIdx >= 0 ? new Date(argv[fuIdx + 1]) : NOW;
+const payIdx = argv.indexOf('--payload');
+const PAYLOAD = payIdx >= 0 ? path.resolve(argv[payIdx + 1]) : null;
 
 if (!fs.existsSync(DATA)) {
   console.error(`No sheet dump at ${DATA}\nRun first, from dashboard/:\n` +
@@ -52,6 +63,20 @@ if (!fs.existsSync(DATA)) {
   process.exit(1);
 }
 const GRIDS = JSON.parse(fs.readFileSync(DATA, 'utf8'));
+
+// --now: the weekly forms as they stood at that moment. A form sent later
+// would otherwise reach the letter -- and, dated a week on, be taken for a
+// date slip of the graded week (Agent1A's slip rule).
+if (FORMS_UNTIL && GRIDS.WEEKLY_FORM_RAW && GRIDS.WEEKLY_FORM_RAW.length > 1) {
+  const stamp = (v) => {
+    const m = String(v).match(/^(\d+)\/(\d+)\/(\d{4})\s+(\d+):(\d+):(\d+)/);
+    return m ? new Date(+m[3], +m[1] - 1, +m[2], +m[4], +m[5], +m[6]) : null;
+  };
+  const before = GRIDS.WEEKLY_FORM_RAW.length - 1;
+  GRIDS.WEEKLY_FORM_RAW = [GRIDS.WEEKLY_FORM_RAW[0]].concat(
+    GRIDS.WEEKLY_FORM_RAW.slice(1).filter((r) => { const t = stamp(r[0]); return !t || t <= FORMS_UNTIL; }));
+  console.log(`forms until ${FORMS_UNTIL.toString()}: ${before - (GRIDS.WEEKLY_FORM_RAW.length - 1)} weekly form(s) sent later left out`);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Apps Script platform stubs
@@ -264,10 +289,25 @@ const CacheService = {
 // Load the real agent source
 // ─────────────────────────────────────────────────────────────────────────────
 
+// --now: a Date whose no-argument form reads the chosen moment. Every other
+// form (and instanceof Date) behaves exactly like the real one.
+function makeClock(fixed) {
+  const Real = Date;
+  function FixedDate(...a) {
+    if (!new.target) return new Real(fixed.getTime()).toString();
+    return a.length ? new Real(...a) : new Real(fixed.getTime());
+  }
+  FixedDate.prototype = Real.prototype;
+  FixedDate.now = () => fixed.getTime();
+  FixedDate.UTC = Real.UTC;
+  FixedDate.parse = Real.parse;
+  return FixedDate;
+}
+
 const sandbox = {
   SpreadsheetApp, PropertiesService, DriveApp, MimeType, Logger, Utilities, MailApp,
   UrlFetchApp, ScriptApp, Session, CacheService,
-  console, JSON, Math, Date, String, Number, Object, Array, RegExp, isNaN, parseInt, parseFloat,
+  console, JSON, Math, Date: NOW ? makeClock(NOW) : Date, String, Number, Object, Array, RegExp, isNaN, parseInt, parseFloat,
 };
 sandbox.globalThis = sandbox;
 const ctx = vm.createContext(sandbox);
@@ -377,6 +417,10 @@ reportPayloads('after 1A');
 kiOutbox();
 if (!run('runAgent1B')) process.exit(1);
 reportPayloads('after 1B');
+if (PAYLOAD) {
+  fs.writeFileSync(PAYLOAD, vm.runInContext("JSON.stringify(loadTempData('A1B_DATA'))", ctx), 'utf8');
+  console.log(`     A1B_DATA -> ${PAYLOAD}`);
+}
 if (!run('runAgent1C')) process.exit(1);
 
 fs.mkdirSync(OUT, { recursive: true });
