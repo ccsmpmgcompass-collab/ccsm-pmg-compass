@@ -17,12 +17,16 @@
  * UrlFetchApp, ScriptApp). Every line of CCSM_*.gs is loaded as-is. If the
  * layout changes, this output changes with it, because it IS the shipping code.
  *
- *   node tools/email_preview/render.js [--gemini] [--out DIR]
+ *   node tools/email_preview/render.js [--gemini] [--out DIR] [--ki-pdfs DIR]
  *
  * --gemini  actually call Gemini for the leadership narratives (needs
  *           GEMINI_API_KEY in AGENT_CONFIG). Off by default: the narrative is
  *           replaced with a clearly-marked placeholder so repeated renders are
  *           free, deterministic, and quota-safe.
+ * --ki-pdfs DIR  play the Monday KI PDF job (PLAN-2026-10-10-ki-autosend.md):
+ *           after Agent1A's REQUEST row, put every Indicadores_clave_*.pdf in DIR
+ *           into KI_PDF_OUTBOX, so the APs' and zone leaders' letters carry them.
+ *           Without it the request is withdrawn, so Agent1C never waits here.
  */
 
 'use strict';
@@ -39,6 +43,8 @@ const argv = process.argv.slice(2);
 const USE_GEMINI = argv.includes('--gemini');
 const outIdx = argv.indexOf('--out');
 const OUT = path.resolve(outIdx >= 0 ? argv[outIdx + 1] : path.join(HERE, '.data', 'out'));
+const kiIdx = argv.indexOf('--ki-pdfs');
+const KI_PDFS = kiIdx >= 0 ? path.resolve(argv[kiIdx + 1]) : null;
 
 if (!fs.existsSync(DATA)) {
   console.error(`No sheet dump at ${DATA}\nRun first, from dashboard/:\n` +
@@ -96,6 +102,7 @@ function makeSheet(name, grid) {
     appendRow: (row) => { grid.push(row.slice()); },
     // Writes are in-memory only — this tool never touches the live sheet.
     clear() { grid.length = 0; return this; },
+    clearContents() { grid.length = 0; return this; },
     setFrozenRows() { return this; },
     autoResizeColumns() { return this; },
     insertSheet() { return this; },
@@ -191,6 +198,13 @@ const Utilities = {
   },
   sleep() {},
   getUuid: () => 'offline-uuid',
+  // Blobs and base64 for the KI PDF attachments; bytes are plain arrays.
+  newBlob(data, type, name) {
+    const bytes = typeof data === 'string' ? Array.from(Buffer.from(data, 'utf8')) : Array.from(data);
+    return { getBytes: () => bytes.slice(), getContentType: () => type || null, getName: () => name || null };
+  },
+  base64Encode: (b) => Buffer.from(typeof b === 'string' ? Buffer.from(b, 'utf8') : b).toString('base64'),
+  base64Decode: (s) => Array.from(Buffer.from(String(s), 'base64')),
 };
 
 const sent = [];
@@ -202,7 +216,8 @@ const MailApp = {
   // captured every recipient as "[object Object]".
   sendEmail: (a, subject, body, opts) => {
     if (a && typeof a === 'object') {
-      sent.push({ to: a.to, subject: a.subject, html: a.htmlBody || a.body || '' });
+      sent.push({ to: a.to, subject: a.subject, html: a.htmlBody || a.body || '',
+                  attachments: (a.attachments || []).map((b) => ({ name: b.getName(), bytes: b.getBytes().length })) });
     } else {
       sent.push({ to: a, subject, html: (opts && opts.htmlBody) || body });
     }
@@ -265,6 +280,7 @@ const FILES = [
   'CCSM_AgentTestMode.gs',
   'CcsmData.gs',
   'CCSM_Setup.gs',
+  'CCSM_Agent5A.gs',      // Agent1A rebuilds WEEKLY_KI with its writer (R1)
   'CCSM_Agent1A.gs',
   'CCSM_Agent1B.gs',
   'CCSM_Agent1C.gs',
@@ -331,9 +347,33 @@ function reportPayloads(label) {
               `  |  Drive ${driveKeys.length} file(s), ${(driveTotal / 1024).toFixed(1)}KB (no quota ceiling)`);
 }
 
+// The Monday job's half of KI_PDF_OUTBOX: PDF rows carrying the REQUEST row's
+// week and cutoff (dashboard/app/ingestion/ki_pdf_runner.py pdf_rows), or no
+// request at all when --ki-pdfs is not given.
+function kiOutbox() {
+  const grid = GRIDS.KI_PDF_OUTBOX;
+  if (!grid || grid.length < 2) return;
+  const req = grid[1];
+  if (!KI_PDFS) { grid.length = 1; return; }
+  const files = fs.readdirSync(KI_PDFS).filter((f) => /^Indicadores_clave_.*\.pdf$/.test(f));
+  files.sort((a, b) => (/_mision_/.test(b) ? 1 : 0) - (/_mision_/.test(a) ? 1 : 0));
+  files.forEach((f) => {
+    const buf = fs.readFileSync(path.join(KI_PDFS, f));
+    const scope = /_mision_/.test(f) ? 'MISSION'
+      : f.replace(/^Indicadores_clave_/, '').replace(/_[^_]+\.pdf$/, '').replace(/_/g, ' ');
+    const pages = (buf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
+    const b64 = buf.toString('base64');
+    const parts = [];
+    for (let i = 0; i < b64.length; i += 45000) parts.push(b64.slice(i, i + 45000));
+    grid.push(['PDF', req[1], scope, f, req[4], String(pages), String(parts.length)].concat(parts));
+  });
+  console.log(`     KI PDFs: ${files.length} document(s) from ${KI_PDFS}`);
+}
+
 console.log(`\nLoaded ${FILES.length} agent files. Gemini: ${USE_GEMINI ? 'LIVE' : 'placeholder'}\n`);
 if (!run('runAgent1A')) process.exit(1);
 reportPayloads('after 1A');
+kiOutbox();
 if (!run('runAgent1B')) process.exit(1);
 reportPayloads('after 1B');
 if (!run('runAgent1C')) process.exit(1);
@@ -346,7 +386,8 @@ const index = [];
 sent.forEach((m, i) => {
   const file = `${String(i + 1).padStart(3, '0')}_${safe(m.to)}.html`;
   fs.writeFileSync(path.join(OUT, file), m.html || '(no html body)', 'utf8');
-  index.push(`<li><a href="${file}">${m.to}</a> — ${m.subject}</li>`);
+  const att = (m.attachments || []).map((a) => `📎 ${a.name} (${Math.round(a.bytes / 1024)} KB)`).join('<br>');
+  index.push(`<li><a href="${file}">${m.to}</a> — ${m.subject}${att ? '<br><small>' + att + '</small>' : ''}</li>`);
 });
 
 fs.writeFileSync(path.join(OUT, 'index.html'),

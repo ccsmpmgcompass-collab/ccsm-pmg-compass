@@ -55,6 +55,17 @@ def test_the_2026_09_28_chain_break_is_named():
     assert p["when"] == datetime(2026, 9, 28, 18, 30)
 
 
+def test_agent1c_waiting_for_the_pdfs_and_never_retrying_is_a_chain_break():
+    """Agent1C logs WAITING while it holds for the KI PDFs (PLAN-2026-10-10
+    K6). If its retry never fires, no letter went: that row is not the step."""
+    rows = [r for r in _healthy_week(MON) if r[1] != "Agent1C"]
+    rows += [["09/28/2026 18:31:00", "Agent1C", "WAITING", "KI PDFs not ready; retry 1 of 5"]]
+    (p,) = AR.missed_runs(_log(rows), NOW)
+    assert p["kind"] == "chain" and p["agent"] == "Agent1C"
+    rows += [["09/28/2026 18:41:00", "Agent1C", "SUCCESS", "Emails sent: 48"]]
+    assert AR.missed_runs(_log(rows), NOW) == []
+
+
 def test_a_chain_still_running_is_not_a_miss():
     rows = [r for r in _healthy_week(MON) if r[1] != "Agent1C"]
     rows += [[(MON - timedelta(days=7)).strftime("%m/%d/%Y 18:33:00"), "Agent1C",

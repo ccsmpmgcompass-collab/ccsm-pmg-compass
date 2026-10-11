@@ -373,6 +373,32 @@ function runAgent1C() {
     var areas     = payload.areas     || {};
     var summaries = payload.summaries || {};
 
+    // The weekly KI PDFs for the APs and the zone leaders
+    // (PLAN-2026-10-10-ki-autosend.md K1, K6). The Monday job builds them
+    // from the same cutoff Agent1A read the forms at; usually they are in
+    // KI_PDF_OUTBOX before this runs. If Agent1A asked for them and they are
+    // not there yet, come back in 2 minutes, at most 5 times -- checked BEFORE
+    // the Gemini narratives, so a wait never spends the free-tier quota twice.
+    // After that the letters go without them and this run says so.
+    var kiPdfs = a1c_loadKiPdfs_(weekEnd);
+    if (kiPdfs.requested && !kiPdfs.ready) {
+      var waitKey = 'A1C_KI_PDF_WAIT_' + weekEnd;
+      var props = PropertiesService.getScriptProperties();
+      var waits = parseInt(props.getProperty(waitKey) || '0', 10);
+      if (waits < A1C_KI_PDF_MAX_WAITS) {
+        props.setProperty(waitKey, String(waits + 1));
+        scheduleNext('runAgent1C', 2);
+        Logger.log('Agent1C: KI PDFs not ready -- waiting (' + (waits + 1) + '/' + A1C_KI_PDF_MAX_WAITS + ')');
+        logRun('Agent1C', 'WAITING', null, null, null,
+               'KI PDFs for ' + weekEnd + ' not ready; retry ' + (waits + 1) + ' of ' + A1C_KI_PDF_MAX_WAITS + ' in 2 min');
+        return;
+      }
+      status = 'ERROR';
+      notes.push('KI PDFs for ' + weekEnd + ' were not ready after ' + (2 * A1C_KI_PDF_MAX_WAITS) +
+                 ' min -- the letters went WITHOUT them. Check the "Weekly KI PDFs" GitHub job.');
+    }
+    var kiAttached = 0, kiDropped = 0;
+
     // Pre-generate all zone + district narratives in 2 batch Gemini calls —
     // collapses N per-unit calls into 2 total (mission narrative, if needed,
     // is generated on demand and cached). See a1c_pregenerateNarratives.
@@ -423,9 +449,16 @@ function runAgent1C() {
 
       var person = peopleMap[email];
       try {
+        var docs    = a1c_kiDocsFor_(person, kiPdfs);
         var subject = a1c_buildSubject(person, weekEnd);
-        var body    = a1c_buildEmail(person, areas, summaries, weekEnd);
-        sendEmail(email, subject, body, 'Agent1C');
+        var body    = a1c_buildEmail(person, areas, summaries, weekEnd, docs);
+        var sent    = sendEmail(email, subject, body, 'Agent1C',
+                                docs.length ? { attachments: docs.map(function(d) { return d.blob; }) } : undefined);
+        if (docs.length) {
+          var got = (sent && typeof sent.attached === 'number') ? sent.attached : 0;
+          kiAttached += got;
+          kiDropped  += docs.length - got;
+        }
         emailsSent++;
       } catch (mailErr) {
         emailErrors++;
@@ -434,6 +467,13 @@ function runAgent1C() {
     });
 
     notes.push('Emails sent: ' + emailsSent + ', errors: ' + emailErrors);
+    if (kiPdfs.ready) notes.push('KI PDFs attached: ' + kiAttached);
+    if (kiDropped > 0) {
+      status = 'ERROR';
+      notes.push('KI PDFs DROPPED: ' + kiDropped + ' -- the relay sent the letters without them. ' +
+                 'Redeploy CCSM_RelayReceiver.gs (same deployment, new version).');
+    }
+    try { PropertiesService.getScriptProperties().deleteProperty('A1C_KI_PDF_WAIT_' + weekEnd); } catch (e) {}
 
     // A coaching letter that never arrived is a failure of this agent's whole
     // purpose, so it must not hide inside a SUCCESS row. Anyone reading
@@ -464,6 +504,107 @@ function runAgent1C() {
     Logger.log('Agent1C FATAL: ' + e.message + '\n' + (e.stack || ''));
   }
   logRun('Agent1C', status, null, null, null, notes.join(' | '));
+}
+
+// ─── WEEKLY KI PDFs (PLAN-2026-10-10-ki-autosend.md) ──────────────────────────
+
+// How many 2-minute waits for the Monday job before the letters go without.
+var A1C_KI_PDF_MAX_WAITS = 5;
+
+/**
+ * This week's KI PDFs from KI_PDF_OUTBOX (Agent1A's REQUEST row and the GitHub
+ * job's PDF rows -- dashboard/app/ingestion/ki_pdf_runner.py):
+ *   { requested, ready, docs: [{ scope, fileName, pages, blob }] }
+ * scope is 'MISSION' or a zone name; the mission's document comes first, then
+ * the zones in the job's (rank) order. PDF rows only count when they carry the
+ * REQUEST row's cutoff, so a stale build is never attached. Any problem reading
+ * the tab reads as "not requested": the letters never wait on a broken tab.
+ */
+function a1c_loadKiPdfs_(weekEnd) {
+  var out = { requested: false, ready: false, docs: [] };
+  try {
+    var sheet = getSpreadsheet().getSheetByName('KI_PDF_OUTBOX');
+    if (!sheet || sheet.getLastRow() < 2) return out;
+    var rows = sheet.getDataRange().getValues();
+    var stamp = null;
+    rows.slice(1).forEach(function(r) {
+      if (String(r[0]) === 'REQUEST' && String(r[1]) === weekEnd) stamp = String(r[4]);
+    });
+    if (stamp === null) return out;
+    out.requested = true;
+    rows.slice(1).forEach(function(r) {
+      if (String(r[0]) !== 'PDF' || String(r[1]) !== weekEnd || String(r[4]) !== stamp) return;
+      var n = parseInt(r[6], 10) || 0;
+      var b64 = r.slice(7, 7 + n).map(String).join('');
+      out.docs.push({
+        scope:    String(r[2]),
+        fileName: String(r[3]),
+        pages:    parseInt(r[5], 10) || 0,
+        blob:     Utilities.newBlob(Utilities.base64Decode(b64), 'application/pdf', String(r[3]))
+      });
+    });
+    out.ready = out.docs.some(function(d) { return d.scope === 'MISSION'; });
+  } catch (e) {
+    Logger.log('Agent1C WARNING: could not read KI_PDF_OUTBOX -- ' + e.message);
+    return { requested: false, ready: false, docs: [] };
+  }
+  return out;
+}
+
+/**
+ * The KI PDFs one letter carries (K1): an AP gets the mission's and every
+ * zone's; a ZL or STL gets their own zone's. Nobody else gets any -- not DLs,
+ * not companionships, not the President (not asked for). The AP area's shared
+ * mailbox is a DL by now (a1c_buildPeopleMap) and gets none.
+ */
+function a1c_kiDocsFor_(person, kiPdfs) {
+  if (!kiPdfs || !kiPdfs.ready) return [];
+  var wanted = {};
+  (person.roles || []).forEach(function(role) {
+    if (role.type === 'AP') {
+      kiPdfs.docs.forEach(function(d) { wanted[d.scope] = true; });
+    } else if (role.type === 'ZL' || role.type === 'STL') {
+      wanted[role.zone] = true;
+    }
+  });
+  return kiPdfs.docs.filter(function(d) { return wanted[d.scope]; });
+}
+
+/** "del 28 sep al 4 oct": a week named by its dates, as the PDFs name it. */
+function a1c_weekSpanEs_(weekEnd) {
+  var MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  var p = String(weekEnd).split('-');
+  var end = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+  var start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 6);
+  return start.getMonth() === end.getMonth()
+    ? 'del ' + start.getDate() + ' al ' + end.getDate() + ' ' + MES[end.getMonth()]
+    : 'del ' + start.getDate() + ' ' + MES[start.getMonth()] + ' al ' + end.getDate() + ' ' + MES[end.getMonth()];
+}
+
+/** The boxed "adjuntos" note under the letter's header (the approved preview). */
+function a1c_kiAttachmentNote_(docs, weekEnd) {
+  var p = String(weekEnd).split('-');
+  var nextEnd = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10) + 7);
+  var nextSpan = a1c_weekSpanEs_(nextEnd.getFullYear() + '-' + (nextEnd.getMonth() + 1) + '-' + nextEnd.getDate());
+  var mission = docs.filter(function(d) { return d.scope === 'MISSION'; })[0];
+  var zones = docs.filter(function(d) { return d.scope !== 'MISSION'; });
+  var text;
+  if (mission) {
+    text = 'La clasificación de la semana ' + a1c_weekSpanEs_(weekEnd) + ' va adjunta: ' +
+           '<b>el documento de la misión</b> (' + mission.pages + ' páginas: las ' + zones.length +
+           ' zonas y cada sector, con las metas para la semana ' + nextSpan + ') y ' +
+           '<b>el documento de cada zona</b> (' + (zones[0] ? zones[0].pages : 3) + ' páginas cada uno), ' +
+           'los mismos que reciben los líderes de zona y las hermanas capacitadoras de esa zona.';
+  } else {
+    text = 'La clasificación de su zona para la semana ' + a1c_weekSpanEs_(weekEnd) + ' va adjunta ' +
+           '(' + zones[0].pages + ' páginas): cada sector de la zona con sus siete indicadores clave ' +
+           'contra la meta que fijó, y las metas para la semana ' + nextSpan + '.';
+  }
+  return '<div style="border:2px solid #1e3a5f;border-radius:8px;padding:12px 14px;margin:16px 0 4px;' +
+         'background:#f2f6fb;font-family:Arial,Helvetica,sans-serif;">' +
+         '<div style="font-size:12px;font-weight:700;color:#1e3a5f;text-transform:uppercase;' +
+         'letter-spacing:.05em;">&#128206; Indicadores clave por sector — adjuntos</div>' +
+         '<div style="font-size:13px;color:#111;line-height:1.5;margin-top:5px;">' + text + '</div></div>';
 }
 
 // ─── MISSION ORG LOADER ────────────────────────────────────────────────────────
@@ -677,7 +818,7 @@ function a1c_buildSubject(person, weekEnd) {
  * Builds the full HTML email body for one person.
  * Sections appear in order: personal area coaching, then leadership summaries.
  */
-function a1c_buildEmail(person, areas, summaries, weekEnd) {
+function a1c_buildEmail(person, areas, summaries, weekEnd, kiDocs) {
   var dateLabel = weekEnd ? a1c_formatDate(weekEnd) : 'esta semana';
   var C = {
     header:  '#1e3a5f',
@@ -702,6 +843,9 @@ function a1c_buildEmail(person, areas, summaries, weekEnd) {
           '<div style="font-size:18px;font-weight:700;">PMG Compass — Entrenamiento Semanal</div>' +
           '<div style="font-size:12px;opacity:0.75;margin-top:4px;">Semana que termina el ' + a1c_esc(dateLabel) + '</div>' +
           '</div>';
+
+  // What is attached, when something is (the weekly KI PDFs).
+  if (kiDocs && kiDocs.length) html += a1c_kiAttachmentNote_(kiDocs, weekEnd);
 
   // Personal area coaching section
   person.areas.forEach(function(areaName) {

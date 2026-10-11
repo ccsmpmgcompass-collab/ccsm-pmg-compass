@@ -93,8 +93,11 @@ def missed_runs(log: pd.DataFrame, now: datetime) -> list[dict]:
         when = started["_ts"].max()
         if now - when.to_pydatetime() < timedelta(hours=CHAIN_HOURS):
             continue    # the chain may still be running
+        # A WAITING row (Agent1C holding for the KI PDFs, PLAN-2026-10-10 K6)
+        # is not the step running: only the retry that follows it is.
         followed = runs[(runs["Agent"] == nxt) & (runs["_ts"] >= when)
-                        & (runs["_ts"] <= when + timedelta(hours=CHAIN_HOURS))]
+                        & (runs["_ts"] <= when + timedelta(hours=CHAIN_HOURS))
+                        & (runs["Status"] != "WAITING")]
         if followed.empty:
             out.append({"kind": "chain", "agent": nxt, "after": first,
                         "when": when.to_pydatetime()})

@@ -28,8 +28,10 @@ OUT_DIR = HERE / ".data"
 # getMessageBank) on the way through.
 TABS = [
     "MISSION_ORG",
+    "MISSION_LEADERSHIP",  # the President + APs at their own addresses (1C people map)
     "DAILY_LOG",
     "NIGHTLY_FORM_RAW",
+    "WEEKLY_FORM_RAW",     # Agent1A rebuilds WEEKLY_KI from it at send time (R1)
     "QUESTIONS_CONFIG",
     "GOALS_CONFIG",
     "AREA_WEEKLY_GOALS",   # each sector's goal per week (goals plan G11)
