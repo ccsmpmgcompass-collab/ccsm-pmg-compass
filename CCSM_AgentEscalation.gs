@@ -834,6 +834,11 @@ function ae_buildWeeklyReminderBody(areaName, weekKey, num, formLink) {
     '<h2 style="color:#1a4d7c;margin:0 0 12px 0;">' + (num === 1 ? 'Recordatorio de Informe Semanal' : 'Segundo Recordatorio de Informe Semanal') + '</h2>',
     '<p>Estimados misioneros de <strong>' + ae_escapeHtml(areaName) + '</strong>,</p>',
     '<p>' + urgency + '</p>',
+    // The deadline, said out loud (the letter redesign's R1,
+    // PLAN-2026-10-10-ki-autosend.md K8). Monday's reminder only: Tuesday's
+    // comes after this week's letter has already gone out.
+    num === 1 ? '<p><strong>Envíen su informe semanal antes del lunes a las 21:00 para ver sus ' +
+                'resultados en el correo de esta semana.</strong></p>' : '',
     '<p><strong>Semana que terminó el:</strong> ' + ae_escapeHtml(dateStr) + ' (domingo)</p>',
     formLink ? ae_linkBtn('Enviar Informe Semanal', formLink) : '',
     ae_footer(),
