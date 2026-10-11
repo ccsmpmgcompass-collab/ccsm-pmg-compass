@@ -187,13 +187,25 @@ function runAgent1A() {
     Logger.log('Agent1A: WEEKLY_KI meta rows for ' + prevWeekEnd + ': ' +
                (weeklyKiPrev === null ? 'TAB UNAVAILABLE' : Object.keys(weeklyKiPrev).length));
 
+    // The letter's four weeks (PLAN-2026-10-11-weekly-letter.md step 1): each
+    // week's KI results beside the goal set the week before, so five weeks
+    // of forms in ONE read of the tab.
+    var kiWeekEnds  = a1a_lastNWeekEnds_(weekEnd, 5);
+    var letterWeeks = kiWeekEnds.slice(1);
+    var kiRows      = a1a_loadKiRows_(kiWeekEnds, weekEnd);
+
     var areaData = {};
     missionOrg.forEach(function(areaObj) {
       var name   = areaObj['Area_Name'];
       var stats  = a1a_buildStats(dailyTotals[name] || {}, effortMap[name] || {});
       var areaGoals = a1a_goalsFor_(name, weekGoals, goals, goalDefaults);
-      var ranked = a1a_rankMetrics(stats, areaGoals, rateTargets, (feedback[name] || {}).lastGrowthMetric);
-      var growth = ranked[ranked.length - 1] || null;
+      var lastGrowth = (feedback[name] || {}).lastGrowthMetric;
+      var ranked = a1a_rankMetrics(stats, areaGoals, rateTargets, lastGrowth);
+      var kiWeeks = kiRows === null ? null : a1a_kiWeeks_(kiRows[name] || {}, kiWeekEnds);
+      // The coaching paragraph follows the KI furthest below its goal
+      // (decision 10): Agent1B picks the growth message for `growth`.
+      var focus  = a1a_pickFocus_(kiWeeks, ranked, lastGrowth);
+      var growth = (focus && focus.feederPick) || ranked[ranked.length - 1] || null;
 
       areaData[name] = {
         code:      areaObj['Area_Code']        || '',
@@ -224,7 +236,13 @@ function runAgent1A() {
         strength1: ranked[0] || null,
         strength2: ranked[1] || null,
         growth:    growth,
-        derived:   a1a_buildDerived(name, stats, growth, history, derivedWeeks, weekEnd, transferStart)
+        derived:   a1a_buildDerived(name, stats, growth, history, derivedWeeks, weekEnd, transferStart),
+        // The weekly letter's four weeks, oldest first (step 1). kiWeeks is
+        // null when WEEKLY_KI cannot be read at all.
+        kiWeeks:    kiWeeks,
+        nightWeeks: a1a_nightWeeks_((history.byArea || {})[name] || {}, letterWeeks),
+        focus:      focus ? { ki: focus.ki, real: focus.real, goal: focus.goal, feeder: focus.feeder } : null,
+        goals:      a1a_weekGoalMap_(ranked)
       };
     });
 
@@ -660,6 +678,138 @@ function a1a_loadWeeklyFilings_(weekEnds, slipWeek) {
     out[area][we] = true;
   }
   return out;
+}
+
+/**
+ * Every area's WEEKLY_KI row for each of `weekEnds`, in ONE read, as
+ *   { areaName: { 'yyyy-MM-dd': { real: {ki_key: n}, meta: {ki_key: n} } } }
+ * slipWeek (the graded week, the last of weekEnds) takes a later-dated row
+ * when the area has none for it -- the same date-slip rule a1a_loadWeeklyKi
+ * applies. NULL when the tab cannot be read.
+ */
+function a1a_loadKiRows_(weekEnds, slipWeek) {
+  var data = a1a_getSheetData('WEEKLY_KI');
+  if (!data || data.length < 2) return null;
+  var headers = data[0].map(function(h) { return String(h).trim(); });
+  var dateIdx = headers.indexOf('Week_End_Date');
+  var areaIdx = headers.indexOf('Area');
+  if (dateIdx < 0 || areaIdx < 0) return null;
+
+  var wanted = {};
+  weekEnds.forEach(function(we) { wanted[we] = true; });
+  function pairs(row) {
+    var out = { real: {}, meta: {} };
+    A1A_KI_DEFS.forEach(function(d) {
+      var r = headers.indexOf(d.key + '_real'), m = headers.indexOf(d.key + '_meta');
+      out.real[d.key] = r >= 0 ? (parseFloat(row[r]) || 0) : 0;
+      out.meta[d.key] = m >= 0 ? (parseFloat(row[m]) || 0) : 0;
+    });
+    return out;
+  }
+  var out = {}, slips = {};
+  for (var i = 1; i < data.length; i++) {
+    var we = a1a_toDateString(data[i][dateIdx]);
+    var area = String(data[i][areaIdx] || '').trim();
+    if (!area || !we) continue;
+    if (wanted[we]) {
+      if (!out[area]) out[area] = {};
+      out[area][we] = pairs(data[i]);
+    } else if (slipWeek && we > slipWeek) {
+      slips[area] = data[i];
+    }
+  }
+  Object.keys(slips).forEach(function(area) {
+    if (!out[area]) out[area] = {};
+    if (!out[area][slipWeek]) out[area][slipWeek] = pairs(slips[area]);
+  });
+  return out;
+}
+
+/**
+ * One area's last four weeks of Key Indicators, oldest first:
+ *   [{ week, filed, real: {k: n}|null, goal: {k: n}|null, next: {k: n}|null }]
+ * `goal` is the meta set on the PREVIOUS week's form -- null when that form is
+ * missing, which the letter shows as "sin meta" (decision 2). `next` is the
+ * meta set on this week's form, i.e. the goal for the week after it.
+ */
+function a1a_kiWeeks_(rows, kiWeekEnds) {
+  var out = [];
+  for (var i = 1; i < kiWeekEnds.length; i++) {
+    var row = rows[kiWeekEnds[i]], prev = rows[kiWeekEnds[i - 1]];
+    out.push({
+      week:  kiWeekEnds[i],
+      filed: !!row,
+      real:  row ? row.real : null,
+      goal:  prev ? prev.meta : null,
+      next:  row ? row.meta : null
+    });
+  }
+  return out;
+}
+
+/**
+ * One area's last four weeks of nightly numbers, oldest first:
+ *   [{ week, nights, m: { metric: value } }]
+ * from the per-week buckets a1a_loadMultiWeekHistory built (rates and
+ * effort_score included). A week with no report has nights 0 and m {}.
+ */
+function a1a_nightWeeks_(byWeek, weeks) {
+  return weeks.map(function(we) {
+    var wk = byWeek[we] || null;
+    var m = {};
+    if (wk) Object.keys(wk).forEach(function(k) { if (k !== 'submissions') m[k] = wk[k]; });
+    return { week: we, nights: wk ? (wk.submissions || 0) : 0, m: m };
+  });
+}
+
+/** The graded week's goal per metric, { key: goal }, from the ranked list. */
+function a1a_weekGoalMap_(ranked) {
+  var out = {};
+  (ranked || []).forEach(function(r) { out[r.key] = r.goal; });
+  return out;
+}
+
+/**
+ * The letter's focus (decision 10): the Key Indicator furthest below the goal
+ * set the week before, among those with a nightly chain (A1A_KI_FEEDERS), and
+ * the chain's weakest nightly feeder against its own weekly goal. The feeder
+ * becomes the area's growth metric, so the coaching paragraph Agent1B picks
+ * speaks to the same thing the focus box names. A feeder used as last week's
+ * growth topic is passed over while another candidate exists.
+ * Returns { ki, real, goal, feeder, feederPick } or null (no form, or every
+ * KI with a goal met).
+ */
+function a1a_pickFocus_(kiWeeks, ranked, lastGrowthMetric) {
+  if (!kiWeeks || !kiWeeks.length) return null;
+  var w = kiWeeks[kiWeeks.length - 1];
+  if (!w.filed || !w.goal) return null;
+  var byKey = {};
+  (ranked || []).forEach(function(r) { byKey[r.key] = r; });
+
+  var cands = [];
+  A1A_KI_DEFS.forEach(function(d, order) {
+    var feeders = A1A_KI_FEEDERS[d.key] || [];
+    var goal = w.goal[d.key] || 0, real = w.real[d.key] || 0;
+    if (!feeders.length || goal <= 0 || real >= goal) return;
+    cands.push({ ki: d.key, real: real, goal: goal, pct: real / goal, order: order, feeders: feeders });
+  });
+  cands.sort(function(a, b) { return (a.pct - b.pct) || (a.order - b.order); });
+
+  var picked = null;
+  cands.some(function(c) {
+    var withGoal = c.feeders.filter(function(k) { return byKey[k]; });
+    withGoal.sort(function(a, b) { return byKey[a].pct - byKey[b].pct; });
+    var fresh = withGoal.filter(function(k) { return k !== lastGrowthMetric; });
+    var feeder = fresh[0] || null;
+    if (!feeder) return false;
+    picked = { ki: c.ki, real: c.real, goal: c.goal, feeder: feeder, feederPick: byKey[feeder] };
+    return true;
+  });
+  if (!picked && cands.length) {
+    var c = cands[0];
+    picked = { ki: c.ki, real: c.real, goal: c.goal, feeder: c.feeders[0], feederPick: byKey[c.feeders[0]] || null };
+  }
+  return picked;
 }
 
 function a1a_loadFeedbackHistory() {
