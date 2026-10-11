@@ -12,7 +12,9 @@ the queued auto-send in memory (`project_pmg_compass`, "Queued").
 ## §1 Decisions (settled — do not re-open without him)
 
 - **K1 Who gets what.** The APs (MISSION_LEADERSHIP, role `assistant`) get the
-  mission document AND every zone document. The ZLs and STLs ("hcaps") of a
+  mission document only — it already holds every zone's pages (Zackary,
+  2026-10-11: "they should just get the whole mission report"; the 10-06 spec
+  said mission + every zone). The ZLs and STLs ("hcaps") of a
   zone, at their area mailbox (MISSION_ORG `Is_ZL` / `Is_STL`), get only that
   zone's document. Nobody else: DLs no (letter Q4), companionships no (R6), the
   President not asked for. The AP area's shared mailbox is read as a DL's and
@@ -86,7 +88,7 @@ d2c7ba9 (5b) · fd4325f (6).
 - **4** Agent1A rebuilds WEEKLY_KI from the forms; the slip rule caught Boca
   de la Costa 1, Boca de la Costa 2 and Ñielol 2 on live data.
 - **5** `render.js --ki-pdfs` on the live dump: 48 letters, 19 attachments
-  (2 APs × 5 + all 9 ZL/STL mailboxes × 1), the AP letter says 39/45 like the
+  (2 APs × 1 mission doc + all 9 ZL/STL mailboxes × 1; was 19 with every zone doc to the APs until 10-11), the AP letter says 39/45 like the
   PDF (was 36/45). Without the job: 0 attachments, letters as before.
 - **5b (found by the full JS suite)** Agent1A requests PDFs only when
   KI_PDF_OUTBOX exists; the job creates it before waiting. So ANY deploy order
@@ -106,7 +108,7 @@ d2c7ba9 (5b) · fd4325f (6).
    Deploy → Manage deployments → pencil → Version: New version → Deploy.
 4. Reboot the Streamlit app (`agent_runs.py` + the packet work).
 5. First live run: Monday 2026-10-12, job 20:30, letters ~21:30. Check
-   AGENT_RUN_LOG's Agent1C row for "KI PDFs attached: 19".
+   AGENT_RUN_LOG's Agent1C row for "KI PDFs attached: 11".
 
 **Open, for Zackary:** the letter's KI totals still differ from the PDF's
 (NP 235/294 vs 203/267) because the letter grades a sector that set no goal

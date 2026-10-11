@@ -86,12 +86,11 @@ const names = (e) => (e.attachments || []).map((b) => b.getName());
   scope.runAgent1C();
 
   const ap = byTo(env, 'ap.uno@missionary.org');
-  assert.deepStrictEqual(names(ap), ['Indicadores_clave_mision_28sep-4oct.pdf',
-    'Indicadores_clave_Arauco_28sep-4oct.pdf', 'Indicadores_clave_Angol_28sep-4oct.pdf'],
-    'the AP gets the mission document and every zone\'s, mission first');
+  assert.deepStrictEqual(names(ap), ['Indicadores_clave_mision_28sep-4oct.pdf'],
+    'the AP gets the mission document only: it already holds every zone');
   assert.deepStrictEqual(ap.attachments[0].getBytes(), pdfBytes('MISSION'), 'the bytes survive the outbox');
   assert.ok(/Indicadores clave por sector — adjuntos/.test(ap.htmlBody), 'the AP letter says what is attached');
-  assert.ok(/el documento de la misión<\/b> \(11 páginas: las 2 zonas/.test(ap.htmlBody));
+  assert.ok(/el documento de la misión<\/b> \(11 páginas: el total de la misión/.test(ap.htmlBody));
 
   const zl = byTo(env, 'zl.arauco1@missionary.org');
   assert.deepStrictEqual(names(zl), ['Indicadores_clave_Arauco_28sep-4oct.pdf'], 'the ZL gets only their zone\'s');
@@ -108,7 +107,7 @@ const names = (e) => (e.attachments || []).map((b) => b.getName());
 
   const run = lastRun(ss);
   assert.strictEqual(run[2], 'SUCCESS', 'run status: ' + run[2] + ' ' + run[7]);
-  assert.ok(/KI PDFs attached: 4/.test(run[7]), 'the run log counts the attachments: ' + run[7]);
+  assert.ok(/KI PDFs attached: 2/.test(run[7]), 'the run log counts the attachments: ' + run[7]);
 }
 
 // ── 2. PDFs late: wait (no Gemini), then send without them and say so. ────────

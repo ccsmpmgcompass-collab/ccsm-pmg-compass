@@ -552,8 +552,9 @@ function a1c_loadKiPdfs_(weekEnd) {
 }
 
 /**
- * The KI PDFs one letter carries (K1): an AP gets the mission's and every
- * zone's; a ZL or STL gets their own zone's. Nobody else gets any -- not DLs,
+ * The KI PDFs one letter carries (K1): an AP gets the mission's only -- it
+ * already holds every zone's pages (Zackary, 2026-10-11: "they should just get
+ * the whole mission report"); a ZL or STL gets their own zone's. Nobody else gets any -- not DLs,
  * not companionships, not the President (not asked for). The AP area's shared
  * mailbox is a DL by now (a1c_buildPeopleMap) and gets none.
  */
@@ -562,7 +563,7 @@ function a1c_kiDocsFor_(person, kiPdfs) {
   var wanted = {};
   (person.roles || []).forEach(function(role) {
     if (role.type === 'AP') {
-      kiPdfs.docs.forEach(function(d) { wanted[d.scope] = true; });
+      wanted.MISSION = true;
     } else if (role.type === 'ZL' || role.type === 'STL') {
       wanted[role.zone] = true;
     }
@@ -591,10 +592,9 @@ function a1c_kiAttachmentNote_(docs, weekEnd) {
   var text;
   if (mission) {
     text = 'La clasificación de la semana ' + a1c_weekSpanEs_(weekEnd) + ' va adjunta: ' +
-           '<b>el documento de la misión</b> (' + mission.pages + ' páginas: las ' + zones.length +
-           ' zonas y cada sector, con las metas para la semana ' + nextSpan + ') y ' +
-           '<b>el documento de cada zona</b> (' + (zones[0] ? zones[0].pages : 3) + ' páginas cada uno), ' +
-           'los mismos que reciben los líderes de zona y las hermanas capacitadoras de esa zona.';
+           '<b>el documento de la misión</b> (' + mission.pages + ' páginas: el total de la misión, ' +
+           'cada zona y cada sector, con las metas para la semana ' + nextSpan + '). Los líderes de ' +
+           'zona y las hermanas capacitadoras reciben las páginas de su zona.';
   } else {
     text = 'La clasificación de su zona para la semana ' + a1c_weekSpanEs_(weekEnd) + ' va adjunta ' +
            '(' + zones[0].pages + ' páginas): cada sector de la zona con sus siete indicadores clave ' +
