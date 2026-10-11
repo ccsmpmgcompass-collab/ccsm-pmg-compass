@@ -4,9 +4,24 @@
     {
       "name": "ccsm-dashboard",
       "runtimeExecutable": "venv/Scripts/streamlit.exe",
-      "runtimeArgs": ["run", "Home.py", "--server.port", "8502", "--server.headless", "true"],
+      "runtimeArgs": [
+        "run",
+        "Home.py",
+        "--server.port",
+        "8502",
+        "--server.headless",
+        "true"
+      ],
       "cwd": "dashboard",
       "port": 8502
+    },
+    {
+      "name": "email-letters",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "tools/email_preview/serve_letters.js"
+      ],
+      "port": 8933
     }
   ]
 }
