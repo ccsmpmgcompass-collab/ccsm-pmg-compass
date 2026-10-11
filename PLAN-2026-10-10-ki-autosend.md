@@ -76,4 +76,39 @@ files that predate this work (`test_agent5b6`, `test_ccsm_data`,
 
 ## §3 STATUS
 
-(updated after every step)
+**2026-10-10 — ALL STEPS 1–7 BUILT AND VERIFIED, NOT PUSHED.** Commits
+601aa89 (1) · 243b04c (2) · 5fda050 (3) · a4c96f8 (4) · 8ae543c (5) ·
+d2c7ba9 (5b) · fd4325f (6).
+
+- **1** 23/23 pages pixel-identical to the approved PDFs (week ending 10-04).
+- **2** Live dry run: 5 documents, 23 pages, 7 cells.
+- **3** `test_relay_attachments.js` runs the real relay `doPost`.
+- **4** Agent1A rebuilds WEEKLY_KI from the forms; the slip rule caught Boca
+  de la Costa 1, Boca de la Costa 2 and Ñielol 2 on live data.
+- **5** `render.js --ki-pdfs` on the live dump: 48 letters, 19 attachments
+  (2 APs × 5 + all 9 ZL/STL mailboxes × 1), the AP letter says 39/45 like the
+  PDF (was 36/45). Without the job: 0 attachments, letters as before.
+- **5b (found by the full JS suite)** Agent1A requests PDFs only when
+  KI_PDF_OUTBOX exists; the job creates it before waiting. So ANY deploy order
+  is safe: .gs first → no tab → letters as today; job first → it waits, gives
+  up, letters untouched; relay not redeployed → letters go once without PDFs
+  and the run log says "redeploy". The missed-run check ignores WAITING rows.
+- **6** Monday reminder carries the deadline line.
+- **7** pytest 0 failed / 1958 passed; JS suite = the same 5 pre-existing
+  failures and nothing else. Preview: `Vista_previa_KI_asistentes/`
+  (untracked, real names) and `tools/email_preview/.data/modelo/ki_asistentes.html`.
+
+**Still to do — Zackary's hands (step 8):**
+1. Push (also pushes the 18 council-packet commits ahead of these).
+2. Apps Script editor: paste `CCSM_Helpers.gs`, `CCSM_Agent1A.gs`,
+   `CCSM_Agent1C.gs`, `CCSM_AgentEscalation.gs`.
+3. Relay project (second Gmail account): paste `CCSM_RelayReceiver.gs`,
+   Deploy → Manage deployments → pencil → Version: New version → Deploy.
+4. Reboot the Streamlit app (`agent_runs.py` + the packet work).
+5. First live run: Monday 2026-10-12, job 20:30, letters ~21:30. Check
+   AGENT_RUN_LOG's Agent1C row for "KI PDFs attached: 19".
+
+**Open, for Zackary:** the letter's KI totals still differ from the PDF's
+(NP 235/294 vs 203/267) because the letter grades a sector that set no goal
+last week against this week's own goal, while the PDF leaves it SIN META.
+Not changed: it is a rule choice, not stale data.
