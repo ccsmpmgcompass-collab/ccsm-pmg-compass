@@ -1,0 +1,68 @@
+name: Weekly KI PDFs
+
+# The KI ranking PDFs that ride on Monday's weekly letter
+# (PLAN-2026-10-10-ki-autosend.md). The APs get the mission document and every
+# zone's; each zone's ZLs and STLs get their zone's.
+#
+# 23:30 UTC Monday is 20:30 in Chile in summer time and 19:30 in winter, so the
+# job is up and waiting well before the letter chain starts (~21:30). It waits
+# for Agent1A's REQUEST row in KI_PDF_OUTBOX, builds from the forms Agent1A
+# read — the same cutoff, so the letter and the PDFs agree — and writes the PDFs
+# back for Agent1C to attach. The timing of the letter does not change: a form
+# sent after the cutoff waits for next week in both.
+#
+# The repository is public — the job prints counts only, never a sector's name
+# or figures.
+
+on:
+  schedule:
+    - cron: "30 23 * * 1"
+  workflow_dispatch:
+    inputs:
+      week_end:
+        description: "The Sunday ending the graded week (YYYY-MM-DD); blank = the last one"
+        required: false
+        type: string
+      now:
+        description: "Build from every form now instead of waiting for the letter's request"
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: "Build and count only; write nothing"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ki-pdfs
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    # Up to 3.5 hours waiting for the request in winter time, plus the build.
+    timeout-minutes: 240
+    env:
+      COMPASS_SHEET_NAME: COMPASS_CCSM
+      GOOGLE_SHEETS_CREDENTIALS_JSON: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # No browser and no Streamlit: the sheet client and ReportLab only.
+      - name: Install dependencies
+        run: pip install --no-cache-dir "gspread>=6.1.2" "google-auth>=2.40.2" "pandas>=2.0.0" "reportlab>=4.0,<6"
+
+      - name: Build the PDFs
+        working-directory: dashboard
+        run: >
+          python -m app.ingestion.ki_pdf_runner
+          ${{ (inputs.week_end && format('--week-end {0}', inputs.week_end)) || '' }}
+          ${{ (inputs.now && '--now') || '' }}
+          ${{ (inputs.dry_run && '--dry-run') || '' }}
