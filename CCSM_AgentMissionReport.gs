@@ -82,9 +82,8 @@ function runAgentMissionReport() {
 
     var recipients = amr_loadLeadershipEmails();
     if (recipients.length === 0) {
-      notes.push('NO RECIPIENTS: MISSION_LEADERSHIP has no active row, so the mission ' +
-                 'report went to nobody. List the President and the assistants on ' +
-                 'Traslados > Liderazgo.');
+      notes.push('NO RECIPIENTS: MISSION_LEADERSHIP has no active president row, so the ' +
+                 'mission report went to nobody. List the President on Traslados > Liderazgo.');
       logRun('AgentMissionReport', 'ERROR', null, 0, null, notes.join(' | '));
       Logger.log('AgentMissionReport: ' + notes.join(' | '));
       return;
@@ -278,8 +277,12 @@ function amr_loadScores() {
  * Active MISSION_LEADERSHIP addresses, lower-cased and deduped — the report's
  * whole recipient list. [] when the tab is missing (getTab throws) or holds no
  * valid row. Same validity rule as the dashboard's queries._clean_leadership:
- * an '@' in the email, role president or assistant, and Active anything but
- * FALSE (blank counts as active).
+ * an '@' in the email, a valid role, and Active anything but FALSE (blank
+ * counts as active).
+ *
+ * The PRESIDENT only (Zackary, 2026-10-11). The assistants get the mission
+ * read in their weekly letter (PLAN-2026-10-11-weekly-letter.md, Q5), so this
+ * report stopped going to them: one weekly email each, not two.
  */
 function amr_loadLeadershipEmails() {
   var data;
@@ -294,7 +297,7 @@ function amr_loadLeadershipEmails() {
     var role  = String(data[i][iR] || '').trim().toLowerCase();
     var act   = iA < 0 ? '' : String(data[i][iA]).trim().toUpperCase();
     if (email.indexOf('@') < 0) continue;
-    if (role !== 'president' && role !== 'assistant') continue;
+    if (role !== 'president') continue;
     if (act === 'FALSE') continue;
     out[email] = true;
   }

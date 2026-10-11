@@ -97,9 +97,11 @@ leadSheet.getRange(1, 1, 6, 5).setValues([
   ['Mal', 'sin-arroba', 'assistant', 'TRUE', ''],
   ['ZL', 'zl@missionary.org', 'zone leader', 'TRUE', ''],
 ]);
+// The President only since 2026-10-11: the assistants read the mission in
+// their weekly letter (PLAN-2026-10-11-weekly-letter.md, Q5).
 assert.deepStrictEqual(scope.amr_loadLeadershipEmails().sort(),
-  ['ap.uno@missionary.org', 'presidente@churchofjesuschrist.org'],
-  'the recipients are the two valid active rows, and not ap@example.com / mp@example.com');
+  ['presidente@churchofjesuschrist.org'],
+  'the recipient is the active president row -- not the assistants, not ap@example.com / mp@example.com');
 
 scope.runAgentMissionReport();
 
@@ -112,9 +114,9 @@ scope.runAgentMissionReport();
 // recipients were resolved, even though both land in one inbox; WHICH two is
 // asserted on amr_loadLeadershipEmails above.
 const emails = env.state.emails;
-assert.strictEqual(emails.length, 2, 'expected exactly 2 emails, one per MISSION_LEADERSHIP row');
+assert.strictEqual(emails.length, 1, 'expected exactly 1 email, to the President');
 assert.ok(emails.every((e) => e.to === 'CCSM.PMG.Compass@gmail.com'),
-  'expected both sends redirected to the TEST_MODE inbox');
+  'expected the send redirected to the TEST_MODE inbox');
 
 console.log('recipients OK');
 

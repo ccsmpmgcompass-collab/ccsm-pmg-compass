@@ -2717,15 +2717,15 @@ ES: dict[str, str] = {
     "Mission leadership": "Liderazgo de la misión",
     "This list decides who may sign in with a personal address, who opens the "
     "leadership pages (Traslados, Editar Envíos, Mantenimiento, Centro de "
-    "Acción, Sugerencias), who sets goals on Metas, and who receives the Monday "
-    "mission report and the mission section of the weekly letter. Zone, "
+    "Acción, Sugerencias), who sets goals on Metas, and who receives the mission's "
+    "weekly letter (the President also gets the Monday mission report). Zone, "
     "district and sister training leaders are not listed here: they lead from "
     "their area's mailbox, and MISSION_ORG already knows them.":
         "Esta lista decide quién puede entrar con un correo personal, quién abre "
         "las páginas de liderazgo (Traslados, Editar Envíos, Mantenimiento, "
         "Centro de Acción, Sugerencias), quién fija metas en Metas y quién recibe "
-        "el informe de la misión del lunes y la sección de la misión de la carta "
-        "semanal. Los líderes de zona, de distrito y las hermanas líderes "
+        "la carta semanal de la misión (el Presidente recibe además el informe de "
+        "la misión del lunes). Los líderes de zona, de distrito y las hermanas líderes "
         "capacitadoras no van aquí: dirigen desde el correo de su área, y "
         "MISSION_ORG ya los conoce.",
     "The President and the assistants, each under the address he signs in "

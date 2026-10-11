@@ -616,8 +616,8 @@ def _render_leadership_tab() -> None:
         info=t("This list decides who may sign in with a personal address, who "
                "opens the leadership pages (Traslados, Editar Envíos, "
                "Mantenimiento, Centro de Acción, Sugerencias), who sets goals on "
-               "Metas, and who receives the Monday mission report and the "
-               "mission section of the weekly letter. Zone, district and sister "
+               "Metas, and who receives the mission's weekly letter (the "
+               "President also gets the Monday mission report). Zone, district and sister "
                "training leaders are not listed here: they lead from their "
                "area's mailbox, and MISSION_ORG already knows them."),
     )
