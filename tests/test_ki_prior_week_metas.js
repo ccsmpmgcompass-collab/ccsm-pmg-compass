@@ -337,15 +337,18 @@ function colorOf(html, pair) {
   assert.ok(email, 'expected an email captured to the TEST_MODE inbox');
   const body = email.htmlBody || '';
 
-  assert.ok(body.includes('>12 / 12</td>'),
+  // Model v2 (PLAN-2026-10-11-weekly-letter.md): this week's cell is the big
+  // result over "de <goal>", the goal set on LAST week's form.
+  const cell = (real, goal) => new RegExp('>' + real + '</b><br><small[^>]*>de ' + goal + '<');
+  assert.ok(cell(12, 12).test(body),
     'the letter must pair this week\'s 12 with last week\'s meta of 12');
-  assert.ok(body.includes('>16 / 25</td>'),
+  assert.ok(cell(16, 25).test(body),
     'the letter must pair this week\'s 16 with last week\'s meta of 25');
-  assert.ok(!body.includes('>12 / 40</td>'),
+  assert.ok(!cell(12, 40).test(body),
     'this week\'s meta of 40 belongs to next week and must not be graded now');
-  assert.ok(!body.includes('>16 / 16</td>'), 'no same-row pair may reach the letter');
-  assert.ok(!body.includes('>99 / '), 'last week\'s results must not be re-reported');
-  assert.ok(!body.includes('†'), 'this area filed both weeks — nothing to dagger');
+  assert.ok(!cell(16, 16).test(body), 'no same-row pair may reach the letter');
+  // The 40 is shown where it belongs: next week's goals.
+  assert.ok(/Sus metas para esta semana[\s\S]*>40</.test(body), 'next week\'s meta of 40 is shown as next week\'s goal');
 
   console.log('end-to-end prior-week wiring OK');
 }

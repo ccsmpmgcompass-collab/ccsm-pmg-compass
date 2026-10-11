@@ -402,7 +402,8 @@ function runAgent1C() {
     // Pre-generate all zone + district narratives in 2 batch Gemini calls —
     // collapses N per-unit calls into 2 total (mission narrative, if needed,
     // is generated on demand and cached). See a1c_pregenerateNarratives.
-    a1c_pregenerateNarratives(summaries, areas, weekEnd);
+    // (Model v2 carries no Gemini narrative, so none is generated: the
+    // free-tier key's 20 requests a day stay for the assistant.)
 
     // Build people map: email → { name, areas[], roles[] }
     var fullOrgData = a1c_loadFullMissionOrg();
@@ -450,8 +451,11 @@ function runAgent1C() {
       var person = peopleMap[email];
       try {
         var docs    = a1c_kiDocsFor_(person, kiPdfs);
-        var subject = a1c_buildSubject(person, weekEnd);
-        var body    = a1c_buildEmail(person, areas, summaries, weekEnd, docs);
+        // Model v2 (PLAN-2026-10-11-weekly-letter.md): one builder makes
+        // both, so the subject's news is the letter's own highlight.
+        var letter  = a1c_v2letter_(person, areas, summaries, weekEnd, docs);
+        var subject = letter.subject;
+        var body    = letter.html;
         var sent    = sendEmail(email, subject, body, 'Agent1C',
                                 docs.length ? { attachments: docs.map(function(d) { return d.blob; }) } : undefined);
         if (docs.length) {
@@ -2591,7 +2595,7 @@ function a1c_softHyphenate_(text) {
  * district scope — flat area list with district total row.
  * mission scope  — flat area list with Zone column + mission total row.
  */
-function a1c_buildAreaDataTable_(areaDetails, scope, C) {
+function a1c_buildAreaDataTable_(areaDetails, scope, C, fontPx) {
   var isMission = scope === 'mission';
   var isZone    = scope === 'zone';
 
@@ -2651,8 +2655,12 @@ function a1c_buildAreaDataTable_(areaDetails, scope, C) {
     return row + '</tr>';
   }
 
-  var tableFontSize = isMission ? '10px' : '9px';
-  var html = '<table style="width:100%;border-collapse:collapse;font-size:' + tableFontSize + ';margin-bottom:8px;">';
+  var tableFontSize = fontPx || (isMission ? '10px' : '9px');
+  // fontPx = the weekly letter v2 (PLAN-2026-10-11): same look, with the
+  // cells' shared padding and centring set once on the table (size budget).
+  var html = fontPx
+    ? '<table cellpadding="3" style="width:100%;border-collapse:collapse;font-size:' + tableFontSize + ';margin-bottom:8px;text-align:center;">'
+    : '<table style="width:100%;border-collapse:collapse;font-size:' + tableFontSize + ';margin-bottom:8px;">';
   html += makeHeaderRow();
 
   if (isZone) {
@@ -2686,7 +2694,8 @@ function a1c_buildAreaDataTable_(areaDetails, scope, C) {
           var v = c.key === 'name' ? aObj.name
                 : c.key === 'zone' ? aObj.zone
                 : statVal(s, c.key);
-          html += '<td style="padding:3px 3px;text-align:' + c.al + ';border-bottom:1px solid ' + C.border + ';">' +
+          html += (fontPx ? '<td' + (c.al === 'left' ? ' align="left"' : '') + ' style="border-bottom:1px solid ' + C.border + ';">'
+                        : '<td style="padding:3px 3px;text-align:' + c.al + ';border-bottom:1px solid ' + C.border + ';">') +
                   a1c_esc(String(v !== undefined && v !== null ? v : '—')) + '</td>';
         });
         html += '</tr>';
@@ -2720,7 +2729,8 @@ function a1c_buildAreaDataTable_(areaDetails, scope, C) {
         var v = c.key === 'name' ? aObj.name
               : c.key === 'zone' ? aObj.zone
               : statVal(s, c.key);
-        html += '<td style="padding:3px 3px;text-align:' + c.al + ';border-bottom:1px solid ' + C.border + ';">' +
+        html += (fontPx ? '<td' + (c.al === 'left' ? ' align="left"' : '') + ' style="border-bottom:1px solid ' + C.border + ';">'
+                        : '<td style="padding:3px 3px;text-align:' + c.al + ';border-bottom:1px solid ' + C.border + ';">') +
                 a1c_esc(String(v !== undefined && v !== null ? v : '—')) + '</td>';
       });
       html += '</tr>';
@@ -3850,9 +3860,9 @@ function a1c_recordFeedbackHistory(areas) {
     var area    = areas[areaName];
     var areaKey = area.code || areaName; // matches CCSM_Agent1B.gs's areaKey formula
 
-    if (area.msg_strength1 && area.msg_strength1.messageId) {
-      recordMessageSent(areaKey, area.msg_strength1.messageId, 'SUNDAY_COACHING_STRENGTH');
-    }
+    // Only what the letter printed: model v2 carries the growth paragraph
+    // (in "Su enfoque esta semana") and no strength message, so a strength
+    // pick is no longer "sent" and must not count against its no-repeat.
     if (area.msg_growth && area.msg_growth.messageId) {
       var growthMetric = (area.growth && area.growth.key) || '';
       recordMessageSent(areaKey, area.msg_growth.messageId, 'SUNDAY_COACHING_GROWTH', growthMetric);
@@ -4080,4 +4090,1165 @@ function a1c_fetchBatchNarratives_(scopeType, summaryMap, areas, weekEnd) {
     Logger.log('a1c_fetchBatchNarratives_ ERROR (' + scopeType + '): ' + e.message + '. Se usará el respaldo por unidad.');
     return {};
   }
+}
+
+// ═══ THE WEEKLY LETTER, MODEL v2 (PLAN-2026-10-11-weekly-letter.md) ══════════
+//
+// The layout Zackary approved on 2026-10-06 (tools/email_preview/.data/modelo,
+// unchanged after the Temuco Ñielol leaders read it). Every letter opens with a
+// one-minute read -- a highlight, "Recibimos sus informes", the seven KIs with
+// four weeks, one focus, next week's goals -- and then every nightly number
+// they sent. Leaders get numbered sections after their own sector: a quick
+// read (KI grid by unit, who to congratulate / call / visit) and then all the
+// data, unit by unit.
+//
+// Totals follow the KI PDFs' rule (decision 2): a sector that filed no form
+// the week before has no goal that week, and its result is left out of the
+// graded part of a total -- so the letter and the attached PDF agree.
+
+var A1C_V2 = {
+  navy: '#003087', ink: '#11131c', ink2: '#3c4257', ink3: '#6b7387',
+  rule: '#dfe3ec', ruleSoft: '#f0f1f5', panel: '#eef2fa',
+  good: '#1f9d57', goodBg: '#e3f3ea', warn: '#b07500', warnBg: '#f6ecd9',
+  bad: '#c9483d', badBg: '#f8e4e2', none: '#3c4257', noneBg: '#f1f2f5'
+};
+
+// The seven KIs: grid label, column head, and the noun a sentence uses
+// (singular, plural).
+var A1C_V2_KI = [
+  { key: 'ki_new_people',         label: 'Nuevas personas',                   head: 'Nuevas pers.',
+    one: 'nueva persona', many: 'nuevas personas' },
+  { key: 'ki_member_lessons',     label: 'Lecciones con miembros',            head: 'Lecc. c/ miem&shy;bros',
+    one: 'lección con miembros', many: 'lecciones con miembros' },
+  { key: 'ki_friends_sacrament',  label: 'Amigos en la sacramental',          head: 'Sacra&shy;mental',
+    one: 'amigo en la sacramental', many: 'amigos en la sacramental' },
+  { key: 'ki_friends_first_week', label: 'Amigos en su 1.ª semana',           head: '1.ª se&shy;mana',
+    one: 'amigo en su primera semana', many: 'amigos en su primera semana' },
+  { key: 'ki_baptismal_date',     label: 'Amigos con fecha bautismal',        head: 'Fecha baut.',
+    one: 'amigo con fecha bautismal', many: 'amigos con fecha bautismal' },
+  { key: 'ki_baptized_confirmed', label: 'Bautismos',                         head: 'Bau&shy;tismos',
+    one: 'bautismo', many: 'bautismos' },
+  { key: 'ki_rc_at_church',       label: 'Conversos recientes en la Iglesia', head: 'Conv. en Iglesia',
+    one: 'converso reciente en la Iglesia', many: 'conversos recientes en la Iglesia' }
+];
+
+// Every nightly number, in the form's Buscar / Enseñar / Invitar order. `rate`
+// rows are the four fractions, set in italics and computed from sums.
+var A1C_V2_NIGHTLY = [
+  { title: '🚪 Buscar', rows: [
+    { key: 'contacts_attempted',       label: 'Intentos de contacto' },
+    { key: 'contacts_made',            label: 'Contactos' },
+    { key: 'contact_rate',             label: 'Tasa de contacto', rate: true },
+    { key: 'meaningful_conversations', label: 'Conversaciones significativas' },
+    { key: 'mc_rate',                  label: 'Tasa de conv. significativas', rate: true },
+    { key: 'new_people_found',         label: 'Nuevas personas encontradas' },
+    { key: 'friend_texts',             label: 'Mensajes de texto a amigos' },
+    { key: 'friend_calls',             label: 'Llamadas a amigos' }] },
+  { title: '📚 Enseñar', rows: [
+    { key: 'friend_lessons',            label: 'Lecciones con amigos' },
+    { key: 'lesson_rate',               label: 'Tasa de lecciones', rate: true },
+    { key: 'pmf_lessons',               label: 'Lecciones con familias parciales' },
+    { key: 'rc_lessons',                label: 'Lecciones con conversos recientes' },
+    { key: 'rc_lessons_mcp',            label: 'Lecciones con CR (Mi Senda)' },
+    { key: 'lessons_member_present',    label: 'Lecciones con miembro presente' },
+    { key: 'member_contacts',           label: 'Contactos con miembros' },
+    { key: 'references_asked',          label: 'Referencias solicitadas' },
+    { key: 'member_referrals_received', label: 'Referencias de miembros recibidas' },
+    { key: 'bom_shared',                label: 'Libros de Mormón entregados' },
+    { key: 'roleplays',                 label: 'Prácticas de enseñanza' }] },
+  { title: '⛪ Invitar', rows: [
+    { key: 'church_invites',           label: 'Invitaciones a la Iglesia' },
+    { key: 'baptism_doctrine_lessons', label: 'Lecciones de doctrina del bautismo' },
+    { key: 'baptismal_invitations',    label: 'Invitaciones al bautismo' },
+    { key: 'baptismal_calendars',      label: 'Calendarios bautismales entregados' },
+    { key: 'close_rate',               label: 'Tasa de invitación bautismal', rate: true }] },
+  { title: '📦 Otros', rows: [
+    { key: 'exchanges', label: 'Intercambios' }] }
+];
+
+var A1C_V2_RATE_PARTS = {
+  contact_rate: ['contacts_made', 'contacts_attempted'],
+  mc_rate:      ['meaningful_conversations', 'contacts_made'],
+  lesson_rate:  ['friend_lessons', 'contacts_attempted'],
+  close_rate:   ['baptismal_invitations', 'friend_lessons']
+};
+
+var A1C_V2_RATE_NOTE = 'Tasas en cursiva: contacto = contactos ÷ intentos · conv. significativas = ' +
+  'conversaciones ÷ contactos · lecciones = lecciones con amigos ÷ intentos · invitación ' +
+  'bautismal = invitaciones ÷ lecciones con amigos.';
+
+var A1C_V2_DIAS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+
+// ─── Small helpers ───────────────────────────────────────────────────────────
+
+function a1c_v2n_(x) { return String(Math.round(Number(x) || 0)); }
+
+function a1c_v2isRate_(key) { return !!A1C_V2_RATE_PARTS[key]; }
+
+function a1c_v2fmt_(key, v) {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  if (a1c_v2isRate_(key)) return Math.round(v * 100) + '%';
+  return a1c_v2n_(v);
+}
+
+/** pct of goal -> [text colour, background]. null = no goal (grey). */
+function a1c_v2band_(pct) {
+  var P = A1C_V2;
+  if (pct === null || pct === undefined || isNaN(pct)) return [P.none, P.noneBg];
+  if (pct >= 0.9) return [P.good, P.goodBg];
+  if (pct >= 0.6) return [P.warn, P.warnBg];
+  return [P.bad, P.badBg];
+}
+
+function a1c_v2kiNoun_(def, n) { return Math.round(n) === 1 ? def.one : def.many; }
+
+function a1c_v2kiDef_(key) {
+  for (var i = 0; i < A1C_V2_KI.length; i++) if (A1C_V2_KI[i].key === key) return A1C_V2_KI[i];
+  return null;
+}
+
+function a1c_v2nightLabel_(key) {
+  for (var g = 0; g < A1C_V2_NIGHTLY.length; g++) {
+    for (var r = 0; r < A1C_V2_NIGHTLY[g].rows.length; r++) {
+      if (A1C_V2_NIGHTLY[g].rows[r].key === key) return A1C_V2_NIGHTLY[g].rows[r].label;
+    }
+  }
+  return a1c_scoreboardLabel_(key);
+}
+
+/** "Contactos con miembros" -> "contactos con miembros" (Mormón, CR, Iglesia kept). */
+function a1c_v2lower_(label) {
+  return label.charAt(0).toLowerCase() + label.slice(1);
+}
+
+/** Spanish list: "a", "a y b", "a, b y c". */
+function a1c_v2list_(items) {
+  if (items.length <= 1) return items.join('');
+  return items.slice(0, -1).join(', ') + ' y ' + items[items.length - 1];
+}
+
+/** "28 sep – 4 oct" */
+function a1c_v2span_(weekEnd) {
+  var MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  var p = String(weekEnd).split('-');
+  var end = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+  var start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 6);
+  return start.getDate() + ' ' + MES[start.getMonth()] + ' – ' + end.getDate() + ' ' + MES[end.getMonth()];
+}
+
+function a1c_v2nextSpan_(weekEnd) {
+  var p = String(weekEnd).split('-');
+  var d = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10) + 7);
+  return a1c_weekSpanEs_(d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate());
+}
+
+// ─── Units: one sector, or a group rolled up under the PDF rule ─────────────
+
+/**
+ * One sector as a "unit": four weeks, oldest first, each
+ *   { week, filed, ki: { k: {r, rg, g} }, nights, m: { metric: n }, goals: {...} }
+ * plus { name, n: 1, sectors: [name] }. `goals` (the graded week's nightly
+ * goals) is set on the last week only -- the letter colours only that week.
+ */
+function a1c_v2sector_(name, area) {
+  var kiWeeks = area.kiWeeks || [];
+  var nightWeeks = area.nightWeeks || [];
+  var weeks = [];
+  for (var i = 0; i < 4; i++) {
+    var kw = kiWeeks[i] || { filed: false, real: null, goal: null };
+    var nw = nightWeeks[i] || { nights: 0, m: {} };
+    var ki = {};
+    A1C_V2_KI.forEach(function(d) {
+      var r = kw.real ? (kw.real[d.key] || 0) : 0;
+      var g = kw.goal ? (kw.goal[d.key] || 0) : 0;
+      ki[d.key] = { r: r, rg: g > 0 ? r : 0, g: g };
+    });
+    weeks.push({
+      week: kw.week || nw.week || '', filed: !!kw.filed, goalSet: !!kw.goal,
+      filedCount: kw.filed ? 1 : 0, ki: ki,
+      nights: nw.nights || 0, m: nw.m || {},
+      goals: i === 3 ? (area.goals || {}) : {}
+    });
+  }
+  return { name: name, n: 1, sectors: [name], area: area, weeks: weeks,
+           next: kiWeeks[3] && kiWeeks[3].next ? kiWeeks[3].next : null,
+           nextGoals: area.nextGoals || null };
+}
+
+/** Several units summed (decision 2: graded part = sectors with a goal). */
+function a1c_v2group_(name, units) {
+  var weeks = [];
+  for (var i = 0; i < 4; i++) {
+    var w = { week: '', filed: false, goalSet: true, filedCount: 0, ki: {}, nights: 0, m: {}, goals: {} };
+    A1C_V2_KI.forEach(function(d) { w.ki[d.key] = { r: 0, rg: 0, g: 0 }; });
+    units.forEach(function(u) {
+      var uw = u.weeks[i];
+      if (!w.week) w.week = uw.week;
+      w.filedCount += uw.filedCount;
+      w.nights += uw.nights;
+      A1C_V2_KI.forEach(function(d) {
+        w.ki[d.key].r += uw.ki[d.key].r;
+        w.ki[d.key].rg += uw.ki[d.key].rg;
+        w.ki[d.key].g += uw.ki[d.key].g;
+      });
+      Object.keys(uw.m).forEach(function(k) {
+        if (!a1c_v2isRate_(k) && k !== 'effort_score') w.m[k] = (w.m[k] || 0) + (Number(uw.m[k]) || 0);
+      });
+      Object.keys(uw.goals).forEach(function(k) {
+        if (a1c_v2isRate_(k)) w.goals[k] = uw.goals[k];
+        else w.goals[k] = (w.goals[k] || 0) + (Number(uw.goals[k]) || 0);
+      });
+    });
+    Object.keys(A1C_V2_RATE_PARTS).forEach(function(k) {
+      var p = A1C_V2_RATE_PARTS[k];
+      w.m[k] = (w.m[p[1]] || 0) > 0 ? (w.m[p[0]] || 0) / w.m[p[1]] : null;
+    });
+    w.filed = w.filedCount > 0;
+    weeks.push(w);
+  }
+  var sectors = [];
+  units.forEach(function(u) { sectors = sectors.concat(u.sectors); });
+  return { name: name, n: sectors.length, sectors: sectors, units: units, weeks: weeks, group: true };
+}
+
+/** A unit's KI cell for one week: { big, small, pct } under the PDF rule. */
+function a1c_v2kiCell_(unit, i, key) {
+  var w = unit.weeks[i], c = w.ki[key];
+  if (!unit.group && !w.filed) return { big: '—', small: 'sin informe', pct: null, none: true };
+  if (c.g > 0) return { big: a1c_v2n_(c.rg), small: 'de ' + a1c_v2n_(c.g), pct: c.rg / c.g };
+  return { big: a1c_v2n_(c.r), small: (i === 3 ? 'sin meta' : ''), pct: null };
+}
+
+/** KIs met / KIs with a goal, for the graded week. */
+function a1c_v2metCount_(unit) {
+  var w = unit.weeks[3], met = 0, set = 0;
+  A1C_V2_KI.forEach(function(d) {
+    var c = w.ki[d.key];
+    if (c.g > 0) { set++; if (c.rg >= c.g) met++; }
+  });
+  return { met: met, set: set };
+}
+
+/** Nightly value of a unit in week i (rates from the unit's own sums). */
+function a1c_v2night_(unit, i, key) {
+  var w = unit.weeks[i];
+  if (a1c_v2isRate_(key)) {
+    var p = A1C_V2_RATE_PARTS[key];
+    return (Number(w.m[p[1]]) || 0) > 0 ? (Number(w.m[p[0]]) || 0) / Number(w.m[p[1]]) : null;
+  }
+  return Number(w.m[key]) || 0;
+}
+
+// ─── Facts: the highlight, the subject line, the leaders' lists ─────────────
+
+/**
+ * The good news in one unit's week, best first: { score, title, short, line }.
+ * Only the unit's own numbers against its own past -- never another area
+ * (Q2). An empty list means the letter shows no highlight box.
+ */
+function a1c_v2facts_(unit) {
+  var facts = [];
+  var w = unit.weeks[3], wp = unit.weeks[2];
+  if (!unit.group && !w.filed) return facts;
+  A1C_V2_KI.forEach(function(d, order) {
+    var c = w.ki[d.key], r = Math.round(c.r);
+    var prior = [0, 1, 2].map(function(i) { return Math.round(unit.weeks[i].ki[d.key].r); });
+    var filedPrior = [0, 1, 2].filter(function(i) { return unit.group || unit.weeks[i].filed; });
+    var bestBefore = Math.max.apply(null, prior);
+    var met = c.g > 0 && c.rg >= c.g && r > 0;
+    var noun = a1c_v2kiNoun_(d, r);
+    if (d.key === 'ki_baptized_confirmed' && r >= 1) {
+      facts.push({ score: 60, kind: 'baptism', key: d.key,
+        title: r + ' ' + noun + ' esta semana',
+        short: r + ' ' + noun + ' esta semana',
+        line: r + ' ' + noun + ' esta semana.' });
+    } else if (filedPrior.length === 3 && r > bestBefore && r >= 2) {
+      facts.push({ score: 50 + order + (met ? 5 : 0), kind: 'best', key: d.key,
+        title: r + ' ' + noun + ': su mejor semana en un mes',
+        short: r + ' ' + noun + ', su mejor semana en un mes',
+        line: r + ' ' + noun + ', su mejor semana en un mes.' });
+    } else if (met) {
+      facts.push({ score: 40 + order + Math.min(c.rg / c.g, 2), kind: 'met', key: d.key,
+        title: r + ' ' + noun + ': meta cumplida',
+        short: r + ' ' + noun + ', meta cumplida',
+        line: r + ' ' + noun + ' (meta ' + a1c_v2n_(c.g) + ').' });
+    }
+    // Four weeks running with at least one, for the KIs where one is news.
+    if (d.key !== 'ki_new_people' && d.key !== 'ki_member_lessons' && r >= 1 &&
+        prior.every(function(v) { return v >= 1; }) && filedPrior.length === 3) {
+      facts.push({ score: 20 + order, kind: 'streak', key: d.key,
+        title: '4 semanas seguidas con ' + d.many,
+        short: '4 semanas seguidas con ' + d.many,
+        line: 'Ya son <b>4 semanas seguidas</b> con ' + d.many + '.' });
+    }
+    var before = Math.round(wp.ki[d.key].r);
+    if ((unit.group || wp.filed) && r >= 3 && r - before >= 2 && r >= before * 1.5) {
+      facts.push({ score: 30 + order + (r - before) / Math.max(before, 1), kind: 'up', key: d.key, from: before, to: r,
+        title: d.many.charAt(0).toUpperCase() + d.many.slice(1) + ': de ' + before + ' a ' + r,
+        short: r + ' ' + noun + ' ▲',
+        line: d.many.charAt(0).toUpperCase() + d.many.slice(1) + ': de ' + before + ' a ' + r + '.' });
+    }
+  });
+  // The nightly form's best week in a month, so a sector with no KI news (or
+  // no weekly form) still opens on something it did. Strictly above each of
+  // the three weeks before, and only when at least two of them were reported.
+  if (!unit.group && w.nights > 0) {
+    var reported = [0, 1, 2].filter(function(i) { return unit.weeks[i].nights > 0; });
+    var NB = ['new_people_found', 'friend_lessons', 'meaningful_conversations', 'contacts_made',
+              'church_invites', 'member_contacts', 'lessons_member_present', 'baptismal_invitations',
+              'baptism_doctrine_lessons', 'references_asked', 'friend_calls', 'friend_texts'];
+    if (reported.length >= 2) NB.some(function(k, order) {
+      var v = Math.round(a1c_v2night_(unit, 3, k));
+      var before = Math.max.apply(null, [0, 1, 2].map(function(i) { return Math.round(a1c_v2night_(unit, i, k)); }));
+      if (v < 2 || v <= before) return false;
+      var lbl = a1c_v2lower_(a1c_v2nightLabel_(k));
+      facts.push({ score: 10 - order / 100, kind: 'nbest', key: k,
+        title: v + ' ' + lbl + ': su mejor semana en un mes',
+        short: v + ' ' + lbl + ', su mejor semana en un mes',
+        line: 'En su informe nocturno, ' + v + ' ' + lbl + ': su mejor semana en un mes.' });
+      return true;
+    });
+  }
+  var mc = a1c_v2metCount_(unit);
+  if (mc.set >= 3 && mc.met >= Math.max(3, Math.ceil(mc.set * 0.7))) {
+    facts.push({ score: 45 + mc.met, kind: 'metas',
+      title: mc.met + ' de ' + mc.set + ' metas cumplidas',
+      short: mc.met + ' de ' + mc.set + ' metas',
+      line: mc.met + ' de ' + mc.set + ' metas cumplidas.' });
+  }
+  facts.sort(function(a, b) { return b.score - a.score; });
+  return facts;
+}
+
+/** The leader's line about their unit: the biggest rise vs last week. */
+function a1c_v2unitRise_(group) {
+  var best = null;
+  A1C_V2_KI.forEach(function(d) {
+    var a = Math.round(group.weeks[2].ki[d.key].r), b = Math.round(group.weeks[3].ki[d.key].r);
+    if (b >= 3 && b - a >= 3 && b >= a * 1.3) {
+      var gain = (b - a) / Math.sqrt(Math.max(a, 1));
+      if (!best || gain > best.gain) best = { def: d, from: a, to: b, gain: gain };
+    }
+  });
+  return best;
+}
+
+// ─── Section pieces ─────────────────────────────────────────────────────────
+
+function a1c_v2h_(title, sub) {
+  var P = A1C_V2;
+  return '<div style="margin:22px 0 8px;">' +
+    '<div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:' + P.navy + ';">' + title + '</div>' +
+    (sub ? '<div style="font-size:12px;color:' + P.ink3 + ';margin-top:2px;">' + sub + '</div>' : '') + '</div>';
+}
+
+function a1c_v2band_h_(id, text) {
+  var P = A1C_V2;
+  return '<a id="' + id + '"></a><div style="margin:28px -16px 0;padding:10px 16px;background:' + P.panel +
+    ';border-top:2px solid ' + P.navy + ';font-size:13px;font-weight:700;color:' + P.navy +
+    ';letter-spacing:.03em;">' + text + '</div>';
+}
+
+function a1c_v2note_(text) {
+  return '<div style="font-size:10.5px;color:' + A1C_V2.ink3 + ';margin-top:6px;line-height:1.45;">' + text + '</div>';
+}
+
+function a1c_v2highlight_(title, line) {
+  var P = A1C_V2;
+  return '<div style="background:#fff7e0;border:1px solid #f1dc9c;border-radius:8px;padding:12px 14px;margin:14px 0 4px;">' +
+    '<div style="font-size:15px;font-weight:700;color:' + P.ink + ';line-height:1.3;">' + title + '</div>' +
+    (line ? '<div style="font-size:12.5px;color:' + P.ink2 + ';margin-top:4px;line-height:1.45;">' + line + '</div>' : '') +
+    '</div>';
+}
+
+/** "Recibimos sus informes": the nights that arrived, their effort, the form. */
+function a1c_v2received_(unit, weekEnd) {
+  var P = A1C_V2, area = unit.area, w = unit.weeks[3];
+  var cons = (area.derived && area.derived.consistency) || {};
+  var flags = cons.dayFlags || [];
+  var s = area.stats || {};
+  var nights = w.nights;
+  var nTxt = nights === 1 ? '1 informe nocturno' : nights + ' informes nocturnos';
+  var link = String(getConfig('WEEKLY_FORM_LINK') || '').trim();
+  var title, text;
+  if (nights > 0 && w.filed) {
+    title = '✓ Recibimos sus informes';
+    text = nTxt + ' y su informe semanal. Cada número que enviaron está en esta carta.';
+  } else if (nights > 0) {
+    title = '✓ Recibimos sus informes nocturnos';
+    text = nTxt + '. Su informe semanal de esta semana todavía no nos llegó' +
+      (link ? ': <a href="' + a1c_esc(link) + '" style="color:' + P.navy + ';font-weight:700;">envíenlo aquí</a>' : '') +
+      '. Sus números nocturnos están todos en esta carta.';
+  } else if (w.filed) {
+    title = '✓ Recibimos su informe semanal';
+    text = 'Esta semana no nos llegó ningún informe nocturno. Sus indicadores clave están en esta carta.';
+  } else {
+    title = 'Sus informes de esta semana';
+    text = 'Todavía no nos llegaron sus informes de esta semana' +
+      (link ? ': <a href="' + a1c_esc(link) + '" style="color:' + P.navy + ';font-weight:700;">informe semanal</a>' : '') +
+      '. La próxima carta los traerá.';
+  }
+  var dots = '';
+  for (var i = 0; i < 7; i++) {
+    var on = flags[i] ? !!flags[i].reported : false;
+    dots += '<td style="text-align:center;padding:0 1px;"><div style="width:26px;height:26px;line-height:' +
+      (on ? '26px' : '24px') + ';border-radius:50%;margin:auto;font-size:11px;font-weight:700;' +
+      (on ? 'background:' + P.navy + ';color:#fff;' : 'background:#fff;color:' + P.ink3 + ';border:1px dashed #b9bfcc;') +
+      '">' + A1C_V2_DIAS[i] + '</div></td>';
+  }
+  var eff = [];
+  if (s.effort_all)  eff.push('Todo ×' + s.effort_all);
+  if (s.effort_most) eff.push('La mayor parte ×' + s.effort_most);
+  if (s.effort_some) eff.push('Algo ×' + s.effort_some);
+  if (eff.length) {
+    dots += '<td style="padding-left:10px;font-size:11px;color:' + P.ink3 + ';line-height:1.3;">Esfuerzo:<br>' +
+      eff.join(' · ') + '</td>';
+  }
+  return '<div style="border:1px solid ' + P.rule + ';border-radius:8px;padding:10px 12px;margin-top:14px;">' +
+    '<div style="font-size:13px;color:' + P.ink + ';font-weight:700;">' + title + '</div>' +
+    '<div style="font-size:12px;color:' + P.ink2 + ';margin:3px 0 8px;line-height:1.45;">' + text + '</div>' +
+    '<table role="presentation" style="border-collapse:collapse;"><tr>' + dots + '</tr></table></div>';
+}
+
+/** The seven KIs with four weeks (own sector, or the mission for the APs). */
+function a1c_v2kiGrid_(unit, title, sub, legendWho) {
+  var P = A1C_V2;
+  var h = a1c_v2h_(title, sub);
+  h += '<table role="presentation" cellpadding="4" cellspacing="2" style="width:100%;table-layout:fixed;text-align:center;font-size:12px;line-height:1.15;">' +
+    '<colgroup><col style="width:40%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:21%"></colgroup><tr><td></td>';
+  for (var i = 0; i < 4; i++) {
+    h += i < 3
+      ? '<td style="font-size:9px;color:' + P.ink3 + ';text-align:center;padding-bottom:2px;">' + a1c_shortDate_(unit.weeks[i].week) + '</td>'
+      : '<td style="font-size:10px;font-weight:700;color:' + P.ink + ';text-align:center;padding-bottom:2px;">' + a1c_shortDate_(unit.weeks[i].week) + '</td>';
+  }
+  h += '</tr>';
+  A1C_V2_KI.forEach(function(d) {
+    h += '<tr><td style="font-size:12.5px;color:' + P.ink + ';padding:2px 6px 2px 0;line-height:1.2;">' + d.label + '</td>';
+    for (var i = 0; i < 4; i++) {
+      var c = a1c_v2kiCell_(unit, i, d.key), b = a1c_v2band_(c.pct);
+      if (i < 3) {
+        h += '<td bgcolor="' + b[1] + '" style="font-weight:600;color:' + b[0] + ';">' + c.big +
+          '<br><small style="font-weight:400;font-size:9px;color:' + P.ink3 + ';">' + (c.small || '&nbsp;') + '</small></td>';
+      } else {
+        h += '<td bgcolor="' + b[1] + '"><b style="font-size:20px;color:' + b[0] + ';">' + c.big + '</b>' +
+          '<br><small style="font-size:10px;color:' + P.ink3 + ';">' + (c.small || '&nbsp;') + '</small></td>';
+      }
+    }
+    h += '</tr>';
+  });
+  h += '</table>';
+  h += a1c_v2note_('El número grande es ' + legendWho + '; «de» es la meta que fijaron la semana anterior. ' +
+    'Verde = 90% o más · ámbar = 60–89% · rojo = menos de 60% · gris = esa semana no había meta.');
+  return h;
+}
+
+/** "Su enfoque esta semana": the focus KI, its nightly feeder, the coaching. */
+function a1c_v2focus_(unit) {
+  var P = A1C_V2, area = unit.area, f = area.focus, msg = area.msg_growth;
+  var head, lines = [];
+  if (f) {
+    var d = a1c_v2kiDef_(f.ki);
+    head = d.label + ': ' + a1c_v2n_(f.real) + ' de ' + a1c_v2n_(f.goal);
+    var why = 'Es el indicador más lejos de su meta';
+    // A recent week well above this one says they know how ("y hace dos
+    // semanas encontraron 9"): at least half again, and two more.
+    var best = null, nowR = Math.round(f.real);
+    for (var i = 0; i < 3; i++) {
+      var w = unit.weeks[i], v = Math.round(w.ki[f.ki].r);
+      if (w.filed && v >= nowR * 1.5 && v >= nowR + 2 && (!best || v >= best.v)) best = { v: v, i: i };
+    }
+    if (best) {
+      var ago = ['hace tres semanas', 'hace dos semanas', 'la semana pasada'][best.i];
+      why += ', y ' + ago + ' llegaron a ' + best.v;
+    }
+    lines.push(why + '.');
+    var fd = f.feeder;
+    if (fd) {
+      var now = a1c_v2night_(unit, 3, fd), prev = a1c_v2night_(unit, 2, fd);
+      var goal = (unit.weeks[3].goals || {})[fd];
+      var lbl = a1c_v2lower_(a1c_v2nightLabel_(fd));
+      var move = Math.round(now) < Math.round(prev) ? 'bajaron de ' + a1c_v2n_(prev) + ' a ' + a1c_v2n_(now)
+               : Math.round(now) > Math.round(prev) ? 'subieron de ' + a1c_v2n_(prev) + ' a ' + a1c_v2n_(now)
+               : 'se quedaron en ' + a1c_v2n_(now);
+      lines.push('Ahí empieza en su informe nocturno: las <b>' + lbl + ' ' + move + '</b>' +
+        (goal ? ' (meta ' + a1c_v2n_(goal) + ')' : '') + '.');
+    }
+  } else if (area.growth) {
+    var g = area.growth;
+    head = a1c_v2nightLabel_(g.key) + ': ' + a1c_v2fmt_(g.key, g.actual) + ' de ' + a1c_v2fmt_(g.key, g.goal);
+    lines.push(unit.weeks[3].filed
+      ? 'Cumplieron sus metas de indicadores clave; este es el número de su informe nocturno más lejos de su meta.'
+      : 'Es el número de su informe nocturno más lejos de su meta.');
+  } else {
+    return '';
+  }
+  var h = a1c_v2h_('Su enfoque esta semana', '');
+  h += '<div style="border-left:4px solid ' + P.navy + ';background:#fafbfd;padding:10px 14px;">' +
+    '<div style="font-size:14px;font-weight:700;color:' + P.ink + ';">' + head + '</div>';
+  lines.forEach(function(l) {
+    h += '<div style="font-size:13px;color:' + P.ink2 + ';line-height:1.5;margin-top:5px;">' + l + '</div>';
+  });
+  if (msg && msg.bodyText) {
+    h += '<div style="font-size:13px;color:' + P.ink2 + ';line-height:1.5;margin-top:8px;">' +
+      a1c_esc(msg.bodyText).replace(/\n/g, '<br>') + '</div>';
+    var ref = a1c_formatPmgRef(msg.pmgPage);
+    if (ref || msg.scripture) {
+      h += '<div style="font-size:11.5px;color:' + P.ink3 + ';margin-top:8px;">' +
+        (ref ? '📖 ' + a1c_esc(ref) + (msg.pmgDescription ? ': ' + a1c_esc(msg.pmgDescription) : '') : '') +
+        (msg.scripture ? (ref ? ' · ' : '') + '✏️ ' + a1c_esc(msg.scripture) : '') + '</div>';
+      if (msg.scriptureText) {
+        h += '<div style="font-size:11.5px;color:' + P.ink3 + ';font-style:italic;margin-top:3px;">' + a1c_esc(msg.scriptureText) + '</div>';
+      }
+    }
+  }
+  return h + '</div>';
+}
+
+/** "Sus metas para esta semana": the goals on this week's own form. */
+function a1c_v2nextGoals_(unit, weekEnd) {
+  var P = A1C_V2;
+  if (!unit.next) return '';
+  var h = a1c_v2h_('Sus metas para esta semana', 'Las que ustedes fijaron el domingo · semana ' + a1c_v2nextSpan_(weekEnd));
+  h += '<table role="presentation" style="width:100%;border-collapse:collapse;table-layout:fixed;"><tr>';
+  A1C_V2_KI.forEach(function(d) {
+    h += '<td style="text-align:center;padding:6px 2px;border:2px solid #fff;background:' + P.panel + ';">' +
+      '<div style="font-size:17px;font-weight:700;color:' + P.navy + ';">' + a1c_v2n_(unit.next[d.key]) + '</div>' +
+      '<div style="font-size:9px;color:' + P.ink3 + ';line-height:1.1;">' + d.head + '</div></td>';
+  });
+  return h + '</tr></table>';
+}
+
+/** Every nightly number of one sector: four weeks, this week against its goal, next goal. */
+function a1c_v2nightTable_(unit) {
+  // Lean like a1c_v2allData_: shared styles on the table, cells inherit.
+  var P = A1C_V2, next = unit.nextGoals || {}, goals = unit.weeks[3].goals || {};
+  var h = a1c_v2h_('Su informe nocturno · todos sus números', 'Las cuatro últimas semanas; la de esta semana contra su meta');
+  h += '<table role="presentation" cellpadding="3" cellspacing="1" style="width:100%;table-layout:fixed;text-align:center;font-size:12px;line-height:1.15;color:' + P.ink2 + ';">' +
+    '<colgroup><col style="width:37%"><col style="width:11%"><col style="width:11%"><col style="width:11%"><col style="width:17%"><col style="width:13%"></colgroup>' +
+    '<tr style="font-size:9px;color:' + P.ink3 + ';"><td></td>';
+  for (var i = 0; i < 3; i++) h += '<td>' + a1c_shortDate_(unit.weeks[i].week) + '</td>';
+  h += '<td style="font-size:10px;font-weight:700;color:' + P.ink + ';">' + a1c_shortDate_(unit.weeks[3].week) + '</td>' +
+    '<td style="color:' + P.navy + ';font-weight:700;">Meta<br>próx.</td></tr>';
+  var LBL = '<td align="left" style="color:' + P.ink + ';">';
+  A1C_V2_NIGHTLY.forEach(function(grp) {
+    h += '<tr><td colspan="6" align="left" style="font-size:11px;font-weight:700;color:' + P.navy + ';padding-top:10px;border-bottom:1px solid ' + P.rule + ';">' + grp.title + '</td></tr>';
+    grp.rows.forEach(function(row) {
+      var k = row.key;
+      h += '<tr>' + LBL + (row.rate ? '<i>' + row.label + '</i>' : row.label) + '</td>';
+      for (var i = 0; i < 3; i++) {
+        var v = unit.weeks[i].nights > 0 ? a1c_v2night_(unit, i, k) : null;
+        h += '<td>' + a1c_v2fmt_(k, v) + '</td>';
+      }
+      var cur = unit.weeks[3].nights > 0 ? a1c_v2night_(unit, 3, k) : null;
+      var g = goals[k];
+      var b = a1c_v2band_((g && cur !== null) ? cur / g : null);
+      h += '<td bgcolor="' + b[1] + '"><b style="font-size:15px;color:' + b[0] + ';">' + a1c_v2fmt_(k, cur) + '</b>' +
+        (g ? '<br><small style="color:' + P.ink3 + ';">de ' + a1c_v2fmt_(k, g) + '</small>' : '') + '</td>';
+      var nx = a1c_v2isRate_(k) ? g : next[k];
+      h += '<td style="color:' + P.navy + ';font-weight:700;">' + (nx ? a1c_v2fmt_(k, nx) : '—') + '</td></tr>';
+    });
+  });
+  h += '</table>';
+  return h + a1c_v2note_(A1C_V2_RATE_NOTE);
+}
+
+// ─── Leader sections ────────────────────────────────────────────────────────
+
+/** Section 2's grid: one row per unit this week, the total, and last week's total. */
+function a1c_v2unitKiGrid_(units, total, unitWord, weekEnd, sub) {
+  var P = A1C_V2;
+  var h = a1c_v2h_('Indicadores clave por ' + unitWord, sub);
+  h += '<table role="presentation" cellpadding="4" cellspacing="2" style="width:100%;table-layout:fixed;line-height:1.15;"><colgroup><col style="width:26%">';
+  for (var c = 0; c < 7; c++) h += '<col style="width:10.57%">';
+  h += '</colgroup><tr><td style="font-size:9.5px;color:' + P.ink3 + ';padding:0 4px 3px 0;">' +
+    unitWord.charAt(0).toUpperCase() + unitWord.slice(1) + '</td>';
+  A1C_V2_KI.forEach(function(d) {
+    h += '<td style="font-size:9px;color:' + P.ink3 + ';text-align:center;line-height:1.1;padding-bottom:3px;">' + d.head + '</td>';
+  });
+  h += '</tr>';
+  function row(u, i, label, subline, strong) {
+    var r = '<tr><td style="font-size:11.5px;color:' + P.ink + ';padding:2px 4px 2px 0;' +
+      (strong ? 'font-weight:700;' : '') + '">' + label +
+      '<div style="font-size:9.5px;color:' + (subline.bad ? P.bad : P.ink3) + ';font-weight:400;">' + subline.text + '</div></td>';
+    A1C_V2_KI.forEach(function(d) {
+      var c = a1c_v2kiCell_(u, i, d.key), b = a1c_v2band_(c.pct);
+      r += '<td align="center" bgcolor="' + b[1] + '" style="font-size:12px;font-weight:' + (strong ? '700' : '600') + ';color:' + b[0] + ';">' + c.big +
+        '<br><small style="font-weight:400;font-size:9px;color:' + P.ink3 + ';">' + (c.small && c.small !== 'sin informe' ? c.small : '&nbsp;') + '</small></td>';
+    });
+    return r + '</tr>';
+  }
+  units.forEach(function(u) {
+    var w = u.weeks[3], sub;
+    if (u.group) sub = { text: w.filedCount + ' de ' + u.n + ' informaron', bad: w.filedCount * 2 < u.n };
+    else if (!w.filed) sub = { text: 'sin informe semanal', bad: true };
+    else if (!w.goalSet) sub = { text: w.nights + '/7 noches · sin meta', bad: false };
+    else sub = { text: w.nights + '/7 noches', bad: w.nights < 4 };
+    h += row(u, 3, (u.group ? a1c_esc(u.label || u.name) : a1c_esc(u.name)), sub, false);
+  });
+  h += row(total, 3, total.label, { text: total.weeks[3].filedCount + ' de ' + total.n + ' informaron' }, true);
+  h += row(total, 2, 'Semana anterior', { text: a1c_shortDate_(total.weeks[2].week) }, false);
+  return h + '</table>';
+}
+
+function a1c_v2actions_(title, blocks) {
+  var P = A1C_V2;
+  var colours = { felicitar: P.good, llamar: P.bad, apoyar: P.navy };
+  var any = blocks.some(function(b) { return b.items.length; });
+  if (!any) return '';
+  var h = a1c_v2h_(title, '');
+  blocks.forEach(function(b) {
+    if (!b.items.length) return;
+    var col = colours[b.kind] || P.navy;
+    h += '<div style="border-left:3px solid ' + col + ';padding:4px 0 4px 10px;margin:8px 0;">' +
+      '<div style="font-size:12.5px;font-weight:700;color:' + col + ';">' + b.head + '</div>';
+    b.items.forEach(function(it) {
+      h += '<div style="font-size:13px;color:' + P.ink2 + ';line-height:1.45;margin-top:3px;">' + it + '</div>';
+    });
+    h += '</div>';
+  });
+  return h;
+}
+
+/** The KIs a sector met this week, as "4 amigos en la sacramental (meta 4)". */
+function a1c_v2metPhrases_(u) {
+  var w = u.weeks[3], out = [];
+  A1C_V2_KI.forEach(function(d) {
+    var c = w.ki[d.key];
+    if (c.g > 0 && c.rg >= c.g && c.r > 0) out.push({ pct: c.rg / c.g, text: a1c_v2n_(c.r) + ' ' + a1c_v2kiNoun_(d, c.r) + ' (meta ' + a1c_v2n_(c.g) + ')' });
+  });
+  out.sort(function(a, b) { return b.pct - a.pct; });
+  return out.map(function(o) { return o.text; });
+}
+
+/** Why a sector needs a call this week; [] when it does not. */
+function a1c_v2callReasons_(u) {
+  var w = u.weeks[3], wp = u.weeks[2], out = [];
+  if (!w.filed) out.push('sin informe semanal esta semana');
+  if (w.nights === 0) out.push('ningún informe nocturno');
+  else if (w.nights <= 4) out.push('informaron solo ' + w.nights + ' de 7 noches (' + wp.nights + ' la semana anterior)');
+  if (w.nights > 0 && wp.nights > 0) {
+    var worst = null;
+    ['contacts_made', 'meaningful_conversations', 'friend_lessons'].forEach(function(k) {
+      var a = a1c_v2night_(u, 2, k), b = a1c_v2night_(u, 3, k);
+      if (a >= 8 && b <= a * 0.5 && (!worst || (a - b) / a > worst.drop)) worst = { k: k, a: a, b: b, drop: (a - b) / a };
+    });
+    if (worst) out.push('sus ' + a1c_v2lower_(a1c_v2nightLabel_(worst.k)) + ' bajaron de ' + a1c_v2n_(worst.a) + ' a ' + a1c_v2n_(worst.b));
+  }
+  return out;
+}
+
+/** The exchange suggestion: the filed sector whose weakest KI is furthest below goal. */
+function a1c_v2exchange_(units, skip) {
+  var best = null;
+  units.forEach(function(u) {
+    if (skip[u.name] || !u.weeks[3].filed) return;
+    A1C_V2_KI.forEach(function(d) {
+      var c = u.weeks[3].ki[d.key];
+      if (!(A1A_KI_FEEDERS[d.key] || []).length || c.g < 2) return;
+      var pct = c.rg / c.g;
+      if (pct < 0.6 && (!best || pct < best.pct)) best = { u: u, d: d, c: c, pct: pct };
+    });
+  });
+  if (!best) return null;
+  var txt = '<b>' + a1c_esc(best.u.name) + '</b>: ' + best.d.many + ', ' + a1c_v2n_(best.c.r) + ' de ' + a1c_v2n_(best.c.g) + '.';
+  for (var i = 0; i < 3; i++) {
+    var w = best.u.weeks[i];
+    if (w.filed && w.ki[best.d.key].r >= best.c.g) {
+      txt += ' ' + ['Hace tres semanas', 'Hace dos semanas', 'La semana pasada'][i] + ' eran ' + a1c_v2n_(w.ki[best.d.key].r) + '.';
+      break;
+    }
+  }
+  return txt;
+}
+
+/** Section 2's lists for a DL: sectors to congratulate, call, visit. */
+function a1c_v2dlActions_(sectors, ownName) {
+  var fel = [], call = [], skip = {};
+  if (ownName) skip[ownName] = true;
+  // Worth a call of congratulations: three goals met, or two with real
+  // numbers behind them -- and nothing that also puts it on the call list.
+  var ranked = sectors.filter(function(u) { return u.weeks[3].filed && !a1c_v2callReasons_(u).length; }).map(function(u) {
+    var w = u.weeks[3], sum = 0;
+    A1C_V2_KI.forEach(function(d) { var c = w.ki[d.key]; if (c.g > 0 && c.rg >= c.g) sum += c.r; });
+    return { u: u, met: a1c_v2metPhrases_(u), sum: sum };
+  }).filter(function(o) { return o.met.length >= 3 || (o.met.length >= 2 && o.sum >= 4); });
+  ranked.sort(function(a, b) { return b.met.length - a.met.length; });
+  ranked.slice(0, 2).forEach(function(o) {
+    fel.push('<b>' + a1c_esc(o.u.name) + '</b>: ' + a1c_v2list_(o.met.slice(0, 2)) + '.');
+  });
+  sectors.forEach(function(u) {
+    var r = a1c_v2callReasons_(u);
+    if (r.length) call.push('<b>' + a1c_esc(u.name) + '</b>: ' + a1c_v2list_(r) + '.');
+  });
+  var ex = a1c_v2exchange_(sectors, skip);
+  return [
+    { kind: 'felicitar', head: '👏 Felicitar', items: fel },
+    { kind: 'llamar', head: '📞 Llamar', items: call.slice(0, 3) },
+    { kind: 'apoyar', head: '🤝 Intercambio sugerido', items: ex ? [ex] : [] }
+  ];
+}
+
+/** Sectors with no weekly form in any of the four weeks, and none this week. */
+function a1c_v2silence_(sectors) {
+  var four = [], week = [];
+  sectors.forEach(function(u) {
+    if (u.weeks.every(function(w) { return !w.filed; })) four.push(u.name);
+    else if (!u.weeks[3].filed) week.push(u.name);
+  });
+  return { four: four, week: week };
+}
+
+/** Section 2's lists for a ZL/STL: by district, then the sectors that went silent. */
+function a1c_v2zlActions_(districts, sectors) {
+  var fel = [], call = [], sup = [];
+  var rises = [];
+  districts.forEach(function(g) {
+    var rise = a1c_v2unitRise_(g), parts = [];
+    if (g.weeks[3].filedCount === g.n && g.n > 1) parts.push('los ' + g.n + ' sectores informaron');
+    if (rise) parts.push(rise.def.many + ', de ' + rise.from + ' a ' + rise.to);
+    if (parts.length) rises.push({ g: g, score: (rise ? rise.gain : 0) + (parts.length - 1), text: '<b>' + a1c_esc(g.label) + '</b>: ' + a1c_v2list_(parts) + '.' });
+    if (g.n > 1 && g.weeks[3].filedCount * 2 <= g.n) sup.push({ name: g.name, f: g.weeks[3].filedCount, n: g.n });
+  });
+  rises.sort(function(a, b) { return b.score - a.score; });
+  fel = rises.slice(0, 2).map(function(r) { return r.text; });
+  var s = a1c_v2silence_(sectors);
+  if (s.four.length) call.push('<b>' + a1c_esc(a1c_v2list_(s.four)) + '</b>: ningún informe semanal en 4 semanas.');
+  if (s.week.length) call.push('<b>' + a1c_esc(a1c_v2list_(s.week)) + '</b>: sin informe semanal esta semana.');
+  var few = sectors.filter(function(u) { return u.weeks[3].nights > 0 && u.weeks[3].nights < 4; }).map(function(u) { return u.name + ' (' + u.weeks[3].nights + ')'; });
+  if (few.length) call.push('<b>' + a1c_esc(a1c_v2list_(few)) + '</b>: menos de 4 noches informadas.');
+  var supItems = sup.map(function(x) { return '<b>' + a1c_esc(x.name) + '</b>: informó ' + x.f + ' sector' + (x.f === 1 ? '' : 'es') + ' de ' + x.n + '.'; });
+  return [
+    { kind: 'felicitar', head: '👏 Felicitar', items: fel },
+    { kind: 'llamar', head: '📞 Llamar', items: call },
+    { kind: 'apoyar', head: '🧭 Apoyar a sus líderes de distrito', items: supItems }
+  ];
+}
+
+/** Section 2's lists for the APs: by zone, plus the sectors with most goals met. */
+function a1c_v2apActions_(zones, sectors) {
+  var fel = [], call = [], zf = [];
+  zones.forEach(function(g) {
+    var rise = a1c_v2unitRise_(g), parts = [];
+    if (g.weeks[3].filedCount === g.n) parts.push('los ' + g.n + ' sectores informaron');
+    if (rise) parts.push(rise.def.many + ', de ' + rise.from + ' a ' + rise.to);
+    if (parts.length) zf.push({ score: (rise ? rise.gain : 0) + parts.length, text: '<b>' + a1c_esc(g.label) + '</b>: ' + a1c_v2list_(parts) + '.' });
+  });
+  zf.sort(function(a, b) { return b.score - a.score; });
+  fel = zf.slice(0, 2).map(function(z) { return z.text; });
+  var top = sectors.map(function(u) { var m = a1c_v2metCount_(u); return { u: u, met: m.met, set: m.set }; })
+    .filter(function(o) { return o.u.weeks[3].filed && o.set >= 3 && o.met >= 4; });
+  top.sort(function(a, b) { return (b.met - a.met) || (a.u.name < b.u.name ? -1 : 1); });
+  if (top.length) {
+    var byScore = {};
+    top.slice(0, 6).forEach(function(o) {
+      var key = o.met + ' de ' + o.set;
+      (byScore[key] = byScore[key] || []).push(o.u.name);
+    });
+    fel.push('Más metas cumplidas: ' + Object.keys(byScore).map(function(k) {
+      return a1c_esc(a1c_v2list_(byScore[k])) + ' (' + k + ')';
+    }).join(', ') + '.');
+  }
+  zones.forEach(function(g) {
+    var w = g.weeks[3], nightsPct = Math.round(100 * w.nights / (7 * g.n));
+    if (w.filedCount < g.n * 0.8) {
+      call.push('<b>' + a1c_esc(g.label) + '</b>: informaron ' + w.filedCount + ' de ' + g.n + ' sectores, y ' + nightsPct + '% de las noches.');
+    }
+  });
+  var four = [];
+  zones.forEach(function(g) {
+    var names = a1c_v2silence_(a1c_v2sectorsOf_(g)).four;
+    if (names.length) four.push(a1c_v2list_(names) + ' (' + g.name + ')');
+  });
+  if (four.length) call.push('Sin informe semanal en 4 semanas: ' + a1c_esc(four.join(', ')) + '.');
+  return [
+    { kind: 'felicitar', head: '👏 Felicitar', items: fel },
+    { kind: 'llamar', head: '📞 Llamar a los líderes de zona', items: call }
+  ];
+}
+
+/**
+ * Section 3's grid: every number for each unit side by side, the total and
+ * last week's total. KI rows plain; nightly rows coloured against each unit's
+ * goal with ▲▼ against its own last week; rates in italics.
+ */
+function a1c_v2allData_(units, total, title, sub) {
+  // Written lean on purpose: this grid is most of a ZL letter, and Gmail
+  // hides everything past ~102 KB behind "Ver todo el mensaje". Alignment,
+  // size and colour are set once on the table (cells inherit them) and
+  // padding/spacing by attribute, so a cell carries only what differs.
+  var P = A1C_V2;
+  var nCols = units.length + 2;
+  var first = units.length > 4 ? 30 : 37;
+  var w = ((100 - first) / nCols).toFixed(1);
+  var h = title ? a1c_v2h_(title, sub) : '';
+  h += '<table role="presentation" cellpadding="2" cellspacing="1" style="width:100%;table-layout:fixed;margin-top:8px;' +
+    'text-align:center;font-size:12px;line-height:1.15;color:' + P.ink2 + ';"><colgroup><col style="width:' + first + '%">';
+  for (var c = 0; c < nCols; c++) h += '<col style="width:' + w + '%">';
+  h += '</colgroup><tr style="font-size:9.5px;color:' + P.ink3 + ';"><td></td>';
+  units.forEach(function(u) { h += '<td>' + a1c_esc(a1c_softHyphenate_(u.short || u.name)) + '</td>'; });
+  h += '<td style="color:' + P.ink + ';font-weight:700;">' + a1c_esc(a1c_softHyphenate_(total.short || total.name)) + '</td><td>Sem. ant.</td></tr>';
+
+  var LBL = '<td align="left">';
+  function label(text, italic) { return LBL + (italic ? '<i>' + text + '</i>' : text) + '</td>'; }
+  function cell(txt, opts) {
+    var st = (opts.col ? 'color:' + opts.col + ';' : '') + (opts.bold ? 'font-weight:700;' : '');
+    return '<td' + (opts.bg ? ' bgcolor="' + opts.bg + '"' : '') + (st ? ' style="' + st + '"' : '') + '>' + txt +
+      (opts.sub ? '<br><small style="color:' + P.ink3 + ';">' + opts.sub + '</small>' : '') +
+      (opts.delta ? '<br>' + opts.delta : '') + '</td>';
+  }
+  function prev(txt, sub) {
+    return '<td style="color:' + P.ink3 + ';">' + txt + (sub ? '<br><small>' + sub + '</small>' : '') + '</td>';
+  }
+  function delta(a, b, key) {
+    if (a1c_v2isRate_(key) || a === null || b === null) return '';
+    var d = Math.round(b) - Math.round(a);
+    // In the cell's own colour: the arrow carries the direction, and a
+    // colour per arrow was ~18 KB of a ZL letter (see the size note above).
+    if (d === 0) return '<small>=</small>';
+    return '<small>' + (d > 0 ? '▲' : '▼') + Math.abs(d) + '</small>';
+  }
+  function band(text) {
+    return '<tr><td colspan="' + (nCols + 1) + '" align="left" style="font-size:11px;font-weight:700;color:' + P.navy +
+      ';padding-top:10px;border-bottom:1px solid ' + P.rule + ';">' + text + '</td></tr>';
+  }
+
+  var all = units.concat([total]);
+  h += '<tr>' + label('Noches informadas');
+  all.forEach(function(u) { h += cell(String(u.weeks[3].nights), { sub: 'de ' + (7 * u.n), bold: u === total }); });
+  h += prev(String(total.weeks[2].nights), 'de ' + (7 * total.n)) + '</tr>';
+  h += band('🎯 Indicadores clave (informe semanal)');
+  A1C_V2_KI.forEach(function(d) {
+    h += '<tr>' + label(d.label);
+    all.forEach(function(u) {
+      var w = u.weeks[3];
+      h += cell((!u.group && !w.filed) ? '—' : a1c_v2n_(w.ki[d.key].r), { bold: u === total });
+    });
+    h += prev(a1c_v2n_(total.weeks[2].ki[d.key].r)) + '</tr>';
+  });
+  A1C_V2_NIGHTLY.forEach(function(grp) {
+    h += band(grp.title);
+    grp.rows.forEach(function(row) {
+      var k = row.key;
+      h += '<tr>' + label(row.label, row.rate);
+      all.forEach(function(u) {
+        var cur = u.weeks[3].nights > 0 ? a1c_v2night_(u, 3, k) : null;
+        var was = u.weeks[2].nights > 0 ? a1c_v2night_(u, 2, k) : null;
+        var g = u.weeks[3].goals[k];
+        var b = (!row.rate && g && cur !== null) ? a1c_v2band_(cur / g) : null;
+        // The band shows as the cell's tint only; the number stays in the
+        // table's colour (bytes again -- the companionship's own table in
+        // section 1 keeps the coloured number).
+        h += cell(a1c_v2fmt_(k, cur), { bg: b ? b[1] : null, bold: u === total, delta: delta(was, cur, k) });
+      });
+      h += prev(a1c_v2fmt_(k, total.weeks[2].nights > 0 ? a1c_v2night_(total, 2, k) : null)) + '</tr>';
+    });
+  });
+  h += '</table>';
+  return h + a1c_v2note_('▲▼ = cambio frente a la semana anterior · color = contra la meta de la semana. ' +
+    'Los indicadores clave suman todo lo informado, también lo de sectores sin meta esa semana; ' +
+    'la tabla «resultado / meta» cuenta solo los sectores con meta.');
+}
+
+/** The ADJUNTO line inside section 2 (zone / mission PDFs). */
+function a1c_v2attachLine_(docs) {
+  if (!docs || !docs.length) return '';
+  var P = A1C_V2;
+  var h = a1c_v2h_(docs.length > 1 ? 'Adjuntos' : 'Adjunto', '');
+  docs.forEach(function(d) {
+    h += '<div style="font-size:12.5px;color:' + P.ink2 + ';margin:3px 0;">📄 ' + a1c_esc(d.fileName) +
+      (d.pages ? ' · ' + d.pages + ' págs.' : '') + '</div>';
+  });
+  return h;
+}
+
+/** The certified baptisms of the year so far, from TABLEAU_BAPTISMS (decision 11). */
+function a1c_v2certifiedYtd_(weekEnd) {
+  try {
+    var data = a1c_getSheetData('TABLEAU_BAPTISMS');
+    if (!data || data.length < 2) return null;
+    var h = data[0].map(function(x) { return String(x).trim(); });
+    var iM = h.indexOf('month'), iZ = h.indexOf('zone'), iB = h.indexOf('baptisms'), iE = h.indexOf('end_date');
+    if (iM < 0 || iZ < 0 || iB < 0) return null;
+    var year = String(weekEnd).slice(0, 4), byMonth = {}, lastEnd = '';
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][iZ]).trim() !== 'MISSION') continue;
+      var m = data[i][iM] instanceof Date ? Utilities.formatDate(data[i][iM], getMissionTimezone(), 'yyyy-MM') : String(data[i][iM]).slice(0, 7);
+      if (m.slice(0, 4) !== year) continue;
+      var n = parseFloat(data[i][iB]);
+      if (isNaN(n)) continue;
+      byMonth[m] = n;
+      if (iE >= 0 && m >= lastEnd.slice(0, 7)) {
+        var e = data[i][iE] instanceof Date ? Utilities.formatDate(data[i][iE], getMissionTimezone(), 'yyyy-MM-dd') : String(data[i][iE] || '').slice(0, 10);
+        if (e) lastEnd = e;
+      }
+    }
+    var months = Object.keys(byMonth);
+    if (!months.length) return null;
+    var total = months.reduce(function(s, k) { return s + byMonth[k]; }, 0);
+    var goal = parseFloat(getConfig('ANNUAL_BAPTISM_GOAL')) || 527;
+    return { total: Math.round(total), goal: goal, asOf: lastEnd };
+  } catch (e) {
+    return null;
+  }
+}
+
+// ─── The units of the mission, built once per run ───────────────────────────
+
+var _a1cV2Index = null;
+
+/**
+ * Every sector as a unit, and the districts, zones and mission rolled up from
+ * them: { sectors: {name: unit}, districts: {name: group}, zones: {name:
+ * group}, zoneOrder, mission }. Built from Agent1A's per-area weeks, so every
+ * total in every letter comes from the same numbers.
+ */
+function a1c_v2index_(areas, weekEnd) {
+  if (_a1cV2Index && _a1cV2Index.weekEnd === weekEnd && _a1cV2Index.areas === areas) return _a1cV2Index;
+  var sectors = {}, distMembers = {}, zoneDists = {}, distZone = {};
+  Object.keys(areas).sort().forEach(function(name) {
+    var a = areas[name];
+    var u = a1c_v2sector_(name, a);
+    sectors[name] = u;
+    var d = a.district || 'Sin distrito', z = a.zone || 'Sin zona';
+    (distMembers[d] = distMembers[d] || []).push(u);
+    distZone[d] = z;
+    zoneDists[z] = zoneDists[z] || [];
+    if (zoneDists[z].indexOf(d) < 0) zoneDists[z].push(d);
+  });
+  var districts = {};
+  Object.keys(distMembers).forEach(function(d) {
+    var g = a1c_v2group_(d, distMembers[d]);
+    g.label = 'Distrito ' + d;
+    g.short = d.length > 12 ? d.replace(/\s*&\s*/, ' & ').split(' ').slice(0, 2).join(' ').replace(/&$/, '').trim() : d;
+    g.zone = distZone[d];
+    districts[d] = g;
+  });
+  var zones = {}, zoneOrder = Object.keys(zoneDists).sort();
+  zoneOrder.forEach(function(z) {
+    var ds = zoneDists[z].slice().sort().map(function(d) { return districts[d]; });
+    var g = a1c_v2group_(z, ds);
+    g.label = 'Zona ' + z;
+    var zw = z.split(' ');
+    g.short = z.length > 12 && zw.length > 2 ? zw.slice(0, 2).join(' ') + ' ' + zw[2].charAt(0) + '.' : z;
+    g.districtNames = zoneDists[z].slice().sort();
+    zones[z] = g;
+  });
+  var mission = a1c_v2group_('Misión', zoneOrder.map(function(z) { return zones[z]; }));
+  mission.label = 'Misión';
+  mission.short = 'Misión';
+  _a1cV2Index = { weekEnd: weekEnd, areas: areas, sectors: sectors, districts: districts,
+                  zones: zones, zoneOrder: zoneOrder, mission: mission };
+  return _a1cV2Index;
+}
+
+/** A group relabelled as the total row/column of its own section. */
+function a1c_v2asTotal_(g, label, short) {
+  var t = {};
+  Object.keys(g).forEach(function(k) { t[k] = g[k]; });
+  t.label = label;
+  t.short = short;
+  return t;
+}
+
+// ─── One person's letter ────────────────────────────────────────────────────
+
+var A1C_V2_C = {
+  header: '#1e3a5f', green: '#16a34a', blue: '#2563eb', yellow: '#a16207', red: '#dc2626',
+  muted: '#6b7280', border: '#e5e7eb', bgLight: '#f9fafb'
+};
+
+/**
+ * The whole letter for one person: { subject, html }.
+ * Section 1 is their own sector (unnumbered for a companionship); each
+ * leadership role adds its quick read and its full data, numbered on.
+ */
+function a1c_v2letter_(person, areas, summaries, weekEnd, kiDocs) {
+  var P = A1C_V2;
+  var idx = a1c_v2index_(areas, weekEnd);
+  var span = a1c_v2span_(weekEnd);
+  var mine = (person.areas || []).filter(function(n) { return idx.sectors[n]; }).map(function(n) { return idx.sectors[n]; });
+  var roles = (person.roles || []).slice();
+  var own = mine[0] || null;
+  var isMissionOnly = !own && roles.some(function(r) { return r.type === 'AP' || r.type === 'MP'; });
+
+  // ── Header line, jump links, subject parts ──
+  var kicker, title, sub, links = [], subj = [], pre = [], hl = null;
+  var roleUnits = roles.map(function(r) {
+    if (r.type === 'DL') return { role: r, g: idx.districts[r.district], scope: 'district' };
+    if (r.type === 'ZL' || r.type === 'STL') return { role: r, g: idx.zones[r.zone], scope: 'zone' };
+    if (r.type === 'AP' || r.type === 'MP') return { role: r, g: idx.mission, scope: 'mission' };
+    return null;
+  }).filter(function(x) { return x && x.g; });
+
+  if (own) {
+    kicker = 'Su semana · ' + span;
+    title = own.name;
+    var a = own.area, top = roleUnits[0];
+    if (!top) sub = 'Distrito ' + a.district + ' · Zona ' + a.zone;
+    else if (top.role.type === 'DL') sub = 'Líderes del Distrito ' + top.role.district + ' · Zona ' + a.zone;
+    else if (top.role.type === 'ZL') sub = 'Líderes de la Zona ' + top.role.zone;
+    else if (top.role.type === 'STL') sub = 'Hermanas capacitadoras · Zona ' + top.role.zone;
+    else sub = 'Distrito ' + a.district + ' · Zona ' + a.zone;
+  } else {
+    kicker = 'La misión · ' + span;
+    title = 'Resumen de la Misión';
+    sub = roles.some(function(r) { return r.type === 'MP'; }) ? 'Presidente de la misión' : 'Asistentes del Presidente';
+  }
+
+  // ── The highlight and the subject ──
+  var facts = own ? a1c_v2facts_(own) : [];
+  if (own) {
+    if (facts.length) {
+      var f0 = facts[0];
+      subj.push(own.name + ' · ' + f0.short);
+      var second = facts.filter(function(f) { return f.key !== f0.key || f.kind !== f0.kind; }).filter(function(f) { return f.key !== f0.key; })[0];
+      hl = { title: (f0.kind === 'metas' ? '🏆 ' : '🎉 ') + f0.title, line: second ? second.line : '' };
+    } else {
+      subj.push(own.name + ' · Su semana ' + a1c_weekSpanEs_(weekEnd));
+    }
+    var mc = a1c_v2metCount_(own);
+    if (mc.set) pre.push(mc.met + ' de ' + mc.set + ' metas');
+    if (facts[1]) pre.push(facts[1].short);
+    if (own.area.focus) pre.push('Enfoque: ' + a1c_v2kiDef_(own.area.focus.ki).many);
+  }
+  roleUnits.forEach(function(ru, i) {
+    if (ru.scope === 'mission') return;
+    var word = ru.scope === 'district' ? 'distrito' : 'zona';
+    var rise = a1c_v2unitRise_(ru.g);
+    if (rise && i === 0) {
+      subj.push('Su ' + word + ': ' + rise.to + ' ' + a1c_v2kiNoun_(rise.def, rise.to) + ' ▲');
+      var riseLine = 'Y su ' + word + ': ' + rise.def.many + ', de ' + rise.from + ' a ' + rise.to + '.';
+      if (hl) hl.line = (hl.line ? hl.line + ' ' : '') + riseLine;
+      else hl = { title: '📈 ' + rise.def.many.charAt(0).toUpperCase() + rise.def.many.slice(1) + ' en su ' + word + ': de ' + rise.from + ' a ' + rise.to, line: '' };
+    }
+  });
+
+  if (isMissionOnly) {
+    var cert = a1c_v2certifiedYtd_(weekEnd);
+    var m = idx.mission, rep = Math.round(m.weeks[3].ki.ki_baptized_confirmed.r);
+    var mrise = a1c_v2unitRise_(m);
+    if (cert) {
+      subj.push('Misión · ' + cert.total + ' de ' + cert.goal + ' bautismos en ' + String(weekEnd).slice(0, 4));
+      hl = { title: '⛪ ' + cert.total + ' de ' + cert.goal + ' bautismos certificados en ' + String(weekEnd).slice(0, 4) +
+                     ' (' + Math.round(100 * cert.total / cert.goal) + '%)',
+             line: (cert.asOf ? 'Cifra certificada al ' + a1c_formatDate(cert.asOf) + '. ' : '') +
+                   'Esta semana los sectores informaron ' + rep + ' ' + (rep === 1 ? 'bautismo' : 'bautismos') + ' en su informe semanal.' };
+    } else {
+      subj.push('Misión · ' + rep + ' ' + (rep === 1 ? 'bautismo informado' : 'bautismos informados'));
+    }
+    if (mrise) {
+      subj.push(mrise.to + ' ' + a1c_v2kiNoun_(mrise.def, mrise.to) + ' ▲');
+      var ml = 'Y ' + mrise.def.many + ' en toda la misión: de ' + mrise.from + ' a ' + mrise.to + '.';
+      if (hl) hl.line += ' ' + ml; else hl = { title: '📈 ' + ml, line: '' };
+    }
+    pre.push(m.weeks[3].filedCount + ' de ' + m.n + ' informaron');
+  }
+
+  // ── Body ──
+  var body = '';
+  var n = 0;
+  var sections = [];
+  if (own && roleUnits.length) sections.push({ id: 'sector', label: 'Su sector' });
+  roleUnits.forEach(function(ru) {
+    if (ru.scope === 'district') sections.push({ id: 'unidad', label: 'Su distrito' }, { id: 'datos', label: 'Todos los datos del distrito' });
+    if (ru.scope === 'zone') sections.push({ id: 'unidad', label: 'Su zona' }, { id: 'datos', label: 'Todos los datos de la zona' });
+    if (ru.scope === 'mission') sections.push({ id: 'mision', label: 'La misión' }, { id: 'unidad', label: 'Por zona' }, { id: 'datos', label: 'Todos los datos' });
+  });
+  if (sections.length > 1) {
+    body += '<div style="font-size:12px;color:' + P.ink3 + ';margin-top:12px;line-height:1.7;">En este correo: ' +
+      sections.map(function(s) { return '<a href="#v2-' + s.id + '" style="color:' + P.navy + ';font-weight:700;text-decoration:none;">' + s.label + '</a>'; }).join(' · ') + '</div>';
+  }
+  if (hl) body += a1c_v2highlight_(hl.title, hl.line);
+
+  mine.forEach(function(u, i) {
+    if (roleUnits.length || mine.length > 1) body += a1c_v2band_h_('v2-sector', (++n) + ' · Su sector: ' + a1c_esc(u.name));
+    body += a1c_v2received_(u, weekEnd);
+    if (u.area.kiWeeks) body += a1c_v2kiGrid_(u, 'Sus 7 indicadores clave', 'Semana ' + a1c_weekSpanEs_(weekEnd) + ', y las tres anteriores', 'su resultado');
+    body += a1c_v2focus_(u);
+    body += a1c_v2nextGoals_(u, weekEnd);
+    body += a1c_v2nightTable_(u);
+  });
+
+  var C = A1C_V2_C;
+  roleUnits.forEach(function(ru) {
+    var g = ru.g;
+    if (ru.scope === 'district') {
+      var secs = g.units;
+      var tot = a1c_v2asTotal_(g, 'Total distrito', 'Distrito');
+      body += a1c_v2band_h_('v2-unidad', (++n) + ' · Su distrito: ' + a1c_esc(g.name));
+      body += a1c_v2unitKiGrid_(secs, tot, 'sector', weekEnd, 'Resultado / meta · semana ' + a1c_weekSpanEs_(weekEnd));
+      var acts = a1c_v2dlActions_(secs, own ? own.name : '');
+      body += a1c_v2actions_('Esta semana, como líder de distrito', acts);
+      if (acts[0].items.length) pre.push('Felicitar a ' + secs.filter(function(u) { return acts[0].items.some(function(t) { return t.indexOf('<b>' + a1c_esc(u.name) + '</b>') === 0; }); }).map(function(u) { return u.name; }).join(' y '));
+      if (acts[1].items.length) pre.push('Llamar a ' + secs.filter(function(u) { return a1c_v2callReasons_(u).length; }).slice(0, 2).map(function(u) { return u.name; }).join(' y '));
+      pre.unshift('Distrito ' + g.name + ': ' + g.weeks[3].filedCount + ' de ' + g.n + ' informaron');
+      body += a1c_v2band_h_('v2-datos', (++n) + ' · Todos los datos del distrito');
+      body += a1c_v2h_('Resumen por sector', 'La tabla de siempre: el informe nocturno de esta semana, sector por sector, con el total del distrito');
+      body += a1c_buildAreaDataTable_(secs.map(function(u) { return { name: u.name, zone: u.area.zone, district: u.area.district, stats: u.area.stats || {} }; }), 'district', C, '10.5px');
+      body += a1c_v2note_('Esf. = nivel de esfuerzo · ✓ = envió informes nocturnos esta semana.');
+      body += a1c_v2allData_(secs, tot, '', '');
+    } else if (ru.scope === 'zone') {
+      var dists = g.units;
+      var ztot = a1c_v2asTotal_(g, 'Total zona', 'Zona');
+      var zSecs = [];
+      dists.forEach(function(d) { zSecs = zSecs.concat(d.units); });
+      body += a1c_v2band_h_('v2-unidad', (++n) + ' · Su zona: ' + a1c_esc(g.name));
+      body += a1c_v2unitKiGrid_(dists, ztot, 'distrito', weekEnd, 'Resultado / meta · el detalle por sector está en la sección ' + (n + 1) + (kiDocs && kiDocs.length ? ' y en el PDF' : ''));
+      body += a1c_v2actions_(ru.role.type === 'STL' ? 'Esta semana, como hermanas capacitadoras' : 'Esta semana, como líderes de zona', a1c_v2zlActions_(dists, zSecs));
+      body += a1c_v2attachLine_(kiDocs);
+      var sil = a1c_v2silence_(zSecs);
+      pre.unshift('Zona ' + g.name + ': ' + g.weeks[3].filedCount + ' de ' + g.n + ' informaron');
+      if (sil.four.length) pre.push(sil.four.length + (sil.four.length === 1 ? ' sector' : ' sectores') + ' sin informe en 4 semanas');
+      body += a1c_v2band_h_('v2-datos', (++n) + ' · Todos los datos de la zona');
+      body += a1c_v2h_('Resumen por sector', 'La tabla de siempre: el informe nocturno de esta semana, sector por sector, con el total de cada distrito y de la zona');
+      body += a1c_buildAreaDataTable_(zSecs.map(function(u) { return { name: u.name, zone: u.area.zone, district: u.area.district, stats: u.area.stats || {} }; }), 'zone', C, '10.5px');
+      body += a1c_v2note_('Esf. = nivel de esfuerzo · ✓ = envió informes nocturnos esta semana.');
+      body += a1c_v2allData_(dists, ztot, 'Por distrito', 'Cada distrito, y el total de la zona contra la semana anterior');
+      dists.forEach(function(d) {
+        body += a1c_v2allData_(d.units, a1c_v2asTotal_(d, d.label, 'Distrito'), d.label, 'Por sector');
+      });
+    } else {
+      var zs = g.units;
+      var mtot = a1c_v2asTotal_(g, 'Misión', 'Misión');
+      var mSecs = [];
+      zs.forEach(function(z) { z.units.forEach(function(d) { mSecs = mSecs.concat(d.units); }); });
+      body += a1c_v2band_h_('v2-mision', (++n) + ' · La misión');
+      body += a1c_v2kiGrid_(g, '7 indicadores, 4 semanas', 'Total de la misión · resultado / meta', 'el resultado de la misión');
+      body += a1c_v2band_h_('v2-unidad', (++n) + ' · Por zona');
+      body += a1c_v2unitKiGrid_(zs, mtot, 'zona', weekEnd, 'Resultado / meta' + (kiDocs && kiDocs.length ? ' · el detalle por sector va en el PDF adjunto' : ''));
+      var apActs = a1c_v2apActions_(zs, mSecs);
+      body += a1c_v2actions_(roles.some(function(r) { return r.type === 'AP'; }) ? 'Esta semana, como asistentes' : 'Esta semana', apActs);
+      body += a1c_v2attachLine_(kiDocs);
+      body += a1c_v2band_h_('v2-datos', (++n) + ' · Todos los datos de la misión');
+      body += a1c_v2allData_(zs, mtot, '', '');
+      var dashUrl = String(getConfig('STREAMLIT_URL') || '').trim();
+      if (dashUrl) {
+        body += '<div style="text-align:center;margin:20px 0 4px;"><a href="' + a1c_esc(dashUrl) + '" style="display:inline-block;background:' + P.navy +
+          ';color:#fff;padding:10px 22px;border-radius:6px;font-size:13px;font-weight:700;text-decoration:none;">Ver el Panel de PMG Compass</a>' +
+          '<div style="font-size:11px;color:' + P.ink3 + ';margin-top:5px;">Cada sector, cada semana, con filtros</div></div>';
+      }
+    }
+  });
+
+  // ── Wrap ──
+  var subject = subj.join(' · ') || ('PMG Compass · Su semana ' + a1c_weekSpanEs_(weekEnd));
+  var preheader = pre.filter(function(x) { return x; }).join(' · ');
+  var html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;color:' + P.ink + ';background:#fff;">' +
+    '<div style="display:none;max-height:0;overflow:hidden;opacity:0;">' + a1c_esc(preheader) + '</div>' +
+    '<div style="background:' + P.navy + ';color:#fff;padding:18px 18px 16px;">' +
+    '<div style="font-size:11px;opacity:.75;letter-spacing:.05em;text-transform:uppercase;">' + a1c_esc(kicker) + '</div>' +
+    '<div style="font-size:21px;font-weight:700;margin-top:3px;line-height:1.2;">' + a1c_esc(title) + '</div>' +
+    '<div style="font-size:12.5px;opacity:.85;margin-top:4px;">' + a1c_esc(sub) + '</div></div>' +
+    '<div style="padding:0 16px;">' + body + '</div>' +
+    '<div style="margin-top:22px;padding:12px 18px;background:#f5f7fa;font-size:11px;color:' + P.ink3 + ';text-align:center;">' +
+    'PMG Compass · ' + a1c_esc(getMissionName()) + ' · llega cada lunes a las 21:30</div></div>';
+  return { subject: subject, preheader: preheader, html: html };
+}
+
+/** Every sector under a unit, however deep. */
+function a1c_v2sectorsOf_(u) {
+  if (!u.group) return [u];
+  var out = [];
+  u.units.forEach(function(x) { out = out.concat(a1c_v2sectorsOf_(x)); });
+  return out;
 }

@@ -411,12 +411,15 @@ assert.ok(!missingLog.slice(1).some((r) => r[mlArea] === 'Arauco 1'),
 console.log('pipeline missed-days OK');
 
 // --- Coaching emails: Spanish, TEST inbox ----------------------------------
-const coaching = env.state.emails.filter((e) => /Entrenamiento Semanal/.test(e.subject));
+// Model v2 letters (PLAN-2026-10-11-weekly-letter.md): the subject carries
+// the sector's news, so the letter is recognised by its body instead.
+const coaching = env.state.emails.filter((e) =>
+  /Su informe nocturno · todos sus números|Resumen de la Misión/.test(e.htmlBody || e.body || ''));
 assert.ok(coaching.length > 0, 'expected at least one Sunday coaching email from Agent1C');
 coaching.forEach((e) => {
   assert.strictEqual(e.to, TEST_INBOX, 'coaching email must be redirected to the TEST inbox');
   const body = e.htmlBody || e.body || '';
-  assert.ok(/Fortaleza|Oportunidad|Resumen/.test(body),
+  assert.ok(/Recibimos|Sus informes|Resumen de la Misión/.test(body),
     'coaching body must be Spanish: ' + e.subject);
   assert.ok(!/Growth Focus|Week ending|Mission Summary|Strength/.test(body),
     'coaching body must not leak English: ' + e.subject);

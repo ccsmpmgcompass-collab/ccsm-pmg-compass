@@ -89,21 +89,21 @@ const names = (e) => (e.attachments || []).map((b) => b.getName());
   assert.deepStrictEqual(names(ap), ['Indicadores_clave_mision_28sep-4oct.pdf'],
     'the AP gets the mission document only: it already holds every zone');
   assert.deepStrictEqual(ap.attachments[0].getBytes(), pdfBytes('MISSION'), 'the bytes survive the outbox');
-  assert.ok(/Indicadores clave por sector — adjuntos/.test(ap.htmlBody), 'the AP letter says what is attached');
-  assert.ok(/el documento de la misión<\/b> \(11 páginas: el total de la misión/.test(ap.htmlBody));
+  // Model v2: section 2's ADJUNTO line names each file and its pages.
+  assert.ok(/📄 Indicadores_clave_mision_28sep-4oct\.pdf · 11 págs\./.test(ap.htmlBody), 'the AP letter says what is attached');
 
   const zl = byTo(env, 'zl.arauco1@missionary.org');
   assert.deepStrictEqual(names(zl), ['Indicadores_clave_Arauco_28sep-4oct.pdf'], 'the ZL gets only their zone\'s');
-  assert.ok(/La clasificación de su zona/.test(zl.htmlBody));
+  assert.ok(/📄 Indicadores_clave_Arauco_28sep-4oct\.pdf · 3 págs\./.test(zl.htmlBody), 'the ZL letter says what is attached');
 
   const mp = byTo(env, 'presidente@churchofjesuschrist.org');
   assert.ok(mp, 'the President still gets the letter');
   assert.deepStrictEqual(names(mp), [], 'the President gets no PDFs (not asked for)');
-  assert.ok(!/adjuntos/.test(mp.htmlBody), 'and no note about them');
+  assert.ok(!/📄 Indicadores_clave/.test(mp.htmlBody), 'and no note about them');
 
   const comp = byTo(env, 'arauco2@missionary.org');
   assert.deepStrictEqual(names(comp), [], 'a companionship gets no PDFs');
-  assert.ok(!/adjuntos/.test(comp.htmlBody));
+  assert.ok(!/📄 Indicadores_clave/.test(comp.htmlBody));
 
   const run = lastRun(ss);
   assert.strictEqual(run[2], 'SUCCESS', 'run status: ' + run[2] + ' ' + run[7]);

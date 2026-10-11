@@ -145,23 +145,26 @@ assert.ok(emails.length >= 1, 'expected at least one email captured');
 
 const testEmail = emails.find((e) => e.to === 'CCSM.PMG.Compass@gmail.com');
 assert.ok(testEmail, 'expected an email addressed to the TEST_MODE inbox (CCSM.PMG.Compass@gmail.com)');
-assert.ok(/PMG Compass — Entrenamiento Semanal/.test(testEmail.subject), 'subject must start with the required Spanish subject: ' + testEmail.subject);
+// Model v2 (PLAN-2026-10-11-weekly-letter.md): the subject names the sector
+// and its news, so it differs per letter and per week.
+assert.ok(/^\[TEST\] Arauco 1 · /.test(testEmail.subject), 'subject must lead with the sector: ' + testEmail.subject);
 
 const body = testEmail.htmlBody || '';
-assert.ok(body.includes('Fortaleza'), 'body must contain "Fortaleza"');
-assert.ok(body.includes('Área de Crecimiento'), 'body must contain "Área de Crecimiento"');
+assert.ok(body.includes('Su informe nocturno · todos sus números'), 'body must carry every nightly number');
+assert.ok(body.includes('Recibimos sus informes nocturnos'), 'body must say which reports arrived');
 assert.ok(!/Growth Focus|Week ending|Mission Summary/.test(body), 'body must not leak English structural strings');
 
-// Zone Leader path: Arauco 1's companion also gets a Zone Summary section
-// (Resumen de Zona — Arauco), rendered from the pre-generated (cached) zone
-// narrative — no on-demand Gemini call needed for this test's only recipient.
-assert.ok(body.includes('Resumen de Zona — Arauco'), 'expected the ZL zone summary section');
-assert.ok(body.includes('Arauco 1'), 'expected the personal area section for Arauco 1');
+// Zone Leader path: Arauco 1's companion also gets the zone's sections,
+// numbered after their own sector -- and no Gemini narrative (v2 has none).
+assert.ok(body.includes('1 · Su sector: Arauco 1'), 'expected the personal section for Arauco 1');
+assert.ok(body.includes('2 · Su zona: Arauco'), 'expected the ZL zone section');
+assert.ok(body.includes('3 · Todos los datos de la zona'), 'expected the zone data section');
+assert.ok(!body.includes('Narrativa de prueba'), 'v2 carries no Gemini narrative');
 
-// No message TEXT was generated for the personal coaching messages — the
-// exact seeded subject lines must appear verbatim.
-assert.ok(body.includes('¡Excelente tasa de contacto!'), 'expected the seeded strength1 subject line verbatim');
-assert.ok(body.includes('Oportunidad: invitaciones al bautismo'), 'expected the seeded growth subject line verbatim');
+// The coaching text comes verbatim from MESSAGE_BANK -- the growth message,
+// in the focus box. The strength messages are not in v2.
+assert.ok(body.includes('Consideren invitar más a menudo a la fecha bautismal.'), 'expected the seeded growth body verbatim');
+assert.ok(!body.includes('¡Excelente tasa de contacto!'), 'v2 prints no strength message');
 
 // ---------------------------------------------------------------------------
 // WEEKLY_BREAKDOWNS: gained exactly one row per area.
@@ -192,9 +195,9 @@ const fhCatIdx = fhHeaders.indexOf('Category');
 const fhMsgIdx = fhHeaders.indexOf('Last_Message_ID');
 const fhGrowthIdx = fhHeaders.indexOf('Last_Growth_Metric');
 
+// v2 prints no strength message, so none is recorded as sent.
 const strengthRow = fh.find((r, i) => i > 0 && r[fhAreaIdx] === 'A014' && r[fhCatIdx] === 'SUNDAY_COACHING_STRENGTH');
-assert.ok(strengthRow, 'expected a SUNDAY_COACHING_STRENGTH FEEDBACK_HISTORY row for Arauco 1 (A014)');
-assert.strictEqual(strengthRow[fhMsgIdx], 'S-CR-001');
+assert.ok(!strengthRow, 'no SUNDAY_COACHING_STRENGTH row: the letter did not print one');
 
 const growthRow = fh.find((r, i) => i > 0 && r[fhAreaIdx] === 'A014' && r[fhCatIdx] === 'SUNDAY_COACHING_GROWTH');
 assert.ok(growthRow, 'expected a SUNDAY_COACHING_GROWTH FEEDBACK_HISTORY row for Arauco 1 (A014)');
