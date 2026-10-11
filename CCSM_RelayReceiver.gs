@@ -24,6 +24,12 @@
  *   6. Copy the Web app URL from the deployment dialog. Send that URL
  *      back — it goes into COMPASS_CCSM's AGENT_CONFIG as RELAY_2_URL.
  *
+ * UPDATING (2026-10-10, attachments — PLAN-2026-10-10-ki-autosend.md K7):
+ *   paste this file over the relay project's Code.gs, then Deploy -> Manage
+ *   deployments -> the pencil on the EXISTING web app -> Version: New version
+ *   -> Deploy. Editing the existing deployment keeps the same URL, so
+ *   RELAY_2_URL does not change. "New deployment" would mint a new URL.
+ *
  * VERIFY: once RELAY_2_URL and RELAY_SECRET are both filled in
  * AGENT_CONFIG on the COMPASS_CCSM side, run testRelay() there (defined
  * in CCSM_Helpers.gs) — it sends one real email through this relay to
@@ -49,14 +55,23 @@ function doPost(e) {
       return jsonOut_(result);
     }
 
-    MailApp.sendEmail({
+    // Optional files, as [{name, mimeType, data(base64)}] (the weekly KI PDFs).
+    var blobs = (data.attachments || []).map(function(a) {
+      return Utilities.newBlob(Utilities.base64Decode(a.data),
+                               a.mimeType || 'application/pdf', a.name);
+    });
+    var message = {
       to:       data.to,
       subject:  data.subject,
       htmlBody: data.body,
       replyTo:  data.replyTo || undefined,
       name:     'PMG Compass'
-    });
+    };
+    if (blobs.length) message.attachments = blobs;
+    MailApp.sendEmail(message);
     result.success = true;
+    // The sender checks this: a relay older than attachments never sets it.
+    result.attachments = blobs.length;
   } catch (err) {
     result.error = err.message;
   }

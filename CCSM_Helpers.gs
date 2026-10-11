@@ -320,8 +320,17 @@ function getMissionTimezone() {
  * @param {string}          subject   - Email subject line.
  * @param {string}          body      - HTML email body.
  * @param {string}          [agentName] - Calling agent name for routing.
+ * @param {Object}          [opts]
+ * @param {Blob[]}          [opts.attachments] - Files to attach (the weekly KI
+ *   PDFs, PLAN-2026-10-10-ki-autosend.md K7). Through the relay they travel as
+ *   base64 [{name, mimeType, data}] and the relay replies with how many it
+ *   attached; a relay deployed before that change sends the email without
+ *   them, so the count comes back 0 rather than the email failing or going
+ *   twice.
+ * @returns {{attached: number}} how many attachments actually went out.
  */
-function sendEmail(to, subject, body, agentName) {
+function sendEmail(to, subject, body, agentName, opts) {
+  var attachments = (opts && opts.attachments) || [];
   // CCSM's own reply address. This was inherited verbatim from the fork and
   // pointed at the ORIGINATING mission's inbox, so every reply from a Chilean
   // missionary landed in another mission's mail. Must stay a CCSM-owned
@@ -359,13 +368,20 @@ function sendEmail(to, subject, body, agentName) {
       Logger.log('sendEmail WARNING: RELAY_SECRET not set. Falling back to main account.');
     } else {
       try {
-        var payload = JSON.stringify({
+        var request = {
           secret:  secret,
           to:      recipient,
           subject: finalSubject,
           body:    body,
           replyTo: REPLY_TO
-        });
+        };
+        if (attachments.length) {
+          request.attachments = attachments.map(function(blob) {
+            return { name: blob.getName(), mimeType: blob.getContentType(),
+                     data: Utilities.base64Encode(blob.getBytes()) };
+          });
+        }
+        var payload = JSON.stringify(request);
         var response = UrlFetchApp.fetch(relayUrl.trim(), {
           method:           'post',
           contentType:      'application/json',
@@ -373,7 +389,15 @@ function sendEmail(to, subject, body, agentName) {
           muteHttpExceptions: true
         });
         var result = JSON.parse(response.getContentText());
-        if (result.success) return; // Relay sent successfully
+        if (result.success) {
+          var attached = typeof result.attachments === 'number' ? result.attachments : 0;
+          if (attached < attachments.length) {
+            Logger.log('sendEmail WARNING: the relay sent the email but attached ' + attached +
+                       ' of ' + attachments.length + ' files — redeploy CCSM_RelayReceiver.gs ' +
+                       '(PLAN-2026-10-10-ki-autosend.md).');
+          }
+          return { attached: attached };
+        }
         Logger.log('sendEmail WARNING: relay rejected — ' + result.error + '. Falling back to main account.');
       } catch (relayErr) {
         Logger.log('sendEmail WARNING: relay call failed — ' + relayErr.message + '. Falling back to main account.');
@@ -382,13 +406,16 @@ function sendEmail(to, subject, body, agentName) {
   }
 
   // Main account send — default for non-relay agents and relay fallback
-  MailApp.sendEmail({
+  var message = {
     to:       recipient,
     subject:  finalSubject,
     htmlBody: body,
     replyTo:  REPLY_TO,
     name:     SENDER_NAME
-  });
+  };
+  if (attachments.length) message.attachments = attachments;
+  MailApp.sendEmail(message);
+  return { attached: attachments.length };
 }
 
 /**

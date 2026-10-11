@@ -443,9 +443,27 @@ function makeGasEnv(options = {}) {
     return out;
   }
 
+  // Blobs and base64, enough for attachments (the weekly KI PDFs): bytes are
+  // plain arrays here, as Apps Script's Byte[] is.
+  function newBlob(data, contentType, name) {
+    const bytes = typeof data === 'string' ? Array.from(Buffer.from(data, 'utf8')) : Array.from(data);
+    return {
+      getBytes() { return bytes.slice(); },
+      getContentType() { return contentType || null; },
+      getName() { return name || null; },
+      setName(n) { name = n; return this; },
+      getDataAsString() { return Buffer.from(bytes).toString('utf8'); },
+    };
+  }
+
   const Utilities = {
     sleep() {},
     formatDate,
+    newBlob,
+    base64Encode(data) {
+      return (typeof data === 'string' ? Buffer.from(data, 'utf8') : Buffer.from(data)).toString('base64');
+    },
+    base64Decode(s) { return Array.from(Buffer.from(String(s), 'base64')); },
   };
 
   // ---- PropertiesService --------------------------------------------------
@@ -667,8 +685,10 @@ function makeGasEnv(options = {}) {
   const GmailApp = { sendEmail, getRemainingDailyQuota };
 
   // ---- UrlFetchApp -----------------------------------------------------------
+  // options.urlFetch(url, params) answers any call (e.g. the relay) when set.
   const UrlFetchApp = {
     fetch(url, params) {
+      if (options.urlFetch) return options.urlFetch(url, params);
       if (options.geminiResponse !== undefined) {
         return options.geminiResponse;
       }
