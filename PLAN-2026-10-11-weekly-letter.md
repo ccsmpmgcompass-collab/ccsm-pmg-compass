@@ -120,9 +120,11 @@ previews of all of them BEFORE anything is pasted.
   JS suite: 38 pass, 5 fail -- the same 5 that fail at HEAD before this
   work (agent5b6, ccsm_data, ccsm_helpers, harness_selftest, quota_guards).
   Committed and pushed.
-- **OWED BY ZACKARY before Mon 10-12 21:15:** paste CCSM_Agent1A.gs,
-  CCSM_Agent1C.gs and CCSM_AgentMissionReport.gs into the Apps Script
-  project; Reboot the Streamlit app (help text).
+- 2026-10-12 ~20:45: **Zackary pasted CCSM_Agent1A.gs, CCSM_Agent1C.gs and
+  CCSM_AgentMissionReport.gs into Apps Script.** The first v2 letters go out
+  Mon 10-12 21:30. Nothing was edited in the Apps Script editor, so the repo
+  matches what runs. Still owed (cosmetic): Reboot the Streamlit app for the
+  Liderazgo help text.
 - **NEXT (Tue 10-13):** check AGENT_RUN_LOG for Agent1A/1B/1C (48 sent, 0
   errors, KI PDFs attached: 11) and that the APs got no 22:00 report; open
   one letter of each role in Gmail and confirm nothing is clipped.
