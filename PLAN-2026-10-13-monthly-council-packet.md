@@ -38,6 +38,9 @@ They continue the packet rebuild's decisions 44–57.
 | 63 | **No commitments tab or data entry.** The packet **remembers itself**: "Desde el último consejo" rebuilds last month's packet from today's sheet and shows whether its focus list and its zone questions moved (the same recompute-not-store rule as decision 53). | — |
 | 64 | **527 is fixed.** The packet shows the gap between the forecast and 527, and what each measured lever would close of it. **It never suggests recasting the goal.** | — |
 | 65 | **The 2026 jump in found people and dates is stated with both readings**: real work and recording practice, which Zackary believes is "a mix of both". The packet leads with measures that do not depend on how finding is recorded. Phase 0.1 measures which measures those are. | — |
+| 66 | (Phase 0, A1) **Decision 59 is graded over the area-weeks that carry a leadership goal.** Inside those, a silent area-week counts as 0. With complete goals this is exactly decision 59. With a gap (2026-5 had goals for 1 area), only the uncovered weeks drop out, never whole areas. The meta reads "sobre N de M semanas-área con meta". | 1.3's "areas with a goal" rule |
+| 67 | (Phase 0, A2) **The reporting KPI's trend is the last 8 complete weeks** (areas reporting per week). It switches to six closed months once six exist (about Feb 2027). The weekly form began on the week ending 2026-08-16. | 1.4's "six closed months" |
+| 68 | (Phase 0, Q-F) **The open-dates pipeline is fitted on the last 6 month-ends only**, because 2026 dates convert at about half the 2025 rate, and the 15-month pooled fit has overshot ×1,7–2,1 since June. Step 2.0, before any bet uses it. | `FIT_MONTHS = 15` |
 
 ### §1.1 — Defaults this plan sets (Zackary may amend; otherwise they hold)
 
@@ -112,7 +115,10 @@ Each measurement uses the live sheet. Write each result into STATUS as a table.
   - `comparison_for`: the month before it, whole (`PREVIOUS`).
   - Add it to `PERIOD_KEYS`, next to `CALENDAR_MONTH`, and to `available`.
   - **Tests:** a month whose first day is a Sunday; February; January (the
-    year boundary); a month containing a transfer day.
+    year boundary); a month containing a transfer day. Also: a comparison
+    month the weekly form had not reached (August 2026 read 42% only because
+    the form launched 16 Aug). It must print *sin comparación*, not a false
+    rise.
 - **1.2 Baptisms for the month.** `tableau.period_baptisms` looks figures up
   by days, so the closed month's certified monthly capture should answer for
   `LAST_MONTH`.
@@ -125,9 +131,13 @@ Each measurement uses the live sheet. Write each result into STATUS as a table.
     area-week) against `mark` (`_leadership_goals`, `model.py:1220`): the full
     prorated goal over every area in scope. Silent area-weeks are zero by
     construction.
-  - **Partial goals:** when `mark_complete` is False (some areas have no
-    goal), grade only the areas that have a goal: their actual against their
-    goal. The `meta` header says "de N áreas con meta".
+  - **Partial goals (decision 66):** grade over the area-weeks that carry a
+    goal, using `data.lead_week_goal(area, week)` for each area in scope ×
+    each week of the period. The goal is the sum over those area-weeks. The
+    actual is those same area-weeks' reported figures, with silent ones
+    counting 0. The `meta` header says "sobre N de M semanas-área con meta".
+    **Test:** September 2026 must grade 136 of 180 area-weeks. Mission
+    Nuevas Personas then reads 61% (amber), not 267%.
   - **Fields:** the `lead_goal` / `lead_actual` / `lead_area_weeks` path of
     decision 44 is retired. Keep the fields only if the screen still reads
     them, and grep for that first.
@@ -139,11 +149,13 @@ Each measurement uses the live sheet. Write each result into STATUS as a table.
     - the rate;
     - the target (95%);
     - a status in D2's bands;
-    - a trend: the last six closed months' rates, from `week_coverage`;
+    - a trend (decision 67): areas reporting in each of the last 8 complete
+      weeks (`_reported_by_week`), switching to six closed months' rates once
+      the form has six;
     - the owners: the zone leaders' names, from the roster (`packet.leadership`,
       `packet.py:215`, already finds leadership companionships).
   - **Rendered as** one headline row above the tablero on the mission page and
-    each zone page: "Informes 75% · meta 95% · [spark of 6 months] ·
+    each zone page: "Informes 75% · meta 95% · [spark of 8 weeks] ·
     responsables: Élder X y Élder Y".
   - **On the mission page,** the zones table gains each zone's owners.
 - **1.5 Both renderers.** These need rewriting to match decision 59: the
@@ -169,6 +181,13 @@ Each measurement uses the live sheet. Write each result into STATUS as a table.
 
 ### Phase 2 — the forward view for a monthly council (C5, C6, C7, C8; decision 64)
 
+- **2.0 Refit the pipeline (decision 68).** `forecast.FIT_MONTHS` goes from
+  15 to 6. Re-run the month-by-month backtest from Phase 0.1's table: June
+  and July 2026 should now land near 1,0× (they were 1,70 and 2,09), and
+  every sentence printing the range (`packet.py:650`, `:1866`, `:2558`)
+  moves with it. Check that the 80% range still uses the backtest miss over
+  the months available. **Commit this on its own**, because it changes a
+  figure the live packet prints.
 - **2.1 "El traslado en curso", its own block (C7).** The tablero becomes a
   closed-period table: Real · por comp. · compromiso · meta · % · cambio ·
   12 semanas. The *Termina en / Falta* columns leave it (`packet.tablero_block`,
@@ -658,4 +677,9 @@ so the result matches the baseline above.
   June 2026 in how dates are set (for example a date at the first lesson)?
   If so, the packet can name it in 3.1.
 
-**Next: his answers to A1, A2 and Q-F, then Phase 1** (new chat).
+**Zackary answered 2026-10-13:** A1 yes, A2 yes, and for Q-F "fit the last 6
+month-ends, as the first step of Phase 2". They are recorded as decisions
+66–68 in §1, and steps 1.1, 1.3, 1.4 and 2.0 are amended. Q-J (what changed in
+June) is still open; it is context only.
+
+**Next: Phase 1** (new chat), starting at 1.1.
