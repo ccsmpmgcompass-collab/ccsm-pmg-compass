@@ -3338,7 +3338,9 @@ def build(period_key: str = None, against: str = None, *, data=None) -> bytes:
     from app.reports import periods as P
 
     data = data or M.load_data()
-    models = M.build_all(period_key or P.DEFAULT_PERIOD,
+    # The council packet reviews the month just closed (decision 61); the
+    # screen passes its own period when a user asks for another one.
+    models = M.build_all(period_key or P.PACKET_PERIOD,
                          against or P.COMPARE_PRIOR, data=data)
     if not models:
         raise ValueError("no hay período que informar")
@@ -3347,5 +3349,10 @@ def build(period_key: str = None, against: str = None, *, data=None) -> bytes:
 
 def filename(model) -> str:
     """What the browser saves it as. ISO, because a filename is a key."""
-    return (f"paquete-consejo-{model.period.key}-"
-            f"{model.today.isoformat()}.pdf")
+    return filename_for(model.period.key, model.today)
+
+
+def filename_for(period_key: str, today) -> str:
+    """`filename` for a period that has no model in hand — the screen's
+    council button builds "Mes pasado" whatever tab is open (D1)."""
+    return f"paquete-consejo-{period_key}-{today.isoformat()}.pdf"

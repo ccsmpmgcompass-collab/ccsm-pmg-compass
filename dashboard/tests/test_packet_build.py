@@ -21,6 +21,7 @@ from pypdf import PdfReader
 from app.reports import model as M
 from app.reports import packet as PK
 from app.reports import packet_parts as PP
+from app.reports import periods as P
 
 TODAY = date(2026, 9, 21)
 W2 = date(2026, 9, 20)
@@ -246,7 +247,7 @@ def test_the_data_note_says_why_there_is_no_finding_section(reader):
 
 def test_the_data_note_states_the_period_and_the_compliance(reader, data):
     note = _note(reader)
-    mission = M.build_all(data=data)[0]
+    mission = M.build_all(P.PACKET_PERIOD, data=data)[0]
     assert mission.period.window_label in note
     assert mission.compliance_label in note
 
@@ -274,3 +275,14 @@ def test_a_section_of_one_unit_states_no_count():
     section = PK.Section("k", "La misión", "", units=1, first_page=3,
                          last_page=8)
     assert PK._titled(section) == "La misión"
+
+
+def test_the_packet_defaults_to_the_month_just_closed(reader):
+    """Decision 61: built with no period, the packet is the council's — "Mes
+    pasado", which on 21 September is August."""
+    assert "agosto 2026" in _pages(reader)[0]
+
+
+def test_the_council_button_names_its_file_without_a_model():
+    assert PK.filename_for(P.LAST_MONTH, date(2026, 11, 2)) == (
+        "paquete-consejo-last_month-2026-11-02.pdf")

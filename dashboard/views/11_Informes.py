@@ -100,7 +100,7 @@ if not _period_keys:
 st.session_state.setdefault("rep_period_section", P.DEFAULT_PERIOD)
 _period_key = render_section_tabs(
     {k: P.PERIOD_LABELS[k] for k in _period_keys},
-    key="rep_period_section", per_row=3,
+    key="rep_period_section", per_row=4,
 )
 _period = P.resolve(_period_key, _data.today, _data.cycles)
 
@@ -134,6 +134,12 @@ _model = M.build_report(_scope, _period, _comparison, _data)
 # selectors point at: it contains that unit's pages either way, and a packet
 # whose contents changed with a dropdown would be a different document under
 # the same name.
+#
+# Two build buttons since PLAN-2026-10-13 D1. "Paquete del consejo" always
+# builds "Mes pasado", the month the council reviews (decision 61), whatever
+# tab is open — the screen itself still opens on "Este traslado". The second
+# builds whichever period is selected, and is not drawn when that period is
+# already "Mes pasado".
 
 #: Where the built packet waits between the two clicks, keyed by the period it
 #: was built for — so changing the período pill offers a fresh build rather
@@ -141,27 +147,38 @@ _model = M.build_report(_scope, _period, _comparison, _data)
 _PACKET_KEY = "rep_packet"
 
 
+def _build_packet(period_key: str, against: str, name: str) -> None:
+    from app.reports import packet as PK
+
+    with st.spinner("Armando el paquete — 63 unidades…"):
+        try:
+            st.session_state[_PACKET_KEY] = {
+                "period": period_key,
+                "bytes": PK.build(period_key, against, data=_data),
+                "name": name,
+            }
+        except Exception as exc:          # noqa: BLE001 - shown, not hidden
+            st.session_state.pop(_PACKET_KEY, None)
+            st.error(f"No se pudo armar el paquete: {exc}")
+
+
 def _render_packet_control() -> None:
     from app.reports import packet as PK
 
+    council = P.resolve(P.PACKET_PERIOD, _data.today, _data.cycles)
     left, right = st.columns([1, 2])
-    built = st.session_state.get(_PACKET_KEY)
     with left:
-        if st.button("Generar paquete", type="primary",
-                     use_container_width=True):
-            with st.spinner("Armando el paquete — 63 unidades…"):
-                try:
-                    st.session_state[_PACKET_KEY] = {
-                        "period": _period.key,
-                        "bytes": PK.build(_period.key, _against, data=_data),
-                        "name": PK.filename(_model),
-                    }
-                except Exception as exc:          # noqa: BLE001 - shown, not hidden
-                    st.session_state.pop(_PACKET_KEY, None)
-                    st.error(f"No se pudo armar el paquete: {exc}")
-            built = st.session_state.get(_PACKET_KEY)
+        if st.button(f"Paquete del consejo — {council.label}", type="primary",
+                     use_container_width=True, key="rep_build_council"):
+            _build_packet(P.PACKET_PERIOD, P.COMPARE_PRIOR,
+                          PK.filename_for(P.PACKET_PERIOD, _data.today))
+        if _period.key != P.PACKET_PERIOD and st.button(
+                f"Paquete · {_period.label}", use_container_width=True,
+                key="rep_build_period"):
+            _build_packet(_period.key, _against, PK.filename(_model))
+    built = st.session_state.get(_PACKET_KEY)
     with right:
-        if built and built.get("period") == _period.key:
+        if built and built.get("period") in (_period.key, P.PACKET_PERIOD):
             size = len(built["bytes"]) / 1024
             st.download_button(
                 f"Descargar · {built['name']} ({fmt_int(size)} KB)",
