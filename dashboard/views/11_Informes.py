@@ -33,7 +33,7 @@ from app.components.charts import (ranked_list, share_bar, spark_multiples,
                                    stage_bars)
 from app.components.design_system import (
     render_companionship_card, render_kpi_row, render_page_header,
-    render_section_label, render_section_tabs,
+    render_section_label, render_section_tabs, render_status_pill,
 )
 from app.components.ki_drilldown import ki_href, render_ki_drilldown
 from app.components.scope_selector import ANY, render_scope_selectors
@@ -244,9 +244,10 @@ def _ki_cards() -> list[dict]:
             # lands back on the same unit (`scope_selector.SCOPE_PARAMS`).
             "href": ki_href(row.key, _SCOPE_PARAMS),
         }
-        # Decision 44, the packet's rule: the bar is against LEADERSHIP's goal
-        # over the area-weeks that reported, and the companionships' own goal
-        # rides as the violet tick, labelled compromiso — never the colour.
+        # Decision 59, the packet's rule: the bar is what every area did
+        # against LEADERSHIP's full goal (a silent week counts as zero), and
+        # the companionships' own goal rides as the violet tick, labelled
+        # compromiso — never the colour.
         if row.lead_goal:
             card["value"] = row.lead_actual
             card["goal"] = row.lead_goal
@@ -255,6 +256,11 @@ def _ki_cards() -> list[dict]:
                 card["mark_label"] = "compromiso"
             if row.key in M.UNCOLOURED_KI:
                 card["note"] = "sin color: manda la meta anual"
+            elif row.lead_area_weeks < row.lead_area_weeks_possible:
+                # Decision 66: a cycle without goals drops its own weeks.
+                card["note"] = (f"sobre {fmt_int(row.lead_area_weeks)} de "
+                                f"{fmt_int(row.lead_area_weeks_possible)} "
+                                f"semanas-área con meta")
         else:
             card["note"] = "sin meta del liderazgo para estas semanas"
         # H5, the packet's rule: a small count moves in units, and a move
@@ -515,14 +521,32 @@ if _SUMMARY:
 
 render_section_label(
     "Indicadores Clave", right=_model.subtitle,
-    info=("Los siete, siempre, en cada nivel. La barra y su color van contra "
-          "la meta de traslado del liderazgo, sobre las mismas semanas y "
-          "áreas que informaron, así que real y meta cuentan lo mismo. La "
+    info=("Los siete, siempre, en cada nivel. La barra y su color son lo "
+          "hecho por todas las áreas contra la meta completa de traslado del "
+          "liderazgo; una semana sin informe cuenta como cero, así que real "
+          "y meta cuentan las mismas semanas. La "
           "marca violeta es el compromiso: la meta que las compañerías se "
           "pusieron, que se muestra y nunca da color. Los bautismos del "
           "formulario no llevan color: la meta de bautismos es la anual. "
           + _comparison_note()),
 )
+
+# Decision 60: reporting is a KPI with a 95% target and named owners, and it
+# sits above the seven because it bounds their colours — the packet's
+# `reporting_headline`, in the screen's words.
+_REP = _model.reporting
+if _REP.rate is not None and _model.scope.level in (S.MISSION, S.ZONE):
+    _rep_word = {"good": ("al ritmo", "green"), "warn": ("atrasado", "amber"),
+                 "bad": ("muy atrasado", "red")}.get(_REP.status,
+                                                     ("", "blue"))
+    _owners = (_PK._names(_REP.owners) if _REP.owners else
+               "los líderes de cada zona" if _model.scope.level == S.MISSION
+               else "sin líderes de zona en el organigrama")
+    render_status_pill(f"Informes {fmt_percent(_REP.rate * 100)} · "
+                       f"{_rep_word[0]}", _rep_word[1])
+    st.caption(f"{fmt_int(_REP.reported)} de {fmt_int(_REP.possible)} "
+               f"informes semanales · meta "
+               f"{fmt_percent(_REP.target * 100)} · responsables: {_owners}")
 
 if not _model.coverage.usable:
     st.info(f"Ninguna área de {_model.scope.name} entregó el formulario "

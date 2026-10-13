@@ -561,8 +561,10 @@ def how_to_read(mission, sections) -> list:
 
     rules.append((
         "Contra qué se mide cada porcentaje, y cómo se ordenan las unidades",
-        f"Cada Indicador Clave se colorea contra la meta del liderazgo, la de "
-        f"traslado, sobre las mismas semanas y áreas que informaron: "
+        f"Cada Indicador Clave se colorea por lo hecho, contando todas las "
+        f"áreas, contra la meta completa del liderazgo para el período: la "
+        f"meta de traslado de cada área, prorrateada a las semanas del "
+        f"período y sumada. Una semana sin informe cuenta como cero: "
         f"{_band_sentence()}. La columna «Compromiso» es la meta que las "
         f"compañerías se pusieron; se imprime y nunca da color. Los bautismos "
         f"del formulario no llevan color: la meta de bautismos es la anual. "
@@ -581,10 +583,12 @@ def how_to_read(mission, sections) -> list:
         who += (f"{es_display.integer(len(silent))} de "
                 f"{es_display.integer(mission.scope.area_count)} áreas no "
                 f"entregaron ninguna semana completa: {', '.join(silent)}. ")
-    who += ("Las sumas van sin dividir, y una semana con menos formularios se "
-            "lee igual que una semana con menos trabajo: por eso cada tabla "
-            "semanal termina con cuántas áreas informaron. Léala antes que las "
-            "cifras de encima.")
+    who += ("Informar es un indicador con meta propia: el 95% de los informes "
+            "semanales posibles (verde desde 95%, ámbar de 85 a 94%, rojo "
+            "debajo), y sus responsables son los líderes de cada zona. Va "
+            "encima del tablero porque explica sus colores: con tres de cada "
+            "cuatro informes, un indicador no pasa de tres cuartos de su meta "
+            "aunque cada área que informó la haya cumplido.")
     rules.append(("Quién informó, y quién no", who))
 
     graded = [r for r in mission.nightly_metrics if r.grade.pct is not None]
@@ -670,9 +674,12 @@ COLUMN_GLOSSARY = (
              "el trabajo nocturno, lo que un área hace en una semana de "
              "noches informadas: su encabezado dice «área/sem»."),
     ("Meta", "En los Indicadores Clave, la meta de traslado del liderazgo "
-             "para las semanas y áreas que informaron, así que real y meta "
-             "cuentan lo mismo. En el trabajo nocturno, la meta de un área "
-             "para una semana, en la misma escala que su real."),
+             "para todas las áreas y todas las semanas del período, y el real "
+             "cuenta esas mismas semanas: una sin informe suma cero. Si un "
+             "ciclo no tiene meta, sus semanas salen de las dos columnas y el "
+             "encabezado dice sobre cuántas semanas-área se mide. En el "
+             "trabajo nocturno, la meta de un área para una semana, en la "
+             "misma escala que su real."),
     ("Compromiso", "La suma de las metas que las compañerías se pusieron en "
                    "el formulario. Se imprime; nunca da color."),
     ("La barra", "Real contra la meta, con el color de la calificación."),
@@ -1781,11 +1788,30 @@ def _spark_of(model, key) -> tuple:
     return tuple(p.actual for p in series.points), bounds
 
 
+def _partial_goal(model):
+    """`(N, M)` when leadership's goal covers only N of the M area-weeks in
+    scope (decision 66), else None. Every row shares one population, because
+    an area-week has a goal when ANY of its seven does."""
+    for row in model.key_indicators:
+        if row.lead_goal is not None and row.lead_area_weeks_possible:
+            if row.lead_area_weeks < row.lead_area_weeks_possible:
+                return row.lead_area_weeks, row.lead_area_weeks_possible
+            return None
+    return None
+
+
 def tablero_lines(model, *, comparable: bool, confident: bool) -> list:
-    """The seven, one line each, for the tablero (AUDIT §5 item 1)."""
+    """The seven, one line each, for the tablero (AUDIT §5 item 1).
+
+    REAL is what the bar is graded on (decision 59): every report, unless a
+    cycle without goals drops some area-weeks (decision 66), when REAL counts
+    only the area-weeks that carry a goal, as META does."""
     finish = {k.key: k for k in model.forward.finish}
+    partial = _partial_goal(model) is not None
     lines = []
     for row in model.key_indicators:
+        real = (row.lead_actual if partial and row.lead_goal is not None
+                else row.actual)
         values, bounds = _spark_of(model, row.key)
         k = finish.get(row.key)
         need = ""
@@ -1793,7 +1819,7 @@ def tablero_lines(model, *, comparable: bool, confident: bool) -> list:
             need = _int(k.needed_per_week) + (
                 f" · {es_display.number(k.factor, 1)}×" if k.factor else "")
         lines.append(PP.TableroLine(
-            label=row.label, real=_count(row.actual),
+            label=row.label, real=_count(real),
             own=_count(row.meta) if row.meta else es_display.NA,
             per_comp=(es_display.number(row.per_active_area_week, 1)
                       if row.per_active_area_week is not None
@@ -1821,8 +1847,12 @@ def tablero_block(model) -> list:
     based = weekly_ok and weekly_sure
     change = (("Cambio", f"vs {against}") if based and against
               else "Cambio" if based else NO_BASE_HEAD)
+    partial = _partial_goal(model)
+    meta_head = (("Meta", f"{es_display.integer(partial[0])} de "
+                          f"{es_display.integer(partial[1])} sem.-área")
+                 if partial else ("Meta", "liderazgo"))
     heads = ["Indicador", "Real", ("Por", "comp./sem"),
-             ("Propia", "compromiso"), "", ("Meta", "liderazgo"), change,
+             ("Propia", "compromiso"), "", meta_head, change,
              ("12", "semanas")]
     if forecast:
         heads += [("Termina", "en"), ("Falta", "por semana")]
@@ -1837,13 +1867,15 @@ def tablero_block(model) -> list:
     note = ("Real: lo informado en el período. Por comp.: por compañería y "
             "semana, contando a quien no informó. Propia: el compromiso, la "
             "meta que las compañerías se pusieron — se imprime y no da color. "
-            "Meta: el porcentaje contra la meta del liderazgo sobre los "
-            "informes que la tienen — es lo único con color. 12 semanas: su "
+            "Meta: lo hecho por todas las áreas contra la meta completa del "
+            "liderazgo; una semana sin informe cuenta como cero, y es lo "
+            "único con color. 12 semanas: su "
             "forma, cada línea en su escala, con la primera y la última "
             "semana informadas debajo.")
     if model.scope.level != S.MISSION:
         note = ("Por comp.: por compañería y semana. Propia: su compromiso, "
-                "sin color. Meta: contra la del liderazgo, lo único con "
+                "sin color. Meta: lo hecho contra la meta completa del "
+                "liderazgo, con cada semana sin informe en cero; lo único con "
                 "color. 12 semanas: su forma, con la primera y la última "
                 "cifra debajo."
                 + (" Termina en y falta: proyección al ritmo reciente, sin "
@@ -1857,6 +1889,10 @@ def tablero_block(model) -> list:
                  f"que haría falta para la meta del traslado y cuántas veces "
                  f"el ritmo de hoy. Proyecciones, sin color.")
         note += _backtest_sentence(model)
+    if partial:
+        note += (f" Real y meta cuentan las {es_display.integer(partial[0])} "
+                 f"de {es_display.integer(partial[1])} semanas-área que tienen "
+                 f"meta del liderazgo; las demás son de un ciclo sin meta.")
     flow.append(Paragraph(PP.text(note), st["note"]))
     reach = _goal_reach_line(model)
     if reach:
@@ -3066,12 +3102,14 @@ def data_note(models, goals=None) -> list:
             f"{es_display.integer(len(silent))} de "
             f"{es_display.integer(mission.scope.area_count)} áreas no "
             f"informaron ninguna semana completa del período: "
-            f"{', '.join(sorted(silent))}. Cuentan en cada denominador por "
-            f"área activa, y no aparecen en ninguna suma.")
+            f"{', '.join(sorted(silent))}. Cuentan como cero contra la meta "
+            f"del liderazgo y en cada denominador por área activa.")
     sentences.append(
-        "Los Indicadores Clave se califican contra la meta de traslado del "
-        "liderazgo, sobre las semanas y áreas que informaron; la meta de las "
-        "compañerías se imprime como compromiso y no da color. Los bautismos "
+        "Los Indicadores Clave se califican por lo hecho, contando todas las "
+        "áreas, contra la meta completa de traslado del liderazgo, "
+        "prorrateada a las semanas del período; una semana sin informe "
+        "cuenta como cero, y sólo salen las semanas de un ciclo sin meta. La "
+        "meta de las compañerías se imprime como compromiso y no da color. Los bautismos "
         "del formulario no llevan color: la meta de bautismos es la anual.")
     labels = {r.key: r.label for r in mission.key_indicators}
     weights = " · ".join(f"{labels[k]} {w}" for k, w in INDEX_WEIGHTS.items()

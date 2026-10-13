@@ -40,8 +40,22 @@ def _num(v) -> str:
     return ES.integer(round(v)) if abs(v) >= 10 else ES.number(v, 1)
 
 
+#: D2's three states, in the words the reporting headline prints.
+_REPORTING_WORD = {"good": "al ritmo", "warn": "atrasado",
+                   "bad": "muy atrasado"}
+
+
 def where_we_are(m) -> list:
     out = []
+    rep = getattr(m, "reporting", None)
+    if rep is not None and rep.rate is not None:
+        # Decision 60: reporting leads, because it bounds every colour below.
+        out.append(
+            f"Informes: {ES.percent(rep.rate * 100, 0)} de los informes "
+            f"semanales posibles ({_int(rep.reported)} de "
+            f"{_int(rep.possible)}), contra una meta de "
+            f"{ES.percent(rep.target * 100, 0)}: "
+            f"{_REPORTING_WORD.get(rep.status, '')}.")
     graded = [r for r in m.key_indicators
               if r.key not in UNCOLOURED_KI and r.grade.pct is not None
               and r.lead_goal]
@@ -52,12 +66,20 @@ def where_we_are(m) -> list:
                 status[r.grade.status] += 1
         worst = min(graded, key=lambda r: r.grade.pct)
         best = max(graded, key=lambda r: r.grade.pct)
+        # Decision 59: every area counts, a silent week as zero; decision 66
+        # names the population when a cycle without goals shrinks it.
+        basis = "con cada semana sin informe en cero"
+        first = graded[0]
+        if first.lead_area_weeks < first.lead_area_weeks_possible:
+            basis += (f", sobre {_int(first.lead_area_weeks)} de "
+                      f"{_int(first.lead_area_weeks_possible)} semanas-área "
+                      f"con meta")
         out.append(
-            f"Contra la meta del liderazgo: {status['good']} de "
-            f"{len(graded)} indicadores al ritmo, {status['warn']} atrasados, "
-            f"{status['bad']} muy atrasados. Lo más fuerte, {best.label} "
-            f"({ES.percent(best.grade.pct, 0)}); lo más atrasado, "
-            f"{worst.label} ({ES.percent(worst.grade.pct, 0)}).")
+            f"Contra la meta completa del liderazgo ({basis}): "
+            f"{status['good']} de {len(graded)} indicadores al ritmo, "
+            f"{status['warn']} atrasados, {status['bad']} muy atrasados. Lo "
+            f"más fuerte, {best.label} ({ES.percent(best.grade.pct, 0)}); lo "
+            f"más atrasado, {worst.label} ({ES.percent(worst.grade.pct, 0)}).")
     quiet = sum(r.silent for r in m.focus)
     if quiet >= 1:
         out.append(

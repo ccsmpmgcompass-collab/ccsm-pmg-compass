@@ -683,3 +683,38 @@ def test_a_refused_comparison_prints_its_reason():
     note = PK._comparison_note(mission)
     assert note.startswith("Sin comparación: El formulario semanal empezó")
     assert "julio 2026" in note
+
+
+def test_no_sentence_still_grades_on_the_weeks_that_reported():
+    """PLAN-2026-10-13 1.5: decision 44's wording is gone from both
+    renderers, and the rule they print instead is decision 59's."""
+    from pathlib import Path
+    from tests.test_packet_tableau import words
+    built = M.build_all(data=_data())
+    mission = built[0]
+    text = " ".join([
+        words(PK.how_to_read(mission, PK.sections_for(built))),
+        words(PK.data_note(built)), words(PK.tablero_block(mission)),
+        " ".join(row[1] for row in PK.COLUMN_GLOSSARY)])
+    screen = Path("views/11_Informes.py").read_text(encoding="utf-8")
+    for old in ("semanas y áreas que informaron", "informes que la tienen",
+                "sobre las mismas semanas y"):
+        assert old not in text and old not in screen
+    assert "una semana sin informe cuenta como cero" in text.lower()
+
+
+def test_a_partial_goal_names_its_area_weeks_on_the_tablero():
+    """Decision 66 in print: REAL follows the graded area-weeks and the Meta
+    head says how many of them there are."""
+    from tests.test_packet_tableau import words
+    goals = LEAD_GOALS[LEAD_GOALS["area"] != "B1"]
+    mission = M.build_all(data=_data(transfer_goals=goals))[0]
+    text = words(PK.tablero_block(mission))
+    assert "4 de 6 sem.-área" in text
+    assert "Real y meta cuentan las 4 de 6 semanas-área" in text
+    row = mission.ki(NEW)
+    line = next(l for l in PK.tablero_lines(mission, comparable=False,
+                                            confident=False)
+                if l.label == "Nuevas Personas")
+    assert line.real == "30"                  # A1's 30; B1's 30 leaves REAL
+    assert row.lead_actual == 30
