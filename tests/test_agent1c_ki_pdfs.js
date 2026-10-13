@@ -98,8 +98,11 @@ const names = (e) => (e.attachments || []).map((b) => b.getName());
 
   const mp = byTo(env, 'presidente@churchofjesuschrist.org');
   assert.ok(mp, 'the President still gets the letter');
-  assert.deepStrictEqual(names(mp), [], 'the President gets no PDFs (not asked for)');
-  assert.ok(!/📄 Indicadores_clave/.test(mp.htmlBody), 'and no note about them');
+  // Since 2026-10-13 (PLAN-2026-10-13-letter-watchdog.md D6): the President
+  // gets the mission document, like the APs, in place of his old mission report.
+  assert.deepStrictEqual(names(mp), ['Indicadores_clave_mision_28sep-4oct.pdf'],
+    'the President gets the mission document, like the APs');
+  assert.ok(/📄 Indicadores_clave_mision_28sep-4oct\.pdf · 11 págs\./.test(mp.htmlBody), 'and his letter says so');
 
   const comp = byTo(env, 'arauco2@missionary.org');
   assert.deepStrictEqual(names(comp), [], 'a companionship gets no PDFs');
@@ -107,7 +110,7 @@ const names = (e) => (e.attachments || []).map((b) => b.getName());
 
   const run = lastRun(ss);
   assert.strictEqual(run[2], 'SUCCESS', 'run status: ' + run[2] + ' ' + run[7]);
-  assert.ok(/KI PDFs attached: 2/.test(run[7]), 'the run log counts the attachments: ' + run[7]);
+  assert.ok(/KI PDFs attached: 3/.test(run[7]), 'the run log counts the attachments (AP, President, ZL): ' + run[7]);
 }
 
 // ── 2. PDFs late: wait (no Gemini), then send without them and say so. ────────

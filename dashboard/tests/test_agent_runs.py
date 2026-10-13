@@ -31,7 +31,6 @@ def _healthy_week(monday: datetime) -> list:
         [f"{m} 18:28:00", "Agent1A", "SUCCESS", "Analyzed 45 areas | Agent1B scheduled in ~1 min"],
         [f"{m} 18:30:00", "Agent1B", "SUCCESS", "Messages selected | Agent1C scheduled in ~1 min"],
         [f"{m} 18:33:00", "Agent1C", "SUCCESS", "Emails sent: 48, errors: 0"],
-        [f"{m} 19:00:00", "AgentMissionReport", "SUCCESS", "Sent: 3"],
         [(monday + timedelta(days=4)).strftime("%m/%d/%Y 09:55:00"), "Agent5B", "SUCCESS",
          "Checked 45 area(s) | Agent6 scheduled in ~1 min"],
         [(monday + timedelta(days=4)).strftime("%m/%d/%Y 09:57:00"), "Agent6", "SUCCESS", "Sent: 10"],
@@ -84,18 +83,28 @@ def test_a_skipped_step_is_said_once_not_twice():
     assert [p["kind"] for p in found] == ["chain"]
 
 
-def test_the_mission_report_that_ran_once_in_august_is_overdue():
-    rows = [r for r in _healthy_week(MON) if r[1] != "AgentMissionReport"]
-    rows += [["8/3/2026 20:12:54", "AgentMissionReport", "ERROR", "QUOTA EXHAUSTED"]]
+def test_a_weekly_agent_that_last_ran_in_august_is_overdue():
+    """The shape of the real 2026-10-05 find (the since-retired mission report
+    had one run ever, on 3 Aug), on an agent that is still scheduled."""
+    rows = [r for r in _healthy_week(MON) if r[1] != "Agent4"]
+    rows += [["8/3/2026 20:12:54", "Agent4", "ERROR", "2 error(s)"]]
     (p,) = AR.missed_runs(_log(rows), NOW)
-    assert p["kind"] == "overdue" and p["agent"] == "AgentMissionReport"
+    assert p["kind"] == "overdue" and p["agent"] == "Agent4"
     assert p["days"] == 60 and p["last"] == datetime(2026, 8, 3, 20, 12, 54)
 
 
 def test_an_agent_with_no_row_at_all_is_named():
-    rows = [r for r in _healthy_week(MON) if r[1] != "AgentMissionReport"]
+    rows = [r for r in _healthy_week(MON) if r[1] != "Agent4"]
     (p,) = AR.missed_runs(_log(rows), NOW)
-    assert p["agent"] == "AgentMissionReport" and p["last"] is None
+    assert p["agent"] == "Agent4" and p["last"] is None
+
+
+def test_the_retired_mission_report_is_never_expected():
+    """Retired 2026-10-13: the President gets the APs' letter and the mission
+    KI PDF instead. Its old August row must not raise an alarm forever."""
+    assert "AgentMissionReport" not in AR.MAX_GAP_DAYS
+    rows = _healthy_week(MON) + [["8/3/2026 20:12:54", "AgentMissionReport", "ERROR", "QUOTA EXHAUSTED"]]
+    assert AR.missed_runs(_log(rows), NOW) == []
 
 
 def test_a_daily_agent_two_days_quiet_is_overdue():

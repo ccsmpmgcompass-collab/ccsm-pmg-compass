@@ -26,7 +26,11 @@ import pandas as pd
 #: its cadence in CCSM_Setup.gs's CCSM_TRIGGER_SCHEDULE plus a day of grace.
 #: Agent1B, Agent1C and Agent6 have no trigger of their own — the chain
 #: schedules them — but they run as often as the agent that starts the chain.
-#: Agent2 is retired (2026-10-02) and deliberately absent.
+#: Agent2 is retired (2026-10-02) and deliberately absent, and so is
+#: AgentMissionReport (retired 2026-10-13: the President gets the APs' weekly
+#: letter and the mission KI PDF instead). LetterWatchdog logs only when it has
+#: to restart the letter chain, so silence is its normal state and it has no
+#: entry here either.
 MAX_GAP_DAYS = {
     "Agent3": 2,            # daily 6 AM and 9 PM
     "Agent5A": 2,           # daily noon
@@ -37,7 +41,6 @@ MAX_GAP_DAYS = {
     "Agent1C": 8,
     "AgentScores": 8,       # Monday 12:05 AM
     "Agent4": 8,            # Monday 7 AM
-    "AgentMissionReport": 8,  # Monday 10 PM
     "AgentReminder": 8,     # Sunday 6 PM
     "Agent5B": 8,           # Friday noon, chains Agent6
     "Agent6": 8,

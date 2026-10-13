@@ -920,6 +920,39 @@ function ccsmDeleteTempDataFile_(key, props) {
   props.deleteProperty(key);
 }
 
+// ─── WEEKLY LETTER CHAIN STATE (PLAN-2026-10-13-letter-watchdog.md) ──────────
+//
+// Where the Monday letter chain (Agent1A -> 1B -> 1C) stands, in one Script
+// Property, so CCSM_LetterWatchdog.gs can tell a chain still running from one
+// Apps Script killed. A killed run (the 6-minute limit, 2026-10-12) writes no
+// AGENT_RUN_LOG row and runs no catch, so this is the only trace it leaves:
+// a 'running' mark that never moves on.
+//   { week: 'yyyy-MM-dd', step: '1A'|'1B'|'1C', state, at: ms, note }
+//   state: 'running' | 'scheduled' | 'failed' | 'done'
+var LETTER_CHAIN_STATE_KEY = 'LETTER_CHAIN_STATE';
+
+/** Records the chain's state. Never throws: the letter matters more than the mark. */
+function letterChainMark_(week, step, state, note) {
+  try {
+    PropertiesService.getScriptProperties().setProperty(LETTER_CHAIN_STATE_KEY, JSON.stringify({
+      week: String(week || ''), step: step, state: state, at: Date.now(),
+      note: String(note || '').slice(0, 300)
+    }));
+  } catch (e) {
+    Logger.log('letterChainMark_: could not record ' + step + ' ' + state + ' -- ' + e.message);
+  }
+}
+
+/** The chain's last recorded state, or null. */
+function letterChainState_() {
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(LETTER_CHAIN_STATE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 /**
  * Appends a structured row to AGENT_RUN_LOG recording the result of an agent run.
  * Every agent calls this at the very end — success, partial, or failure.

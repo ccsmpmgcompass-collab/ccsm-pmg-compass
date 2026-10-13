@@ -50,14 +50,19 @@
 function runAgent1B() {
   var status = 'SUCCESS';
   var notes  = [];
+  // The week this chain is on (PLAN-2026-10-13-letter-watchdog.md), until
+  // Agent1A's payload says it outright.
+  var week   = (letterChainState_() || {}).week || '';
 
   try {
     Logger.log('Agent1B: Starting message selection — ' + new Date().toISOString());
+    letterChainMark_(week, '1B', 'running');
 
     // Load Agent1A's output. loadTempData() already parses the JSON it
     // stored, so payload is the object saveTempData('A1A_DATA', {...}) saved.
     var payload = loadTempData('A1A_DATA');
     if (!payload) throw new Error('A1A_DATA not found in Script Properties. Did Agent1A run?');
+    week = payload.weekEnd || week;
 
     var areaCount = 0;
     var msgCount  = 0;
@@ -88,6 +93,7 @@ function runAgent1B() {
 
     saveTempData('A1B_DATA', payload);
     scheduleNext('runAgent1C', 1);
+    letterChainMark_(week, '1C', 'scheduled');
     notes.push('Agent1C scheduled in ~1 min');
     Logger.log('Agent1B: Complete — ' + notes.join(' | '));
 
@@ -95,6 +101,7 @@ function runAgent1B() {
     status = 'ERROR';
     notes.push('ERROR: ' + e.message);
     Logger.log('Agent1B FATAL: ' + e.message + '\n' + (e.stack || ''));
+    letterChainMark_(week, '1B', 'failed', e.message);
   }
 
   // logRun(agent, status, recordsProcessed, emailsSent, durationMs, notes, error)

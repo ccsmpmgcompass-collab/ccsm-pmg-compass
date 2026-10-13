@@ -34,7 +34,7 @@ const GS_FILES = [
   'CCSM_Agent6.gs', 'CCSM_AgentDuplicate.gs', 'CCSM_AgentEscalation.gs',
   'CCSM_AgentMissionReport.gs', 'CCSM_AgentQA.gs', 'CCSM_AgentReminder.gs',
   'CCSM_AgentScores.gs', 'CCSM_AgentValidation.gs', 'CCSM_SeedContent.gs',
-  'CCSM_Setup.gs',
+  'CCSM_Setup.gs', 'CCSM_LetterWatchdog.gs',
 ];
 
 // The two installable form-submit triggers. Not on CCSM_TRIGGER_SCHEDULE
@@ -72,7 +72,7 @@ const EXPECTED_TRIGGERS = [
   { fn: 'runAgentEscalation', everyDays: 1,        atHour: 7 },
   { fn: 'runAgent4',          onWeekDay: 'MONDAY', atHour: 7 },
   { fn: 'runAgentScores',     onWeekDay: 'MONDAY', atHour: 0,  nearMinute: 5 },
-  { fn: 'runAgentMissionReport', onWeekDay: 'MONDAY', atHour: 22 },
+  { fn: 'runLetterWatchdog',  onWeekDay: 'MONDAY', atHour: 23 },
 ];
 
 scope.setupAllCcsmTriggers();

@@ -116,6 +116,12 @@ function runAgent1A() {
     var weekStart = a1a_getWeekStart(weekEnd);
     Logger.log('Agent1A: Week ' + weekStart + ' to ' + weekEnd);
 
+    // The watchdog (PLAN-2026-10-13-letter-watchdog.md): this run is the
+    // chain's, and the first check comes 10 minutes from now. If Apps Script
+    // kills this run, the 'running' mark is all that is left to say so.
+    letterChainMark_(weekEnd, '1A', 'running');
+    scheduleNext('runLetterWatchdogRetry', 10);
+
     // R1 (PLAN-2026-10-10-ki-autosend.md K3, K4): read the weekly forms as they
     // stand NOW, not as Agent5A left WEEKLY_KI at noon -- that lag put the empty
     // "No recibimos su informe" box in 16-25 letters a week, 4-9 of them for
@@ -272,6 +278,7 @@ function runAgent1A() {
 
     notes.push('Analyzed ' + missionOrg.length + ' areas for week ending ' + weekEnd);
     scheduleNext('runAgent1B', 1);
+    letterChainMark_(weekEnd, '1B', 'scheduled');
     notes.push('Agent1B scheduled in ~1 min');
     Logger.log('Agent1A: Complete -- ' + notes.join(' | '));
 
@@ -279,6 +286,7 @@ function runAgent1A() {
     status = 'ERROR';
     notes.push('ERROR: ' + e.message);
     Logger.log('Agent1A FATAL: ' + e.message + '\n' + (e.stack || ''));
+    letterChainMark_(weekEnd, '1A', 'failed', e.message);
   }
 
   // logRun(agent, status, recordsProcessed, emailsSent, durationMs, notes, error)
@@ -538,11 +546,24 @@ var A1A_KI_OUTBOX_HEADER = ['Kind', 'Week_End', 'Scope', 'File_Name', 'Stamp', '
  * waits): no tab means the job is not set up, so nothing is requested and
  * Agent1C sends the letters as it always has instead of waiting for PDFs
  * that will never come.
+ *
+ * A REQUEST for this same week already there means this run is a retry
+ * (PLAN-2026-10-13-letter-watchdog.md D4): the first try asked, and the job
+ * has built the PDFs from it or is building them. That request and its PDFs
+ * are kept as they are. Clearing them would leave nobody to build new ones,
+ * because the job runs only on Monday evening (2026-10-13, by hand).
  */
 function a1a_requestKiPdfs_(weekEnd, cutoff) {
   try {
     var sheet = getSpreadsheet().getSheetByName(A1A_KI_OUTBOX_TAB);
     if (!sheet) return 'KI PDFs not requested: no ' + A1A_KI_OUTBOX_TAB + ' tab (the Monday job creates it)';
+    if (sheet.getLastRow() >= 2) {
+      var kept = null;
+      sheet.getDataRange().getValues().slice(1).forEach(function(r) {
+        if (String(r[0]) === 'REQUEST' && String(r[1]) === weekEnd) kept = String(r[4]);
+      });
+      if (kept !== null) return 'KI PDFs: kept this week\'s request (forms read at ' + kept + ') and its PDFs';
+    }
     var rows = [A1A_KI_OUTBOX_HEADER, ['REQUEST', weekEnd, '', '', cutoff, '', '']];
     sheet.clearContents();
     var range = sheet.getRange(1, 1, rows.length, A1A_KI_OUTBOX_HEADER.length);

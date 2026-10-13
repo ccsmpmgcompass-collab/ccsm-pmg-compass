@@ -36,7 +36,8 @@
  *   runAgentEscalation   Daily     7:00 AM   escalation System 1 + System 2
  *   runAgent4            Monday    7:00 AM   system health check + self-heal
  *   runAgentScores       Monday   12:05 AM   weekly area scores
- *   runAgentMissionReport Monday  10:00 PM   mission-wide numbers for AP/MP
+ *   runLetterWatchdog    Monday   11:00 PM   restarts the letter chain if it died (CCSM_LetterWatchdog.gs)
+ *   runAgentMissionReport (none)             RETIRED 2026-10-13 — the President gets the AP letter + mission KI PDF
  *   runAgent2            (none)              RETIRED 2026-10-02 — never run
  *
  * Plus TWO installable form-submit triggers, which are NOT time-based and so
@@ -215,7 +216,11 @@ var CCSM_TRIGGER_SCHEDULE = [
   { fn: 'runAgentEscalation', everyDays: 1,          hour: 7,                describe: 'Daily 7:00 AM' },
   { fn: 'runAgent4',          weekDay: 'MONDAY',     hour: 7,                describe: 'Monday 7:00 AM' },
   { fn: 'runAgentScores',     weekDay: 'MONDAY',     hour: 0,  minute: 5,    describe: 'Monday 12:05 AM' },
-  { fn: 'runAgentMissionReport', weekDay: 'MONDAY',  hour: 22,               describe: 'Monday 10:00 PM (mission-wide numbers, AP/MP)' }
+  // PLAN-2026-10-13-letter-watchdog.md: catches an Agent1A that never started.
+  // (Agent1A schedules its own first check 10 min after it starts.)
+  { fn: 'runLetterWatchdog',  weekDay: 'MONDAY',     hour: 23,               describe: 'Monday ~11:00 PM (restarts the letter chain if it died)' }
+  // runAgentMissionReport is RETIRED (2026-10-13, Zackary): the President gets
+  // the APs' mission letter and the mission KI PDF instead.
 ];
 
 /**
@@ -224,7 +229,7 @@ var CCSM_TRIGGER_SCHEDULE = [
  * never part of CCSM_TRIGGER_SCHEDULE, but deleteAllCcsmTriggers() and the
  * smoke test's inventory both need to know they are legitimate.
  */
-var CCSM_CHAINED_HANDLERS = ['runAgent1B', 'runAgent1C', 'runAgent6'];
+var CCSM_CHAINED_HANDLERS = ['runAgent1B', 'runAgent1C', 'runAgent6', 'runLetterWatchdogRetry'];
 
 /**
  * The project's two INSTALLABLE FORM-SUBMIT triggers. They are not on

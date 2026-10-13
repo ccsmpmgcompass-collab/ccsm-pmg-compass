@@ -92,8 +92,25 @@ const formats = book.sheets.KI_PDF_OUTBOX.numberFormats || {};
 assert.strictEqual(formats['2,2'], '@', 'the week end is written as text');
 assert.strictEqual(formats['2,5'], '@', 'the cutoff is written as text');
 
-// A second run replaces the request instead of stacking it.
+// A second run the same week is a retry (PLAN-2026-10-13-letter-watchdog.md
+// D4): the request, its cutoff and the PDFs the job built from it all stay,
+// because on a Tuesday retry no job is left to build new ones.
+outbox.appendRow(['PDF', weekEnd, 'MISSION', 'Indicadores_clave_mision.pdf', grid[1][4], '11', '1', 'JVBERi0=']);
 scope.runAgent1A();
-assert.strictEqual(ss.getSheetByName('KI_PDF_OUTBOX').getDataRange().getValues().length, 2);
+const kept = ss.getSheetByName('KI_PDF_OUTBOX').getDataRange().getValues();
+assert.strictEqual(kept.length, 3, 'header + the same REQUEST + its PDF row');
+assert.strictEqual(kept[1][4], grid[1][4], 'the first try\'s cutoff is kept');
+assert.strictEqual(kept[2][0], 'PDF', 'the PDF row is kept');
+const notes = ss.getSheetByName('AGENT_RUN_LOG').getDataRange().getValues().pop()[7];
+assert.ok(/kept this week's request/.test(notes), notes);
+
+// Last week's request is replaced, not stacked: a new week starts clean.
+const stale = ss.getSheetByName('KI_PDF_OUTBOX');
+stale.getRange(2, 2).setValue(prevSunday);
+stale.getRange(3, 2).setValue(prevSunday);
+scope.runAgent1A();
+const fresh = ss.getSheetByName('KI_PDF_OUTBOX').getDataRange().getValues();
+assert.strictEqual(fresh.length, 2, 'header + one new REQUEST row');
+assert.strictEqual(fresh[1][1], weekEnd);
 
 console.log('agent1a ki request OK');

@@ -2718,14 +2718,14 @@ ES: dict[str, str] = {
     "This list decides who may sign in with a personal address, who opens the "
     "leadership pages (Traslados, Editar Envíos, Mantenimiento, Centro de "
     "Acción, Sugerencias), who sets goals on Metas, and who receives the mission's "
-    "weekly letter (the President also gets the Monday mission report). Zone, "
+    "weekly letter (with the mission's key-indicator PDF attached). Zone, "
     "district and sister training leaders are not listed here: they lead from "
     "their area's mailbox, and MISSION_ORG already knows them.":
         "Esta lista decide quién puede entrar con un correo personal, quién abre "
         "las páginas de liderazgo (Traslados, Editar Envíos, Mantenimiento, "
         "Centro de Acción, Sugerencias), quién fija metas en Metas y quién recibe "
-        "la carta semanal de la misión (el Presidente recibe además el informe de "
-        "la misión del lunes). Los líderes de zona, de distrito y las hermanas líderes "
+        "la carta semanal de la misión (con el PDF de indicadores clave de la "
+        "misión adjunto). Los líderes de zona, de distrito y las hermanas líderes "
         "capacitadoras no van aquí: dirigen desde el correo de su área, y "
         "MISSION_ORG ya los conoce.",
     "The President and the assistants, each under the address he signs in "
@@ -2738,14 +2738,12 @@ ES: dict[str, str] = {
         "{names}: figura(n) aquí como asistente(s), pero MISSION_ORG ya no "
         "lo(s) ubica en el área de los asistentes. Desmarque Activo para quien "
         "haya sido relevado y agregue al nuevo asistente.",
-    "No one is listed. Until someone is, nobody receives the Monday mission "
-    "report or the mission section of the weekly letter — they never fall back "
-    "to the assistants' shared area mailbox, which gets its district's section "
-    "instead.":
-        "No hay nadie en la lista. Mientras tanto, nadie recibe el informe de la "
-        "misión del lunes ni la sección de la misión de la carta semanal: nunca "
-        "se envían al correo compartido del área de los asistentes, que recibe "
-        "la sección de su distrito.",
+    "No one is listed. Until someone is, nobody receives the mission's weekly "
+    "letter — it never falls back to the assistants' shared area mailbox, which "
+    "gets its district's section instead.":
+        "No hay nadie en la lista. Mientras tanto, nadie recibe la carta semanal "
+        "de la misión: nunca se envía al correo compartido del área de los "
+        "asistentes, que recibe la sección de su distrito.",
     "President": "Presidente",
     "Assistant": "Asistente",
     "Sign-in email": "Correo de ingreso",

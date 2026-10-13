@@ -4,6 +4,11 @@
  * PMG Compass | Chile Concepción South Mission (CCSM) — Spanish fork
  * ============================================================
  *
+ * RETIRED 2026-10-13 (PLAN-2026-10-13-letter-watchdog.md D7). It is off
+ * CCSM_TRIGGER_SCHEDULE and nothing calls it: the President now gets the APs'
+ * weekly mission letter and the mission KI PDF instead (Zackary's call after
+ * seeing it rendered). Kept until the old-builder cleanup; do not reschedule it.
+ *
  * Phase 6 of the CCSM go-live readiness program. No Provo equivalent —
  * Provo's own nightly report agent was a single-recipient, personal-name-
  * addressed report cut from this fork entirely (a different audience and

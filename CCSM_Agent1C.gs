@@ -359,8 +359,12 @@ function a1c_prevWeekEnd_(weekEnd) {
 function runAgent1C() {
   var status = 'SUCCESS';
   var notes = [];
+  // The week this chain is on (PLAN-2026-10-13-letter-watchdog.md), until
+  // Agent1B's payload says it outright.
+  var weekEnd = (letterChainState_() || {}).week || '';
   try {
     Logger.log('Agent1C: Starting email send — ' + new Date().toISOString());
+    letterChainMark_(weekEnd, '1C', 'running');
 
     // Load Agent1B's enriched output. loadTempData() already parses the JSON
     // it stored (see CCSM_Helpers.gs) — payload IS the object saveTempData
@@ -368,7 +372,7 @@ function runAgent1C() {
     var payload = loadTempData('A1B_DATA');
     if (!payload) throw new Error('A1B_DATA not found in Script Properties. Did Agent1B run?');
 
-    var weekEnd   = payload.weekEnd   || '';
+    weekEnd       = payload.weekEnd   || weekEnd;
     var weekStart = payload.weekStart || '';
     var areas     = payload.areas     || {};
     var summaries = payload.summaries || {};
@@ -388,6 +392,7 @@ function runAgent1C() {
       if (waits < A1C_KI_PDF_MAX_WAITS) {
         props.setProperty(waitKey, String(waits + 1));
         scheduleNext('runAgent1C', 2);
+        letterChainMark_(weekEnd, '1C', 'scheduled', 'waiting for the KI PDFs');
         Logger.log('Agent1C: KI PDFs not ready -- waiting (' + (waits + 1) + '/' + A1C_KI_PDF_MAX_WAITS + ')');
         logRun('Agent1C', 'WAITING', null, null, null,
                'KI PDFs for ' + weekEnd + ' not ready; retry ' + (waits + 1) + ' of ' + A1C_KI_PDF_MAX_WAITS + ' in 2 min');
@@ -435,10 +440,18 @@ function runAgent1C() {
     // CCSM_AgentEscalation.ae_relayConfigured().
     var usingRelay = a1c_relayConfigured();
 
+    // Who already has this week's letter (PLAN-2026-10-13-letter-watchdog.md
+    // D5). Empty on a first run; on a restart after Apps Script killed this
+    // run mid-loop, it is everyone the killed run reached, and they are
+    // skipped -- a restart never sends anyone the same letter twice.
+    var alreadySent = a1c_loadSent_(weekEnd);
+    var skippedSent = 0;
+
     Object.keys(peopleMap).forEach(function(email) {
       if (!email || email.indexOf('@') < 0) return;
       if (email.toLowerCase().indexOf('notreadyyet') >= 0) return;
       if (email.toLowerCase().indexOf('tbd@') >= 0) return;
+      if (alreadySent[email.toLowerCase()]) { skippedSent++; return; }
 
       // Checked per-iteration, not once up front: the quota is consumed BY
       // this loop, so a single check before it would pass and then blow
@@ -464,6 +477,8 @@ function runAgent1C() {
           kiDropped  += docs.length - got;
         }
         emailsSent++;
+        alreadySent[email.toLowerCase()] = true;
+        a1c_recordSent_(weekEnd, alreadySent);
       } catch (mailErr) {
         emailErrors++;
         Logger.log('Agent1C: Failed to send to ' + email + ' — ' + mailErr.message);
@@ -471,6 +486,7 @@ function runAgent1C() {
     });
 
     notes.push('Emails sent: ' + emailsSent + ', errors: ' + emailErrors);
+    if (skippedSent > 0) notes.push('Already sent before a restart, skipped: ' + skippedSent);
     if (kiPdfs.ready) notes.push('KI PDFs attached: ' + kiAttached);
     if (kiDropped > 0) {
       status = 'ERROR';
@@ -501,13 +517,52 @@ function runAgent1C() {
     try { clearTempData('A1A_DATA'); } catch (e) {}
     try { clearTempData('A1B_DATA'); } catch (e) {}
 
+    letterChainMark_(weekEnd, '1C', 'done', 'sent ' + emailsSent + ', errors ' + emailErrors);
     Logger.log('Agent1C: Complete — ' + notes.join(' | '));
   } catch (e) {
     status = 'ERROR';
     notes.push('ERROR: ' + e.message);
     Logger.log('Agent1C FATAL: ' + e.message + '\n' + (e.stack || ''));
+    letterChainMark_(weekEnd, '1C', 'failed', e.message);
   }
   logRun('Agent1C', status, null, null, null, notes.join(' | '));
+}
+
+// ─── WHO HAS THIS WEEK'S LETTER (PLAN-2026-10-13-letter-watchdog.md D5) ───────
+//
+// One Script Property per week, A1C_SENT_<week end>: the addresses this week's
+// letter reached, written after every send so a run killed mid-loop leaves an
+// exact record. ~45 addresses is ~2 KB, well inside a property's 9 KB. Older
+// weeks' records are dropped as soon as a new week's is started.
+
+function a1c_sentKey_(weekEnd) {
+  return 'A1C_SENT_' + weekEnd;
+}
+
+/** { email: true } for every address this week's letter already reached. */
+function a1c_loadSent_(weekEnd) {
+  var out = {};
+  try {
+    var props = PropertiesService.getScriptProperties();
+    Object.keys(props.getProperties()).forEach(function(k) {
+      if (k.indexOf('A1C_SENT_') === 0 && k !== a1c_sentKey_(weekEnd)) props.deleteProperty(k);
+    });
+    var raw = props.getProperty(a1c_sentKey_(weekEnd));
+    (raw ? JSON.parse(raw) : []).forEach(function(e) { out[e] = true; });
+  } catch (e) {
+    Logger.log('Agent1C WARNING: could not read who already has the letter -- ' + e.message);
+  }
+  return out;
+}
+
+/** Saves the record. A failure is logged, never thrown: the letters go on. */
+function a1c_recordSent_(weekEnd, sentMap) {
+  try {
+    PropertiesService.getScriptProperties().setProperty(a1c_sentKey_(weekEnd),
+      JSON.stringify(Object.keys(sentMap)));
+  } catch (e) {
+    Logger.log('Agent1C WARNING: could not record who has the letter -- ' + e.message);
+  }
 }
 
 // ─── WEEKLY KI PDFs (PLAN-2026-10-10-ki-autosend.md) ──────────────────────────
@@ -556,17 +611,18 @@ function a1c_loadKiPdfs_(weekEnd) {
 }
 
 /**
- * The KI PDFs one letter carries (K1): an AP gets the mission's only -- it
- * already holds every zone's pages (Zackary, 2026-10-11: "they should just get
- * the whole mission report"); a ZL or STL gets their own zone's. Nobody else gets any -- not DLs,
- * not companionships, not the President (not asked for). The AP area's shared
- * mailbox is a DL by now (a1c_buildPeopleMap) and gets none.
+ * The KI PDFs one letter carries (K1): the President and an AP get the
+ * mission's only -- it already holds every zone's pages (Zackary, 2026-10-11:
+ * "they should just get the whole mission report"; the President since
+ * 2026-10-13, when his old Monday mission report was retired); a ZL or STL
+ * gets their own zone's. Nobody else gets any -- not DLs, not companionships.
+ * The AP area's shared mailbox is a DL by now (a1c_buildPeopleMap) and gets none.
  */
 function a1c_kiDocsFor_(person, kiPdfs) {
   if (!kiPdfs || !kiPdfs.ready) return [];
   var wanted = {};
   (person.roles || []).forEach(function(role) {
-    if (role.type === 'AP') {
+    if (role.type === 'AP' || role.type === 'MP') {
       wanted.MISSION = true;
     } else if (role.type === 'ZL' || role.type === 'STL') {
       wanted[role.zone] = true;

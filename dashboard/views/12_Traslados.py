@@ -616,8 +616,8 @@ def _render_leadership_tab() -> None:
         info=t("This list decides who may sign in with a personal address, who "
                "opens the leadership pages (Traslados, Editar Envíos, "
                "Mantenimiento, Centro de Acción, Sugerencias), who sets goals on "
-               "Metas, and who receives the mission's weekly letter (the "
-               "President also gets the Monday mission report). Zone, district and sister "
+               "Metas, and who receives the mission's weekly letter (with the "
+               "mission's key-indicator PDF attached). Zone, district and sister "
                "training leaders are not listed here: they lead from their "
                "area's mailbox, and MISSION_ORG already knows them."),
     )
@@ -637,8 +637,7 @@ def _render_leadership_tab() -> None:
                      names=", ".join(moved)))
     if current.empty:
         st.warning(t("No one is listed. Until someone is, nobody receives the "
-                     "Monday mission report or the mission section of the weekly "
-                     "letter — they never fall back to the assistants' shared "
+                     "mission's weekly letter — it never falls back to the assistants' shared "
                      "area mailbox, which gets its district's section instead."))
 
     role_label = {"president": t("President"), "assistant": t("Assistant")}

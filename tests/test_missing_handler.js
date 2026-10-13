@@ -30,7 +30,7 @@ const ALL_GS = [
   'CCSM_Agent6.gs', 'CCSM_AgentDuplicate.gs', 'CCSM_AgentEscalation.gs',
   'CCSM_AgentMissionReport.gs', 'CCSM_AgentQA.gs', 'CCSM_AgentReminder.gs',
   'CCSM_AgentScores.gs', 'CCSM_AgentValidation.gs', 'CCSM_SeedContent.gs',
-  'CCSM_Setup.gs',
+  'CCSM_Setup.gs', 'CCSM_LetterWatchdog.gs',
 ];
 
 function runSmokeTest(gsFiles) {
