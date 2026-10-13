@@ -1,7 +1,8 @@
 """When a report is about — and how honestly it can be compared to before.
 
-Six periods, in the order the picker offers them (decision 5), defaulting to
-"Este traslado". Each resolves to a day window AND the list of complete
+Seven periods, in the order the picker offers them (decision 5), defaulting to
+"Este traslado" on the screen and to "Mes pasado" in the council packet
+(decision 61). Each resolves to a day window AND the list of complete
 week-ending Sundays inside it, because this report reads two sources with two
 rhythms: DAILY_LOG is a day at a time, WEEKLY_KI is a Mon–Sun week keyed by its
 closing Sunday.
@@ -12,7 +13,7 @@ week's totals across a month boundary invents activity that was never reported
 that way, and counting a week by its Monday would file the week of 31 August –
 6 September under August, where five of its seven days did not happen. The rule
 costs nothing on a transfer cycle, which starts on a Monday and ends on a
-Sunday, and only shows itself on "Mes calendario" and "Año".
+Sunday, and only shows itself on "Mes pasado", "Mes calendario" and "Año".
 
 A week is only ever counted once it has FINISHED — `last_complete_week()`, which
 is `area_helpers.latest_due_sunday` — so an in-progress week never drags a
@@ -50,18 +51,20 @@ from typing import Mapping
 from app.config import es_display
 from app.utils.area_helpers import latest_due_sunday
 
-# ── The six periods ───────────────────────────────────────────────────────────
+# ── The seven periods ─────────────────────────────────────────────────────────
 
 LAST_WEEK = "last_week"
 THIS_TRANSFER = "this_transfer"
 LAST_TRANSFER = "last_transfer"
 LAST_6_WEEKS = "last_6_weeks"
+LAST_MONTH = "last_month"
 CALENDAR_MONTH = "calendar_month"
 YEAR = "year"
 
-#: Display order, exactly as decision 5 lists them.
+#: Display order, as decision 5 lists them, with "Mes pasado" (decision 61)
+#: beside the month that is still running.
 PERIOD_KEYS = (LAST_WEEK, THIS_TRANSFER, LAST_TRANSFER,
-               LAST_6_WEEKS, CALENDAR_MONTH, YEAR)
+               LAST_6_WEEKS, LAST_MONTH, CALENDAR_MONTH, YEAR)
 
 #: Spanish only, screen and packet (decision 3). The labels live here rather
 #: than in either renderer so the PDF and the page cannot drift apart.
@@ -70,6 +73,7 @@ PERIOD_LABELS = {
     THIS_TRANSFER: "Este traslado",
     LAST_TRANSFER: "Traslado pasado",
     LAST_6_WEEKS: "Últimas 6 semanas",
+    LAST_MONTH: "Mes pasado",
     CALENDAR_MONTH: "Mes calendario",
     YEAR: "Año",
 }
@@ -83,6 +87,7 @@ WITHIN_LABELS = {
     THIS_TRANSFER: "En este traslado",
     LAST_TRANSFER: "En el traslado pasado",
     LAST_6_WEEKS: "En las últimas 6 semanas",
+    LAST_MONTH: "En el mes pasado",
     CALENDAR_MONTH: "En este mes",
     YEAR: "En lo que va del año",
 }
@@ -91,6 +96,12 @@ WITHIN_LABELS = {
 #: reporting rhythm and a month is an accident of the calendar. Same reasoning
 #: that put the transfer first in `breakdowns_engine._KPI_PERIODS`.
 DEFAULT_PERIOD = THIS_TRANSFER
+
+#: The council packet's own default (decision 61): the council meets in the
+#: first week of the month and reviews the month just closed. The screen keeps
+#: DEFAULT_PERIOD, because a weekly user should not land on a month that is
+#: already two to six weeks old (PLAN-2026-10-13 §1.1, D1).
+PACKET_PERIOD = LAST_MONTH
 
 #: How many weeks "Últimas 6 semanas" holds. Six because that is a transfer
 #: cycle's length, so the rolling window and the planning unit are the same
@@ -189,6 +200,11 @@ def _shift_year(day: date, years: int) -> date:
 
 def _month_end(day: date) -> date:
     return day.replace(day=calendar.monthrange(day.year, day.month)[1])
+
+
+def _month_label(day: date) -> str:
+    """"septiembre 2026" — a closed month names itself, as a transfer does."""
+    return f"{es_display.MONTHS[day.month - 1]} {day.year}"
 
 
 # ── Transfer cycles ───────────────────────────────────────────────────────────
@@ -399,6 +415,14 @@ def resolve(key: str, today: date,
         start = end - timedelta(weeks=ROLLING_WEEKS - 1, days=6)
         return _period(key, PERIOD_LABELS[key], start, end, today)
 
+    if key == LAST_MONTH:
+        # The calendar month just closed, whole. Its weeks are the complete
+        # weeks that END inside it (the rule at the top of this module), so
+        # September 2026 counts the weeks ending 6–27 September: 31 August –
+        # 27 September of form weeks against 1–30 September of days.
+        end = today.replace(day=1) - timedelta(days=1)
+        return _period(key, _month_label(end), end.replace(day=1), end, today)
+
     if key == CALENDAR_MONTH:
         start = today.replace(day=1)
         return _period(key, PERIOD_LABELS[key], start, today, today,
@@ -427,7 +451,8 @@ def transfer_period(cycles: list[dict], today: date,
 
 def comparison_for(period: Period, today: date,
                    cycles: list[dict] | None = None,
-                   against: str = COMPARE_PRIOR) -> Comparison:
+                   against: str = COMPARE_PRIOR,
+                   records_from: date | None = None) -> Comparison:
     """The window `period` is honestly comparable to.
 
     "Honestly" is the whole job. Three days into September, holding 1–3
@@ -446,6 +471,13 @@ def comparison_for(period: Period, today: date,
     The caller sees `week_coverage` report zero weeks reported and says "sin
     comparación", which is the truth; clamping the window here would instead
     quietly shorten it and compare two different spans.
+
+    The one exception is "Mes pasado", whose twin is a whole closed month.
+    ``records_from`` is the first week the weekly form really covered
+    (`ReportData.weekly_records_from`). A month that begins before it is the
+    form's launch month, which read 42% in August 2026 only because the form
+    started on the 16th; holding September against it would print a rise that
+    is the launch and not the work, so that month is NO_COMPARISON.
     """
     cycles = cycles or []
 
@@ -497,6 +529,19 @@ def comparison_for(period: Period, today: date,
                     prev["start"], prev_weeks[-1], today,
                     transfer=prev.get("number")),
             PREVIOUS if whole else SAME_WEEKS_ELAPSED)
+
+    if period.key == LAST_MONTH:
+        end = period.start - timedelta(days=1)
+        prev = _period(period.key, _month_label(end), end.replace(day=1), end,
+                       today)
+        if records_from is not None and (
+                not prev.weeks or prev.weeks[0] < records_from):
+            return Comparison(
+                None, NO_COMPARISON,
+                f"El formulario semanal empezó la semana que termina el "
+                f"{es_display.day_month(records_from, with_year=True)}, así "
+                f"que {prev.label} no es un mes completo de informes.")
+        return Comparison(prev, PREVIOUS)
 
     if period.key == CALENDAR_MONTH:
         # Same elapsed days of last month. A month shorter than the elapsed

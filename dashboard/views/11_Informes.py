@@ -116,7 +116,8 @@ if len(_compare_keys) > 1:
         key="rep_compare_section", per_row=2,
     )
 _comparison = P.comparison_for(_period, _data.today, _data.cycles,
-                               against=_against)
+                               against=_against,
+                               records_from=_data.weekly_records_from)
 
 _model = M.build_report(_scope, _period, _comparison, _data)
 

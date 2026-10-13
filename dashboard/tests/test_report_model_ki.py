@@ -386,3 +386,25 @@ def test_the_preceding_weeks_pill_produces_a_real_change():
     assert m.ki(NEW).before_per_reporting_area_week == pytest.approx(10)
     assert m.ki(NEW).grade.change_pct == pytest.approx(60)
     assert m.comparison_coverage.label == "2 de 2 semanas"
+
+
+# ── Where the weekly records start ("Mes pasado", PLAN-2026-10-13 1.1) ───────
+
+def test_the_records_start_at_the_first_week_a_quarter_of_areas_filed():
+    """A single stray row (here A1 alone on 6 September, as CCSM's one area
+    on 2026-08-09) is not the form starting; the first week a quarter of the
+    mission filed is."""
+    stray = pd.DataFrame([{"_week": "2026-09-06", "_area": "A1", NEW: 1,
+                           LESSONS: 0}])
+    d = _data(weekly_ki=pd.concat([stray, WEEKLY_KI], ignore_index=True))
+    assert d.weekly_records_from == W1
+    assert _data(weekly_ki=pd.DataFrame()).weekly_records_from is None
+
+
+def test_build_all_refuses_a_month_before_the_records():
+    """On 21 September "Mes pasado" is August, whose twin is July: before the
+    records, so every model carries `sin comparación` and its reason."""
+    models = M.build_all(P.LAST_MONTH, data=_data())
+    assert models and models[0].period.label == "agosto 2026"
+    assert models[0].comparison.kind == P.NO_COMPARISON
+    assert "julio 2026" in models[0].comparison.reason

@@ -926,6 +926,28 @@ class ReportData:
                                                            self.mission_name)
         return self._flags["mission_scope"]
 
+    @property
+    def weekly_records_from(self) -> date | None:
+        """The first week the weekly form really covered the mission, or None.
+
+        "Really" is `periods.THIN_REPORTING_RATE` of the mission's areas, so
+        the single stray row dated 2026-08-09 does not count as the start and
+        the week ending 2026-08-16 (31 of 45 areas) does. "Mes pasado" uses it
+        to refuse a comparison with the form's launch month.
+        """
+        if "records_from" not in self._flags:
+            first = None
+            areas = self.mission.area_count
+            df = self.weekly_ki
+            if areas and df is not None and not df.empty:
+                mine = df[df["_area"].isin(set(self.mission.areas))]
+                counts = mine.groupby("_week")["_area"].nunique()
+                weeks = [P._as_date(w) for w, n in counts.items()
+                         if n >= P.THIN_REPORTING_RATE * areas]
+                first = min((w for w in weeks if w is not None), default=None)
+            self._flags["records_from"] = first
+        return self._flags["records_from"]
+
     def lead_week_goal(self, area: str, week: str) -> dict | None:
         """Leadership's goal for one area for one week, or None.
 
@@ -2384,6 +2406,7 @@ def build_all(period_key: str = P.DEFAULT_PERIOD,
     if period is None:
         return []
     comparison = P.comparison_for(period, data.today, data.cycles,
-                                  against=against)
+                                  against=against,
+                                  records_from=data.weekly_records_from)
     return [build_report(s, period, comparison, data)
             for s in S.walk(data.roster, data.mission_name)]

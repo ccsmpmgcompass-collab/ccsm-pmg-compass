@@ -85,7 +85,7 @@ def test_transfer_periods_disappear_without_a_schedule():
     """A label is simply absent when TRANSFER_SCHEDULE cannot supply it — the
     picker hides the option rather than offering an empty page."""
     assert P.available(MONDAY, []) == (
-        P.LAST_WEEK, P.LAST_6_WEEKS, P.CALENDAR_MONTH, P.YEAR)
+        P.LAST_WEEK, P.LAST_6_WEEKS, P.LAST_MONTH, P.CALENDAR_MONTH, P.YEAR)
 
 
 def test_last_week_is_the_last_complete_week():
@@ -256,6 +256,106 @@ def test_a_leap_day_clamps_when_the_year_shifts_back():
     p = P.resolve(P.YEAR, date(2028, 2, 29), CYCLES)
     comp = P.comparison_for(p, date(2028, 2, 29), CYCLES)
     assert comp.period.end == date(2027, 2, 28)
+
+
+# ── "Mes pasado" (decision 61) ───────────────────────────────────────────────
+
+def test_the_packet_defaults_to_last_month_and_the_screen_does_not():
+    """Decision 61 and D1: the council reviews the month just closed; a weekly
+    user of the screen still lands on the transfer in progress."""
+    assert P.PACKET_PERIOD == P.LAST_MONTH
+    assert P.DEFAULT_PERIOD == P.THIS_TRANSFER
+
+
+def test_last_month_is_the_closed_month_named_by_itself():
+    """September 2026, as Phase 0.2 measured it: the weeks ending 6–27
+    September, i.e. 31 August – 27 September of form weeks."""
+    p = P.resolve(P.LAST_MONTH, date(2026, 10, 13), CYCLES)
+    assert (p.start, p.end, p.full_end) == (
+        date(2026, 9, 1), date(2026, 9, 30), date(2026, 9, 30))
+    assert p.weeks == (date(2026, 9, 6), date(2026, 9, 13),
+                       date(2026, 9, 20), date(2026, 9, 27))
+    assert p.label == "septiembre 2026"
+    assert p.days == 30
+    assert not p.in_progress
+    assert p.progress_label == "4 de 4 semanas completas"
+    assert P.PERIOD_LABELS[P.LAST_MONTH] == "Mes pasado"
+    assert P.WITHIN_LABELS[P.LAST_MONTH] == "En el mes pasado"
+
+
+def test_a_month_starting_on_sunday_keeps_that_sunday_week():
+    """1 November 2026 is a Sunday, so the week of 26 October – 1 November is
+    November's: five of its seven days are October's, but its report closes in
+    November, and a week is filed under its closing Sunday."""
+    p = P.resolve(P.LAST_MONTH, date(2026, 12, 10), CYCLES)
+    assert p.weeks == (date(2026, 11, 1), date(2026, 11, 8), date(2026, 11, 15),
+                       date(2026, 11, 22), date(2026, 11, 29))
+
+
+def test_february_closes_on_its_own_last_day():
+    """February 2027 ends on Sunday the 28th. Built on Monday 1 March, that
+    week is already due and counts."""
+    p = P.resolve(P.LAST_MONTH, date(2027, 3, 1), CYCLES)
+    assert (p.start, p.end) == (date(2027, 2, 1), date(2027, 2, 28))
+    assert p.weeks[-1] == date(2027, 2, 28)
+    assert len(p.weeks) == 4
+    assert p.label == "febrero 2027"
+
+
+def test_january_reaches_back_across_the_year():
+    p = P.resolve(P.LAST_MONTH, date(2027, 1, 5), CYCLES)
+    assert (p.start, p.end, p.label) == (
+        date(2026, 12, 1), date(2026, 12, 31), "diciembre 2026")
+    comp = P.comparison_for(
+        P.resolve(P.LAST_MONTH, date(2027, 2, 3), CYCLES), date(2027, 2, 3),
+        CYCLES)
+    assert comp.kind == P.PREVIOUS
+    assert (comp.period.start, comp.period.end, comp.period.label) == (
+        date(2026, 12, 1), date(2026, 12, 31), "diciembre 2026")
+
+
+def test_a_month_holding_a_transfer_day_is_still_one_month():
+    """October 2026 holds 2026-7's first day. The month does not split at it:
+    the boundary is a rule on the axis (decision 9), not a new period."""
+    p = P.resolve(P.LAST_MONTH, date(2026, 11, 2), CYCLES)
+    assert p.weeks == (date(2026, 10, 4), date(2026, 10, 11),
+                       date(2026, 10, 18), date(2026, 10, 25))
+    assert p.transfer is None
+    assert P.transfer_boundaries(CYCLES, p.start, p.end) == (
+        (date(2026, 10, 19), "2026-7"),)
+
+
+def test_last_month_compares_against_the_whole_month_before():
+    p = P.resolve(P.LAST_MONTH, date(2026, 11, 2), CYCLES)
+    comp = P.comparison_for(p, date(2026, 11, 2), CYCLES,
+                            records_from=date(2026, 8, 16))
+    assert comp.kind == P.PREVIOUS
+    assert comp.period.key == P.LAST_MONTH
+    assert comp.period.label == "septiembre 2026"
+    assert len(comp.period.weeks) == 4
+
+
+def test_the_forms_launch_month_is_no_comparison():
+    """August 2026 read 42% only because the weekly form began on the week
+    ending 16 August. September against it would print the launch as a rise,
+    so it is `sin comparación`, with the reason."""
+    today = date(2026, 10, 13)
+    p = P.resolve(P.LAST_MONTH, today, CYCLES)
+    comp = P.comparison_for(p, today, CYCLES, records_from=date(2026, 8, 16))
+    assert not comp
+    assert comp.kind == P.NO_COMPARISON
+    assert "16 de ago de 2026" in comp.reason
+    assert "agosto 2026" in comp.reason
+
+
+def test_without_a_records_start_the_month_before_is_returned():
+    """The pure rule elsewhere (a twin before the records is still returned and
+    the caller reports its coverage) holds when nobody says where they start."""
+    today = date(2026, 10, 13)
+    comp = P.comparison_for(P.resolve(P.LAST_MONTH, today, CYCLES), today,
+                            CYCLES)
+    assert comp.kind == P.PREVIOUS
+    assert comp.period.start == date(2026, 8, 1)
 
 
 # ── The second pill: the weeks immediately before ────────────────────────────
