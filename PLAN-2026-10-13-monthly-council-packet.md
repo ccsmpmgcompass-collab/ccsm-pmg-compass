@@ -684,3 +684,71 @@ June): **Zackary does not know.** So the packet must NOT name a cause in 3.1.
 It states the measured change and its date (June 2026) only.
 
 **Next: Phase 1** (new chat), starting at 1.1.
+
+### 2026-10-13 — Phase 1 built, verified and pushed
+
+One commit per step: `07c0e19` 1.1 · `888408c` 1.2 · `7603722` 1.3 ·
+`49a0408` 1.4 · `3baa6c7` 1.5 · `05c9ba3` 1.6 · `cf760e0` 1.7 (fixes found by
+reading the live pages). **Suite: 1 failed / 1996 passed / 1 skipped**, the
+same single date-sensitive failure as the baseline (+39 new tests).
+
+**What exists now:**
+- **1.1** `periods.LAST_MONTH` ("Mes pasado", label = the month's name, e.g.
+  "septiembre 2026"), between *Últimas 6 semanas* and *Mes calendario*.
+  `P.PACKET_PERIOD = LAST_MONTH`; `P.DEFAULT_PERIOD` stays `THIS_TRANSFER`.
+  `comparison_for(..., records_from=)` makes the twin month
+  `NO_COMPARISON` when it starts before the form really began.
+  `ReportData.weekly_records_from` = the first week ≥ 25% of the mission's
+  areas filed (live: **2026-08-16**). So September prints *"Sin comparación:
+  El formulario semanal empezó la semana que termina el 16 de ago de 2026,
+  así que agosto 2026 no es un mes completo de informes."* October will
+  compare cleanly with September.
+- **1.2** No code needed in `period_baptisms`; pinned by tests (September
+  answers 29). The data note says weeks are not days, for *Mes pasado* only.
+- **1.3** Decision 59/66 in `model._ki_rows`. New field
+  `MetricRow.lead_area_weeks_possible`. `LEAD_MIN_SHARE` (0,5) is now a
+  share of the POSSIBLE area-weeks. **Live check: September grades 136 of
+  180 area-weeks and every cell matches Phase 0.3's table** (mission NP 61,
+  LcM 52, Reunión 57, 1ª Sem 63, Fecha 74, Conversos 62).
+  **One rule the plan did not state, decided in the build:** a unit that filed
+  nothing at all keeps its goal and is NOT graded. Its rows read "sin
+  informes" (not seven red zeros, and not "sin meta"). The reporting KPI
+  carries its 0%.
+- **1.4** `ReportModel.reporting` (`model.Reporting`: reported, possible,
+  target 0,95, trend, trend_unit, owners) and `model.reporting_status` (D2).
+  The owners are `scope.zone_leader_names` (the companions of `Is_ZL` areas,
+  read like `packet.leadership`). `ChildRow.owners` too.
+  `PP.reporting_line` / `packet.reporting_headline` draw it above the tablero
+  on the mission and zone pages. The mission's "Quién informó" names each
+  zone's owners and colours on 95/85. The trend's weeks before the form are
+  gaps. Live September: mission 72% (130/180), Angol 64%, LAN 69%,
+  San Pedro 70%, Temuco Ñielol 83%, all red.
+- **1.5** The decision-44 sentences are gone from both renderers (a test
+  guards it). With partial goals the tablero's REAL follows the graded
+  area-weeks, the Meta head reads "136 de 180 sem.-área", and the note says
+  so. The screen shows the reporting line above the seven cards.
+  `summary.where_we_are` opens with reporting.
+- **1.6** The screen has the *Mes pasado* tab and a primary button
+  "Paquete del consejo — septiembre 2026" that always builds `LAST_MONTH`.
+  A second button "Paquete · {período}" builds the selected tab and is hidden
+  on *Mes pasado*. `packet.build()` with no period builds `PACKET_PERIOD`;
+  `packet.filename_for(key, today)` is new.
+- **1.7** Live builds (data pickled 2026-10-13): **Mes pasado (September) =
+  50 pages, Este traslado (2026-6) = 49 pages** (48 before Phase 1).
+  Read: mission p.4, Angol p.12, an area page (p.36), *Cómo leer*, the data
+  note. Screen run headless (AppTest) on both tabs, with no exception.
+
+**Two things for Zackary to know (not blocking):**
+1. **Los Ángeles Norte's zone section went from 2 pages to 3** in both
+   packets. The headline row (25 pt) leaves its first page 23 pt short for
+   the 140 pt ladder block, which cannot split. Step 2.1 rebuilds exactly that
+   tablero area (the *Termina en / Falta* columns and their note leave it), so
+   it was left rather than squeezed.
+2. The *Mes pasado* packet still prints the transfer forecast columns
+   (*Termina en / Falta*) beside September's figures. They are about 2026-6,
+   in progress. That is step 2.1's job.
+
+**Next: Phase 2** (new chat), starting at **2.0** (the 6-month pipeline
+refit, committed on its own). Phases 1–2 must be live before 2026-11-02.
+**Zackary must Reboot the deployed app** after this push
+(`dashboard/DEPLOYING.md`).
