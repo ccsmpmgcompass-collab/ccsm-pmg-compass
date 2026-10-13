@@ -444,3 +444,62 @@ def test_build_all_refuses_a_month_before_the_records():
     assert models and models[0].period.label == "agosto 2026"
     assert models[0].comparison.kind == P.NO_COMPARISON
     assert "julio 2026" in models[0].comparison.reason
+
+
+# ── Reporting as a headline KPI (decision 60, D2, decision 67) ──────────────
+
+def test_reporting_is_the_coverage_rate_against_95(data, period):
+    rep = _report(data, period).reporting
+    assert (rep.reported, rep.possible) == (5, 10)
+    assert rep.rate == pytest.approx(0.5)
+    assert rep.target == 0.95
+    assert rep.status == "bad"
+
+
+@pytest.mark.parametrize("rate, status", [
+    (0.95, "good"), (1.0, "good"), (0.94, "warn"), (0.85, "warn"),
+    (0.849, "bad"), (None, None)])
+def test_reporting_bands_are_95_and_85(rate, status):
+    assert M.reporting_status(rate) == status
+
+
+def test_the_reporting_trend_is_eight_weeks_with_no_reading_before_the_form(
+        data, period):
+    """Decision 67. The form's first week here is 13 September, so the six
+    weeks before it are gaps, not zeros; the last two are 3 and 2 of 5."""
+    rep = _report(data, period).reporting
+    assert rep.trend_unit == "semanas"
+    assert len(rep.trend) == 8
+    assert [v for _, v in rep.trend[:6]] == [None] * 6
+    assert [v for _, v in rep.trend[6:]] == [pytest.approx(0.6),
+                                              pytest.approx(0.4)]
+    assert rep.trend[-1][0] == "20 de sep"
+
+
+def test_six_closed_months_on_record_switch_the_trend_to_months():
+    """Once the form has six whole months of its own (decision 67), the trend
+    is those months' rates, oldest first."""
+    weeks = P.weeks_ending_in(date(2026, 3, 2), date(2026, 9, 30))
+    rows = pd.DataFrame([{"_week": w.isoformat(), "_area": a, NEW: 1,
+                          LESSONS: 0}
+                         for w in weeks for a in ("A1", "A2", "A3", "B1")])
+    d = _data(weekly_ki=rows, today=date(2026, 10, 5))
+    month = P.resolve(P.LAST_MONTH, d.today, d.cycles)
+    rep = M.build_report(d.mission, month, P.Comparison(None, P.NO_COMPARISON),
+                         d).reporting
+    assert rep.trend_unit == "meses"
+    assert [label for label, _ in rep.trend] == ["abr", "may", "jun", "jul",
+                                                  "ago", "sep"]
+    assert all(v == pytest.approx(0.8) for _, v in rep.trend)
+
+
+def test_a_zone_s_reporting_is_owned_by_its_zone_leaders():
+    roster = ROSTER.assign(Is_ZL=["TRUE", "", "", "", "TRUE"])
+    d = _data(roster=roster)
+    per = P.resolve(P.THIS_TRANSFER, TODAY, d.cycles)
+    norte = _report(d, per, S.ZONE, zone="Norte")
+    assert norte.reporting.owners == ("Elder Uno", "Elder Dos")
+    assert _report(d, per).reporting.owners == ()
+    mission = _report(d, per)
+    owners = {c.name: c.owners for c in mission.children}
+    assert owners == {"Norte": ("Elder Uno", "Elder Dos"), "Sur": ()}

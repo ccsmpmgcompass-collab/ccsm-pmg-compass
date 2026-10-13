@@ -149,6 +149,25 @@ def companion_names(row) -> tuple[str, ...]:
     return tuple(names)
 
 
+def zone_leader_names(df: pd.DataFrame, zone: str) -> tuple[str, ...]:
+    """The zone leaders of `zone`: every companion of an area flagged Is_ZL.
+
+    The owners of the zone's reporting rate (decision 60). Read the same way
+    `packet.leadership` counts them, so the names and the count of copies the
+    print guide hands out cannot disagree.
+    """
+    roster = _clean(df)
+    if roster.empty or "Is_ZL" not in roster.columns:
+        return ()
+    flagged = roster[(roster["Zone"] == zone)
+                     & (roster["Is_ZL"].astype(str).str.strip().str.upper()
+                        == "TRUE")]
+    names: list[str] = []
+    for _, row in flagged.sort_values("Area_Name").iterrows():
+        names.extend(n for n in companion_names(row) if n not in names)
+    return tuple(names)
+
+
 # ── Building scopes ───────────────────────────────────────────────────────────
 #
 # Names sort with plain `sorted()`, which is what the scope selectors already

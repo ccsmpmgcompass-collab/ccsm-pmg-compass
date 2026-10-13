@@ -149,6 +149,55 @@ class NightlyCoverage:
         return f"{self.days_reported} de {self.days_possible} días-área"
 
 
+#: Decision 60 and D2: reporting is a headline KPI with a target. Green at
+#: 95% of the weekly reports possible, amber from 85%, red below.
+REPORTING_TARGET = 0.95
+REPORTING_WARN = 0.85
+#: Decision 67: the trend is the last eight complete weeks until the form has
+#: six closed months of its own (about February 2027), then six months.
+REPORTING_TREND_WEEKS = 8
+REPORTING_TREND_MONTHS = 6
+
+
+def reporting_status(rate: float | None) -> str | None:
+    """D2's bands, in the good / warn / bad vocabulary every status speaks."""
+    if rate is None:
+        return None
+    if rate >= REPORTING_TARGET:
+        return "good"
+    return "warn" if rate >= REPORTING_WARN else "bad"
+
+
+@dataclass(frozen=True)
+class Reporting:
+    """The weekly reporting rate as a KPI (decision 60): the rate, its target,
+    its trend and who owns it.
+
+    The rate is `Coverage.reporting_rate` — weekly reports filed over reports
+    possible in the period's complete weeks — so the headline and the
+    "Quién informó" list can never disagree. ``trend`` is `(label, rate)`
+    oldest first; a rate is None for a week before the weekly form began,
+    which the spark draws as a gap rather than as a collapse. ``owners`` are
+    the zone leaders' names on a zone; the mission's owners are every zone's,
+    named in its zones list.
+    """
+
+    reported: int = 0
+    possible: int = 0
+    trend: tuple = ()
+    trend_unit: str = "semanas"
+    owners: tuple[str, ...] = ()
+    target: float = REPORTING_TARGET
+
+    @property
+    def rate(self) -> float | None:
+        return self.reported / self.possible if self.possible else None
+
+    @property
+    def status(self) -> str | None:
+        return reporting_status(self.rate)
+
+
 # ── One metric ────────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -559,6 +608,8 @@ class ChildRow:
     trend: float | None = None
     coverage: P.Coverage = None
     areas_silent: tuple[str, ...] = ()
+    #: Who owns this unit's reporting rate — a zone's leaders (decision 60).
+    owners: tuple[str, ...] = ()
 
     @property
     def name(self) -> str:
@@ -584,6 +635,8 @@ class ReportModel:
     comparison_coverage: P.Coverage | None = None
     nightly_coverage: NightlyCoverage | None = None
     comparison_nightly_coverage: NightlyCoverage | None = None
+    #: The same coverage as a headline KPI, with target, trend and owners.
+    reporting: Reporting = field(default_factory=Reporting)
 
     #: Roster areas that filed a weekly form in the period, and those that did
     #: not. The silent list is named, at every level, including the mission
@@ -1210,6 +1263,62 @@ def _reported_by_week(rows: pd.DataFrame) -> dict:
     return rows.groupby("_week")["_area"].nunique().to_dict()
 
 
+def _reporting(data: ReportData, scope: S.Scope, period: P.Period,
+               coverage: P.Coverage) -> Reporting:
+    """Decision 60's KPI for one unit: the period's rate, its trend, owners.
+
+    The trend ends at the period's last complete week, so a September packet
+    shows the eight weeks to 27 September whatever day it is built. Weeks
+    before `ReportData.weekly_records_from` are None, not 0%: before the form
+    existed nobody could have filed it (decision 67).
+    """
+    from app.config import es_display
+    end = period.weeks[-1] if period.weeks else P.last_complete_week(data.today)
+    start = data.weekly_records_from
+    areas = scope.area_count
+    df = data.weekly_ki
+    counts: dict = {}
+    if df is not None and not df.empty and areas:
+        mine = df[df["_area"].isin(set(scope.areas))]
+        for raw, n in _reported_by_week(mine).items():
+            day = P._as_date(raw)
+            if day is not None:
+                counts[day] = int(n)
+
+    # Six closed months on record switch the trend from weeks to months: a
+    # month is on record when every week ending in it is complete by `end`
+    # and none is before the form began.
+    months = []
+    first = end.replace(day=1)
+    while start is not None and len(months) < REPORTING_TREND_MONTHS:
+        weeks = P.weeks_ending_in(first, P._month_end(first))
+        if weeks and weeks[0] < start:
+            break
+        if weeks and weeks[-1] <= end:
+            months.append((first, weeks))
+        first = (first - timedelta(days=1)).replace(day=1)
+    if len(months) >= REPORTING_TREND_MONTHS and areas:
+        trend = tuple(
+            (es_display.MONTHS_ABBR[m.month - 1],
+             sum(counts.get(w, 0) for w in weeks) / (len(weeks) * areas))
+            for m, weeks in reversed(months))
+        unit = "meses"
+    else:
+        weeks = [end - timedelta(weeks=i)
+                 for i in range(REPORTING_TREND_WEEKS - 1, -1, -1)]
+        trend = tuple(
+            (es_display.day_month(w),
+             None if (start is None or w < start or not areas)
+             else counts.get(w, 0) / areas)
+            for w in weeks)
+        unit = "semanas"
+    owners = (S.zone_leader_names(data.roster, scope.name)
+              if scope.level == S.ZONE else ())
+    return Reporting(reported=coverage.area_weeks_reported,
+                     possible=coverage.area_weeks_expected,
+                     trend=trend, trend_unit=unit, owners=owners)
+
+
 def _nightly_coverage(data: ReportData, scope: S.Scope,
                       period: P.Period) -> NightlyCoverage:
     """Area-days filed against area-days possible over the period's own days.
@@ -1730,6 +1839,8 @@ def _rank_scopes(data: ReportData, scopes: list, period: P.Period,
             coverage=P.week_coverage(period, _reported_by_week(child_rows),
                                      child.area_count),
             areas_silent=tuple(sorted(set(child.areas) - reported)),
+            owners=(S.zone_leader_names(data.roster, child.name)
+                    if child.level == S.ZONE else ()),
         ))
     out.sort(key=lambda c: (c.index.value is None,
                             c.index.value if c.index.value is not None else 0,
@@ -2375,6 +2486,7 @@ def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
         today=data.today,
         coverage=coverage,
         comparison_coverage=comparison_coverage,
+        reporting=_reporting(data, scope, period, coverage),
         nightly_coverage=_nightly_coverage(data, scope, period),
         comparison_nightly_coverage=(
             _nightly_coverage(data, scope, comparison.period)

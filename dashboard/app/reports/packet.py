@@ -42,7 +42,7 @@ from app.reports import packet_parts as PP
 from app.reports import periods as P
 from app.reports import scope as S
 from app.reports.model import (CHRONIC_BELOW, EFFORT_SCORE, INDEX_WEIGHTS,
-                               UNCOLOURED_KI)
+                               UNCOLOURED_KI, reporting_status)
 
 #: How the packet is ordered and what each block of pages is for. The keys are
 #: stable; the titles and audiences are what the print guide prints.
@@ -1022,7 +1022,10 @@ def _comparison_note(model) -> str:
     """
     comparison = model.comparison
     if comparison is None or comparison.period is None:
-        reason = getattr(comparison, "reason", "") if comparison else ""
+        # `Comparison` is falsy exactly when it has no window, so test for
+        # None: `if comparison` would drop the reason it carries.
+        reason = (getattr(comparison, "reason", "")
+                  if comparison is not None else "")
         return f"Sin comparación: {reason}" if reason else "Sin comparación."
     cov = model.comparison_coverage
     # A comma, not brackets: the label often carries its own ("2026-5
@@ -1282,12 +1285,47 @@ def _index_words(value: float) -> str:
     return f"un {es_display.integer(abs(gap))}% {word}"
 
 
+def _names(names) -> str:
+    """"A", "A y B", "A, B y C" — people named in a sentence."""
+    names = [n for n in names if n]
+    if len(names) <= 1:
+        return "".join(names)
+    return ", ".join(names[:-1]) + " y " + names[-1]
+
+
+def reporting_headline(model) -> list:
+    """Decision 60's KPI row, above the tablero on the mission and zone pages:
+    the rate against its 95% target (D2's colours), its trend (decision 67)
+    and who owns it."""
+    rep = model.reporting
+    if rep is None or model.scope.level not in (S.MISSION, S.ZONE):
+        return []
+    values = [v * 100 if v is not None else None for _, v in rep.trend]
+    labels = [label for label, v in rep.trend if v is not None]
+    n = len(rep.trend)
+    trend_note = (f"últimas {n} {rep.trend_unit}" if not labels
+                  else f"{n} {rep.trend_unit}: {labels[0]} a {labels[-1]}")
+    if model.scope.level == S.MISSION:
+        owners = "los líderes de cada zona, en «Quién informó»"
+    else:
+        owners = _names(rep.owners) or "sin líderes de zona en el organigrama"
+    counts = (f"{es_display.integer(rep.reported)} de "
+              f"{es_display.integer(rep.possible)} informes")
+    return [PP.reporting_line(
+        PP.CONTENT_WIDTH,
+        rate_pct=rep.rate * 100 if rep.rate is not None else None,
+        status=rep.status, target_pct=rep.target * 100, counts=counts,
+        trend=values, trend_note=trend_note, owners=owners),
+        Spacer(0, 6)]
+
+
 def reporting_block(model) -> list:
     """Who reported — decision 45's separate list, worst first.
 
     Silence is not folded into a performance figure any more; it is said here,
     with the areas named, at mission and zone level (district pages carry the
-    silent areas in their own areas table).
+    silent areas in their own areas table). Since decision 60 each zone carries
+    its owners, the zone leaders, and every dot is on D2's bands (95/85).
     """
     st = PP.styles()
     units = model.reporting_ranked
@@ -1305,12 +1343,14 @@ def reporting_block(model) -> list:
         silent = child.areas_silent
         sub = ("sin informe en todo el período: " + ", ".join(silent)
                if silent else "todas sus áreas informaron")
+        if child.owners:
+            sub = f"responsables: {_names(child.owners)} · {sub}"
         out_of = (f"{es_display.integer(cov.area_weeks_reported)} de "
                   f"{es_display.integer(cov.area_weeks_expected)}"
                   if cov is not None else es_display.NA)
         flow.append(PP.ranked_row(
             spec, rank=i, name=child.name, sub=sub,
-            status=_attainment_status(rate), cells=[out_of],
+            status=reporting_status(rate / 100), cells=[out_of],
             value=_pct(rate), bar=rate, bar_max=100))
     flow.append(Spacer(0, 4))
     flow.append(Paragraph(PP.text(
@@ -1786,7 +1826,7 @@ def tablero_block(model) -> list:
              ("12", "semanas")]
     if forecast:
         heads += [("Termina", "en"), ("Falta", "por semana")]
-    flow = opening(model)
+    flow = opening(model) + reporting_headline(model)
     flow += [
         PP.SectionHead("El tablero", f"los siete · {model.compliance_label}"),
         PP.tablero_table(tablero_lines(model, comparable=weekly_ok,

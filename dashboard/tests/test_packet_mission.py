@@ -642,3 +642,44 @@ def test_the_mission_s_tablero_says_what_its_change_is_against(mission):
     tablero also prints the sentence, with the window's dates."""
     flow = PK.tablero_block(mission)
     assert PK._comparison_note(mission) in _notes(flow, "note")
+
+
+# ── Reporting as a headline KPI (decision 60) ────────────────────────────────
+
+def _with_leaders():
+    roster = ROSTER.assign(Is_ZL=["TRUE", "", "TRUE"],
+                           Companion1_Name=["Élder Uno", "", "Élder Tres"],
+                           Companion2_Name=["Élder Dos", "", ""])
+    return M.build_all(data=_data(roster=roster))
+
+
+def test_the_reporting_headline_sits_above_the_tablero_on_mission_and_zone():
+    from tests.test_packet_tableau import words
+    built = _with_leaders()
+    mission = built[0]
+    norte = next(m for m in built if m.scope.name == "Norte")
+    district = next(m for m in built if m.scope.level == "district")
+    text = words(PK.tablero_block(mission))
+    assert "50%" in text and "meta 95%" in text      # 3 of 6 reports
+    assert "3 de 6 informes" in text
+    assert "muy atrasado" in text
+    assert "los líderes de cada zona" in text
+    assert "Élder Uno y Élder Dos" in words(PK.tablero_block(norte))
+    assert "meta 95%" not in words(PK.tablero_block(district))
+
+
+def test_the_mission_s_reporting_list_names_each_zone_s_owners():
+    from tests.test_packet_tableau import words
+    text = words(PK.reporting_block(_with_leaders()[0]))
+    assert "responsables: Élder Uno y Élder Dos" in text
+    assert "responsables: Élder Tres" in text
+
+
+def test_a_refused_comparison_prints_its_reason():
+    """`Comparison` is falsy without a window; the note must still carry the
+    reason it was refused (here: the month before the form began)."""
+    from app.reports import periods as P
+    mission = M.build_all(P.LAST_MONTH, data=_data())[0]
+    note = PK._comparison_note(mission)
+    assert note.startswith("Sin comparación: El formulario semanal empezó")
+    assert "julio 2026" in note
