@@ -32,6 +32,8 @@
  * --forms-until ISO  keep the weekly forms stamped up to ISO (default: --now).
  *           A later cutoff shows a past week with the forms that came in late.
  * --payload FILE  also write Agent1B's A1B_DATA payload (what 1C builds from).
+ * --mission-report  after the chain, also run runAgentMissionReport (the
+ *           President's Monday 22:00 email, CCSM_AgentMissionReport.gs).
  */
 
 'use strict';
@@ -56,6 +58,7 @@ const fuIdx = argv.indexOf('--forms-until');
 const FORMS_UNTIL = fuIdx >= 0 ? new Date(argv[fuIdx + 1]) : NOW;
 const payIdx = argv.indexOf('--payload');
 const PAYLOAD = payIdx >= 0 ? path.resolve(argv[payIdx + 1]) : null;
+const MISSION_REPORT = argv.includes('--mission-report');
 
 if (!fs.existsSync(DATA)) {
   console.error(`No sheet dump at ${DATA}\nRun first, from dashboard/:\n` +
@@ -324,6 +327,7 @@ const FILES = [
   'CCSM_Agent1A.gs',
   'CCSM_Agent1B.gs',
   'CCSM_Agent1C.gs',
+  'CCSM_AgentMissionReport.gs',  // run only with --mission-report
 ];
 
 FILES.forEach((f) => {
@@ -422,6 +426,7 @@ if (PAYLOAD) {
   console.log(`     A1B_DATA -> ${PAYLOAD}`);
 }
 if (!run('runAgent1C')) process.exit(1);
+if (MISSION_REPORT && !run('runAgentMissionReport')) process.exit(1);
 
 fs.mkdirSync(OUT, { recursive: true });
 fs.rmSync(path.join(OUT, 'index.html'), { force: true });
