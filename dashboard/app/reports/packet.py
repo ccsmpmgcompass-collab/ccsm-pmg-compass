@@ -29,6 +29,7 @@ from __future__ import annotations
 import io
 import math
 from dataclasses import dataclass, field, replace
+from datetime import timedelta
 
 from reportlab.platypus import (BaseDocTemplate, CondPageBreak, Flowable,
                                 Frame, KeepTogether, PageBreak, PageTemplate,
@@ -3003,6 +3004,16 @@ def data_note(models, goals=None) -> list:
         f"paquete se apoya en eso, y una unidad que informó la mitad tiene "
         f"cifras que valen la mitad.",
     ]
+    if period.key == P.LAST_MONTH and period.weeks:
+        # Risk 2 of PLAN-2026-10-13: the month's form weeks and its days are
+        # different spans, and the certified baptisms count the days.
+        first_monday = period.weeks[0] - timedelta(days=6)
+        sentences.append(
+            f"Las semanas no son los días del mes: los formularios cuentan las "
+            f"semanas completas que terminan en {period.label} "
+            f"({es_display.day_range(first_monday, period.weeks[-1])}), "
+            f"y los bautismos certificados cuentan los días del mes "
+            f"({period.window_label}). Por eso nunca comparten una tabla.")
     if cov is not None and cov.thin:
         sentences.append(
             "La cobertura de este período es demasiado delgada para sostener "

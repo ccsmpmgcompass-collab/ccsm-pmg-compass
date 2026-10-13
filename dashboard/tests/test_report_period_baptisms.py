@@ -79,6 +79,46 @@ def test_the_year_is_the_closed_months_and_the_open_one():
                                "que todavía no cierra")
 
 
+# ── "Mes pasado" (PLAN-2026-10-13 step 1.2) ───────────────────────────────────
+
+def test_last_month_is_its_closed_monthly_capture():
+    """The certified monthly figure answers by days, with no window capture:
+    on 23 September "Mes pasado" is August, 1–31 August, 36."""
+    fig = _figure(P.LAST_MONTH)
+    assert fig.present and fig.count == 36
+    assert (fig.window.start, fig.window.end) == (date(2026, 8, 1),
+                                                  date(2026, 8, 31))
+    assert not fig.window.clipped
+
+
+def test_september_answers_29_in_october():
+    """Phase 0.2's live figure: the closed September capture, 29."""
+    certified = {**CERTIFIED, "2026-09": 29}
+    fig = _figure(P.LAST_MONTH, certified=certified,
+                  open_month=("2026-10", 4, date(2026, 10, 12)),
+                  today=date(2026, 10, 13))
+    assert fig.count == 29
+    assert fig.window.label == "1 de sep - 30 de sep de 2026"
+
+
+def test_a_month_not_yet_certified_answers_with_its_own_shorter_days():
+    """Two days after the month closes, the sync may still hold it as the open
+    month through the 29th: the figure says how many days it covers."""
+    fig = _figure(P.LAST_MONTH, open_month=("2026-09", 27, date(2026, 9, 29)),
+                  today=date(2026, 10, 1))
+    assert fig.count == 27
+    assert fig.window.clipped
+    assert fig.window.shortfall_label == "29 de 30 días del período"
+
+
+def test_the_year_is_untouched_by_last_month():
+    """`_year_to_date` keeps summing closed months and the open one."""
+    assert _figure(P.LAST_MONTH).count == 36
+    fig = _figure(P.YEAR)
+    assert fig.count == 319 + 24
+    assert (fig.closed, fig.closed_months, fig.open_count) == (319, 8, 24)
+
+
 # ── a capture that stops short says so ────────────────────────────────────────
 
 def test_a_capture_a_night_behind_answers_with_its_own_days():

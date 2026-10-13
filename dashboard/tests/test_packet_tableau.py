@@ -378,3 +378,15 @@ def test_no_finding_data_prints_no_mix():
     built, _ = models(detail=people([]))
     mission = next(m for m in built if m.scope.level == S.MISSION)
     assert PK.finding_mix_block(mission) == []
+
+
+def test_last_month_s_data_note_says_weeks_are_not_days():
+    """PLAN-2026-10-13 1.2: on 21 September "Mes pasado" is August, whose form
+    weeks run 27 July – 30 August while its certified baptisms count 1–31
+    August."""
+    built, _ = models(period_key=P.LAST_MONTH)
+    text = words(PK.data_note(built))
+    assert "Las semanas no son los días del mes" in text
+    assert "terminan en agosto 2026 (27 de jul - 30 de ago de 2026)" in text
+    assert "(1 de ago - 31 de ago de 2026)" in text
+    assert "Las semanas no son" not in words(PK.data_note(models()[0]))
