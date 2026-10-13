@@ -1446,11 +1446,12 @@ def _ki_rows(data: ReportData, scope: S.Scope, period: P.Period, *,
                 if group is not None and key in group.columns:
                     done = float(pd.to_numeric(group[key], errors="coerce").sum())
                 lead_actual[key] = lead_actual.get(key, 0.0) + done
-    # A unit that filed nothing at all has no reading to grade: its row says
-    # "sin informes" and its reporting line carries the 0%, rather than seven
-    # red zeros saying the same thing again.
-    graded = (reporting_area_weeks > 0 and lead_weeks > 0
-              and lead_weeks >= LEAD_MIN_SHARE * active_area_weeks)
+    has_goal = (lead_weeks > 0
+                and lead_weeks >= LEAD_MIN_SHARE * active_area_weeks)
+    # A unit that filed nothing at all keeps its goal but has no reading to
+    # grade: its rows say "sin informes" and its reporting line carries the
+    # 0%, rather than seven red zeros saying the same thing again.
+    graded = has_goal and reporting_area_weeks > 0
 
     # The companionships' own goals, summed across the period's weeks. Each
     # week's goal lives on the PREVIOUS week's form (queries.py's W-7 lookup).
@@ -1487,11 +1488,11 @@ def _ki_rows(data: ReportData, scope: S.Scope, period: P.Period, *,
         meta = metas.get(key, 0.0) if meta_area_weeks else None
         mark, mark_areas, mark_complete = marks.get(key, (None, 0, False))
 
-        goal_sum = lead_goal.get(key) if graded else None
-        done_sum = lead_actual.get(key, 0.0) if graded else None
+        goal_sum = lead_goal.get(key) if has_goal else None
+        done_sum = lead_actual.get(key, 0.0) if has_goal else None
         grade = grade_ki(
-            done_sum / lead_weeks if goal_sum else None,
-            goal_sum / lead_weeks if goal_sum else None,
+            done_sum / lead_weeks if goal_sum and graded else None,
+            goal_sum / lead_weeks if goal_sum and graded else None,
             before=before_rate, now=per_reporting,
             # The raw counts behind the change, so a change on single digits
             # prints as "+4" and a move inside Poisson noise prints without a
@@ -1515,7 +1516,7 @@ def _ki_rows(data: ReportData, scope: S.Scope, period: P.Period, *,
             leadership_goal_complete=mark_complete,
             lead_goal=goal_sum,
             lead_actual=done_sum,
-            lead_area_weeks=lead_weeks if graded else 0,
+            lead_area_weeks=lead_weeks if has_goal else 0,
             lead_area_weeks_possible=active_area_weeks,
             per_active_area_week=per_active,
             per_reporting_area_week=per_reporting,

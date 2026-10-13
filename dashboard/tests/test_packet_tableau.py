@@ -388,5 +388,5 @@ def test_last_month_s_data_note_says_weeks_are_not_days():
     text = words(PK.data_note(built))
     assert "Las semanas no son los días del mes" in text
     assert "terminan en agosto 2026 (27 de jul - 30 de ago de 2026)" in text
-    assert "(1 de ago - 31 de ago de 2026)" in text
+    assert "los bautismos certificados, los días del mes" in text
     assert "Las semanas no son" not in words(PK.data_note(models()[0]))

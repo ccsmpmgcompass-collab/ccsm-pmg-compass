@@ -561,11 +561,9 @@ def how_to_read(mission, sections) -> list:
 
     rules.append((
         "Contra qué se mide cada porcentaje, y cómo se ordenan las unidades",
-        f"Cada Indicador Clave se colorea por lo hecho, contando todas las "
-        f"áreas, contra la meta completa del liderazgo para el período: la "
-        f"meta de traslado de cada área, prorrateada a las semanas del "
-        f"período y sumada. Una semana sin informe cuenta como cero: "
-        f"{_band_sentence()}. La columna «Compromiso» es la meta que las "
+        f"Cada Indicador Clave se colorea por lo hecho por todas las áreas "
+        f"contra la meta completa del liderazgo para el período, con cada "
+        f"semana sin informe en cero: {_band_sentence()}. La columna «Compromiso» es la meta que las "
         f"compañerías se pusieron; se imprime y nunca da color. Los bautismos "
         f"del formulario no llevan color: la meta de bautismos es la anual. "
         f"Las unidades se ordenan por su índice de productividad: lo que "
@@ -583,12 +581,10 @@ def how_to_read(mission, sections) -> list:
         who += (f"{es_display.integer(len(silent))} de "
                 f"{es_display.integer(mission.scope.area_count)} áreas no "
                 f"entregaron ninguna semana completa: {', '.join(silent)}. ")
-    who += ("Informar es un indicador con meta propia: el 95% de los informes "
-            "semanales posibles (verde desde 95%, ámbar de 85 a 94%, rojo "
-            "debajo), y sus responsables son los líderes de cada zona. Va "
-            "encima del tablero porque explica sus colores: con tres de cada "
-            "cuatro informes, un indicador no pasa de tres cuartos de su meta "
-            "aunque cada área que informó la haya cumplido.")
+    who += ("Informar tiene meta propia: el 95% de los informes posibles "
+            "(ámbar de 85 a 94%), a cargo de los líderes de zona. Con tres de "
+            "cada cuatro informes, ningún indicador pasa de tres cuartos de "
+            "su meta.")
     rules.append(("Quién informó, y quién no", who))
 
     graded = [r for r in mission.nightly_metrics if r.grade.pct is not None]
@@ -674,12 +670,9 @@ COLUMN_GLOSSARY = (
              "el trabajo nocturno, lo que un área hace en una semana de "
              "noches informadas: su encabezado dice «área/sem»."),
     ("Meta", "En los Indicadores Clave, la meta de traslado del liderazgo "
-             "para todas las áreas y todas las semanas del período, y el real "
-             "cuenta esas mismas semanas: una sin informe suma cero. Si un "
-             "ciclo no tiene meta, sus semanas salen de las dos columnas y el "
-             "encabezado dice sobre cuántas semanas-área se mide. En el "
-             "trabajo nocturno, la meta de un área para una semana, en la "
-             "misma escala que su real."),
+             "para todas las áreas y semanas del período; una semana sin "
+             "informe suma cero al real. En el trabajo nocturno, la meta de un "
+             "área para una semana, en la misma escala que su real."),
     ("Compromiso", "La suma de las metas que las compañerías se pusieron en "
                    "el formulario. Se imprime; nunca da color."),
     ("La barra", "Real contra la meta, con el color de la calificación."),
@@ -838,6 +831,8 @@ def _verdict(row, *, graded: bool = True) -> str:
     """
     if row.grade.flag and graded:
         return row.grade.flag_label
+    if row.actual is None and row.lead_goal:
+        return "sin informes"
     pct = _pct(row.grade.pct)
     if not graded:
         return f"{pct} de la meta" if row.grade.pct is not None else "sin meta"
@@ -865,7 +860,9 @@ def ki_lines(model, *, comparable: bool, confident: bool = True) -> list:
         if row.lead_goal is None:
             note = "sin meta del liderazgo para estas semanas"
         else:
-            if row.lead_area_weeks < row.lead_area_weeks_possible:
+            if row.actual is None:
+                note = "sin informes en el período"
+            elif row.lead_area_weeks < row.lead_area_weeks_possible:
                 # Decision 66: graded on the area-weeks that carry a goal;
                 # REAL follows them so the two columns count the same thing.
                 real = row.lead_actual
@@ -1323,7 +1320,7 @@ def reporting_headline(model) -> list:
         rate_pct=rep.rate * 100 if rep.rate is not None else None,
         status=rep.status, target_pct=rep.target * 100, counts=counts,
         trend=values, trend_note=trend_note, owners=owners),
-        Spacer(0, 6)]
+        Spacer(0, 2)]
 
 
 def reporting_block(model) -> list:
@@ -1811,7 +1808,7 @@ def tablero_lines(model, *, comparable: bool, confident: bool) -> list:
     lines = []
     for row in model.key_indicators:
         real = (row.lead_actual if partial and row.lead_goal is not None
-                else row.actual)
+                and row.actual is not None else row.actual)
         values, bounds = _spark_of(model, row.key)
         k = finish.get(row.key)
         need = ""
@@ -1874,10 +1871,9 @@ def tablero_block(model) -> list:
             "semana informadas debajo.")
     if model.scope.level != S.MISSION:
         note = ("Por comp.: por compañería y semana. Propia: su compromiso, "
-                "sin color. Meta: lo hecho contra la meta completa del "
-                "liderazgo, con cada semana sin informe en cero; lo único con "
-                "color. 12 semanas: su forma, con la primera y la última "
-                "cifra debajo."
+                "sin color. Meta: contra la meta completa del liderazgo, "
+                "semanas sin informe en cero; lo único con color. 12 semanas: "
+                "su forma, con la primera y la última cifra debajo."
                 + (" Termina en y falta: proyección al ritmo reciente, sin "
                    "color." if forecast else ""))
     elif forecast:
@@ -1959,11 +1955,12 @@ def opening(model) -> list:
         if line:
             lines.append(line)
     if model.scope.level == S.ZONE and model.children:
+        # The rate itself is the reporting headline's, just below (decision
+        # 60); this line only names who was silent the whole period.
         silent = [a for c in model.children for a in c.areas_silent]
-        lines.append(f"Quién informó: {model.compliance_label}"
-                     + (f"; sin informe en todo el período: "
-                        f"{', '.join(silent)}." if silent else
-                        "; todas sus áreas informaron."))
+        if silent:
+            lines.append(f"Sin informe en todo el período: "
+                         f"{', '.join(silent)}.")
     flow.append(PP.SectionHead("Dónde estamos", model.period.window_label))
     for line in lines:
         flow.append(Paragraph(PP.text(line), st["body"]))
@@ -3087,10 +3084,10 @@ def data_note(models, goals=None) -> list:
         first_monday = period.weeks[0] - timedelta(days=6)
         sentences.append(
             f"Las semanas no son los días del mes: los formularios cuentan las "
-            f"semanas completas que terminan en {period.label} "
-            f"({es_display.day_range(first_monday, period.weeks[-1])}), "
-            f"y los bautismos certificados cuentan los días del mes "
-            f"({period.window_label}). Por eso nunca comparten una tabla.")
+            f"semanas que terminan en {period.label} "
+            f"({es_display.day_range(first_monday, period.weeks[-1])}); los "
+            f"bautismos certificados, los días del mes. Nunca comparten una "
+            f"tabla.")
     if cov is not None and cov.thin:
         sentences.append(
             "La cobertura de este período es demasiado delgada para sostener "
@@ -3105,11 +3102,10 @@ def data_note(models, goals=None) -> list:
             f"{', '.join(sorted(silent))}. Cuentan como cero contra la meta "
             f"del liderazgo y en cada denominador por área activa.")
     sentences.append(
-        "Los Indicadores Clave se califican por lo hecho, contando todas las "
-        "áreas, contra la meta completa de traslado del liderazgo, "
-        "prorrateada a las semanas del período; una semana sin informe "
-        "cuenta como cero, y sólo salen las semanas de un ciclo sin meta. La "
-        "meta de las compañerías se imprime como compromiso y no da color. Los bautismos "
+        "Los Indicadores Clave se califican por lo hecho por todas las áreas "
+        "contra la meta completa de traslado del liderazgo, con cada semana "
+        "sin informe en cero. La meta de las compañerías se imprime como "
+        "compromiso y no da color. Los bautismos "
         "del formulario no llevan color: la meta de bautismos es la anual.")
     labels = {r.key: r.label for r in mission.key_indicators}
     weights = " · ".join(f"{labels[k]} {w}" for k, w in INDEX_WEIGHTS.items()

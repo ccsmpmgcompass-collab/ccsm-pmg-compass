@@ -503,3 +503,12 @@ def test_a_zone_s_reporting_is_owned_by_its_zone_leaders():
     mission = _report(d, per)
     owners = {c.name: c.owners for c in mission.children}
     assert owners == {"Norte": ("Elder Uno", "Elder Dos"), "Sur": ()}
+
+
+def test_a_silent_unit_keeps_its_goal_and_has_no_grade(data, period):
+    """B2 filed nothing: its goal is still its goal (10 new people over two
+    weeks), so the page can say "sin informes" rather than "sin meta"."""
+    row = _report(data, period, S.AREA, area="B2").ki(NEW)
+    assert row.lead_goal == pytest.approx(10)
+    assert row.actual is None
+    assert row.grade.pct is None and row.grade.status is None

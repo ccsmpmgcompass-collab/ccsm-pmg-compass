@@ -718,3 +718,14 @@ def test_a_partial_goal_names_its_area_weeks_on_the_tablero():
                 if l.label == "Nuevas Personas")
     assert line.real == "30"                  # A1's 30; B1's 30 leaves REAL
     assert row.lead_actual == 30
+
+
+def test_a_unit_that_filed_nothing_reads_sin_informes_not_sin_meta():
+    """A2 filed no week: it has leadership's goal, so 'sin meta' would be a
+    false statement about the goal when the truth is about the reports."""
+    a2 = next(m for m in M.build_all(data=_data()) if m.scope.name == "A2")
+    lines = PK.area_lines(a2)
+    new = next(l for l in lines if l.label == "Nuevas Personas")
+    assert new.verdict == "sin informes"
+    assert new.goal == "40"
+    assert new.value == "—"

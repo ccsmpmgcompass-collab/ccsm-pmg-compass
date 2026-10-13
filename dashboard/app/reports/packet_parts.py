@@ -1608,7 +1608,7 @@ def companionship_line(names, *, width: float = CONTENT_WIDTH) -> Drawing:
     return d
 
 
-REPORTING_LINE_HEIGHT = 26.0
+REPORTING_LINE_HEIGHT = 23.0
 REPORTING_VALUE = Type(15, 17, FONT_BOLD)
 
 
@@ -1623,7 +1623,7 @@ def reporting_line(width: float, *, rate_pct, status, target_pct,
     there instead of diving to zero.
     """
     d = Drawing(width, REPORTING_LINE_HEIGHT)
-    top, low = 15.0, 3.0
+    top, low = 13.5, 2.5
     d.add(dot(3.0, top + 2.4, status, r=3.0))
     g = Group()
     _tracked(g, 11.0, top, "Informes", TILE_LABEL, INK_3, upper=True)
@@ -1632,14 +1632,14 @@ def reporting_line(width: float, *, rate_pct, status, target_pct,
                   NOTE, status_color(status)))
     value = (es_display.percent(rate_pct, 0) if rate_pct is not None
              else es_display.NA)
-    d.add(_string(76.0, 6.0, value, REPORTING_VALUE, INK))
+    d.add(_string(76.0, 4.5, value, REPORTING_VALUE, INK))
     d.add(_string(126.0, top, f"meta {es_display.percent(target_pct, 0)}",
                   CELL, INK_2))
     d.add(_string(126.0, low, counts, NOTE, INK_3))
     spark_x, spark_w = 214.0, 92.0
-    line = sparkline(spark_w, 13.0, list(trend or []))
+    line = sparkline(spark_w, 12.0, list(trend or []))
     holder = Group(*line.contents)
-    holder.transform = (1, 0, 0, 1, spark_x, 10.0)
+    holder.transform = (1, 0, 0, 1, spark_x, 9.5)
     d.add(holder)
     d.add(_string(spark_x, 0.5, trend_note, NOTE, INK_3))
     owners_x = 324.0

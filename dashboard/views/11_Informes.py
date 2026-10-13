@@ -265,7 +265,9 @@ def _ki_cards() -> list[dict]:
         # against LEADERSHIP's full goal (a silent week counts as zero), and
         # the companionships' own goal rides as the violet tick, labelled
         # compromiso — never the colour.
-        if row.lead_goal:
+        if row.lead_goal and row.actual is None:
+            card["note"] = "sin informes en el período"
+        elif row.lead_goal:
             card["value"] = row.lead_actual
             card["goal"] = row.lead_goal
             if row.meta_per_area_week:
