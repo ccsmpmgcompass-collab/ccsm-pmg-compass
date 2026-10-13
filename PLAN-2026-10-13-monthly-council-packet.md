@@ -680,6 +680,7 @@ so the result matches the baseline above.
 **Zackary answered 2026-10-13:** A1 yes, A2 yes, and for Q-F "fit the last 6
 month-ends, as the first step of Phase 2". They are recorded as decisions
 66–68 in §1, and steps 1.1, 1.3, 1.4 and 2.0 are amended. Q-J (what changed in
-June) is still open; it is context only.
+June): **Zackary does not know.** So the packet must NOT name a cause in 3.1.
+It states the measured change and its date (June 2026) only.
 
 **Next: Phase 1** (new chat), starting at 1.1.
