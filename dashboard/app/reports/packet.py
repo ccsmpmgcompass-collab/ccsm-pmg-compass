@@ -841,10 +841,11 @@ def _verdict(row, *, graded: bool = True) -> str:
 
 
 def ki_lines(model, *, comparable: bool, confident: bool = True) -> list:
-    """The seven Key Indicators as printable rows (decisions 10, 44, 46).
+    """The seven Key Indicators as printable rows (decisions 10, 46, 59).
 
-    The bar and its colour are against LEADERSHIP's transfer goal, over the
-    area-weeks that reported — so REAL and META count the same thing. The
+    The bar and its colour are what was done, counting every area, against
+    LEADERSHIP's full goal for the period — a week an area did not report
+    counts as zero, so REAL and META count the same area-weeks. The
     companionships' own goal is the uncoloured COMPROMISO beside it. The
     form's baptisms show their percentage and never take a colour: the 527
     annual goal is the baptism target. The screen's card makes the identical
@@ -857,13 +858,13 @@ def ki_lines(model, *, comparable: bool, confident: bool = True) -> list:
         if row.lead_goal is None:
             note = "sin meta del liderazgo para estas semanas"
         else:
-            if row.lead_area_weeks < row.actual_area_weeks:
-                # Graded on the reports that have a goal; REAL follows them so
-                # the two columns still count the same area-weeks.
+            if row.lead_area_weeks < row.lead_area_weeks_possible:
+                # Decision 66: graded on the area-weeks that carry a goal;
+                # REAL follows them so the two columns count the same thing.
                 real = row.lead_actual
                 note = (f"sobre {es_display.integer(row.lead_area_weeks)} de "
-                        f"{es_display.integer(row.actual_area_weeks)} "
-                        f"informes, los que tienen meta")
+                        f"{es_display.integer(row.lead_area_weeks_possible)} "
+                        f"semanas-área con meta")
             if row.key in UNCOLOURED_KI:
                 note = "sin color: los bautismos se miden contra la meta anual"
         lines.append(PP.MetricLine(

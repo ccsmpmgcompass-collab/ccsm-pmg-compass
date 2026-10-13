@@ -186,35 +186,71 @@ def test_the_compromiso_reduces_both_sides_before_dividing(data, period):
     assert row.own_pct == pytest.approx(80)
 
 
-def test_the_grade_is_against_leadership_on_the_area_weeks_that_reported(
+def test_the_grade_is_what_was_done_against_leadership_s_full_goal(
         data, period):
-    """Decision 44 on rule 1. Every area's 2026-6 goal is 30 new people over a
-    six-week cycle — 5 per area-week. Five area-weeks reported, so the goal is
-    25 against 80 done: 320%, al ritmo. The companionships' own 80% does not
-    colour it."""
+    """Decision 59. Every area's 2026-6 goal is 30 new people over a six-week
+    cycle — 5 per area-week. Five areas over two weeks is ten area-weeks and
+    50 of goal; the five silent area-weeks count as zero, so 80 done is 160%.
+    The companionships' own 80% does not colour it."""
     row = _report(data, period).ki(NEW)
-    assert row.lead_area_weeks == 5
-    assert row.lead_goal == pytest.approx(25)
+    assert row.lead_area_weeks == 10
+    assert row.lead_area_weeks_possible == 10
+    assert row.lead_goal == pytest.approx(50)
     assert row.lead_actual == pytest.approx(80)
-    assert row.grade.pct == pytest.approx(320)
+    assert row.grade.pct == pytest.approx(160)
     assert row.grade.status == "good"
+
+
+def test_a_silent_area_week_counts_as_zero_against_its_goal(data, period):
+    """Sur: B1 filed 30 in one week; B2 filed nothing. Four area-weeks of
+    goal at 5 is 20, so Sur is at 150% — not the 600% of grading B1's one
+    report alone, which is what decision 44 printed."""
+    row = _report(data, period, S.ZONE, zone="Sur").ki(NEW)
+    assert (row.lead_area_weeks, row.lead_goal, row.lead_actual) == (
+        4, pytest.approx(20), pytest.approx(30))
+    assert row.grade.pct == pytest.approx(150)
+
+
+def test_an_area_is_graded_on_every_week_not_the_weeks_it_filed(data, period):
+    """A2 filed one of two weeks (20 new people): against two weeks of its
+    goal (10) it is 200%, and its reporting fraction says why it is not
+    higher."""
+    row = _report(data, period, S.AREA, area="A2").ki(NEW)
+    assert row.lead_goal == pytest.approx(10)
+    assert row.grade.pct == pytest.approx(200)
 
 
 def test_an_area_week_with_no_leadership_goal_leaves_both_sides():
     """B1 has no 2026-6 goal: its 30 leave the actual AND its weeks leave the
-    goal, so the percentage never mixes two populations."""
+    goal, so the percentage never mixes two populations (decision 66)."""
     d = _data(transfer_goals=GOALS[~((GOALS["area"] == "B1")
                                      & (GOALS["transfer_start"] == "2026-09-07"))])
     row = _report(d, P.resolve(P.THIS_TRANSFER, TODAY, d.cycles)).ki(NEW)
-    assert row.lead_area_weeks == 4
+    assert row.lead_area_weeks == 8
+    assert row.lead_area_weeks_possible == 10
     assert row.lead_actual == pytest.approx(50)
-    assert row.lead_goal == pytest.approx(20)
-    assert row.grade.pct == pytest.approx(250)
+    assert row.lead_goal == pytest.approx(40)
+    assert row.grade.pct == pytest.approx(125)
+
+
+def test_a_cycle_only_one_area_planned_drops_only_its_own_weeks(data):
+    """Decision 66 — September 2026's shape. The week ending 6 September is
+    2026-5's, where only A1 has a goal; the two after it are 2026-6's, where
+    all five do. 11 of 15 area-weeks carry a goal: A1's silent 6 September
+    adds 5 of goal and nothing done, and no area drops out whole."""
+    period = P._period(P.LAST_MONTH, "septiembre", date(2026, 8, 31),
+                       date(2026, 9, 20), TODAY)
+    assert period.weeks == (date(2026, 9, 6), W1, W2)
+    row = _report(data, period).ki(NEW)
+    assert (row.lead_area_weeks, row.lead_area_weeks_possible) == (11, 15)
+    assert row.lead_goal == pytest.approx(55)
+    assert row.lead_actual == pytest.approx(80)
+    assert row.grade.pct == pytest.approx(80 / 55 * 100)
 
 
 def test_too_few_area_weeks_with_a_goal_is_no_grade_at_all():
-    """Under half the reports carrying a goal, the row is "sin meta del
-    liderazgo" rather than graded on a sliver (decisions 23, 44)."""
+    """Under half the possible area-weeks carrying a goal, the row is "sin
+    meta del liderazgo" rather than graded on a sliver (decisions 23, 66)."""
     d = _data(transfer_goals=GOALS[GOALS["area"] == "A3"])
     row = _report(d, P.resolve(P.THIS_TRANSFER, TODAY, d.cycles)).ki(NEW)
     assert row.lead_goal is None and row.grade.pct is None

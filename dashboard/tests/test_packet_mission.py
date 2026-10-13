@@ -70,10 +70,11 @@ SCORES = pd.DataFrame([
 ])
 
 
-#: Leadership's 2026-6 goals (decision 44): per area-week 20 new people, 8
-#: friends at sacrament and one baptism. Three area-weeks reported, so the
-#: grade is 60 of 60 new people (100%), 12 of 24 friends (50%) and one of
-#: three baptisms (33%, never coloured — decision 46).
+#: Leadership's 2026-6 goals (decision 59): per area-week 20 new people, 8
+#: friends at sacrament and one baptism. Three areas over two weeks is six
+#: area-weeks of goal, and the three that did not report count as zero, so
+#: the grade is 60 of 120 new people (50%), 12 of 48 friends (25%) and one of
+#: six baptisms (17%, never coloured — decision 46).
 LEAD_GOALS = pd.DataFrame([
     {"area": a, "transfer_start": "2026-09-07", NEW: 120, SACR: 48, BAUT: 6}
     for a in ("A1", "A2", "B1")])
@@ -129,14 +130,15 @@ def test_the_bar_fills_against_the_companionships_own_goal(mission):
 
 def test_the_grade_is_leadership_s_and_the_compromiso_is_its_own_column(
         mission):
-    """Decision 44: META is leadership's goal over the area-weeks that
-    reported, and the companionships' own summed goal is the uncoloured
-    COMPROMISO beside it — no violet mark on the bar any more."""
+    """Decision 59: META is leadership's full goal for every area-week, a
+    silent one counting as zero, and the companionships' own summed goal is
+    the uncoloured COMPROMISO beside it — no violet mark on the bar."""
     rows = {l.label: l for l in PK.ki_lines(mission, comparable=False)}
     new, sacr = rows["Nuevas Personas"], rows["Amigos en Sacramental"]
-    assert (new.value, new.goal, new.pct) == ("60", "60", pytest.approx(100))
-    assert new.status == "good"
-    assert (sacr.goal, sacr.pct, sacr.status) == ("24", pytest.approx(50),
+    assert (new.value, new.goal, new.pct) == ("60", "120", pytest.approx(50))
+    assert new.status == "bad"
+    assert new.note == ""                    # every area-week has a goal
+    assert (sacr.goal, sacr.pct, sacr.status) == ("48", pytest.approx(25),
                                                   "bad")
     assert new.own == "180"                  # 90 a week, two weeks
     assert new.mark_pct is None
@@ -147,7 +149,7 @@ def test_the_form_s_baptisms_carry_a_percentage_and_no_colour(mission):
     is shown and never colours the row."""
     line = next(l for l in PK.ki_lines(mission, comparable=False)
                 if l.label == "Bautizados y Confirmados")
-    assert line.pct == pytest.approx(100 / 3)
+    assert line.pct == pytest.approx(100 / 6)
     assert line.status is None
     assert "meta anual" in line.note
 

@@ -63,10 +63,10 @@ from app.reports.grading import (
     Grade, attainment, goal_is_unusable, grade_ki, grade_nightly,
 )
 
-#: Below this share of a row's reporting area-weeks carrying a leadership
+#: Below this share of the unit's possible area-weeks carrying a leadership
 #: goal, the row is not graded at all — "sin meta del liderazgo" (decisions
-#: 23, 44). A period straddling a cycle nobody set goals for would otherwise
-#: be graded on a sliver of its weeks.
+#: 23, 66). 2026-5 has goals for one area of 45: without this floor the
+#: mission would be graded on one companionship's six weeks.
 LEAD_MIN_SHARE = 0.5
 
 #: How much DAILY_LOG history to pull. The `days` argument is a client-side
@@ -183,19 +183,23 @@ class MetricRow:
 
     #: Leadership's AREA_TRANSFER_GOALS figure for EVERY area in scope,
     #: pro-rated to the part of the cycle this period covers (the graded
-    #: figure is `lead_goal`, over the area-weeks that reported).
+    #: figure is `lead_goal`, over the area-weeks that carry a goal).
     leadership_goal: float | None = None
     leadership_goal_areas: int = 0
     leadership_goal_complete: bool = False
 
-    #: Leadership's goal over exactly the area-weeks that REPORTED and have a
-    #: goal, and the actual over those same area-weeks — the two sides the
-    #: row is graded on since decision 44 (PLAN-2026-10-06, 1.1). Rule 1 of
-    #: the Informes layer: both sides of a percentage rest on one population.
-    #: ``lead_area_weeks`` is that population's size.
+    #: The two sides the row is graded on since decision 59 (PLAN-2026-10-13,
+    #: 1.3): leadership's FULL goal over every area-week in scope that carries
+    #: one, and what was done in those same area-weeks — a silent area-week
+    #: counts as zero (decision 66). Rule 1 of the Informes layer still holds:
+    #: both sides rest on one population, the area-weeks with a goal.
+    #: ``lead_area_weeks`` is that population's size, and
+    #: ``lead_area_weeks_possible`` every area-week in scope — "sobre N de M
+    #: semanas-área con meta" when they differ.
     lead_goal: float | None = None
     lead_actual: float | None = None
     lead_area_weeks: int = 0
+    lead_area_weeks_possible: int = 0
 
     per_active_area_week: float | None = None
     per_reporting_area_week: float | None = None
@@ -222,7 +226,7 @@ class MetricRow:
 
     @property
     def lead_goal_rate(self) -> float | None:
-        """Leadership's goal per reporting area-week, on the graded basis."""
+        """Leadership's goal per area-week with a goal, on the graded basis."""
         if self.lead_goal is None or not self.lead_area_weeks:
             return None
         return self.lead_goal / self.lead_area_weeks
@@ -1308,25 +1312,36 @@ def _ki_rows(data: ReportData, scope: S.Scope, period: P.Period, *,
 
     marks = _leadership_goals(data, scope, period)
 
-    # Leadership's goal over exactly the area-weeks that reported (decision
-    # 44), with the actual over the same area-weeks — an area-week with no
-    # goal leaves BOTH sides, so the percentage never mixes populations.
+    # Decision 59: what was done, counting every area, against leadership's
+    # full goal. Decision 66: over every area-week in scope that CARRIES a
+    # goal, reported or not — a silent one adds its goal and nothing done.
+    # An area-week with no goal leaves both sides, so with complete goals this
+    # is every area-week, and a cycle nobody set goals for drops only its own
+    # weeks rather than whole areas.
     lead_goal: dict = {}
     lead_actual: dict = {}
     lead_weeks = 0
-    if not rows.empty:
-        for (area, week), group in rows.groupby(["_area", "_week"]):
+    reported = ({(a, w): g for (a, w), g in rows.groupby(["_area", "_week"])}
+                if not rows.empty else {})
+    for area in scope.areas:
+        for day in period.weeks:
+            week = day.isoformat()
             goal = data.lead_week_goal(area, week)
             if goal is None:
                 continue
             lead_weeks += 1
+            group = reported.get((area, week))
             for key in data.ki_keys:
                 lead_goal[key] = lead_goal.get(key, 0.0) + goal.get(key, 0.0)
-                if key in group.columns:
-                    lead_actual[key] = lead_actual.get(key, 0.0) + float(
-                        pd.to_numeric(group[key], errors="coerce").sum())
-    graded = (lead_weeks > 0
-              and lead_weeks >= LEAD_MIN_SHARE * reporting_area_weeks)
+                done = 0.0
+                if group is not None and key in group.columns:
+                    done = float(pd.to_numeric(group[key], errors="coerce").sum())
+                lead_actual[key] = lead_actual.get(key, 0.0) + done
+    # A unit that filed nothing at all has no reading to grade: its row says
+    # "sin informes" and its reporting line carries the 0%, rather than seven
+    # red zeros saying the same thing again.
+    graded = (reporting_area_weeks > 0 and lead_weeks > 0
+              and lead_weeks >= LEAD_MIN_SHARE * active_area_weeks)
 
     # The companionships' own goals, summed across the period's weeks. Each
     # week's goal lives on the PREVIOUS week's form (queries.py's W-7 lookup).
@@ -1392,6 +1407,7 @@ def _ki_rows(data: ReportData, scope: S.Scope, period: P.Period, *,
             lead_goal=goal_sum,
             lead_actual=done_sum,
             lead_area_weeks=lead_weeks if graded else 0,
+            lead_area_weeks_possible=active_area_weeks,
             per_active_area_week=per_active,
             per_reporting_area_week=per_reporting,
             before_per_reporting_area_week=before_rate,
