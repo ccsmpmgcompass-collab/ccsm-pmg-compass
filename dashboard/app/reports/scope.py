@@ -168,6 +168,23 @@ def zone_leader_names(df: pd.DataFrame, zone: str) -> tuple[str, ...]:
     return tuple(names)
 
 
+def district_leader_names(df: pd.DataFrame, zone: str,
+                          district: str) -> tuple[str, ...]:
+    """The district leaders of `district` in `zone`: every companion of an
+    area flagged Is_DL (PLAN-2026-10-13 4.4, the district page's header)."""
+    roster = _clean(df)
+    if roster.empty or "Is_DL" not in roster.columns:
+        return ()
+    flagged = roster[(roster["Zone"] == zone)
+                     & (roster["District"] == district)
+                     & (roster["Is_DL"].astype(str).str.strip().str.upper()
+                        == "TRUE")]
+    names: list[str] = []
+    for _, row in flagged.sort_values("Area_Name").iterrows():
+        names.extend(n for n in companion_names(row) if n not in names)
+    return tuple(names)
+
+
 # ── Building scopes ───────────────────────────────────────────────────────────
 #
 # Names sort with plain `sorted()`, which is what the scope selectors already

@@ -85,3 +85,36 @@ def test_the_area_builders_still_answer_under_their_old_names():
     """Step 4.1 moved them to `packet_annex` (risk 5); `packet` re-exports."""
     assert PK.area_block is PA.area_block
     assert PK.AREAS_PER_PAGE == PA.AREAS_PER_PAGE
+
+
+# ── Step 4.4 (C13): smaller fixes ─────────────────────────────────────────────
+
+def test_zone_and_district_pages_name_their_leaders():
+    from tests.test_report_model_ki import _data, ROSTER as KI_ROSTER
+    from app.reports import model as M
+    roster = KI_ROSTER.assign(Is_ZL=["TRUE", "", "", "", ""],
+                              Is_DL=["", "TRUE", "", "", ""])
+    built = M.build_all(data=_data(roster=roster))
+    norte = next(m for m in built if m.scope.level == S.ZONE
+                 and m.scope.name == "Norte")
+    assert norte.leaders == ("Elder Uno", "Elder Dos")
+    head = " ".join(p.getPlainText() for p in PK._heading(norte))
+    assert "Líderes de zona: Elder Uno y Elder Dos" in head
+    d3 = next(m for m in built if m.scope.name == "D3")
+    assert "sin líderes de distrito en el organigrama" in " ".join(
+        p.getPlainText() for p in PK._heading(d3))
+
+
+def test_an_area_s_small_goal_prints_a_count_not_a_percentage():
+    from dataclasses import replace
+    from tests.test_report_model_ki import _data
+    from app.reports import model as M
+    area = next(m for m in M.build_all(data=_data())
+                if m.scope.level == S.AREA and m.scope.name == "A1")
+    row = area.key_indicators[0]
+    small = replace(area, key_indicators=(replace(
+        row, lead_goal=1.0, actual=6.0,
+        grade=replace(row.grade, pct=600.0, status="good")),))
+    line = PK.ki_lines(small, comparable=False)[0]
+    assert "600" not in line.verdict
+    assert line.verdict == "al ritmo · 6 de 1,0"

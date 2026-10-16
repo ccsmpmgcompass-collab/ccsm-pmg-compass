@@ -936,9 +936,17 @@ def ki_lines(model, *, comparable: bool, confident: bool = True) -> list:
     for row in model.key_indicators:
         note = ""
         real = row.actual
+        verdict = _verdict(row)
         if row.lead_goal is None:
             note = "sin meta del liderazgo para estas semanas"
         else:
+            if (model.scope.level == S.AREA and row.actual is not None
+                    and row.lead_goal < SMALL_GOAL and not row.grade.flag):
+                # Step 4.4 (C13): a goal under 3 makes a percentage of
+                # noise — 6 against a goal of 1 read "600%".
+                word = PP.STATUS_WORD.get(row.grade.status or "")
+                count = f"{_count(row.actual)} de {_goal(row.lead_goal)}"
+                verdict = f"{word} · {count}" if word else count
             if row.actual is None:
                 note = "sin informes en el período"
             elif row.lead_area_weeks < row.lead_area_weeks_possible:
@@ -955,10 +963,15 @@ def ki_lines(model, *, comparable: bool, confident: bool = True) -> list:
             goal=(_goal(row.lead_goal) if row.lead_goal else es_display.NA),
             own=_count(row.meta) if row.meta else es_display.NA,
             pct=row.grade.pct, status=row.grade.status,
-            verdict=_verdict(row),
+            verdict=verdict,
             change=_change(row, comparable=comparable, confident=confident),
             note=note))
     return lines
+
+
+#: Under this leadership goal for the period, an area's row prints its count
+#: against the goal and no percentage (step 4.4).
+SMALL_GOAL = 3.0
 
 
 LEAD_GOAL_HEAD = PP.LEAD_GOAL_HEAD
@@ -1090,10 +1103,21 @@ def _attainment_status(pct) -> str | None:
 
 # ── The mission's pages ───────────────────────────────────────────────────────
 
+#: What a unit's leaders are called on its page's header (step 4.4).
+LEADER_WORDS = {S.ZONE: "Líderes de zona", S.DISTRICT: "Líderes de distrito"}
+
+
 def _heading(model) -> list:
+    """The unit's name, its period line, and — on a zone's or a district's
+    page — who leads it (step 4.4, C13), off the roster."""
     st = PP.styles()
+    sub = model.subtitle
+    words = LEADER_WORDS.get(model.scope.level)
+    if words:
+        sub += (f" · {words}: {_names(model.leaders)}" if model.leaders
+                else f" · sin {words.lower()} en el organigrama")
     return [Paragraph(PP.text(model.scope.name), st["title"]),
-            Paragraph(PP.text(model.subtitle), st["subtitle"])]
+            Paragraph(PP.text(sub), st["subtitle"])]
 
 
 def _comparison_note(model) -> str:
@@ -2260,6 +2284,10 @@ def tablero_lines(model, *, comparable: bool, confident: bool) -> list:
     for row in model.key_indicators:
         real = (row.lead_actual if partial and row.lead_goal is not None
                 and row.actual is not None else row.actual)
+        # Step 4.4 (C13): the form's baptisms keep their row, under a name
+        # that says which baptism figure this is (decision 21).
+        label = (f"{row.label} (formulario)" if row.key in NOT_FOR_VERDICTS
+                 else row.label)
         values, bounds = _spark_of(model, row.key)
         k = finish.get(row.key)
         need = ""
@@ -2267,7 +2295,7 @@ def tablero_lines(model, *, comparable: bool, confident: bool) -> list:
             need = _int(k.needed_per_week) + (
                 f" · {es_display.number(k.factor, 1)}×" if k.factor else "")
         lines.append(PP.TableroLine(
-            label=row.label, real=_count(real),
+            label=label, real=_count(real),
             own=_count(row.meta) if row.meta else es_display.NA,
             per_comp=(es_display.number(row.per_active_area_week, 1)
                       if row.per_active_area_week is not None

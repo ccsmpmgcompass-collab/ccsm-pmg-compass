@@ -357,12 +357,13 @@ def test_nor_the_one_that_has_to_move(mission):
 
 
 def test_the_baptism_row_itself_stays_on_the_page(mission):
-    """Only the opening sentences lose it — the tablero's row keeps it."""
+    """Only the opening sentences lose it — the tablero's row keeps it, and
+    since PLAN-2026-10-13 4.4 its label says it is the form's figure."""
     model = _with_baptisms_at(mission, 999.0)
     assert BAPTIZED in {r.key for r in model.key_indicators}
     labels = {l.label for l in PK.tablero_lines(model, comparable=False,
                                                 confident=False)}
-    assert model.ki(BAPTIZED).label in labels
+    assert f"{model.ki(BAPTIZED).label} (formulario)" in labels
 
 
 def test_a_mission_with_nothing_graded_names_neither(mission):

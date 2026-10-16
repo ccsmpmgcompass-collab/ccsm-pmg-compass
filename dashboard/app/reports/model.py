@@ -702,6 +702,10 @@ class ReportModel:
     mission_name: str
     today: date
 
+    #: Who leads the unit: a zone's zone leaders, a district's district
+    #: leaders, off the roster's flags (step 4.4) — printed under its name.
+    leaders: tuple = ()
+
     #: Weekly-form coverage of the period, and of whatever it is held against.
     #: Decision 19 puts this in the subtitle at every level: it qualifies every
     #: other number on the page.
@@ -2659,12 +2663,19 @@ def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
         from app.reports import focus as FC
         data._flags["mission_levers"] = FC.levers(funnel)
 
+    leaders = ()
+    if scope.level == S.ZONE:
+        leaders = S.zone_leader_names(data.roster, scope.name)
+    elif scope.level == S.DISTRICT:
+        leaders = S.district_leader_names(data.roster, scope.zone or "",
+                                          scope.name)
     return ReportModel(
         scope=scope,
         period=period,
         comparison=comparison,
         mission_name=data.mission_name,
         today=data.today,
+        leaders=leaders,
         coverage=coverage,
         comparison_coverage=comparison_coverage,
         reporting=_reporting(data, scope, period, coverage),
