@@ -859,3 +859,79 @@ failure. Four new tests.
   monthly table.
 - Suite: **1 failed / 2013 passed / 1 skipped** (baseline failure only).
   The new test file is `test_packet_year_path.py`.
+
+### 2026-10-16 — step 2.3 (the gap and the bets), committed `e194db3`
+
+- **`forecast.year_gap(year, pipeline, levers, today)` → `YearGap`**
+  (goal, low/high gap, `bets`; `Bet` = label, low, high, how). It is set as
+  `Forward.gap` for the **mission only**.
+  - **Gap** = 527 less the landing (never below 0).
+  - **Bet (a):** the mission's `Forward.levers` (each zone's largest leak
+    converting like the mission, per six weeks of finding) × the transfers
+    left in the year, which is weeks to 31 Dec ÷ 6. On 2026-10-16 that is
+    1,8 transfers.
+  - **Bet (b):** the open dates 91–180 days old × (the 31–60 bucket's
+    conversion − their own), over the pipeline's six weeks.
+    - Its range applies the backtest miss.
+    - While the fit has run high in at least two-thirds of its backtests,
+      the range runs only down from the figure (this answers the 2.0 STATUS
+      note).
+- **`packet.gap_block`** sits on the mission's baptism page, after the zones'
+  paths and before *Lo que viene*. It leads with `packet.gap_line`, the
+  sentence Phase 3.3 will put on page 1.
+  - The note says the bets can count the same people (the sum is a
+    ceiling), and that reporting is not a baptism bet.
+  - A test guards that no sentence suggests moving 527.
+- **Live (2026-10-16):** the year lands 446–468, so **59–82 short**.
+  - (a) 9 zones: **10–38**.
+  - (b) 433 dates aged 91–180 days: **11–20**.
+  - *"Las palancas medidas suman 22-58 de los 59-82 que faltan para 527."*
+  - A build dated 2026-12-02 gives 10–31, with fewer transfers left.
+- Suite: **1 failed / 2021 passed / 1 skipped**. The new test file is
+  `test_report_year_gap.py`.
+
+### 2026-10-16 — step 2.4 (verify), Phase 2 built, verified and pushed
+
+- **Commits:**
+  - `c763c5e` 2.0
+  - `3a15625` 2.1
+  - `06035e8` 2.2
+  - `e194db3` 2.3
+  - the 2.4 fix: the transfer block's cell padding goes from 3 to 2,5 pt.
+    That keeps San Pedro's *Este traslado* block on its first page; it had
+    measured 687 of 688 pt.
+- **Live builds (data of 2026-10-16):**
+  - **Mes pasado (September): 51 pages.** That is 50 + 1: the data note
+    now carries the monthly table.
+  - **Este traslado (2026-6): 51 pages** (49 after Phase 1).
+- **Pages read:** mission p4 (tablero + transfer block), p6 (year path +
+  the zones' paths), p7 (gap + pipeline); every zone's first page; Los
+  Ángeles Norte's third page; the data note.
+- **The December check:** a build dated **2026-12-02** prints *"Cómo
+  empieza 2026-8 · cómo cerró 2026-7"* on the mission page and all four
+  zone pages.
+- **Screen (AppTest, live data pickled 10-16):** *Este traslado* and *Mes
+  pasado* run with no exception. They show "Cómo termina el traslado", the
+  6-month method text and *"se quedó alto"*. Dated 2026-12-02, both tabs
+  show "Cómo empieza" instead.
+- **Suite:** 1 failed / 2021 passed / 1 skipped. That is the baseline's
+  single date-sensitive failure, with 25 new tests in Phase 2.
+
+**Three build-time choices for Zackary (all amendable):**
+1. **2.0:** the backtest is out-of-sample (each month-end is checked with
+   the fit of its own day). The live range is 23–61, and the method line
+   says it ran high in 10 of 12.
+2. **2.2:** the zones' year paths are small multiples on the mission page,
+   not on each zone page. The zone pages are full. A per-zone chart cost
+   every zone a nearly blank third page.
+3. **2.3:** bet (b)'s range runs only downward while the pipeline runs high.
+
+**Open for Phase 3/4:**
+- Los Ángeles Norte's third page (*De resultado a causa*, four districts),
+  for 4.2.
+- The data note's second page, for 4.1/4.2.
+- The 2026-7 goals must be saved on Mon 2026-10-19 (Metas bulk Recomendar),
+  or the November packet's "Cómo empieza"/running block reads "sin meta".
+
+**Next: Phase 3** (new chat), from 3.1. **Zackary must Reboot** the deployed
+app after this push (`dashboard/DEPLOYING.md`).
