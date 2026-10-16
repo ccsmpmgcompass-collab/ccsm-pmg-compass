@@ -690,8 +690,9 @@ def how_to_read(mission, sections) -> list:
         mission)))
 
     note = next((s for s in sections if s.key == DATA_NOTE), None)
-    where = (f"en la página {note.page_label}" if note is not None
-             and note.present else "al final")
+    where = ((f"en las páginas {note.page_label}" if note.page_count > 1
+              else f"en la página {note.page_label}")
+             if note is not None and note.present else "al final")
     rules.append((
         "Dónde está el resto",
         f"La nota de datos, {where}, dice de qué pestaña sale cada cifra, qué "
@@ -2220,14 +2221,16 @@ def dates_block(model) -> list:
     conclusion = ""
     if len(q.cohorts) == 2 and q.cohorts[0].dates and q.cohorts[1].dates:
         a, b = q.cohorts
-        conclusion = (f"Las fechas de {_months_words(b.start, b.end)} valen "
-                      f"menos que las de {a.start.year}: "
+        conclusion = (f"Las fechas fijadas entre "
+                      f"{_months_words(b.start, b.end)} valen menos que las "
+                      f"de {a.start.year}: "
                       f"{_int(b.share(b.baptized) * 100)} de cada 100 "
                       f"terminaron en bautismo en seis semanas, contra "
                       f"{_int(a.share(a.baptized) * 100)}."
                       if b.share(b.baptized) < a.share(a.baptized) else
-                      f"Las fechas de {_months_words(b.start, b.end)} valen "
-                      f"lo que las de {a.start.year}: "
+                      f"Las fechas fijadas entre "
+                      f"{_months_words(b.start, b.end)} valen lo que las de "
+                      f"{a.start.year}: "
                       f"{_int(b.share(b.baptized) * 100)} de cada 100 "
                       f"terminaron en bautismo en seis semanas, contra "
                       f"{_int(a.share(a.baptized) * 100)}.")
@@ -2640,6 +2643,9 @@ def focus_block(model) -> list:
     labels = {r.key: r.label for r in model.key_indicators}
     cut = next((i for i, r in enumerate(rows, start=1) if r.cumulative >= 80),
                len(rows))
+    if model.scope.level == S.ZONE:
+        # The rows the zone's table prints, so the head and the table agree.
+        cut = min(cut, ZONE_FOCUS_ROWS)
     quiet = sum(r.silent for r in rows)
     conclusion = (f"{'Las' if noun == 'áreas' else 'Los'} primer"
                   f"{'as' if noun == 'áreas' else 'os'} "
@@ -3021,6 +3027,11 @@ def trend_block(model) -> list:
             for s in series]
     reporting = [p.reporting for p in series[0].points]
     filed = [n for n in reporting if n is not None]
+    floor = P.THIN_REPORTING_RATE * model.scope.area_count
+    while filed and filed[0] < floor:
+        # Weeks before the weekly form really began (`weekly_records_from`'s
+        # rule) are not silence: one stray row read "entre 1 y 36".
+        filed = filed[1:]
     conclusion = (f"Informaron entre {_int(min(filed))} y {_int(max(filed))} de "
                   f"{_int(model.scope.area_count)} áreas por semana; la "
                   f"última, {_int(filed[-1])}." if filed else "")
@@ -3839,7 +3850,8 @@ def section_methods(mission) -> list:
          "la unidad varía de una semana a otra, «pocas cifras» con menos de 6 "
          "informes por lado (en el gráfico, un punto hueco)."),
         ("Productividad",
-         INDEX_NOTE),
+         INDEX_NOTE.replace("A la derecha, el índice de productividad",
+                            "El índice de productividad")),
     ]
     yl = fwd.year
     if yl is not None and yl.anchors:
