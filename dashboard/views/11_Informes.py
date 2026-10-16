@@ -698,10 +698,8 @@ elif _FWD.pipeline is not None:
         info=("Cada fecha abierta (fijada en el último año, sin bautismo) "
               "cuenta con la probabilidad con que las fechas de su misma edad "
               "terminaron en bautismo dentro de seis semanas, medida en los "
-              "últimos 15 cierres de mes"
-              + (f"; en los últimos {_PL.backtests} el cálculo falló por un "
-                 f"{fmt_percent((_PL.miss or 0) * 100)} típico"
-                 if _PL.miss is not None else "")
+              f"últimos {_PK.F.FIT_MONTHS} cierres de mes"
+              + (f"; {_PL.miss_clause}" if _PL.miss_clause else "")
               + ". El rango es el 80% de lo esperable."),
     )
     render_kpi_row([

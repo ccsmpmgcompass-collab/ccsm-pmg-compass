@@ -133,6 +133,66 @@ def test_the_forecast_counts_only_dates_still_open_today():
     assert pl.low <= pl.expected <= pl.high
 
 
+def _monthly(first: date, months: int, convert) -> list:
+    """A date on the 5th and the 25th of each month; ``convert(set_d)`` gives
+    its baptism or None."""
+    rows = []
+    for i in range(months):
+        y, m = first.year + (first.month - 1 + i) // 12, (first.month - 1 + i) % 12 + 1
+        for day in (5, 25):
+            set_d = date(y, m, day)
+            c = convert(set_d)
+            rows.append((set_d.isoformat(), c.isoformat() if c else None))
+    return rows
+
+
+def test_a_steady_mission_backtests_without_a_miss():
+    """Every date converts on schedule (the 25th's ten days on, the 5th's
+    thirty), so whatever the fit saw at each month-end, it forecast right."""
+    rows = _monthly(date(2025, 1, 1), 16, lambda s: s + timedelta(
+        days=10 if s.day == 25 else 30))
+    fit = F.fit_pipeline(*_people(rows), date(2026, 4, 15))
+    assert fit.backtests == 12
+    assert fit.miss == pytest.approx(0) and fit.over == 0
+
+
+def test_the_backtest_uses_the_fit_of_its_own_day():
+    """Step 2.0: from January 2026 the 5th's dates stop converting. A
+    month-end is forecast with the fit that existed then, so 2025's ten
+    month-ends are exact and only January and February 2026 overshoot (2
+    forecast, 1 baptism). A fit that had already seen 2026 would have missed
+    every 2025 month-end low instead."""
+    def convert(s):
+        if s.day == 25:
+            return s + timedelta(days=10)
+        return s + timedelta(days=30) if s.year == 2025 else None
+    rows = _monthly(date(2025, 1, 1), 16, convert)
+    fit = F.fit_pipeline(*_people(rows), date(2026, 4, 15))
+    assert fit.backtests == 12
+    assert fit.over == 2
+    assert fit.miss == pytest.approx(0)            # the median: 10 of 12 exact
+
+
+def test_the_backtest_clause_says_which_way_it_missed():
+    pl = F.Pipeline(open_dates=1250, expected=43.1, low=24, high=63,
+                    miss=0.45, backtests=12, over=10)
+    assert pl.miss_clause == ("en los últimos 12 cierres de mes, el cálculo "
+                              "hecho en su momento falló por un 45% típico y "
+                              "se quedó alto en 10")
+    even = F.Pipeline(open_dates=1, expected=1, low=0, high=2, miss=0.2,
+                      backtests=12, over=6)
+    assert even.miss_clause.endswith("falló por un 20% típico")
+    low = F.Pipeline(open_dates=1, expected=1, low=0, high=2, miss=0.2,
+                     backtests=12, over=1)
+    assert low.miss_clause.endswith("y se quedó bajo en 11")
+    assert F.Pipeline(open_dates=1, expected=1, low=0, high=2).miss_clause == ""
+
+
+def test_the_pipeline_is_fitted_on_six_month_ends():
+    """Decision 68."""
+    assert F.FIT_MONTHS == 6
+
+
 def test_no_history_is_no_forecast():
     set_d, conf = _people([("2026-09-20", None)])
     assert F.pipeline(set_d, conf, date(2026, 10, 6), F.PipelineFit()) is None

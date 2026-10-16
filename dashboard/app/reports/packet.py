@@ -1756,14 +1756,13 @@ def pipeline_block(model) -> list:
             headers=("Zona", "Fechas abiertas", ("Esperados", "6 semanas"), ""),
             align=("l", "r", "r", "l")))
     flow.append(Spacer(0, 4))
-    miss = (f" En los últimos {es_display.integer(pl.backtests)} cierres de "
-            f"mes, el mismo cálculo falló por un "
-            f"{es_display.percent((pl.miss or 0) * 100, 0)} típico."
-            if pl.miss is not None else "")
+    clause = pl.miss_clause
+    miss = f" {clause[:1].upper()}{clause[1:]}." if clause else ""
     flow.append(Paragraph(PP.text(
         "Método: cada fecha abierta cuenta con la probabilidad con que las "
         "fechas de su misma edad terminaron en bautismo dentro de seis "
-        "semanas, medida en los últimos 15 cierres de mes de toda la misión."
+        f"semanas, medida en los últimos {_int(F.FIT_MONTHS)} cierres de mes "
+        "de toda la misión."
         f"{miss} El rango es el 80% de lo esperable. Sólo cuenta a quienes "
         "hoy tienen fecha; registros de Tableau por persona, algo por debajo "
         "de la cifra certificada. Sin color: es una proyección."),

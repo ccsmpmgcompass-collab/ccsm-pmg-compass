@@ -246,10 +246,13 @@ BUCKETS = (0, 15, 31, 61, 91, 181, 366)
 BUCKET_LABELS = ("0-14 días", "15-30", "31-60", "61-90", "91-180", "181-365")
 #: The forecast horizon: six weeks, a transfer.
 HORIZON = 42
-#: How far back the conversion is fitted: month-ends over the last 15 months
-#: whose six weeks have fully happened.
-FIT_MONTHS = 15
-#: How many of those month-ends the backtest reports on.
+#: How far back the conversion is fitted: the last 6 month-ends whose six
+#: weeks have fully happened (decision 68). 2026 dates convert at about half
+#: the 2025 rate, and the 15-month pooled fit overshot ×1,7–2,1 from June.
+FIT_MONTHS = 6
+#: How many month-ends the backtest reports on. Each is forecast with the fit
+#: that existed AT that month-end — what the packet would have printed then —
+#: never with a fit that already saw its answer (step 2.0).
 BACKTEST_MONTHS = 12
 
 
@@ -261,7 +264,9 @@ class Pipeline:
     next six weeks, by its age (P4). ``low``/``high`` are an 80% range: the
     wider of the Poisson-binomial spread and the backtest's typical miss.
     ``miss`` is that typical miss as a fraction — the median of |forecast −
-    what happened| / what happened over the last twelve month-ends.
+    what happened| / what happened over the last twelve month-ends, each
+    forecast with the fit of its own day. ``high`` counts the backtests that
+    forecast more than happened.
     """
 
     open_dates: int
@@ -272,6 +277,23 @@ class Pipeline:
     miss: float | None = None
     backtests: int = 0
     asof: date | None = None
+    over: int = 0
+
+    @property
+    def miss_clause(self) -> str:
+        """", el cálculo hecho en su momento falló por un 45% típico (alto en
+        10)" — both renderers' backtest words, or "" with no backtest."""
+        if self.miss is None or not self.backtests:
+            return ""
+        from app.config import es_display as ES
+        line = (f"en los últimos {ES.integer(self.backtests)} cierres de mes, "
+                f"el cálculo hecho en su momento falló por un "
+                f"{ES.percent(self.miss * 100, 0)} típico")
+        if self.over * 3 >= self.backtests * 2:
+            line += f" y se quedó alto en {ES.integer(self.over)}"
+        elif (self.backtests - self.over) * 3 >= self.backtests * 2:
+            line += f" y se quedó bajo en {ES.integer(self.backtests - self.over)}"
+        return line
 
 
 @dataclass(frozen=True)
@@ -281,6 +303,7 @@ class PipelineFit:
     p: tuple = ()                  # one probability per bucket
     miss: float | None = None
     backtests: int = 0
+    over: int = 0
 
 
 def _bucket(age_days) -> pd.Series:
@@ -332,35 +355,58 @@ def fit_pipeline(set_d: pd.Series, conf_d: pd.Series, asof: date) -> PipelineFit
     (T, T + 42 days]. Pooling the T's gives P(baptised within six weeks | still
     open at this age) — the conditional probability P4 asks for, measured
     rather than assumed.
+
+    The backtest forecasts each of the last ``BACKTEST_MONTHS`` month-ends T
+    with the fit as of T (the ``FIT_MONTHS`` month-ends before it whose six
+    weeks had happened by T), so ``miss`` is the error the packet would have
+    printed, not the error of a fit that already saw the answer.
     """
-    n = [0] * (len(BUCKETS) - 1)
-    h = [0] * (len(BUCKETS) - 1)
-    per_t = []
+    k = len(BUCKETS) - 1
     set_ns, conf_ns = _ns(set_d), _ns(conf_d)
-    for t in _month_ends(asof, FIT_MONTHS):
-        mask = _open_at(set_d, conf_d, t)
-        if not mask.any():
+    stats = {}                    # month-end -> (open per bucket, hits per bucket)
+
+    def at(t):
+        if t not in stats:
+            mask = _open_at(set_d, conf_d, t)
+            tt = _t(t)
+            buckets = _bucket((tt - set_ns[mask]) // _DAY)
+            later = conf_ns[mask]
+            hit = (later > tt) & (later <= tt + HORIZON * _DAY)
+            counts = buckets.value_counts().to_dict()
+            hits = buckets[hit].value_counts().to_dict()
+            n, h = [0] * k, [0] * k
+            for b, c in counts.items():
+                if pd.notna(b):
+                    n[int(b)] += int(c)
+                    h[int(b)] += int(hits.get(b, 0))
+            stats[t] = (n, h)
+        return stats[t]
+
+    def fit_at(day):
+        n, h = [0] * k, [0] * k
+        for t in _month_ends(day, FIT_MONTHS):
+            tn, th = at(t)
+            n = [a + b for a, b in zip(n, tn)]
+            h = [a + b for a, b in zip(h, th)]
+        if not any(n):
+            return None
+        return tuple(h[i] / n[i] if n[i] else 0.0 for i in range(k))
+
+    p = fit_at(asof)
+    if p is None:
+        return PipelineFit(p=tuple([0.0] * k))
+    misses, over = [], 0
+    for t in _month_ends(asof, BACKTEST_MONTHS):
+        then = fit_at(t.date())
+        n, h = at(t)
+        actual = sum(h)
+        if then is None or not actual:
             continue
-        tt = _t(t)
-        ages = (tt - set_ns[mask]) // _DAY
-        buckets = _bucket(ages)
-        later = conf_ns[mask]
-        hit = (later > tt) & (later <= tt + HORIZON * _DAY)
-        counts = buckets.value_counts().to_dict()
-        hits = buckets[hit].value_counts().to_dict()
-        for b, c in counts.items():
-            if pd.notna(b):
-                n[int(b)] += int(c)
-                h[int(b)] += int(hits.get(b, 0))
-        per_t.append((t, counts, int(hit.sum())))
-    p = tuple(h[i] / n[i] if n[i] else 0.0 for i in range(len(n)))
-    misses = []
-    for t, counts, actual in per_t[-BACKTEST_MONTHS:]:
-        forecast = sum(p[int(b)] * c for b, c in counts.items() if pd.notna(b))
-        if actual:
-            misses.append(abs(forecast - actual) / actual)
+        forecast = sum(q * c for q, c in zip(then, n))
+        misses.append(abs(forecast - actual) / actual)
+        over += forecast > actual
     miss = (sorted(misses)[len(misses) // 2] if misses else None)
-    return PipelineFit(p=p, miss=miss, backtests=len(misses))
+    return PipelineFit(p=p, miss=miss, backtests=len(misses), over=over)
 
 
 def pipeline(set_d: pd.Series, conf_d: pd.Series, asof: date,
@@ -385,7 +431,7 @@ def pipeline(set_d: pd.Series, conf_d: pd.Series, asof: date,
     return Pipeline(open_dates=int(open_now.sum()), expected=expected,
                     low=max(0.0, expected - spread), high=expected + spread,
                     by_bucket=tuple(rows), miss=fit.miss,
-                    backtests=fit.backtests, asof=asof)
+                    backtests=fit.backtests, asof=asof, over=fit.over)
 
 
 # ── A unit's baptisms from Tableau's person records (decision 47) ─────────────
