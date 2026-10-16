@@ -2144,7 +2144,7 @@ def transfer_block(model) -> list:
         head,
         PP.table(rows, (TRANSFER_LABEL_WIDTH,) + (cell,) * len(kis),
                  headers=("",) + tuple(_transfer_head(k) for k in kis),
-                 align=("l",) + ("r",) * len(kis), pad=3.0),
+                 align=("l",) + ("r",) * len(kis), pad=2.5),
         Spacer(0, 3),
         Paragraph(PP.text(note), st["note"]),
     ]
