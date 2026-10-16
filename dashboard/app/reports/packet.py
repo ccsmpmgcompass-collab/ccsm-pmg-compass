@@ -1542,7 +1542,7 @@ def _period_sentence(bap, period) -> str:
     return fig.sentence(period.label)
 
 
-def baptism_page(model) -> list:
+def baptism_page(model, peers=None) -> list:
     """"Bautismos: el año y lo que viene" (AUDIT §5 item 3): the period's
     CERTIFIED figure first (decisions 41, 42), then the year against the 527
     with its landing range and the two years before it, then the open
@@ -1567,6 +1567,9 @@ def baptism_page(model) -> list:
     year = year_block(model)
     if year:
         flow += year + [Spacer(0, 8)]
+        paths = zone_paths(model, peers or {})
+        if paths:
+            flow += paths + [Spacer(0, 8)]
     elif bap is not None:
         flow.append(Paragraph(PP.text(
             f"Bautismos {model.today.year}: sin meses certificados todavía, "
@@ -1574,7 +1577,8 @@ def baptism_page(model) -> list:
             f"bautismos; es un año sin captura."), st["note_lead"]))
     pipe = pipeline_block(model)
     if pipe:
-        flow += pipe
+        # The head and its tiles together, never the head alone at a foot.
+        flow += [CondPageBreak(120)] + pipe
     if bap is not None:
         flow += [Spacer(0, 8), Paragraph(PP.text(
             f"Sobre la cifra de bautismos. Arriba está la cifra CERTIFICADA "
@@ -1675,25 +1679,9 @@ def year_block(model) -> list:
                              note=(f"{_int(prior)} en los mismos "
                                    f"{es_display.integer(yl.months)} meses")))
     flow += [PP.stat_tiles(W, tiles), Spacer(0, 6)]
-
-    years = sorted(yl.monthly)
-    rows = []
-    run = 0
-    for i, name in enumerate(F.MONTH_ABBR):
-        this = yl.monthly.get(yl.year, [None] * 12)[i]
-        if this is not None:
-            run += this
-        row = [name] + [_int(yl.monthly[y][i]) if yl.monthly[y][i] is not None
-                        else "" for y in years]
-        row.append(_int(run) if this is not None else "")
-        row.append(_int(yl.goal * (i + 1) / 12) if yl.goal else "")
-        rows.append(row)
-    heads = (["mes"] + [str(y) for y in years]
-             + [("acumulado", str(yl.year)), ("ritmo de", "la meta")])
-    widths = [70.0] + [62.0] * len(years) + [80.0, 80.0]
-    flow.append(PP.table(rows, widths, headers=heads,
-                         align=["l"] + ["r"] * (len(years) + 2)))
-    flow.append(Spacer(0, 4))
+    # Step 2.2 (C5): the path replaces the month-by-month table, which moves
+    # to the data note (`year_table`).
+    flow += [year_path(yl, W, 150.0), Spacer(0, 4)]
     anchors = " · ".join(f"{words} {_int(v)}" for words, v in yl.anchors)
     lead = ""
     b = fwd.baptisms
@@ -1710,10 +1698,90 @@ def year_block(model) -> list:
                       f"todavía sin cerrar: cuentan en lo que va del año, "
                       f"no en el ritmo ni en la proyección. ")
     flow.append(Paragraph(PP.text(
-        f"{lead}{open_month}Cierre probable: el mínimo y el máximo de cuatro "
-        f"cálculos — {anchors}. Sin color: es una proyección."
+        f"{lead}{open_month}La línea es lo acumulado mes a mes; la raya, el "
+        f"camino parejo a la meta; la mancha, dónde cierra diciembre. Cierre "
+        f"probable: el mínimo y el máximo de cuatro cálculos — {anchors}. "
+        f"Sin color: es una proyección. Mes a mes, en la nota de datos."
         f"{_year_check_sentence(model)}"), st["note"]))
     return flow
+
+
+def year_path(yl, width: float, height: float, *, axis: bool = True):
+    """`PP.year_path_chart` for one `YearLanding`: the closed months'
+    running total, the goal's straight path to December, the landing fan."""
+    this = yl.monthly.get(yl.year, [None] * 12)
+    actual, run = [], 0
+    for v in this[:yl.months]:
+        run += v or 0
+        actual.append(run)
+    path = [yl.goal * (i + 1) / 12 for i in range(12)] if yl.goal else []
+    return PP.year_path_chart(
+        width, height, F.MONTH_ABBR, path, actual, yl.low, yl.high,
+        goal_label=f"meta {_int(yl.goal)}" if yl.goal else "",
+        actual_label=(f"{_int(yl.total)} a {F.MONTH_ABBR[yl.months - 1]}"
+                      if axis else ""),
+        range_label=f"cierra {_range(yl.low, yl.high)}"
+        if yl.low is not None else "", axis=axis)
+
+
+def zone_paths(model, peers: dict) -> list:
+    """Step 2.2: each pilot zone's year as a small multiple under the
+    mission's — Tableau's records against its share of 527 (decision 47).
+    On the mission page because a zone's own two pages are full, and the
+    zone leaders read the mission pages in the council packet."""
+    if model.scope.level != S.MISSION:
+        return []
+    zones = [(c.name, peers[c.scope.key].forward.year) for c in model.children
+             if c.scope.key in peers
+             and peers[c.scope.key].forward.year is not None]
+    if not zones:
+        return []
+    st = PP.styles()
+    W = PP.CONTENT_WIDTH
+    n = len(zones)
+    cell = W / n
+    cells = []
+    for name, yl in sorted(zones):
+        caption = (f"{_int(yl.total)} a {F.MONTH_ABBR[yl.months - 1]}"
+                   + (f" de {_int(yl.goal)}" if yl.goal else "")
+                   + (f" · cierra {_range(yl.low, yl.high)}"
+                      if yl.low is not None else ""))
+        cells.append([Paragraph(PP.text(name), st["cell_bold"]),
+                      year_path(yl, cell - 12, 54.0, axis=False),
+                      Paragraph(PP.text(caption), st["note"])])
+    year = zones[0][1].year
+    return [PP.SectionHead(f"Las zonas en {year}",
+                           "registros de Tableau · su parte de 527"),
+            PP.table([cells], [cell] * n, head_band=False, row_rules=False),
+            Paragraph(PP.text(
+                "Cada zona contra su parte de la meta: la que tuvo de los "
+                "bautismos de la misión en los últimos doce meses. Misma "
+                "lectura que arriba, sin escala. Sin color."), st["note"])]
+
+
+def year_table(yl) -> list:
+    """The month-by-month table the year block used to carry (step 2.2): each
+    year's certified months, this year's running total, and the goal's even
+    pace."""
+    years = sorted(yl.monthly)
+    rows = []
+    run = 0
+    for i, name in enumerate(F.MONTH_ABBR):
+        this = yl.monthly.get(yl.year, [None] * 12)[i]
+        if this is not None:
+            run += this
+        row = [name] + [_int(yl.monthly[y][i]) if yl.monthly[y][i] is not None
+                        else "" for y in years]
+        row.append(_int(run) if this is not None else "")
+        row.append(_int(yl.goal * (i + 1) / 12) if yl.goal else "")
+        rows.append(row)
+    heads = (["mes"] + [str(y) for y in years]
+             + [("acumulado", str(yl.year)), ("ritmo de", "la meta")])
+    widths = [70.0] + [62.0] * len(years) + [80.0, 80.0]
+    return [PP.SectionHead(f"Bautismos de la misión, mes a mes",
+                           f"{yl.source} · meses cerrados"),
+            PP.table(rows, widths, headers=heads,
+                     align=["l"] + ["r"] * (len(years) + 2))]
 
 
 #: The pipeline's columns by age and, at mission level, by zone.
@@ -2891,7 +2959,7 @@ def mission_pages(model, goals, peers=None) -> list:
     return run_on([
         tablero_block(model), focus_block(model),
         children_page(model) + reporting_block(model),
-        baptism_page(model), levers_block(model), levers_size_block(model),
+        baptism_page(model, peers), levers_block(model), levers_size_block(model),
         finding_mix_block(model), trend_block(model), years_block(model),
         changes_block(model), nightly_page(model, goals),
     ])
@@ -3199,6 +3267,8 @@ def data_note(models, goals=None) -> list:
     ]
     flow.append(PP.table(rows, [108, 124, W - 232],
                          headers=["Cifra", "Fuente", "Qué es"]))
+    if mission.forward.year is not None:
+        flow += [Spacer(0, 10)] + year_table(mission.forward.year)
     flow.append(Spacer(0, 10))
     flow.append(PP.SectionHead("Lo que este paquete no dice", rule=False))
     sentences = [

@@ -1052,6 +1052,115 @@ def strip_plot(width: float, points, *, highlight: str = "",
     return d
 
 
+# ── 6b · The year's path: cumulative against the goal's straight line ───────
+
+def _faint(color: colors.Color, alpha: float) -> colors.Color:
+    return colors.Color(color.red, color.green, color.blue, alpha=alpha)
+
+
+def year_path_chart(width: float, height: float, months, path, actual,
+                    low: float | None, high: float | None, *,
+                    goal_label: str = "", actual_label: str = "",
+                    range_label: str = "", axis: bool = True) -> Drawing:
+    """The year so far as a cumulative line, the goal's straight path to
+    December dashed under it, and the landing range as a pale fan from the
+    last closed month to December (PLAN-2026-10-13 step 2.2, C5).
+
+    No status colour anywhere: the line is the magnitude blue, the path ink
+    grey, the fan a tint of the line. ``months`` are the twelve labels,
+    ``path`` the goal's cumulative value at each month's end (or empty),
+    ``actual`` the cumulative value at each CLOSED month's end, ``low`` /
+    ``high`` where December lands. The three labels sit in a right margin,
+    pushed apart when they would collide. ``axis=False`` is the small
+    multiple: no scale, no month names, no margin — its caption says it.
+    """
+    d = Drawing(width, height)
+    left, right, bottom, top = ((26.0, 62.0, 12.0, 6.0) if axis
+                                else (2.0, 2.0, 2.0, 3.0))
+    plot_w, plot_h = width - left - right, height - bottom - top
+    values = [v for v in list(path or []) + list(actual or [])
+              + [low, high] if v is not None]
+    if not actual or not values:
+        return d
+    top_v = max(values) * 1.06 or 1.0
+
+    def x_of(month: float) -> float:            # 0 = 1 January, 12 = 31 Dec
+        return left + plot_w * month / 12
+
+    def y_of(v: float) -> float:
+        return bottom + plot_h * v / top_v
+
+    step = _nice_step(top_v / 3) if axis else top_v * 2
+    tick = 0.0
+    while tick <= top_v:
+        y = y_of(tick)
+        d.add(Line(left, y, left + plot_w, y,
+                   strokeColor=RULE if tick == 0 else RULE_SOFT,
+                   strokeWidth=0.5))
+        if axis:
+            d.add(_string(left - 4, y - 2.2,
+                          f"{int(tick):,}".replace(",", "."), NOTE, INK_3,
+                          anchor="end"))
+        tick += step
+    for i, label in enumerate(months if axis else ()):
+        d.add(_string(x_of(i + 0.5), 2, label, NOTE, INK_3, anchor="middle"))
+
+    line = SERIES[0]
+    closed = len(actual)
+    end_x, end_y = x_of(closed), y_of(actual[-1])
+    if low is not None and high is not None and closed < 12:
+        d.add(Polygon(points=[end_x, end_y, x_of(12), y_of(low),
+                              x_of(12), y_of(high)],
+                      fillColor=_faint(line, 0.24), strokeColor=None,
+                      strokeWidth=0))
+    if path:
+        pts = [x_of(0), y_of(0)]
+        for i, v in enumerate(path):
+            pts += [x_of(i + 1), y_of(v)]
+        d.add(PolyLine(points=pts, strokeColor=INK_3, strokeWidth=0.8,
+                       strokeDashArray=[2.5, 2]))
+    pts = [x_of(0), y_of(0)]
+    for i, v in enumerate(actual):
+        pts += [x_of(i + 1), y_of(v)]
+    d.add(PolyLine(points=pts, strokeColor=line, strokeWidth=1.5,
+                   strokeLineJoin=1))
+    d.add(Circle(end_x, end_y, 2.2, fillColor=line, strokeColor=PAPER,
+                 strokeWidth=0.6))
+    if actual_label:
+        # Below the point: the goal's dashed path runs just above the line.
+        d.add(_string(end_x + 2, end_y - 10, actual_label,
+                      Type(NOTE.size, NOTE.leading, FONT_BOLD), INK,
+                      anchor="middle"))
+
+    # The right margin: the goal's end and the fan's, never on top of each
+    # other.
+    marks = []
+    if path and goal_label:
+        marks.append([y_of(path[-1]), goal_label, INK_2])
+    if low is not None and high is not None and range_label and closed < 12:
+        marks.append([y_of((low + high) / 2), range_label, line])
+    marks.sort(key=lambda m: m[0])
+    for a, b in zip(marks, marks[1:]):
+        if b[0] - a[0] < 9:
+            mid = (a[0] + b[0]) / 2
+            a[0], b[0] = mid - 4.5, mid + 4.5
+    for y, label, color in marks:
+        d.add(_string(x_of(12) + 4, y - 2.2, fit(label, NOTE, right - 4),
+                      NOTE, color))
+    return d
+
+
+def _nice_step(raw: float) -> float:
+    """1, 2 or 5 times a power of ten, at or above ``raw``."""
+    if raw <= 0:
+        return 1.0
+    power = 10 ** math.floor(math.log10(raw))
+    for k in (1, 2, 5, 10):
+        if k * power >= raw:
+            return k * power
+    return 10 * power
+
+
 # ── 7 · A ranked row ──────────────────────────────────────────────────────────
 
 RANK_ROW_HEIGHT = 17.0
