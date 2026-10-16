@@ -147,15 +147,18 @@ _model = M.build_report(_scope, _period, _comparison, _data)
 _PACKET_KEY = "rep_packet"
 
 
-def _build_packet(period_key: str, against: str, name: str) -> None:
+def _build_packet(period_key: str, against: str, name: str,
+                  annex_name: str) -> None:
     from app.reports import packet as PK
 
-    with st.spinner("Armando el paquete — 63 unidades…"):
+    with st.spinner("Armando el paquete y el anexo — 63 unidades…"):
         try:
+            # D3 (step 4.1): two PDFs from one set of models — the council
+            # packet, and the annex of districts and areas.
+            council, annex = PK.build_both(period_key, against, data=_data)
             st.session_state[_PACKET_KEY] = {
-                "period": period_key,
-                "bytes": PK.build(period_key, against, data=_data),
-                "name": name,
+                "period": period_key, "bytes": council, "name": name,
+                "annex": annex, "annex_name": annex_name,
             }
         except Exception as exc:          # noqa: BLE001 - shown, not hidden
             st.session_state.pop(_PACKET_KEY, None)
@@ -171,22 +174,35 @@ def _render_packet_control() -> None:
         if st.button(f"Paquete del consejo — {council.label}", type="primary",
                      use_container_width=True, key="rep_build_council"):
             _build_packet(P.PACKET_PERIOD, P.COMPARE_PRIOR,
-                          PK.filename_for(P.PACKET_PERIOD, _data.today))
+                          PK.filename_for(P.PACKET_PERIOD, _data.today),
+                          PK.filename_for(P.PACKET_PERIOD, _data.today,
+                                          PK.ANNEX))
         if _period.key != P.PACKET_PERIOD and st.button(
                 f"Paquete · {_period.label}", use_container_width=True,
                 key="rep_build_period"):
-            _build_packet(_period.key, _against, PK.filename(_model))
+            _build_packet(_period.key, _against, PK.filename(_model),
+                          PK.filename_for(_period.key, _data.today, PK.ANNEX))
     built = st.session_state.get(_PACKET_KEY)
     with right:
         if built and built.get("period") in (_period.key, P.PACKET_PERIOD):
             size = len(built["bytes"]) / 1024
             st.download_button(
-                f"Descargar · {built['name']} ({fmt_int(size)} KB)",
+                f"Descargar el paquete · {built['name']} ({fmt_int(size)} KB)",
                 data=built["bytes"], file_name=built["name"],
-                mime="application/pdf", use_container_width=True)
+                mime="application/pdf", use_container_width=True,
+                key="rep_download_council")
+            if built.get("annex"):
+                size = len(built["annex"]) / 1024
+                st.download_button(
+                    f"Descargar el anexo · {built['annex_name']} "
+                    f"({fmt_int(size)} KB)",
+                    data=built["annex"], file_name=built["annex_name"],
+                    mime="application/pdf", use_container_width=True,
+                    key="rep_download_annex")
         else:
-            st.caption("Todo el consejo en un PDF: la misión, las 4 zonas, los "
-                       "13 distritos y las 45 áreas, con su guía de impresión.")
+            st.caption("Dos PDF: el paquete del consejo (la historia del mes, "
+                       "el resumen, la misión y las zonas, con su guía de "
+                       "impresión) y el anexo con cada distrito y cada área.")
 
 
 _render_packet_control()

@@ -152,22 +152,20 @@ def test_the_contents_names_the_pages_the_sections_really_start_on(models, pdf):
     assert "NOTA DE DATOS" in pages[int(claimed["Nota de datos"]) - 1].upper()
 
 
-def test_the_run_sheet_sends_a_zone_leader_to_their_own_zones_pages(models, pdf):
-    """Their row reads "the mission and their zone" — one range when the zone
-    follows the mission directly, two joined by "+" when it does not — and
-    every page it names has to carry what the row promises."""
+def test_the_run_sheet_gives_zone_leaders_the_council_packet(models, pdf):
+    """D3: the zone leaders and the sister training leaders get the council
+    packet from page 1 to the last zone — the reference pages (data note,
+    rules, this guide) go in the two full copies only (decision 43)."""
     pages = _pages(pdf)
     guide = pages[-1]          # the print guide is the last page (AUDIT L1)
-    row = re.search(r"Líderes de zona · Norte\s+([\d–+ ]+?)\s+\d+\s", guide)
-    assert row, guide
-    named = []
-    for part in row.group(1).split("+"):
-        bounds = [int(x) for x in part.strip().split("–")]
-        named += list(range(bounds[0], bounds[-1] + 1))
-    claimed = re.search(r"La misión\s+(\d+)", pages[0])
-    assert named[0] == int(claimed.group(1))
-    assert "CÓMO LEER" not in pages[named[0] - 1].upper()
-    assert any("Norte" in pages[n - 1] for n in named[1:])
+    for who in ("Líderes de zona", "Hermanas líderes de capacitación"):
+        row = re.search(who + r"\s+1–(\d+)\s", guide)
+        assert row, guide
+        last = int(row.group(1))
+        assert "LA HISTORIA DE ESTE MES" in pages[0].upper()
+        assert any("Norte" in pages[n] for n in range(last))
+        assert not any("seis reglas" in pages[n] for n in range(last))
+    assert re.search(r"Líderes de distrito · D1\s+anexo \d+", guide), guide
 
 
 def test_the_last_page_number_the_guide_promises_is_the_last_page(pdf):
@@ -188,8 +186,10 @@ def test_the_build_settles_rather_than_running_to_the_ceiling(models, monkeypatc
         lengths.append(pages)
         return pdf, pages
 
+    from app.reports import packet_annex as PA
+    _, layout = PA.build_annex_packet(models, ROSTER)
     monkeypatch.setattr(PK, "_render", counting)
-    PK.build_packet(models, ROSTER)
+    PK.build_packet(models, ROSTER, annex=layout)
     assert len(lengths) <= 2
     assert len(set(lengths)) == 1          # every pass the same length
 
@@ -280,7 +280,8 @@ def test_every_string_the_front_matter_prints_survives_the_encoding(models):
     changes anything here, something is about to print in ZapfDingbats."""
     mission = models[0]
     sections = PK.sections_for(models)
-    flows = PK.front_matter(mission, sections, [], ROSTER, total_pages=20)
+    flows = (PK.front_matter(mission, sections, [], ROSTER, total_pages=20)
+             + PK.appendix_pages(mission, sections))
     seen = 0
     for flow in flows:
         for line in _strings(flow):

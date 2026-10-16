@@ -1,9 +1,10 @@
-"""The council packet: 63 report models in, one PDF out.
+"""The council packet: 63 report models in, two PDFs out (D3, step 4.1).
 
 `model.build_all()` returns every scope's `ReportModel` in packet order — the
 mission, four zones, thirteen districts, forty-five areas — from a single sheet
-read. This module renders them, and does no arithmetic that the model has not
-already done.
+read. This module renders the council packet (the story, the resumen, the
+mission, the zones and the reference pages); `packet_annex` renders the
+districts and the areas. Neither does arithmetic the model has not done.
 
 **Page numbers resolve in a second pass.** The cover lists the packet's
 contents with their page ranges and the print guide's run sheet says which
@@ -58,6 +59,12 @@ ZONES = "sec:zones"
 DISTRICTS = "sec:districts"
 AREAS = "sec:areas"
 DATA_NOTE = "sec:data_note"
+ANNEX_FRONT = "sec:annex_front"
+
+#: The two PDFs (D3, step 4.1): what the council reads together, and what
+#: is handed out — each district leader's page and the areas behind it.
+COUNCIL = "council"
+ANNEX = "annex"
 
 
 @dataclass(frozen=True)
@@ -209,6 +216,9 @@ class Leadership:
     zone_leaders: dict = field(default_factory=dict)
     district_leaders: dict = field(default_factory=dict)
     assistants: int = 0
+    #: Sister training leaders' companionships (`Is_STL`) — the council's
+    #: "hcaps" (decision 58), who get the council packet (D3).
+    training_leaders: int = 0
 
     @property
     def districts_without_a_leader(self) -> list:
@@ -237,75 +247,65 @@ def leadership(roster) -> Leadership:
                   & (dl["District"].astype(str).str.strip() == d.name) & dl["_f"]]
         districts[d.key] = int(rows.shape[0])
     ap = flag(roster, "Is_AP")
+    stl = flag(roster, "Is_STL")
     return Leadership(zone_leaders=zones, district_leaders=districts,
-                      assistants=int(ap[ap["_f"]].shape[0]))
+                      assistants=int(ap[ap["_f"]].shape[0]),
+                      training_leaders=int(stl[stl["_f"]].shape[0]))
 
 
-def hand_outs(sections, units, roster) -> list:
-    """The run sheet: one row per person at the table.
+def hand_outs(sections, units, roster, *, annex_pages: int = 0) -> list:
+    """The run sheet: one row per kind of person at the table (D3).
 
-    The president and the assistants get the whole packet. Every zone leader
-    gets the mission pages and their own zone's, and every district leader
-    their own district's page — named one row at a time, with the unit's own
-    name on it, rather than as a single "give them their zone packet", because
-    decision 2 means there is no separate zone PDF to give them in v1.
+    The president and the assistants get both PDFs whole. The zone leaders
+    and the sister training leaders get the council packet up to its
+    reference pages — the data note, the rules and this guide go in the two
+    full copies only (decision 43's paper rule). Every district leader gets
+    their own district's page from the annex, named one row at a time.
 
-    ``units`` is `(scope, (first, last))` in packet order, already resolved.
+    ``units`` is `(scope, (first, last))` for the districts, in the annex's
+    own page numbers; ``annex_pages`` is the annex's length, 0 when there is
+    no annex beside this packet.
     """
     by_key = {s.key: s for s in sections}
     total = max((s.last_page for s in sections if s.present), default=0)
     whole = f"1–{total}" if total else "—"
+    both = (f"{whole} + anexo 1–{annex_pages}" if annex_pages and total
+            else whole)
     lead = leadership(roster)
+    count = total + annex_pages
 
-    rows = [HandOut("Presidente de misión", whole, 1, "El paquete completo",
-                    total),
-            HandOut("Asistentes", whole, max(1, lead.assistants),
-                    "El paquete completo", total)]
-
-    # Page 3 ("Cómo leer") goes in the two full copies only — decision 43:
-    # in every leader's stack it cost fifteen sheets a run (151 -> 166), a
-    # district's four pages becoming five. A leader's own pages carry the
-    # one-line version of every rule instead (R3.2), and never point at a page
-    # the leader was not handed.
-    mission_section = by_key.get(MISSION)
-    mission_label = mission_section.page_label if mission_section else "—"
-    mission_count = mission_section.page_count if mission_section else 0
+    rows = [HandOut("Presidente de misión", both, 1,
+                    "Los dos documentos completos" if annex_pages
+                    else "El paquete completo", count),
+            HandOut("Asistentes", both, max(1, lead.assistants),
+                    "Los dos documentos completos" if annex_pages
+                    else "El paquete completo", count)]
+    # Page 1 (the story) through the last zone: what the council reads.
+    pages = max((by_key[k].last_page for k in (RESUMEN, MISSION, ZONES)
+                 if k in by_key and by_key[k].present), default=0)
+    reading = f"1–{pages}" if pages else "—"
+    zl = sum(lead.zone_leaders.values())
+    rows.append(HandOut(
+        "Líderes de zona", reading, zl,
+        "El paquete del consejo, sin las páginas de referencia" if zl
+        else "Sin líderes de zona en el organigrama", pages))
+    rows.append(HandOut(
+        "Hermanas líderes de capacitación", reading, lead.training_leaders,
+        "El paquete del consejo, sin las páginas de referencia"
+        if lead.training_leaders
+        else "Sin hermanas líderes en el organigrama", pages))
+    prefix = "anexo " if annex_pages else ""
     for scope, (first, last) in units:
-        pages = str(first) if first == last else f"{first}–{last}"
-        count = last - first + 1
-        if scope.level == S.ZONE:
-            copies = lead.zone_leaders.get(scope.key, 0)
-            # A zone that follows the mission directly is one range, not two
-            # joined by "+" that a printer would have to read twice.
-            together = (mission_section is not None and mission_section.present
-                        and mission_section.last_page + 1 == first)
-            rows.append(HandOut(
-                f"Líderes de zona · {scope.name}",
-                (_joined(mission_section, replace(
-                    mission_section, first_page=first, last_page=last))
-                 if together else f"{mission_label} + {pages}"), copies,
-                "La misión y su zona" if copies
-                else "Sin líder de zona en el organigrama",
-                mission_count + count))
-        elif scope.level == S.DISTRICT:
-            copies = lead.district_leaders.get(scope.key, 0)
-            rows.append(HandOut(
-                f"Líderes de distrito · {scope.name}", pages, copies,
-                "Su distrito" if copies
-                else "Sin líder de distrito en el organigrama",
-                count))
+        if scope.level != S.DISTRICT:
+            continue
+        span = str(first) if first == last else f"{first}–{last}"
+        copies = lead.district_leaders.get(scope.key, 0)
+        rows.append(HandOut(
+            f"Líderes de distrito · {scope.name}", prefix + span, copies,
+            "Su distrito" if copies
+            else "Sin líder de distrito en el organigrama",
+            last - first + 1))
     return rows
-
-
-def _joined(*sections) -> str:
-    """Consecutive sections' pages as one range — "4–13" for the mission and
-    the zone that follows it — or "—" when none has been measured yet."""
-    present = [s for s in sections if s is not None and s.present]
-    if not present:
-        return "—"
-    first = min(s.first_page for s in present)
-    last = max(s.last_page for s in present)
-    return str(first) if first == last else f"{first}–{last}"
 
 
 def sheets(rows) -> int:
@@ -346,8 +346,10 @@ def _render(flowables) -> tuple:
 
 # ── The front matter ──────────────────────────────────────────────────────────
 
-def sections_for(models) -> list:
-    """The contents, in packet order, described for the print guide.
+def sections_for(models, part: str = COUNCIL) -> list:
+    """The contents of one of the two PDFs, in order, described for the
+    print guide (D3): the council packet, or the annex of districts and
+    areas.
 
     Titles carry their own counts ("Cada zona — 4 zonas") because Provo's
     contents does and it answers the second question a reader has. The counts
@@ -359,6 +361,17 @@ def sections_for(models) -> list:
     """
     counts = {level: sum(1 for m in models if m.scope.level == level)
               for level in (S.ZONE, S.DISTRICT, S.AREA)}
+    if part == ANNEX:
+        return [
+            Section(ANNEX_FRONT, "Qué entregar", "Quien reparte el anexo",
+                    "Referencia"),
+            Section(DISTRICTS, f"Cada distrito — {counts[S.DISTRICT]}",
+                    "Entregar a cada líder de distrito",
+                    units=counts[S.DISTRICT], unit_noun="distrito"),
+            Section(AREAS, f"Cada área — {counts[S.AREA]}",
+                    "Referencia durante el consejo", units=counts[S.AREA],
+                    unit_noun="área", feminine=True),
+        ]
     return [
         Section(RESUMEN, "Resumen para el presidente",
                 "Presidente y asistentes"),
@@ -366,12 +379,6 @@ def sections_for(models) -> list:
         Section(ZONES, f"Cada zona — {counts[S.ZONE]} zonas",
                 "Se discute zona por zona", units=counts[S.ZONE],
                 unit_noun="zona", feminine=True),
-        Section(DISTRICTS, f"Cada distrito — {counts[S.DISTRICT]}",
-                "Entregar a cada líder de distrito", units=counts[S.DISTRICT],
-                unit_noun="distrito"),
-        Section(AREAS, f"Cada área — {counts[S.AREA]}",
-                "Referencia durante el consejo", units=counts[S.AREA],
-                unit_noun="área", feminine=True),
         Section(DATA_NOTE, "Nota de datos",
                 "Quien pregunte de dónde sale una cifra", "Referencia"),
         Section(HOW_TO_READ, "Cómo leer este paquete",
@@ -410,6 +417,7 @@ def _titled(section) -> str:
     each = section.page_count / section.units
     agree = "cada una" if section.feminine else "cada uno"
     if section.key == AREAS:
+        from app.reports.packet_annex import AREAS_PER_PAGE
         words = {2: "dos", 3: "tres", 4: "cuatro"}.get(AREAS_PER_PAGE,
                                                       str(AREAS_PER_PAGE))
         return f"{section.title}, {words} por página"
@@ -423,7 +431,8 @@ def _titled(section) -> str:
 
 
 def front_matter(mission, sections, units, roster, *, total_pages: int,
-                 pagination: "Pagination | None" = None) -> list:
+                 pagination: "Pagination | None" = None,
+                 annex_pages: int = 0) -> list:
     """Page 1, the story of the month, and page 2, the resumen (step 3.3).
 
     The cover shrank to the header band of page 1 (C1): a monthly council
@@ -432,7 +441,7 @@ def front_matter(mission, sections, units, roster, *, total_pages: int,
     """
     period = mission.period
     return (
-        story_page(mission, describe(sections))
+        story_page(mission, describe(sections), annex_pages=annex_pages)
         + [PageBreak(),
            PP.SetFurniture(PP.Furniture(
                eyebrow=mission.mission_name, period=period.window_label,
@@ -457,7 +466,7 @@ def appendix_pages(mission, sections, *,
 STORY_CONTENTS = (206.0, 54.0, 206.0, 54.0)
 
 
-def story_page(mission, sections) -> list:
+def story_page(mission, sections, *, annex_pages: int = 0) -> list:
     """"La historia de este mes" (step 3.3, C1): the header band, the three
     largest findings as action titles with one number each — the year's
     path drawn under the gap to 527 — the questions they put to the council,
@@ -498,14 +507,18 @@ def story_page(mission, sections) -> list:
         flow.append(Paragraph(PP.text(
             "Este período no tiene hallazgos con qué medirse: ni meta del "
             "liderazgo, ni proyección del año."), st["body"]))
-    present = [s for s in sections]
+    present = [(s.title, s.page_label) for s in sections]
+    if annex_pages:
+        # D3: the districts and the areas are the other PDF.
+        present.append(("Anexo: cada distrito y cada área",
+                        f"otro PDF, {_int(annex_pages)} págs."))
     rows = []
     for i in range(0, len(present), 2):
         pair = present[i:i + 2]
         row = []
-        for sec in pair:
-            row += [Paragraph(PP.text(sec.title), st["cell"]),
-                    Paragraph(PP.text(sec.page_label), st["cell_right"])]
+        for title, pages in pair:
+            row += [Paragraph(PP.text(title), st["cell"]),
+                    Paragraph(PP.text(pages), st["cell_right"])]
         if len(pair) == 1:
             row += ["", ""]
         rows.append(row)
@@ -548,7 +561,8 @@ def resumen_page(mission) -> list:
 
 
 def print_guide_pages(mission, sections, units, roster, *, total_pages: int,
-                      pagination: "Pagination | None" = None) -> list:
+                      pagination: "Pagination | None" = None,
+                      annex_pages: int = 0) -> list:
     """The run sheet, as the packet's last page (AUDIT L1).
 
     On the first pass every range is a dash and the total is zero; the guide
@@ -558,7 +572,7 @@ def print_guide_pages(mission, sections, units, roster, *, total_pages: int,
     """
     period = mission.period
     sections = describe(sections)
-    rows = hand_outs(sections, units, roster)
+    rows = hand_outs(sections, units, roster, annex_pages=annex_pages)
     paper = sheets(rows)
     lead = leadership(roster)
     missing = lead.districts_without_a_leader
@@ -586,7 +600,11 @@ def print_guide_pages(mission, sections, units, roster, *, total_pages: int,
                 f"en «Tamaño real» — no «Ajustar a la página»: el diseño "
                 f"está hecho para los márgenes de Carta y escalarlo corta los "
                 f"pies de página. Son {sheets_per_copy} hojas por copia "
-                f"completa."),
+                f"completa."
+                + (f" El anexo de distritos y áreas es otro documento, de "
+                   f"{annex_pages} páginas: cada líder de distrito recibe la "
+                   f"suya, y la primera página del anexo lo repite."
+                   if annex_pages else "")),
             sections=[[s.title, s.page_label, s.audience, s.print_it]
                       for s in sections],
             handouts=[[r.who, r.pages, str(r.copies), r.note] for r in rows],
@@ -3408,134 +3426,6 @@ def _week_rows(model):
     return weeks, rows, boundaries, reporting
 
 
-# ── An area, which is a companionship ───────────────────────────
-
-AREAS_PER_PAGE = 3
-
-
-def _area_spark(model, row) -> object:
-    """One Key Indicator's last twelve weeks, as a drawing for its own row."""
-    values, bounds = _spark_of(model, row.key)
-    if len([v for v in values if v is not None]) < 2:
-        return None
-    return PP.sparkline(AREA_COLUMNS_SPARK, 8.0, list(values),
-                        boundaries=bounds)
-
-
-#: The width the spark gets inside the area rows' last column.
-AREA_COLUMNS_SPARK = PP.AREA_ROW_COLUMNS[5] - 6
-
-#: The nightly inputs a companionship controls (AUDIT M5), in the words the
-#: area line prints them with.
-AREA_NIGHTLY = (("contacts_attempted", "intentos de contacto"),
-                ("friend_lessons", "lecciones con amigos"),
-                ("lessons_member_present", "con miembro presente"),
-                ("baptismal_invitations", "invitaciones al bautismo"),
-                ("church_invites", "invitaciones a la iglesia"))
-
-
-def area_nightly_line(model) -> str:
-    """The companionship's own nights, per week against its goal."""
-    rows = {r.key: r for r in model.nightly_metrics}
-    bits = []
-    for key, words in AREA_NIGHTLY:
-        r = rows.get(key)
-        if r is None or r.per_reporting_area_week is None:
-            continue
-        goal = (f" de {_per_week(r.goal_per_area_week)}"
-                if r.goal_per_area_week else "")
-        bits.append(f"{words} {_per_week(r.per_reporting_area_week)}{goal}")
-    cov = model.nightly_coverage
-    if not bits:
-        return ("Noches: ninguna informada en el período." if cov is not None
-                else "")
-    head = "Noches, por semana"
-    if cov is not None:
-        head += f" ({cov.label} informados)"
-    return head + ": " + " · ".join(bits) + "."
-
-
-def area_lines(model) -> list:
-    """The area's seven, each carrying its own weeks."""
-    lines = ki_lines(model, comparable=False)
-    return [replace(line, spark=_area_spark(model, row))
-            for line, row in zip(lines, model.key_indicators)]
-
-
-def area_block(model) -> list:
-    """One area's third of a page (P5 (a)): who they are, their seven against
-    leadership's goal with their twelve weeks, their own nights against
-    their goals (AUDIT M5), their productivity against their district, zone
-    and mission, and what the agents chose as their strength."""
-    st = PP.styles()
-    W = PP.CONTENT_WIDTH
-    trail = " · ".join(model.scope.trail)
-    flow = [
-        Paragraph(PP.text(model.scope.name), st["area_title"]),
-        PP.companionship_line(model.scope.companions),
-        Paragraph(PP.text(" · ".join(x for x in (trail, model.compliance_label,
-                                                 area_ladder_line(model))
-                                     if x)), st["note"]),
-        Spacer(0, 2),
-        PP.area_ki_rows(W, area_lines(model)),
-        Spacer(0, 2),
-    ]
-    nights = area_nightly_line(model)
-    if nights:
-        flow.append(Paragraph(PP.text(nights), st["note"]))
-    strong = ", ".join(model.strengths)
-    grow = model.growth or ""
-    if strong or grow:
-        bits = []
-        if strong:
-            bits.append(f"Su fortaleza: {strong}")
-        if grow:
-            bits.append(f"Para crecer: {grow}")
-        flow.append(Paragraph(PP.text(" · ".join(bits)), st["note"]))
-    else:
-        flow.append(Paragraph(PP.text(
-            "Sin fortaleza ni meta de crecimiento esta semana — el análisis "
-            "de los agentes va una semana atrás de los Indicadores Clave."),
-            st["note"]))
-    scores = model.scores
-    if scores is not None and scores.measured:
-        # Kept on the area, where it has a comparator (its rank in its
-        # district); gone from mission and zone pages, where it had none
-        # (AUDIT-2026-10-06 M1).
-        parts = [f"{name} {es_display.number(value, 1)}"
-                 for name, value in (("Esfuerzo", scores.effort),
-                                     ("Habilidad", scores.skill),
-                                     ("Indicadores Clave", scores.ki),
-                                     ("Efectividad", scores.effectiveness))
-                 if value is not None]
-        line = "Puntajes: " + " · ".join(parts)
-        if scores.rank:
-            line += (f" — {es_display.integer(scores.rank)}º de "
-                     f"{es_display.integer(scores.of)} en su distrito, por "
-                     f"efectividad")
-        flow.append(Paragraph(PP.text(line), st["note"]))
-    return flow
-
-
-
-def area_ladder_line(model) -> str:
-    """The area against its district, its zone and the mission, in one line.
-
-    The half page has no room for the ranked table a zone or a district gets,
-    and a companionship's question is smaller anyway: are we ahead of or
-    behind the people around us. Three signed figures answer it in the space
-    a sentence takes.
-    """
-    own = model.index
-    if own.value is None:
-        return ""
-    bits = [f"{r.role} {_idx(r.index.value)}" for r in model.ladder[1:]
-            if not r.is_self and r.index.value is not None]
-    line = (f"Productividad {_idx(own.value)} (misión = 100)"
-            + (" · pocas cifras" if own.thin else ""))
-    return line + (" · " + " · ".join(bits) if bits else "")
-
-
 # ── The body ──────────────────────────────────────────────
 
 #: What the running head calls a unit, per level.
@@ -3800,57 +3690,34 @@ def _baptism_sentences(mission, baptisms) -> list:
 
 
 def _body(models, goals, pagination: Pagination) -> list:
-    """Every unit in packet order, with the markers the second pass reads.
+    """The council packet's units — the mission and the zones — then the
+    data note, with the markers the second pass reads (step 4.1: the
+    districts and the areas are the annex, `packet_annex`).
 
     Two markers per unit: one for the section the unit opens, if it is the
-    first of its level, and one for the unit itself. The run sheet needs the
-    second — it names a zone leader's own pages — and the contents needs the
-    first.
-
-    The areas are handed to `area_pages` as a block rather than one at a time,
-    because two of them share a page (§3.2) and the page break belongs between
-    the pairs rather than before every unit.
+    first of its level, and one for the unit itself.
     """
-    section_of = {S.MISSION: MISSION, S.ZONE: ZONES, S.DISTRICT: DISTRICTS,
-                  S.AREA: AREAS}
-    # Every model by scope key, so a district page can look up its zone and the
-    # mission without a second query (R6's note: `build_all` already returns
-    # all 63, and a peer-series field only one page would read does not belong
-    # on the model).
+    section_of = {S.MISSION: MISSION, S.ZONE: ZONES}
+    # Every model by scope key, so a page can look up its zone and the
+    # mission without a second query.
     peers = {m.scope.key: m for m in models}
-    areas = [m for m in models if m.scope.level == S.AREA]
     flow, opened = [], set()
     for model in models:
-        if model.scope.level == S.AREA:
+        key = section_of.get(model.scope.level)
+        if key is None:
             continue
-        key = section_of[model.scope.level]
         flow.append(PageBreak())
         if key not in opened:
             opened.add(key)
             flow.append(SectionStart(key, pagination))
         flow.append(SectionStart(model.scope.key, pagination))
         flow.extend(unit_pages(model, goals, peers))
-    if areas:
-        flow.append(PageBreak())
-        flow.append(SectionStart(AREAS, pagination))
-        for i, model in enumerate(areas):
-            if i and i % AREAS_PER_PAGE == 0:
-                flow.append(PageBreak())
-            elif i:
-                flow.append(Spacer(0, 6))
-                flow.append(PP.HairRule(color=PP.RULE, space_before=0,
-                                        space_after=6))
-            if i % AREAS_PER_PAGE == 0:
-                flow.append(PP.SetFurniture(furniture_for(model)))
-            flow.append(SectionStart(model.scope.key, pagination))
-            flow.append(KeepTogether(area_block(model)))
     flow.append(PageBreak())
-    # Its own furniture, or it inherits the last area spread's and the page
-    # explaining every source in the packet is headed "Áreas".
+    # Its own furniture, or it inherits the last zone's and the page
+    # explaining every source in the packet is headed by a zone.
     mission = next((m for m in models if m.scope.level == S.MISSION), None)
     if mission is not None:
-        # No key: the data note grades nothing, and the three states in its
-        # footer would be a key to a page with no colour on it.
+        # No key: the data note grades nothing.
         flow.append(PP.SetFurniture(PP.Furniture(
             eyebrow="Nota de datos",
             period=mission.period.window_label,
@@ -3870,35 +3737,39 @@ def _body(models, goals, pagination: Pagination) -> list:
 MAX_PASSES = 3
 
 
-def build_packet(models, roster, goals=None) -> bytes:
-    """Every model, one PDF — the whole of decision 1.
+def build_packet(models, roster, goals=None, *, annex=None) -> bytes:
+    """The council packet (D3): every model in, one PDF out.
 
-    Laid out repeatedly until a pass confirms the page numbers it was handed.
+    Laid out repeatedly until a pass confirms the page numbers it was
+    handed. ``annex`` is the annex's `packet_annex.AnnexLayout` — its length
+    and each district's pages — which the run sheet prints; built here when
+    it is not handed in, so the guide never names a page it has not seen.
     """
+    from app.reports import packet_annex as PA
     goals = dict(goals or {})
     sections = sections_for(models)
     unit_keys = [m.scope.key for m in models]
     mission = next((m for m in models if m.scope.level == S.MISSION), None)
     if mission is None:
         raise ValueError("el paquete necesita el modelo de la misión")
+    if annex is None:
+        _, annex = PA.build_annex_packet(models, roster, goals)
 
     given, pdf = Pagination(), b""
     for _ in range(MAX_PASSES):
         measured = Pagination()
         resolved = given.resolve(sections) if given.measured else sections
-        spans = given.unit_ranges(unit_keys) if given.measured else {}
-        units = [(m.scope, spans[m.scope.key]) for m in models
-                 if m.scope.key in spans
-                 and m.scope.level in (S.ZONE, S.DISTRICT)]
         total = max((s.last_page for s in resolved if s.present), default=0)
-        flow = (front_matter(mission, resolved, units, roster,
-                             total_pages=total, pagination=measured)
+        flow = (front_matter(mission, resolved, [], roster,
+                             total_pages=total, pagination=measured,
+                             annex_pages=annex.total)
                 + _body(models, goals, measured)
                 + [PageBreak()]
                 + appendix_pages(mission, resolved, pagination=measured)
                 + [PageBreak()]
-                + print_guide_pages(mission, resolved, units, roster,
-                                    total_pages=total, pagination=measured))
+                + print_guide_pages(mission, resolved, annex.units, roster,
+                                    total_pages=total, pagination=measured,
+                                    annex_pages=annex.total))
         pdf, measured.total = _render(flow)
         if measured.same_as(given):
             break
@@ -3906,20 +3777,9 @@ def build_packet(models, roster, goals=None) -> bytes:
     return pdf
 
 
-def build(period_key: str = None, against: str = None, *, data=None) -> bytes:
-    """A period in, a packet out — the whole of `build_packet(period)`.
-
-    The one call the screen's button makes. It reads the sheet once, builds the
-    63 models and lays the document out; measured live on CCSM it is about 35
-    seconds for the models and 20 for the PDF, which is why the button stores
-    the bytes rather than a `download_button` regenerating them on every rerun.
-
-    ``data`` is injected by the screen, which already has a cached
-    `ReportData` — so a packet built from the page costs the render alone.
-    """
+def _models(period_key, against, data):
     from app.reports import model as M
     from app.reports import periods as P
-
     data = data or M.load_data()
     # The council packet reviews the month just closed (decision 61); the
     # screen passes its own period when a user asks for another one.
@@ -3927,7 +3787,39 @@ def build(period_key: str = None, against: str = None, *, data=None) -> bytes:
                          against or P.COMPARE_PRIOR, data=data)
     if not models:
         raise ValueError("no hay período que informar")
-    return build_packet(models, data.roster, data.nightly_goals)
+    return models, data
+
+
+def build_both(period_key: str = None, against: str = None, *,
+               data=None) -> tuple:
+    """`(council packet, annex)` for one period, from one set of models
+    (D3): the annex is laid out first, so the council packet's run sheet
+    prints each district leader's annex page."""
+    from app.reports import packet_annex as PA
+    models, data = _models(period_key, against, data)
+    annex_pdf, layout = PA.build_annex_packet(models, data.roster,
+                                              data.nightly_goals)
+    return (build_packet(models, data.roster, data.nightly_goals,
+                         annex=layout), annex_pdf)
+
+
+def build(period_key: str = None, against: str = None, *, data=None) -> bytes:
+    """A period in, the council packet out (D3) — what the council reads
+    together: the story, the resumen, the mission, the zones and the
+    reference pages. `build_annex` is the districts and the areas.
+
+    ``data`` is injected by the screen, which already has a cached
+    `ReportData` — so a packet built from the page costs the render alone.
+    """
+    return build_both(period_key, against, data=data)[0]
+
+
+def build_annex(period_key: str = None, against: str = None, *,
+                data=None) -> bytes:
+    """A period in, the annex out: the districts' and the areas' pages."""
+    from app.reports import packet_annex as PA
+    models, data = _models(period_key, against, data)
+    return PA.build_annex_packet(models, data.roster, data.nightly_goals)[0]
 
 
 def filename(model) -> str:
@@ -3935,7 +3827,23 @@ def filename(model) -> str:
     return filename_for(model.period.key, model.today)
 
 
-def filename_for(period_key: str, today) -> str:
+def filename_for(period_key: str, today, part: str = COUNCIL) -> str:
     """`filename` for a period that has no model in hand — the screen's
     council button builds "Mes pasado" whatever tab is open (D1)."""
-    return f"paquete-consejo-{period_key}-{today.isoformat()}.pdf"
+    name = "anexo-consejo" if part == ANNEX else "paquete-consejo"
+    return f"{name}-{period_key}-{today.isoformat()}.pdf"
+
+
+# ── The annex's builders, re-exported (step 4.1) ──────────────────────────────
+
+#: Names that moved to `packet_annex` and are still asked for here.
+_ANNEX_NAMES = frozenset({"AREAS_PER_PAGE", "_area_spark", "AREA_COLUMNS_SPARK", "AREA_NIGHTLY", "area_nightly_line", "area_lines", "area_block", "area_ladder_line"})
+
+
+def __getattr__(name):
+    """PEP 562: `packet.area_block` and friends live in `packet_annex` since
+    step 4.1; imported lazily, because the annex imports this module."""
+    if name in _ANNEX_NAMES:
+        from app.reports import packet_annex
+        return getattr(packet_annex, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

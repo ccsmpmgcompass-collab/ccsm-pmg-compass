@@ -104,6 +104,13 @@ def pdf(models):
     return PK.build_packet(models, ROSTER, _data().nightly_goals)
 
 
+@pytest.fixture(scope="module")
+def annex(models):
+    """The districts and the areas: their own PDF since step 4.1 (D3)."""
+    from app.reports import packet_annex as PA
+    return PA.build_annex_packet(models, ROSTER, _data().nightly_goals)[0]
+
+
 def _pages(pdf_bytes):
     return [(p.extract_text() or "")
             for p in PdfReader(io.BytesIO(pdf_bytes)).pages]
@@ -259,17 +266,28 @@ def test_a_zone_lists_its_districts_and_every_one_of_its_areas(pdf):
     assert "LAS 3 ÁREAS" in page.upper()
 
 
-def test_a_district_page_carries_the_three_way_comparison(pdf):
-    page = next(p for p in _body_pages(pdf) if "DISTRITO · D1" in p.upper())
+def test_a_district_page_carries_the_three_way_comparison(annex):
+    page = next(p for p in _pages(annex)[1:] if "DISTRITO · D1" in p.upper())
     assert "CONTRA SU ZONA Y LA MISIÓN" in page.upper()
 
 
-def test_the_contents_says_how_many_pages_a_unit_really_took(pdf):
+def test_the_contents_says_how_many_pages_a_unit_really_took(pdf, annex):
     """Decision 49: a district is one page and an area a third of one. The
-    contents describes the document that was built, not the one sketched."""
-    cover = _pages(pdf)[0]
-    assert re.search(r"Cada distrito . [0-9]+, una página cada uno", cover), cover
-    assert re.search(r"Cada área . [0-9]+, tres por página", cover), cover
+    contents describes the document that was built, not the one sketched —
+    the annex's page 1 for its units, the council packet's for its zones."""
+    first = _pages(annex)[0]
+    assert re.search(r"Cada distrito . [0-9]+, una página cada uno", first), first
+    assert re.search(r"Cada área . [0-9]+, tres por página", first), first
+    assert re.search(r"Cada zona . [0-9]+ zonas", _pages(pdf)[0])
+
+
+def test_the_council_packet_holds_no_district_or_area_page(pdf):
+    """D3: the council reads the mission and the zones; the districts and
+    the areas are handed out from the annex."""
+    for page in _body_pages(pdf):
+        tail = " ".join(page.strip().splitlines()[-3:]).upper()
+        assert "DISTRITO ·" not in tail, tail
+        assert "Su fortaleza" not in page and "Para crecer" not in page
 
 
 def test_every_unit_page_names_its_unit_in_the_running_head(pdf):

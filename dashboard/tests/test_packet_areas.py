@@ -105,7 +105,9 @@ def areas(models):
 
 @pytest.fixture(scope="module")
 def pdf(models):
-    return PK.build_packet(models, ROSTER)
+    """The annex: the areas' pages left the council packet in step 4.1."""
+    from app.reports import packet_annex as PA
+    return PA.build_annex_packet(models, ROSTER)[0]
 
 
 def _pages(pdf_bytes):
