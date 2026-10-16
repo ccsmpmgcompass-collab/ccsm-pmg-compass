@@ -116,9 +116,11 @@ def area_block(model) -> list:
             st["note"]))
     scores = model.scores
     if scores is not None and scores.measured:
-        # Kept on the area, where it has a comparator (its rank in its
-        # district); gone from mission and zone pages, where it had none
-        # (AUDIT-2026-10-06 M1).
+        # Kept on the area; gone from mission and zone pages (AUDIT-2026-10-06
+        # M1). Unranked since step 4.3 (C11): an area's one yardstick is its
+        # productivity against its district, zone and mission, on the line
+        # under its name — a second ranking on the agents' scores was a
+        # second yardstick for the same page.
         parts = [f"{name} {es_display.number(value, 1)}"
                  for name, value in (("Esfuerzo", scores.effort),
                                      ("Habilidad", scores.skill),
@@ -126,10 +128,6 @@ def area_block(model) -> list:
                                      ("Efectividad", scores.effectiveness))
                  if value is not None]
         line = "Puntajes: " + " · ".join(parts)
-        if scores.rank:
-            line += (f" — {es_display.integer(scores.rank)}º de "
-                     f"{es_display.integer(scores.of)} en su distrito, por "
-                     f"efectividad")
         flow.append(Paragraph(PP.text(line), st["note"]))
     return flow
 

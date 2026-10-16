@@ -190,13 +190,15 @@ def test_an_area_the_agents_have_not_written_up_says_why(areas):
     assert "análisis de los agentes va una semana atrás" in said
 
 
-def test_the_scores_carry_the_areas_rank_in_its_district(areas):
-    """Decision 18: the full four at area level, with the area's place among
-    its district's areas on Effectiveness."""
+def test_the_scores_stay_on_the_area_unranked(areas):
+    """Decision 18: the full four at area level. Since PLAN-2026-10-13 4.3
+    (C11) without a rank among the district's areas: productivity, on the
+    line under the area's name, is the page's one yardstick."""
     said = " ".join(_text_of(PK.area_block(_area(areas, "A1"))))
     assert "Puntajes: Esfuerzo 63,8" in said
-    assert "en su distrito, por efectividad" in said
-    assert re.search(r"\dº de \d en su distrito", said)
+    assert "en su distrito, por efectividad" not in said
+    assert not re.search(r"\dº de \d", said)
+    assert "Productividad" in said
 
 
 def test_all_seven_key_indicators_are_rows_at_area_level_too(areas):

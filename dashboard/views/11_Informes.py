@@ -1363,12 +1363,9 @@ if _model.scores and _model.scores.measured:
         {"label": "Indicadores Clave", "value": _model.scores.ki},
         {"label": "Efectividad", "value": _model.scores.effectiveness},
     ]
+    # Unranked (PLAN-2026-10-13 4.3, C11): productivity is the one yardstick.
     render_kpi_row([{**c, "value": round(c["value"], 1), "decimals": 1}
                     for c in _cards if c["value"] is not None])
-    if _model.scores.rank:
-        st.caption(f"{_model.scope.name} va {fmt_int(_model.scores.rank)} de "
-                   f"{fmt_int(_model.scores.of)} en su distrito, por "
-                   f"efectividad.")
 
 
 # ── 7 · Quién informó ─────────────────────────────────────────────────────────
