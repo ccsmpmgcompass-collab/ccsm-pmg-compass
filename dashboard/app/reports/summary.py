@@ -165,12 +165,39 @@ def whats_coming(m) -> list:
     return out
 
 
+def council_line(m) -> str:
+    """"Desde el último consejo" in one sentence (step 3.2): how the last
+    council's focus units and zone questions moved since. Both renderers and
+    page 1 print it."""
+    ch = m.changes
+    c = ch.council if ch is not None else None
+    if c is None or not c.then_label:
+        return ""
+    bits = [f"{f.name} de {ES.percent(f.share_then, 0)} a "
+            f"{ES.percent(f.share_now, 0)}"
+            for f in c.focus if f.share_now is not None]
+    out = ""
+    if bits:
+        out = (f"Desde el último consejo ({c.then_label}), la parte de lo que "
+               f"falta de sus unidades de enfoque: " + " · ".join(bits) + ".")
+    if c.questions:
+        better = sum(1 for q in c.questions
+                     if q.now and q.then and q.now[0] > q.then[0])
+        out += ((" " if out else f"Desde el último consejo ({c.then_label}): ")
+                + f"{_int(better)} de {_int(len(c.questions))} zonas mejoraron "
+                f"el paso de su pregunta.")
+    return out
+
+
 def what_changed(m) -> list:
     out = []
     ch = m.changes
     y = m.forward.year
     if ch is None:
         return out
+    line = council_line(m)
+    if line:
+        out.append(line)
     if ch.landing_then is not None and y is not None and y.low is not None:
         out.append(f"El cierre probable del año pasó de "
                    f"{_range(ch.landing_then.low, ch.landing_then.high)} "

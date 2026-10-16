@@ -2904,8 +2904,10 @@ def changes_block(model) -> list:
         lines.append(f"En «Dónde enfocar», contra {ch.against}: "
                      + "; ".join(bits) + ".")
     now_year = model.forward.year
+    # "Desde el último consejo", just above, already prints the landing.
     if ch.landing_then is not None and now_year is not None \
-            and now_year.low is not None:
+            and now_year.low is not None and not (
+                ch.council is not None and ch.council.then_label):
         lines.append(
             f"El cierre probable del año: {ch.landing_then_label} era "
             f"{_range(ch.landing_then.low, ch.landing_then.high)}; hoy es "
@@ -2921,6 +2923,88 @@ def changes_block(model) -> list:
         "primer traslado cuenta sólo sus semanas con formulario. Calculado "
         "con los informes de hoy, también los atrasados: puede no coincidir "
         f"con lo que imprimió el paquete de entonces.{rest}"), st["note"]))
+    return flow
+
+
+#: Unit · its part of the shortfall then and now · its productivity then
+#: and now; zone · the question · then · now.
+COUNCIL_FOCUS_COLUMNS = (196.0, 81.0, 81.0, 81.0, 81.0)
+COUNCIL_QUESTION_COLUMNS = (110.0, 190.0, 110.0, 110.0)
+
+
+def _step_pair(pair) -> str:
+    """"4,7% · misión 15%" -- one step of the funnel, the zone's and the
+    mission's, as the leak table prints them."""
+    if not pair or pair[0] is None:
+        return es_display.NA
+    zone, mission = pair
+    return (f"{es_display.percent(zone, 1)} · misión "
+            f"{es_display.percent(mission, 1) if mission is not None else es_display.NA}")
+
+
+def since_block(model) -> list:
+    """"Desde el último consejo" (step 3.2, decision 63): last month's
+    packet rebuilt from today's sheet -- its top focus units and each zone's
+    question, then and now, and how the year's landing moved. Mission, on
+    "Mes pasado" only; nothing stored, nothing coloured."""
+    ch = model.changes
+    c = ch.council if ch is not None else None
+    if model.scope.level != S.MISSION or c is None:
+        return []
+    st = PP.styles()
+    if not c.then_label:
+        return [PP.SectionHead("Desde el último consejo", "sin consejo anterior"),
+                Paragraph(PP.text(
+                    "No hay consejo anterior que recordar"
+                    + (f": {c.reason[0].lower()}{c.reason[1:]}"
+                       if c.reason else ".")), st["note_lead"])]
+    now = model.period.label
+    flow = [PP.SectionHead("Desde el último consejo",
+                           f"{c.then_label} contra {now} · con los informes "
+                           f"de hoy")]
+    if c.focus:
+        rows = []
+        for f in c.focus:
+            trail = [p for p in f.scope.trail if p != model.scope.name]
+            name = f.name + (f" · {trail[0]}" if trail else "")
+            if f.silent_then:
+                name += " · sin informe"
+            rows.append([name, _pct(f.share_then), _pct(f.share_now),
+                         _idx(f.index_then), _idx(f.index_now)])
+        flow.append(PP.table(
+            rows, COUNCIL_FOCUS_COLUMNS,
+            headers=(("A dónde ir", "en el último consejo"),
+                     ("Parte de lo", "que faltaba"), ("Parte", "ahora"),
+                     ("Produc-", "tividad"), ("Produc-", "tividad ahora")),
+            align=("l", "r", "r", "r", "r")))
+        flow.append(Spacer(0, 4))
+    if c.questions:
+        rows = [[q.zone, f"¿Qué pasa entre {q.leak.replace(' a ', ' y ', 1)}?",
+                 _step_pair(q.then), _step_pair(q.now)]
+                for q in c.questions]
+        flow.append(PP.table(
+            rows, COUNCIL_QUESTION_COLUMNS,
+            headers=("Zona", ("La pregunta", "del último consejo"),
+                     ("Pasaba", "entonces"), ("Pasa", "ahora")),
+            align=("l", "l", "r", "r")))
+        flow.append(Spacer(0, 4))
+    lines = []
+    year = model.forward.year
+    if (ch.landing_then is not None and year is not None
+            and year.low is not None):
+        lines.append(
+            f"El cierre probable del año: {ch.landing_then_label} era "
+            f"{_range(ch.landing_then.low, ch.landing_then.high)}; hoy es "
+            f"{_range(year.low, year.high)}, de una meta de "
+            f"{_int(year.goal)}.")
+    for line in lines:
+        flow.append(Paragraph(PP.text(line), st["note_lead"]))
+    flow.append(Paragraph(PP.text(
+        f"El paquete de {c.then_label}, rehecho con la hoja de hoy: los "
+        f"informes atrasados cuentan, así que puede no coincidir con lo que "
+        f"se imprimió. Las preguntas siguen a quienes se encontraron hace tres "
+        f"a seis meses; entre un consejo y otro esa cohorte se corre un mes, "
+        f"así que una tasa se mueve despacio. Sin color."), st["note"]))
     return flow
 
 
@@ -3202,7 +3286,7 @@ def mission_pages(model, goals, peers=None) -> list:
         children_page(model) + reporting_block(model),
         baptism_page(model, peers), levers_block(model), levers_size_block(model),
         finding_mix_block(model), trend_block(model), years_block(model),
-        changes_block(model), nightly_page(model, goals),
+        since_block(model), changes_block(model), nightly_page(model, goals),
     ])
 
 

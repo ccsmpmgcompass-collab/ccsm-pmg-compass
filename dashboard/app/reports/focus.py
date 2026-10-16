@@ -322,6 +322,14 @@ class FunnelRow:
     def pct(self, i: int) -> float | None:
         return self.reached[i] / self.found * 100 if self.found else None
 
+    def step(self, i: int) -> float | None:
+        """Of the people who entered step ``i``, the share (0-100) who went
+        on to stage ``i`` -- the rate a leak is named on, or None when fewer
+        than LEAK_MIN_STEP entered it."""
+        before = self.found if i == 0 else self.reached[i - 1]
+        return (self.reached[i] / before * 100
+                if before >= LEAK_MIN_STEP else None)
+
     @property
     def thin(self) -> bool:
         """Too few people for its shares to mean much — "pocas personas"."""

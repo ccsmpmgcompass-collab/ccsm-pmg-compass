@@ -533,6 +533,52 @@ class IndexHistory:
 
 
 @dataclass(frozen=True)
+class CouncilFocus:
+    """One unit of last council's "A dónde ir", then and now (step 3.2)."""
+
+    scope: S.Scope
+    share_then: float
+    index_then: float | None = None
+    share_now: float | None = None
+    index_now: float | None = None
+    silent_then: bool = False
+
+    @property
+    def name(self) -> str:
+        return self.scope.name
+
+
+@dataclass(frozen=True)
+class CouncilQuestion:
+    """One zone's question at the last council -- its largest leak, as
+    ``(zone %, mission %)`` -- and the same step today (step 3.2)."""
+
+    zone: str
+    leak: str
+    then: tuple
+    now: tuple | None = None
+    leak_now: str | None = None
+
+
+@dataclass(frozen=True)
+class SinceCouncil:
+    """"Desde el último consejo" (step 3.2, decision 63): last month's packet
+    rebuilt from today's sheet -- its top focus units, each zone's question
+    and (in `Changes`) the year's landing, then and now. ``reason`` says why
+    there is no earlier council to remember (the form's launch month)."""
+
+    then_label: str = ""
+    then_day: date | None = None
+    focus: tuple = ()
+    questions: tuple = ()
+    reason: str = ""
+
+
+#: How many of last council's focus units are followed (step 3.2).
+COUNCIL_FOCUS = 3
+
+
+@dataclass(frozen=True)
 class Changes:
     """What moved since the period it is compared with (PLAN 4B.2, decision
     53): recomputed from today's sheet, so "antes" is with today's reports,
@@ -549,6 +595,8 @@ class Changes:
     left: tuple = ()
     landing_then: object = None
     landing_then_label: str = ""
+    #: "Desde el último consejo" (step 3.2) -- mission, on "Mes pasado".
+    council: SinceCouncil | None = None
 
 
 #: The nightly activity a companionship controls behind each Key Indicator
@@ -2114,9 +2162,11 @@ def _focus(data: ReportData, scope: S.Scope, period: P.Period,
     return FC.pareto(rows, index_weights(data.ki_keys))
 
 
-def _funnel(data: ReportData, scope: S.Scope):
+def _funnel(data: ReportData, scope: S.Scope, asof: date | None = None):
     """The mature-cohort funnel: the mission's Tableau zones (all ten), a
-    zone's districts by roster area."""
+    zone's districts by roster area. ``asof`` rebuilds it as it read on an
+    earlier day (step 3.2): that day's cohort, and only the stages reached
+    by then -- from today's sheet, so late entries count."""
     from app.analytics import finding_funnel as FF
     from app.reports import focus as FC
     if scope.level not in (S.MISSION, S.ZONE):
@@ -2130,6 +2180,14 @@ def _funnel(data: ReportData, scope: S.Scope):
         data._flags["funnel_dates"] = (
             FF.parse_dates(det, "event_date_selected"), stages)
     found, stages = data._flags["funnel_dates"]
+    day = data.today
+    if asof is not None and asof < data.today:
+        import numpy as np
+        cut = np.datetime64(asof + timedelta(days=1), "ns")
+        stages = [(label, s.where(~(np.asarray(s, dtype="datetime64[ns]")
+                                    >= cut)))
+                  for label, s in stages]
+        day = asof
     if scope.level == S.MISSION:
         zone_col = TB._names(det, TB.ZONE_COL)
         pilot = {z.name for z in S.children(data.roster, scope)}
@@ -2140,7 +2198,7 @@ def _funnel(data: ReportData, scope: S.Scope):
         groups = [(d.name, area_col.isin(set(d.areas)), True)
                   for d in S.children(data.roster, scope)]
     return FC.mature_funnel(found, [s for _, s in stages],
-                            [label for label, _ in stages], groups, data.today,
+                            [label for label, _ in stages], groups, day,
                             found_label=TB.STAGE_LABELS.get("Found",
                                                             "Encontradas"))
 
@@ -2354,12 +2412,13 @@ def _head(rows) -> set:
 
 
 def _changes(data: ReportData, scope: S.Scope, period: P.Period,
-             comparison: P.Comparison | None, focus_now: tuple):
+             comparison: P.Comparison | None, focus_now: tuple,
+             funnel=None):
     """4B.2 (decision 53): recomputed against the comparison period."""
     from app.reports import forecast as F
     if scope.level not in (S.MISSION, S.ZONE):
         return None
-    entered = left = ()
+    entered = left = before = ()
     against = ""
     if (comparison is not None and comparison.period is not None
             and comparison.period.weeks):
@@ -2385,9 +2444,62 @@ def _changes(data: ReportData, scope: S.Scope, period: P.Period,
             landing_then = F.year_landing(cut, year, goal=data.annual_goal)
             month = int(closed[-2][5:7])
             then_label = f"a fin de {F.MONTH_ABBR[month - 1]}"
+    council = None
+    if scope.level == S.MISSION and period.key == P.LAST_MONTH:
+        council = _since_council(data, scope, comparison, before, focus_now,
+                                 funnel)
     return Changes(against=against, history=_index_history(data, scope),
                    entered=entered, left=left, landing_then=landing_then,
-                   landing_then_label=then_label)
+                   landing_then_label=then_label, council=council)
+
+
+def _month_back(day: date) -> date:
+    """The same day a month earlier, clamped to that month's length."""
+    last = day.replace(day=1) - timedelta(days=1)
+    return last.replace(day=min(day.day, last.day))
+
+
+def _since_council(data: ReportData, scope: S.Scope,
+                   comparison: P.Comparison | None, before: tuple,
+                   focus_now: tuple, funnel=None) -> SinceCouncil:
+    """Step 3.2 (decision 63): the council a month ago reviewed the month
+    before "Mes pasado" -- the comparison period, already rebuilt as
+    ``before`` by `_changes`. Its zone questions come from the mission's
+    funnel as it read a month ago (`_funnel` with ``asof``)."""
+    if comparison is None or comparison.period is None:
+        return SinceCouncil(reason=(comparison.reason if comparison is not None
+                                    else ""))
+    then_day = _month_back(data.today)
+    now = {r.scope.key: r for r in focus_now}
+    focus = []
+    for r in before[:COUNCIL_FOCUS]:
+        if not r.share:
+            continue
+        n = now.get(r.scope.key)
+        focus.append(CouncilFocus(
+            scope=r.scope, share_then=r.share, index_then=r.index,
+            share_now=n.share if n is not None else None,
+            index_now=n.index if n is not None else None,
+            silent_then=r.mostly_silent))
+    questions = []
+    then_f = _funnel(data, scope, then_day)
+    now_f = funnel if funnel is not None else _funnel(data, scope)
+    if then_f is not None and now_f is not None:
+        pilot = {z.name for z in S.children(data.roster, scope)}
+        today_rows = {r.name: r for r in now_f.rows}
+        for r in then_f.rows:
+            if r.name not in pilot or not r.leak or r.leak_index is None:
+                continue
+            t = today_rows.get(r.name)
+            i = r.leak_index
+            step = ((t.step(i), now_f.mission.step(i)) if t is not None
+                    else None)
+            questions.append(CouncilQuestion(
+                zone=r.name, leak=r.leak, then=r.leak_step,
+                now=step if step and step[0] is not None else None,
+                leak_now=t.leak if t is not None else None))
+    return SinceCouncil(then_label=comparison.period.label, then_day=then_day,
+                        focus=tuple(focus), questions=tuple(questions))
 
 
 def _goal_reach(data: ReportData, scope: S.Scope, rows) -> dict:
@@ -2583,7 +2695,7 @@ def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,
         strengths=strengths,
         growth=growth,
         years=_other_years(data, scope, period),
-        changes=_changes(data, scope, period, comparison, focus),
+        changes=_changes(data, scope, period, comparison, focus, funnel),
         goal_reach=_goal_reach(data, scope, own),
         drivers=_drivers(data, scope, period, comparison, children, funnel,
                          child_rates, rates),
