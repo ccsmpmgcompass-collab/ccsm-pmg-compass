@@ -42,6 +42,7 @@ from app.reports import forecast as F
 from app.reports import packet_parts as PP
 from app.reports import periods as P
 from app.reports import scope as S
+from app.reports import tableau as TB
 from app.reports.model import (CHRONIC_BELOW, EFFORT_SCORE, INDEX_WEIGHTS,
                                TRANSFER_ENDED, TRANSFER_RUNNING,
                                TRANSFER_STARTING, UNCOLOURED_KI,
@@ -2788,6 +2789,8 @@ def levers_block(model) -> list:
             "Encontradas hace tres a seis meses, seguidas hasta hoy (Tableau); "
             "fuga: el paso bajo el 85% del de la misión."), st["note"]))
         flow.append(Spacer(0, 3))
+        if model.scope.level == S.MISSION:
+            flow += [mission_funnel_chart(fn), Spacer(0, 6)]
 
         def share(v):
             # A decimal under 10%: the lower funnel lives at 0,3-5%, and
@@ -2882,6 +2885,44 @@ def levers_block(model) -> list:
             for text in drivers:
                 flow.append(Paragraph(PP.text(text), st["note_lead"]))
     return flow
+
+
+def mission_funnel_chart(fn):
+    """Step 4.5 (C12): the mission's mature cohort, stage by stage, with each
+    step's conversion between the bars and the widest drop named — the
+    shape the funnel table's row of percentages hides."""
+    labels = (TB.STAGE_LABELS.get("Found", "Encontradas"),) + tuple(fn.stages)
+    counts = (fn.mission.found,) + tuple(fn.mission.reached)
+    return PP.stage_bars(PP.CONTENT_WIDTH, list(zip(labels, counts)),
+                         label_share=0.24)
+
+
+def district_strip(model) -> list:
+    """Step 4.5 (C12): every district's productivity on one axis, on the
+    mission's page — whether the districts sit in a crowd or spread out,
+    which the ranked tables cannot show. The least productive is named."""
+    if model.scope.level != S.MISSION:
+        return []
+    points = [(r.name, r.index) for r in model.focus]
+    read = [(n, v) for n, v in points if v is not None]
+    if len(read) < 3:
+        return []
+    low = min(read, key=lambda t: t[1])
+    high = max(read, key=lambda t: t[1])
+    top = 50.0 * math.ceil(max([v for _, v in read] + [INDEX_BAR_MAX]) / 50.0)
+    ticks = [(t, "100 = misión" if t == 100 else es_display.integer(t))
+             for t in range(0, int(top) + 1, 50)]
+    return action_head(
+        f"Los {es_display.integer(len(points))} distritos",
+        f"De {_idx(low[1])} ({low[0]}) a {_idx(high[1])} ({high[0]}): "
+        f"{es_display.integer(sum(1 for _, v in read if v < 100))} de "
+        f"{es_display.integer(len(read))} producen menos que la misión.",
+        "productividad por compañería · misión = 100") + [
+        PP.strip_plot(PP.CONTENT_WIDTH, points, highlight=low[0],
+                      axis_max=top, value_fmt=_idx, ticks=ticks,
+                      caption=(f"{es_display.integer(len(points) - len(read))}"
+                               f" sin lectura" if len(read) < len(points)
+                               else ""))]
 
 
 #: The sources table's columns: source, people, share now, share before, bar.
@@ -3515,7 +3556,7 @@ def mission_pages(model, goals, peers=None) -> list:
     levers, the twelve-week strip, and the nightly work."""
     return run_on([
         tablero_block(model), focus_block(model),
-        children_page(model) + reporting_block(model),
+        children_page(model) + district_strip(model) + reporting_block(model),
         baptism_page(model, peers), levers_block(model), levers_size_block(model),
         finding_mix_block(model), trend_block(model), years_block(model),
         since_block(model), changes_block(model), nightly_page(model, goals),

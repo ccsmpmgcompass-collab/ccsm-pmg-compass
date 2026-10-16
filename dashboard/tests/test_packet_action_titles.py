@@ -77,3 +77,42 @@ def test_sin_color_is_said_five_times_or_fewer():
     text = " ".join((p.extract_text() or "")
                     for p in PdfReader(io.BytesIO(pdf)).pages).lower()
     assert text.count("sin color") <= 5
+
+
+# ── Step 4.5 (C12): charts where a table hid the shape ────────────────────────
+
+def test_the_mission_s_funnel_is_drawn_as_stage_bars():
+    from reportlab.graphics.shapes import Drawing
+    from app.reports import focus as FC
+    from app.reports import model as M
+    from tests.test_packet_tableau import shapes
+    from tests.test_report_council_memory import _nov
+    from tests.test_report_tableau_blocks import people, person
+    fn = FC.MatureFunnel(start=None, end=None, stages=("Intento", "Bautizados"),
+                         mission=FC.FunnelRow(name="la misión", found=100,
+                                              reached=(80, 4)))
+    chart = PK.mission_funnel_chart(fn)
+    assert isinstance(chart, Drawing)
+    assert "80% del paso anterior" in shapes(chart)
+    detail = people([person("2026-06-10", area="A1", zone="Norte",
+                            first_contact_attempt_event_date="2026-06-11")
+                     for _ in range(150)])
+    built = M.build_all("last_month", data=_nov(tableau_detail=detail))
+    mission = next(m for m in built if m.scope.level == S.MISSION)
+    assert any(isinstance(f, Drawing) for f in PK.levers_block(mission))
+    zone = next(m for m in built if m.scope.level == S.ZONE)
+    assert not any(isinstance(f, Drawing) for f in PK.levers_block(zone))
+
+
+def test_the_districts_productivity_is_a_strip_on_the_mission_page():
+    from tests.test_report_council_memory import _nov
+    from app.reports import model as M
+    mission = next(m for m in M.build_all("last_month", data=_nov())
+                   if m.scope.level == S.MISSION)
+    flow = PK.district_strip(mission)
+    assert flow and isinstance(flow[0], PP.SectionHead)
+    assert "distritos" in flow[0].label
+    assert flow[1].style.name == "action"
+    zone = next(m for m in M.build_all("last_month", data=_nov())
+                if m.scope.level == S.ZONE)
+    assert PK.district_strip(zone) == []
