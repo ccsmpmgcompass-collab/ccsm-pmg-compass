@@ -42,7 +42,9 @@ from app.reports import packet_parts as PP
 from app.reports import periods as P
 from app.reports import scope as S
 from app.reports.model import (CHRONIC_BELOW, EFFORT_SCORE, INDEX_WEIGHTS,
-                               UNCOLOURED_KI, reporting_status)
+                               TRANSFER_ENDED, TRANSFER_RUNNING,
+                               TRANSFER_STARTING, UNCOLOURED_KI,
+                               reporting_status)
 
 #: How the packet is ordered and what each block of pages is for. The keys are
 #: stable; the titles and audiences are what the print guide prints.
@@ -1832,13 +1834,14 @@ def tablero_lines(model, *, comparable: bool, confident: bool) -> list:
 
 def tablero_block(model) -> list:
     """The unit's opening: where it stands in two sentences, and the seven
-    Key Indicators on one table — real, per companionship, against
-    leadership's goal, how they moved, their twelve weeks and, at mission and
-    zone level, where the transfer finishes and what it would need."""
+    Key Indicators on one closed-period table — real, per companionship,
+    against leadership's goal, how they moved and their twelve weeks. At
+    mission and zone level the transfer in progress follows in its own block
+    (step 2.1, C7), so a month's review never prints another period's
+    forecast beside it."""
     st = PP.styles()
     weekly_ok = _weekly_comparable(model)
     weekly_sure = _weekly_confident(model)
-    forecast = bool(model.forward.finish) and model.forward.finish[0].weeks_left > 0
     against = _against_label(model)
     based = weekly_ok and weekly_sure
     change = (("Cambio", f"vs {against}") if based and against
@@ -1850,14 +1853,12 @@ def tablero_block(model) -> list:
     heads = ["Indicador", "Real", ("Por", "comp./sem"),
              ("Propia", "compromiso"), "", meta_head, change,
              ("12", "semanas")]
-    if forecast:
-        heads += [("Termina", "en"), ("Falta", "por semana")]
     flow = opening(model) + reporting_headline(model)
     flow += [
         PP.SectionHead("El tablero", f"los siete · {model.compliance_label}"),
         PP.tablero_table(tablero_lines(model, comparable=weekly_ok,
                                        confident=weekly_sure),
-                         headers=tuple(heads), forecast=forecast),
+                         headers=tuple(heads), forecast=False),
         Spacer(0, 4),
     ]
     note = ("Real: lo informado en el período. Por comp.: por compañería y "
@@ -1872,18 +1873,7 @@ def tablero_block(model) -> list:
         note = ("Por comp.: por compañería y semana. Propia: su compromiso, "
                 "sin color. Meta: contra la meta completa del liderazgo, "
                 "semanas sin informe en cero; lo único con color. 12 semanas: "
-                "su forma, con la primera y la última cifra debajo."
-                + (" Termina en y falta: proyección al ritmo reciente, sin "
-                   "color." if forecast else ""))
-    elif forecast:
-        k = model.forward.finish[0]
-        note += (f" Termina en: lo que va del traslado {model.forward.transfer} "
-                 f"más las {es_display.integer(k.weeks_left)} semanas que "
-                 f"faltan como la peor y la mejor de las últimas "
-                 f"{es_display.integer(k.pace_weeks)}; falta por semana: lo "
-                 f"que haría falta para la meta del traslado y cuántas veces "
-                 f"el ritmo de hoy. Proyecciones, sin color.")
-        note += _backtest_sentence(model)
+                "su forma, con la primera y la última cifra debajo.")
     if partial:
         note += (f" Real y meta cuentan las {es_display.integer(partial[0])} "
                  f"de {es_display.integer(partial[1])} semanas-área que tienen "
@@ -1894,7 +1884,149 @@ def tablero_block(model) -> list:
         flow.append(Paragraph(PP.text(reach), st["note_lead"]))
     if model.comparison is not None and model.scope.level == S.MISSION:
         flow.append(Paragraph(PP.text(_comparison_note(model)), st["note"]))
-    return flow
+    return flow + transfer_block(model)
+
+
+#: The transfer block runs on its side — the seven across, four short rows
+#: down — so it costs about 150pt under a zone's tablero instead of 250 and
+#: the zone keeps its two pages (decision 49). The heads are written out, as
+#: CHILD_COLUMNS' are, never trimmed off the catalogue's labels.
+TRANSFER_HEADS = {
+    "ki_new_people_real": ("Nuevas", "personas"),
+    "ki_member_lessons_real": ("Lecc.", "con miembros"),
+    "ki_friends_sacrament_real": ("Sacr.", "reunión"),
+    "ki_friends_first_week_real": ("1ª sem", "en la iglesia"),
+    "ki_baptismal_date_real": ("Fecha", "bautismal"),
+    "ki_baptized_confirmed_real": ("Bautiz.", "formulario"),
+    "ki_rc_at_church_real": ("CR", "en la iglesia"),
+}
+TRANSFER_LABEL_WIDTH = 100.0
+
+
+def _transfer_head(k):
+    return TRANSFER_HEADS.get(k.key) or PP.fit(k.label, PP.CELL_HEAD, 50)
+
+
+def _goal_cell(k) -> str:
+    """A transfer's whole goal; "*" when some area has none (noted below)."""
+    if not k.goal:
+        return "sin meta"
+    return _count(round(k.goal)) + ("" if k.goal_complete else "*")
+
+
+def _weeks_words(n: int, noun: str = "semana completa") -> str:
+    """"1 semana completa", "5 semanas completas"."""
+    if n == 1:
+        return f"1 {noun}"
+    return f"{es_display.integer(n)} " + " ".join(w + "s" for w in noun.split())
+
+
+def _need_cell(k) -> str:
+    if k.needed_per_week is None:
+        return es_display.NA
+    return _int(k.needed_per_week) + (
+        f" · {es_display.number(k.factor, 1)}×" if k.factor else "")
+
+
+def transfer_block(model) -> list:
+    """Step 2.1 (C7): the transfer in progress at build time, under the
+    tablero on the mission and zone pages, whatever period the tablero
+    reviews. Three cases (`Forward.transfer_state`): running, it finishes
+    forward; starting, how the last one closed and the new one's goal per
+    week; ended, the closed result. Never coloured (decision 48)."""
+    fwd = model.forward
+    if model.scope.level not in (S.MISSION, S.ZONE) or not fwd.finish:
+        return []
+    st = PP.styles()
+    kis = fwd.finish
+    first = kis[0]
+    full = first.weeks_done + first.weeks_left
+    goals = kis
+    if fwd.transfer_state == TRANSFER_RUNNING:
+        head = PP.SectionHead(
+            "El traslado en curso",
+            f"{fwd.transfer} · {es_display.integer(first.weeks_done)} de "
+            f"{_weeks_words(full)} · proyección")
+        rows = [
+            ["Lleva"] + [_count(k.actual) for k in kis],
+            ["Meta del traslado"] + [_goal_cell(k) for k in kis],
+            ["Termina en"]
+            + [_range(k.low, k.high) for k in kis],
+            ["Falta por semana"] + [_need_cell(k) for k in kis],
+        ]
+        if model.scope.level == S.MISSION:
+            note = (f"Termina en: lo que va del traslado más "
+                    + ("la semana que falta" if first.weeks_left == 1 else
+                       f"las {es_display.integer(first.weeks_left)} semanas "
+                       f"que faltan")
+                    + f", como la peor y la mejor de las últimas "
+                    f"{es_display.integer(first.pace_weeks)}. Falta por "
+                    f"semana: lo que haría falta para la meta del traslado "
+                    f"entero, y cuántas veces el ritmo de hoy. Sin color: es "
+                    f"una proyección." + _backtest_sentence(model))
+        else:
+            # One line, so the block fits under the zone's tablero.
+            note = (f"Termina en: al ritmo de la peor y la mejor de las "
+                    f"últimas {es_display.integer(first.pace_weeks)} semanas. "
+                    f"Falta: por semana, para la meta entera, y cuántas veces "
+                    f"el ritmo de hoy. Sin color.")
+    elif fwd.transfer_state == TRANSFER_STARTING and fwd.previous:
+        prev = {k.key: k for k in fwd.previous}
+        was = [prev.get(k.key) for k in kis]
+        goals = fwd.previous
+        rows = [
+            [f"{fwd.previous_transfer} cerró en"]
+            + [_count(w.actual) if w is not None else es_display.NA
+               for w in was],
+            [f"Meta de {fwd.previous_transfer}"]
+            + [_goal_cell(w) if w is not None else es_display.NA for w in was],
+            ["Logrado"]
+            + [_pct(w.pct(w.actual)) if w is not None and w.goal
+               else es_display.NA for w in was],
+            [f"{fwd.transfer}: meta por semana"]
+            + [es_display.number(k.goal / full, 1) if k.goal and full
+               else "sin meta" for k in kis],
+        ]
+        head = PP.SectionHead(
+            f"Cómo empieza {fwd.transfer}",
+            f"cómo cerró {fwd.previous_transfer} · la meta del nuevo")
+        note = (f"{fwd.transfer} lleva {_weeks_words(first.weeks_done)}: "
+                f"todavía no tiene ritmo propio que proyectar. Cerró en: "
+                f"todas las áreas de {fwd.previous_transfer}, con los informes "
+                f"de hoy, contra la meta completa del liderazgo. Meta por "
+                f"semana: la del liderazgo para {fwd.transfer} entero, "
+                f"dividida en sus {es_display.integer(full)} semanas"
+                + ("; «sin meta» es que todavía no está guardada"
+                   if any(not k.goal for k in kis) else "")
+                + ". Sin color.")
+    elif fwd.transfer_state == TRANSFER_ENDED:
+        head = PP.SectionHead(f"El traslado {fwd.transfer}",
+                              f"terminado · {_weeks_words(first.weeks_done)}")
+        rows = [
+            ["Cerró en"] + [_count(k.actual) for k in kis],
+            ["Meta del traslado"] + [_goal_cell(k) for k in kis],
+            ["Logrado"]
+            + [_pct(k.pct(k.actual)) if k.goal else es_display.NA for k in kis],
+        ]
+        note = ("Cerró en: todas las áreas, con los informes de hoy, contra la "
+                "meta completa del liderazgo. Sin color.")
+    else:
+        # Starting, with no earlier transfer on the schedule to show.
+        return []
+    if any(k.goal and not k.goal_complete for k in goals):
+        note += " *Alguna área no tiene meta del liderazgo para ese traslado."
+    cell = (PP.CONTENT_WIDTH - TRANSFER_LABEL_WIDTH) / len(kis)
+    block = [
+        head,
+        PP.table(rows, (TRANSFER_LABEL_WIDTH,) + (cell,) * len(kis),
+                 headers=("",) + tuple(_transfer_head(k) for k in kis),
+                 align=("l",) + ("r",) * len(kis), pad=3.0),
+        Spacer(0, 3),
+        Paragraph(PP.text(note), st["note"]),
+    ]
+    # Its own height, not a round floor: four rows never split, and a zone
+    # whose tablero leaves 140pt keeps the block on its first page.
+    return [CondPageBreak(_height(block) + 2)] + block
 
 
 def opening(model) -> list:
@@ -2766,8 +2898,8 @@ def mission_pages(model, goals, peers=None) -> list:
 
 
 def zone_pages(model, goals, peers=None) -> list:
-    """Two pages (decision 49): the tablero with the transfer's finish and
-    its twelve weeks, the productivity ladder against the mission, its
+    """Two pages (decision 49): the tablero with its twelve weeks, the
+    transfer in progress (step 2.1), the productivity ladder against the mission, its
     districts, where its shortfall sits among its areas, and its levers."""
     return run_on([
         tablero_block(model), ladder_block(model, gaps=False),

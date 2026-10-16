@@ -472,10 +472,26 @@ class Forward:
     #: What closing each zone's largest leak to the mission's rate would add
     #: (PLAN 4C.2, decision 54) — `focus.Lever`s, largest first.
     levers: tuple = ()
+    #: Where the transfer in progress stands at build time (step 2.1, C7):
+    #: TRANSFER_RUNNING (2+ complete weeks and 1+ left: ``finish`` forecasts
+    #: it), TRANSFER_STARTING (under 2 complete weeks: ``previous`` is how
+    #: ``previous_transfer`` closed and ``finish``'s goals are the new one's)
+    #: or TRANSFER_ENDED (no week left: ``finish`` is the closed result).
+    transfer_state: str = ""
+    previous_transfer: str = ""
+    previous: tuple = ()
 
     @property
     def present(self) -> bool:
         return bool(self.finish or self.year or self.pipeline or self.baptisms)
+
+
+TRANSFER_RUNNING = "running"
+TRANSFER_STARTING = "starting"
+TRANSFER_ENDED = "ended"
+#: Under this many complete weeks a transfer has no pace of its own to
+#: finish forward from, so the block shows how the last one closed instead.
+TRANSFER_MIN_WEEKS = 2
 
 
 #: Under this index in EVERY transfer shown, on enough figures each time, a
@@ -2173,13 +2189,17 @@ def _forward(data: ReportData, scope: S.Scope, period: P.Period) -> Forward:
             if fit is not None else None))
 
     finish, label = (), ""
+    state, prev_label, previous = "", "", ()
     cycle = P.resolve(P.THIS_TRANSFER, data.today, data.cycles)
     pace = P.resolve(P.LAST_6_WEEKS, data.today, data.cycles)
+
+    def cycle_label(period):
+        return next((str(c.get("number", "")) for c in data.cycles
+                     if c["start"] == period.start), period.label)
+
     if cycle is not None:
-        start = cycle.start
-        label = next((str(c.get("number", "")) for c in data.cycles
-                      if c["start"] == start), cycle.label)
-        goals, complete = _transfer_goals_full(data, scope, start)
+        label = cycle_label(cycle)
+        goals, complete = _transfer_goals_full(data, scope, cycle.start)
         finish = F.transfer_finish(
             data.weekly_ki, scope.areas, data.ki_keys, data.labels,
             cycle_weeks=[w.isoformat() for w in cycle.weeks],
@@ -2187,6 +2207,21 @@ def _forward(data: ReportData, scope: S.Scope, period: P.Period) -> Forward:
             pace_weeks_list=([w.isoformat() for w in pace.weeks]
                              if pace is not None else []),
             goals=goals, goals_complete=complete)
+        if cycle.weeks_elapsed >= cycle.full_weeks:
+            state = TRANSFER_ENDED
+        elif cycle.weeks_elapsed >= TRANSFER_MIN_WEEKS:
+            state = TRANSFER_RUNNING
+        else:
+            state = TRANSFER_STARTING
+            last = P.resolve(P.LAST_TRANSFER, data.today, data.cycles)
+            if last is not None:
+                prev_label = cycle_label(last)
+                g, c = _transfer_goals_full(data, scope, last.start)
+                previous = F.transfer_finish(
+                    data.weekly_ki, scope.areas, data.ki_keys, data.labels,
+                    cycle_weeks=[w.isoformat() for w in last.weeks],
+                    full_weeks=last.full_weeks, pace_weeks_list=[],
+                    goals=g, goals_complete=c)
 
     year = pipeline = None
     zones = ()
@@ -2212,7 +2247,9 @@ def _forward(data: ReportData, scope: S.Scope, period: P.Period) -> Forward:
                               goal=baptisms.reference if baptisms else None,
                               source="registros de Tableau")
     return Forward(transfer=label, finish=finish, year=year,
-                   pipeline=pipeline, baptisms=baptisms, zones=zones)
+                   pipeline=pipeline, baptisms=baptisms, zones=zones,
+                   transfer_state=state, previous_transfer=prev_label,
+                   previous=previous)
 
 
 # ── History, change, levers and the goal's reach (PLAN-2026-10-06 Phase 4) ───

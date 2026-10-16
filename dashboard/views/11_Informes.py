@@ -632,7 +632,39 @@ def _rng(lo, hi) -> str:
 if _FWD.baptisms is not None:
     st.caption(_FWD.baptisms.sentence)
 
-if _FWD.finish and _FWD.finish[0].weeks_left > 0:
+if (_FWD.finish and _FWD.previous
+        and _FWD.transfer_state == M.TRANSFER_STARTING):
+    # Step 2.1: under two complete weeks there is no pace of its own to
+    # finish forward from — how the last transfer closed, and the new goal.
+    _full = _FWD.finish[0].weeks_done + _FWD.finish[0].weeks_left
+    _was = {k.key: k for k in _FWD.previous}
+    render_section_label(
+        f"Cómo empieza {_FWD.transfer}",
+        right=f"cómo cerró {_FWD.previous_transfer} · la meta del nuevo",
+        info=(f"{_FWD.transfer} todavía no tiene ritmo propio que proyectar. "
+              f"Cerró en: todas las áreas de {_FWD.previous_transfer}, con los "
+              f"informes de hoy, contra la meta completa del liderazgo. Meta "
+              f"por semana: la de {_FWD.transfer} entero, dividida en sus "
+              f"{_full} semanas. Sin color."),
+    )
+    st.markdown(ranked_list([{
+        "name": k.label, "rank": "",
+        "sub": ((f"{_FWD.previous_transfer} cerró en "
+                 f"{fmt_int(round(_was[k.key].actual))}"
+                 + (f" de {fmt_int(round(_was[k.key].goal))}"
+                    if _was[k.key].goal else "")
+                 if k.key in _was else "")
+                + (f" · {_FWD.transfer}: {fmt_number(k.goal / _full, 1)} por "
+                   f"semana" if k.goal and _full else
+                   f" · {_FWD.transfer}: sin meta todavía")),
+        "value": (_was[k.key].pct(_was[k.key].actual)
+                  if k.key in _was and _was[k.key].goal else None),
+        "bar": (_was[k.key].pct(_was[k.key].actual)
+                if k.key in _was and _was[k.key].goal else None),
+    } for k in _FWD.finish], bar_max=100,
+        value_fmt=lambda v: NA if v is None else fmt_percent(v)),
+        unsafe_allow_html=True)
+elif _FWD.finish and _FWD.finish[0].weeks_left > 0:
     _left = _FWD.finish[0].weeks_left
     render_section_label(
         f"Cómo termina el traslado {_FWD.transfer}",

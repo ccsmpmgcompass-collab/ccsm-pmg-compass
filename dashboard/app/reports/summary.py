@@ -22,7 +22,8 @@ from __future__ import annotations
 
 from app.config import es_display as ES
 from app.reports import scope as S
-from app.reports.model import CHRONIC_BELOW, UNCOLOURED_KI
+from app.reports.model import (CHRONIC_BELOW, TRANSFER_RUNNING,
+                               TRANSFER_STARTING, UNCOLOURED_KI)
 
 
 def _int(v) -> str:
@@ -124,8 +125,25 @@ def where_to_go(m) -> list:
 
 def whats_coming(m) -> list:
     out = []
-    fin = [k for k in m.forward.finish if k.goal and k.key not in UNCOLOURED_KI]
-    if fin:
+    fwd = m.forward
+    fin = [k for k in fwd.finish if k.goal and k.key not in UNCOLOURED_KI]
+    closed = fwd.previous if fwd.transfer_state == TRANSFER_STARTING else (
+        () if fwd.transfer_state == TRANSFER_RUNNING else fwd.finish)
+    closed = [k for k in closed if k.goal and k.key not in UNCOLOURED_KI]
+    if closed:
+        # Step 2.1: no pace of its own yet (or none left) — how it closed.
+        name = (fwd.previous_transfer if fwd.transfer_state == TRANSFER_STARTING
+                else fwd.transfer)
+        made = [k for k in closed if k.actual >= k.goal]
+        out.append(
+            f"El traslado {name} cerró con {_int(len(made))} de "
+            f"{_int(len(closed))} indicadores en la meta del liderazgo"
+            + (f" ({', '.join(k.label for k in made)})" if made else "")
+            + (f"; {fwd.transfer} recién empieza"
+               if fwd.transfer_state == TRANSFER_STARTING else "")
+            + " — esa meta cuenta todas las áreas, también las que no "
+              "informan.")
+    elif fin and fwd.transfer_state == TRANSFER_RUNNING:
         reach = [k for k in fin if k.high >= k.goal]
         out.append(
             f"El traslado {m.forward.transfer}: al mejor ritmo reciente, "

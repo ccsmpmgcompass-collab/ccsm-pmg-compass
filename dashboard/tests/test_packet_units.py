@@ -250,8 +250,10 @@ def test_a_zone_opens_the_same_way_the_mission_does(pdf):
 
 
 def test_a_zone_lists_its_districts_and_every_one_of_its_areas(pdf):
-    page = next(p for p in _body_pages(pdf)
-                if "DISTRITOS" in p.upper() and "ÁREAS" in p.upper())
+    """Across the zone's own pages: since step 2.1's transfer block the
+    areas can start the zone's second page."""
+    page = "\n".join(p for p in _body_pages(pdf) if "ZONA · NORTE" in p.upper())
+    assert "DISTRITOS" in page.upper()
     for area in ("A1", "A2", "A3"):
         assert area in page
     assert "LAS 3 ÁREAS" in page.upper()
