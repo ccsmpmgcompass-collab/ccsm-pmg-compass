@@ -791,3 +791,41 @@ the overshoot affects less than the level.
 
 Suite: **1 failed / 2000 passed / 1 skipped**, the same single date-sensitive
 failure. Four new tests.
+
+### 2026-10-16 — step 2.1 (the transfer in progress), committed `3a15625`
+
+- **Model:** `Forward.transfer_state` holds `model.TRANSFER_RUNNING`,
+  `TRANSFER_STARTING` or `TRANSFER_ENDED` (`TRANSFER_MIN_WEEKS = 2`).
+  `Forward.previous` / `previous_transfer` hold the last transfer closed (a
+  `transfer_finish` with no weeks left, against its full goals). They are
+  filled only when the state is *starting*.
+- **Packet:** the tablero has lost its *Termina en / Falta* columns.
+  `packet.transfer_block` sits under it on the mission and zone pages. It
+  lies **on its side**: the seven indicators across, four rows down (Lleva ·
+  Meta del traslado · Termina en · Falta por semana). That keeps it at about
+  130 pt, against about 250 pt as a seven-row table. The 250 pt version put
+  every zone at 3 pages (53 pages in all).
+  - The block's page-break guard is its own measured height.
+  - A zone's note is one line. The mission's keeps the finish backtest.
+  - *Starting* prints "Cómo empieza {nuevo}": how the last transfer closed
+    (cerró en · meta · logrado, uncoloured) and the new transfer's goal per
+    week, or "sin meta" until it is saved.
+  - *Ended* prints the closed result.
+  - *Starting* with no earlier transfer on the schedule prints nothing.
+- **Resumen** (`summary.whats_coming`) and **screen** follow the same three
+  cases. The screen gets a "Cómo empieza" ranked list.
+- **Live (data of 2026-10-16):** the *Mes pasado* (September) packet is
+  **50 pages**. Every zone's block sits on its zone's first page.
+  - Angol, San Pedro and Temuco Ñielol have 2 pages each.
+  - **Los Ángeles Norte still has 3**, but its third page now holds only
+    *De resultado a causa*, because it has four districts. That is no longer
+    the tablero area. Leave it for Phase 4.2 (method moved out).
+- **A build dated 2026-10-21** (2026-7 two days old) prints *Cómo empieza
+  2026-7* everywhere. 2026-6 closed at 57 / 51 / 63 / 74 / 73 / 15 / 56%,
+  and 2026-7 shows "sin meta" because its goals are not saved yet. The
+  resumen reads *"El traslado 2026-6 cerró con 0 de 6 indicadores en la
+  meta…; 2026-7 recién empieza"*.
+- Suite: **1 failed / 2006 passed / 1 skipped** (baseline failure only).
+  There is a new test file, `test_packet_transfer_block.py`.
+  `test_packet_units`' district-and-areas test now reads the zone's pages
+  together.
