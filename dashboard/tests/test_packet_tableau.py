@@ -227,13 +227,13 @@ def test_a_period_with_no_capture_prints_a_dash_and_says_why():
 
 def test_a_capture_a_night_behind_says_how_many_days_it_covers():
     behind = ((date(2026, 9, 7), date(2026, 9, 20), 16),)
-    lead = words(PK.baptism_page(_mission(windows=behind))[:4])
+    lead = words(PK.baptism_page(_mission(windows=behind))[:5])
     assert "14 de 15 días del período" in lead
 
 
 def test_the_year_period_splits_into_closed_and_open_months():
     flow = PK.baptism_page(_mission(period_key=P.YEAR))
-    lead = words(flow[:4])
+    lead = words(flow[:5])
     assert "338" in lead          # 319 closed + 19 September
     assert "319" in lead and "19" in lead
     assert "septiembre, todavía sin cerrar" in lead
