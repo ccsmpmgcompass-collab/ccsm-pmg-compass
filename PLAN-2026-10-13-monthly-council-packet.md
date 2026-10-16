@@ -829,3 +829,33 @@ failure. Four new tests.
   There is a new test file, `test_packet_transfer_block.py`.
   `test_packet_units`' district-and-areas test now reads the zone's pages
   together.
+
+### 2026-10-16 — step 2.2 (the plan path), committed `06035e8`
+
+- **`PP.year_path_chart(width, height, months, path, actual, low, high, *,
+  goal_label, actual_label, range_label, axis=True)`.** It draws the
+  cumulative line (magnitude blue), the goal path (dashed, ink grey), and the
+  landing fan (the line's tint, alpha 0,24) from the last closed month to
+  December.
+  - No status colour; a test guards it.
+  - The right-margin labels are pushed at least 9 pt apart.
+  - `axis=False` is the small multiple: no scale, no month names.
+- **Mission:** `year_block` draws it at 520×150, in place of the monthly
+  table. The table is now `packet.year_table` and is printed in the data
+  note ("Bautismos de la misión, mes a mes").
+- **Zones — a deviation from the plan's "each zone page also gets a small
+  version".** Every zone's second page is already full. A 130 pt zone chart
+  sent all four zones to 3 pages, and the packet to 54 pages, each third page
+  nearly blank. So the four zones' paths are **small multiples under the
+  mission's year chart**, in a block called *"Las zonas en 2026"*: each
+  zone's Tableau records against its share of 527, with a caption like *"23
+  a sep de 42 · cierra 29-32"*. The zone leaders read the mission pages in
+  the council packet (D3). Once Phase 4.2 has moved the method paragraphs
+  out of the zone pages, a per-zone copy can return there.
+- **Pipeline block:** a 120 pt guard keeps its head from being orphaned at a
+  page foot.
+- **Live September packet: 51 pages.** The mission still has 8 pages and the
+  zones are unchanged. The data note is 2 pages now that it carries the
+  monthly table.
+- Suite: **1 failed / 2013 passed / 1 skipped** (baseline failure only).
+  The new test file is `test_packet_year_path.py`.
