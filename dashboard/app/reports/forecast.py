@@ -22,7 +22,7 @@ the renderers only draw. Nothing here grades.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 import math
 
@@ -432,6 +432,97 @@ def pipeline(set_d: pd.Series, conf_d: pd.Series, asof: date,
                     low=max(0.0, expected - spread), high=expected + spread,
                     by_bucket=tuple(rows), miss=fit.miss,
                     backtests=fit.backtests, asof=asof, over=fit.over)
+
+
+# ── The gap to 527 and what would close it (C6, C8, decision 64) ─────────────
+
+#: The open dates a bet moves (b), and the age whose conversion it borrows.
+OLD_BUCKET = "91-180"
+YOUNG_BUCKET = "31-60"
+
+
+@dataclass(frozen=True)
+class Bet:
+    """One measured lever, sized in baptisms to 31 December, as a range."""
+
+    label: str
+    low: float
+    high: float
+    how: str = ""
+
+
+@dataclass(frozen=True)
+class YearGap:
+    """527 less where the year lands, and the measured levers beside it.
+
+    ``low``/``high`` is the gap: the goal less the landing's high and low
+    anchors (never below zero). ``bets`` are what each lever would add by 31
+    December. 527 is fixed (decision 64): this says what closes the gap, and
+    nothing here proposes moving the goal.
+    """
+
+    goal: float
+    low: float
+    high: float
+    bets: tuple = ()
+
+    @property
+    def bets_low(self) -> float:
+        return sum(b.low for b in self.bets)
+
+    @property
+    def bets_high(self) -> float:
+        return sum(b.high for b in self.bets)
+
+
+def year_gap(year: "YearLanding | None", pipeline: "Pipeline | None",
+             levers, today: date) -> YearGap | None:
+    """The gap to the annual goal and two bets (PLAN-2026-10-13 step 2.3):
+
+    (a) every zone's largest leak converting like the mission — `focus.Lever`
+        is per six weeks of finding, so it is carried over the transfers
+        left in the year (weeks to 31 December ÷ 6);
+    (b) the open dates 91–180 days old converting like the 31–60-day ones,
+        from the pipeline fit's own age buckets, over its six weeks. Its
+        range carries the fit's backtest miss; when the fit has run high in
+        two-thirds of its backtests the range only runs down from the
+        figure.
+
+    Reporting is NOT a bet: the certified baptisms do not depend on forms.
+    """
+    if year is None or not year.goal or year.low is None:
+        return None
+    gap = YearGap(goal=year.goal, low=max(0.0, year.goal - year.high),
+                  high=max(0.0, year.goal - year.low))
+    bets = []
+    weeks = max(0.0, (date(year.year, 12, 31) - today).days / 7)
+    transfers = weeks / 6
+    sized = [v for v in (levers or ()) if v.baptisms]
+    if sized and transfers:
+        lo = sum(v.baptisms[0] for v in sized) * transfers
+        hi = sum(v.baptisms[1] for v in sized) * transfers
+        bets.append(Bet(
+            label="La mayor fuga de cada zona, convirtiendo como la misión",
+            low=lo, high=hi,
+            how=(f"{len(sized)} zonas, por traslado de hallazgo, por los "
+                 f"{transfers:.1f}".replace(".", ",")
+                 + " traslados que quedan del año")))
+    if pipeline is not None:
+        rows = {label: (n, q) for label, n, q in pipeline.by_bucket}
+        if OLD_BUCKET in rows and YOUNG_BUCKET in rows:
+            n, q_old = rows[OLD_BUCKET]
+            _, q_young = rows[YOUNG_BUCKET]
+            extra = n * max(0.0, q_young - q_old)
+            miss = pipeline.miss or 0.0
+            ran_high = (pipeline.backtests
+                        and pipeline.over * 3 >= pipeline.backtests * 2)
+            bets.append(Bet(
+                label="Las fechas de 91 a 180 días, convirtiendo como las de "
+                      "31 a 60",
+                low=extra * max(0.0, 1 - miss),
+                high=extra if ran_high else extra * (1 + miss),
+                how=(f"{n} fechas abiertas de esa edad, en seis semanas")))
+    return replace(gap, bets=tuple(bets))
 
 
 # ── A unit's baptisms from Tableau's person records (decision 47) ─────────────

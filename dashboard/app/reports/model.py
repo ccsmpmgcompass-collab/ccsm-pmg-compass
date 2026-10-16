@@ -480,6 +480,10 @@ class Forward:
     transfer_state: str = ""
     previous_transfer: str = ""
     previous: tuple = ()
+    #: The mission's gap to 527 and the measured bets that would close it
+    #: (step 2.3, decision 64) — `forecast.YearGap`, or None below the
+    #: mission.
+    gap: object = None
 
     @property
     def present(self) -> bool:
@@ -2484,8 +2488,10 @@ def _forward_checks(data: ReportData, scope: S.Scope, period: P.Period,
     levers = data._flags["mission_levers"]
     if scope.level == S.ZONE:
         levers = tuple(v for v in levers if v.name == scope.name)
+    gap = (F.year_gap(fwd.year, fwd.pipeline, levers, data.today)
+           if scope.level == S.MISSION else None)
     return replace(fwd, year_check=year_check, finish_check=finish_check,
-                   levers=levers)
+                   levers=levers, gap=gap)
 
 
 def build_report(scope: S.Scope, period: P.Period, comparison: P.Comparison,

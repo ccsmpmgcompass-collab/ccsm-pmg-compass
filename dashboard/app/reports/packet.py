@@ -1570,6 +1570,9 @@ def baptism_page(model, peers=None) -> list:
         paths = zone_paths(model, peers or {})
         if paths:
             flow += paths + [Spacer(0, 8)]
+        gap = gap_block(model)
+        if gap:
+            flow += [CondPageBreak(_height(gap) + 2)] + gap + [Spacer(0, 8)]
     elif bap is not None:
         flow.append(Paragraph(PP.text(
             f"Bautismos {model.today.year}: sin meses certificados todavía, "
@@ -1757,6 +1760,59 @@ def zone_paths(model, peers: dict) -> list:
                 "Cada zona contra su parte de la meta: la que tuvo de los "
                 "bautismos de la misión en los últimos doce meses. Misma "
                 "lectura que arriba, sin escala. Sin color."), st["note"])]
+
+
+#: Palanca · bautismos hasta el 31 dic · cómo se mide.
+GAP_COLUMNS = (230.0, 90.0, 200.0)
+
+
+def gap_line(gap) -> str:
+    """"Las palancas medidas suman 22-58 de los 59-82 que faltan para 527."
+    — the one sentence page 1 will carry (Phase 3). 527 is fixed (decision
+    64): the sentence sizes what closes the gap, never the goal."""
+    if gap is None:
+        return ""
+    if gap.high <= 0:
+        return (f"La proyección del año ya llega a {_int(gap.goal)}; las "
+                f"palancas medidas suman {_range(gap.bets_low, gap.bets_high)} "
+                f"bautismos más.")
+    if not gap.bets:
+        return (f"Faltan {_range(gap.low, gap.high)} bautismos para "
+                f"{_int(gap.goal)}; ninguna palanca tiene con qué medirse.")
+    return (f"Las palancas medidas suman {_range(gap.bets_low, gap.bets_high)} "
+            f"de los {_range(gap.low, gap.high)} que faltan para "
+            f"{_int(gap.goal)}.")
+
+
+def gap_block(model) -> list:
+    """Step 2.3 (C6, C8, decision 64): 527 less the year's landing, and what
+    each measured lever would add by 31 December. Ranges, never coloured."""
+    gap = model.forward.gap
+    if model.scope.level != S.MISSION or gap is None:
+        return []
+    st = PP.styles()
+    rows = [[b.label, _range(b.low, b.high), b.how] for b in gap.bets]
+    flow = [PP.SectionHead(f"Lo que falta para {_int(gap.goal)}",
+                           "y lo que lo cerraría · hasta el 31 de dic"),
+            Paragraph(PP.text(gap_line(gap)), st["note_lead"]),
+            Spacer(0, 3)]
+    if rows:
+        flow.append(PP.table(
+            rows, GAP_COLUMNS,
+            headers=("Palanca", ("Bautismos más", "hasta el 31 de dic"),
+                     "Cómo se mide"),
+            align=("l", "r", "l")))
+        flow.append(Spacer(0, 3))
+    flow.append(Paragraph(PP.text(
+        f"Lo que falta: {_int(gap.goal)} menos el cierre probable del año. "
+        "Cada palanca es un tamaño, no un pronóstico, y las dos pueden contar "
+        "a las mismas personas: la suma es un techo. La primera es «Cuánto "
+        "vale cada fuga» por los traslados que quedan; la segunda, las "
+        "conversiones por edad de «Lo que viene», y como esa proyección "
+        "viene quedando alta, su rango baja desde la cifra. Informar no es "
+        "una palanca de bautismos: la cifra certificada no depende de los "
+        "formularios. Sin color."), st["note"]))
+    return flow
 
 
 def year_table(yl) -> list:
