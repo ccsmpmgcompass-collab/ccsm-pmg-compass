@@ -1040,3 +1040,103 @@ su zona" and not page 1. D3's council packet gives them the whole of it.
 
 **Next: Phase 4**, from 4.1. **Zackary must Reboot** the deployed app after
 this push (`dashboard/DEPLOYING.md`).
+
+### 2026-10-16 — Phase 4 built, verified and pushed
+
+- **Commits:**
+  - `a68e219` 4.1
+  - `11ce76e` 4.2
+  - `75a290f` 4.3
+  - `c6d12e9` 4.4
+  - `ffb49a0` 4.5
+  - `976bf4d` 4.6 (fixes from reading every page)
+  - this STATUS entry
+- **4.1 Two PDFs (D3).**
+  - `packet.build()` returns the **council packet**: story, resumen,
+    mission, zones, data note, *Cómo leer*, print guide.
+    `packet.build_annex()` returns the **annex**: a first page saying which
+    page each district leader takes, then the districts and the areas.
+  - `packet.build_both()` lays the annex out first (`AnnexLayout`), so the
+    packet's run sheet names each district leader's annex page.
+    `sections_for(models, part=)` takes `COUNCIL` or `ANNEX`.
+  - **Run sheet:**
+    - President and APs: both documents whole.
+    - Zone leaders (4) and sister training leaders (`Is_STL`, 5): the
+      council packet up to its reference pages (1–19). Decision 43's
+      paper rule still keeps *Cómo leer* in the full copies only.
+    - Each DL: "anexo N".
+  - **Paper:** 154 sheets against 85, because nine leaders now take 10
+    sheets each.
+  - The area builders moved to **`packet_annex.py`** (risk 5). `packet`
+    re-exports them (PEP 562), so `PK.area_block` still answers. The
+    screen builds both PDFs and offers two downloads.
+- **4.2 Action titles, method moved out (C10).**
+  - `packet.action_head(label, conclusion, note)` puts the small label
+    above and the computed conclusion as the heading. It is used on every
+    mission and zone section.
+  - Each block keeps one source line. The method paragraphs moved to the
+    data note's **"Cómo se calcula cada sección"**
+    (`packet.section_methods`).
+  - The mission's and the zones' openings drop what the heads now say
+    (strongest/weakest, productivity, leak). The zone ladder drops its
+    sibling strip, because the mission's zones table already ranks them.
+    The dates block now sits before the pipeline.
+  - **Measured (live September):** "sin color" appears **3** times (42
+    before Phase 4, 22 in the first council build), and **every caption on
+    the mission and zone pages fits on one line** (test-guarded).
+- **4.3** Area pages and the screen drop "Nº de N en su distrito, por
+  efectividad". The scores stay, unranked.
+- **4.4**
+  - An area row whose leadership goal is under 3 prints *"atrasado · 2 de
+    2,5"*, with no percentage.
+  - Zone and district headers name their leaders (`ReportModel.leaders`,
+    `scope.district_leader_names`).
+  - The tablero row reads *"Bautizados y Confirmados (formulario)"*.
+- **4.5** The mission's mature funnel is drawn as `PP.stage_bars` above its
+  table, with the widest drop named. **"Los 13 distritos"** puts every
+  district's productivity on a `PP.strip_plot` under the zones' table.
+- **4.6 Verify:**
+  - **Suite:** 1 failed / 2070 passed / 1 skipped. The failure is the
+    baseline's date-sensitive one. There are 16 new tests in
+    `test_packet_two_pdfs.py` and `test_packet_action_titles.py`, and the
+    tests that pinned moved wording were rewritten.
+  - **Page counts (data of 2026-10-16):**
+
+    | Build | Council packet | Annex |
+    |---|---|---|
+    | *Mes pasado* (September) | **23** | **29** |
+    | *Este traslado* | 22 | 29 |
+    | dated 2026-11-02 | 23 | — |
+    | dated 2026-12-02 (prints "Cómo empieza 2026-8") | 22 | — |
+
+    The September council packet breaks down as 1 story + 1 resumen + 9
+    mission + 8 zones (**2 each**, Los Ángeles Norte included) + 2 data
+    note + 1 *Cómo leer* + 1 guide.
+  - **Every page of the September council packet was rasterised and
+    read.** Five fixes followed (4.6).
+  - **Screen (AppTest, live):** *Este traslado* and *Mes pasado* run with
+    no exception. With a built packet in the session, both download
+    buttons draw (council 122 KB, annex 162 KB).
+
+**The 15–18-page target is missed: the council packet is 23.** Moving the
+method out (4.2) took it from 25 to 22, and 4.5's two charts added one.
+Getting to 18 means moving content out of the mission's 9 pages. These are
+the candidates, with their measured costs; **Zackary to choose (nothing is
+moved yet):**
+1. *"Todo el trabajo nocturno"* (22 rows, about 1,3 pages) to the annex.
+2. *"Las últimas 12 semanas"* (about 230 pt). The tablero's 12-week column
+   and the reporting spark already draw the same weeks.
+3. *"Tasas de conversión por zona"* and *"Las mismas semanas, otros años"*
+   (about 400 pt together) to the annex or the data note.
+
+Doing 1–3 would bring the packet to about 19–20 pages. 18 would also need
+the pipeline's ten-zone table to shrink to the four pilot zones.
+
+**Two build-time choices (amendable):**
+- The zone leaders' and STLs' copy stops before the reference pages.
+- The page-1 findings are ranked by the share of their gap they move.
+
+**Next:** Zackary's choice on the page budget, and **Reboot** after this
+push (`dashboard/DEPLOYING.md`). 4D.2 of the previous plan is still dated
+after 2026-11-29. The 2026-7 goals are due Mon 2026-10-19 (Metas bulk
+Recomendar).
