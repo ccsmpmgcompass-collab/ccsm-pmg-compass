@@ -752,3 +752,42 @@ same single date-sensitive failure as the baseline (+39 new tests).
 refit, committed on its own). Phases 1–2 must be live before 2026-11-02.
 **Zackary must Reboot the deployed app** after this push
 (`dashboard/DEPLOYING.md`).
+
+### 2026-10-16 — Phase 2, step 2.0 (the pipeline refit), committed `c763c5e`
+
+The live sheet was loaded on 2026-10-16: 1.247 open dates.
+
+**The refit does not reach the plan's "near 1,0×".** Dates are still losing
+value month by month. The share of open dates that end in a baptism within 6
+weeks was 6–7% at the month-ends of Jan–Mar 2026, 4,2% in June, and 2,7% in
+July and August. Every fit looks backwards, so every fit length overshoots:
+
+| Fit | Prints today | Jun / Jul / Aug, in-sample | Jun / Jul / Aug, with the fit of its own day |
+|---|---|---|---|
+| 15 month-ends (before) | 58 (49–67) | ×1,56 / 1,92 / 1,76 | ×2,08 / 2,53 / 2,14 |
+| **6 (decision 68)** | **43 (24–63)** | ×1,19 / 1,46 / 1,34 | ×1,65 / 2,02 / 1,70 |
+| 3 (June regime only) | 34 (27–42) | ≈1,0 by construction | ×1,66 / 1,99 / 1,47 |
+
+(On 10-15 the 6-month fit gave 43,1. On 10-16 the packet prints 23–61.)
+
+**A build-time rule (Zackary may amend):** the backtest miss used to be
+measured **in-sample**: the fit had already seen the month it was checking.
+Each of the last 12 month-ends is now forecast **with the fit that existed at
+that month-end**, which is what the packet would have printed then. That
+miss is 45% typical, and the forecast ran high in 10 of the 12. So the
+80% range widens honestly (24–63 against an in-sample 29–57). Both renderers
+now say *"el cálculo hecho en su momento falló por un 45% típico y se quedó
+alto en 10"*. `Pipeline.over` and `Pipeline.miss_clause` are new. The method
+text prints `FIT_MONTHS` instead of a hard-coded 15.
+
+I asked Zackary to choose between this, the plain refit and a 3-month fit.
+He declined the question and said "keep working", so the recommended option
+was built.
+
+**For 2.3's bet (b):** the pipeline still runs high (about ×1,5–2 in the last
+three months). Bet (b) must be printed as a range that carries the same
+caveat, or be read from the age-bucket *ratio* (91–180 against 31–60), which
+the overshoot affects less than the level.
+
+Suite: **1 failed / 2000 passed / 1 skipped**, the same single date-sensitive
+failure. Four new tests.
