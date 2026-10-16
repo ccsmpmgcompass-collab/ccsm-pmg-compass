@@ -244,6 +244,10 @@ def year_landing(by_month: dict, year: int, *, goal: float | None,
 #: Age buckets, in days since the baptismal date was set.
 BUCKETS = (0, 15, 31, 61, 91, 181, 366)
 BUCKET_LABELS = ("0-14 días", "15-30", "31-60", "61-90", "91-180", "181-365")
+#: A date this many days old or more is "stale": the packet's "revisar o
+#: liberar" and the zones' share of old dates (step 3.1). A bucket edge, so
+#: the pipeline's own buckets answer it.
+STALE_DAYS = 91
 #: The forecast horizon: six weeks, a transfer.
 HORIZON = 42
 #: How far back the conversion is fitted: the last 6 month-ends whose six
@@ -278,6 +282,16 @@ class Pipeline:
     backtests: int = 0
     asof: date | None = None
     over: int = 0
+
+    @property
+    def old(self) -> int:
+        """Open dates STALE_DAYS old or more (step 3.1)."""
+        return sum(c for (label, c, _), lo in zip(self.by_bucket, BUCKETS)
+                   if lo >= STALE_DAYS)
+
+    @property
+    def old_share(self) -> float | None:
+        return self.old / self.open_dates if self.open_dates else None
 
     @property
     def miss_clause(self) -> str:
@@ -432,6 +446,165 @@ def pipeline(set_d: pd.Series, conf_d: pd.Series, asof: date,
                     low=max(0.0, expected - spread), high=expected + spread,
                     by_bucket=tuple(rows), miss=fit.miss,
                     backtests=fit.backtests, asof=asof, over=fit.over)
+
+
+# ── What a date is worth (PLAN-2026-10-13 step 3.1, C4, decision 65) ─────────
+
+#: A date set within this many days of the person being found is "quick".
+QUICK_DAYS = 7
+#: How many whole calendar months the cohorts compare, 2025 against 2026.
+COHORT_MONTHS = 3
+
+
+@dataclass(frozen=True)
+class DateAges:
+    """The open dates on one day, by age — `_open_at`'s definition: set in
+    the year before and not yet baptised (Tableau has no "dropped" field)."""
+
+    asof: date
+    open: int = 0
+    old: int = 0          # STALE_DAYS or more
+    fresh: int = 0        # under 31 days
+
+    def share(self, n: int) -> float | None:
+        return n / self.open if self.open else None
+
+
+@dataclass(frozen=True)
+class DateCohort:
+    """The dates set inside [start, end] and what became of them: baptised
+    within ``HORIZON`` days, set within ``QUICK_DAYS`` of being found, and set
+    after the person first attended church."""
+
+    start: date
+    end: date
+    dates: int = 0
+    baptized: int = 0
+    quick: int = 0
+    after_church: int = 0
+
+    def share(self, n: int) -> float | None:
+        return n / self.dates if self.dates else None
+
+
+@dataclass(frozen=True)
+class DateQuality:
+    """Step 3.1 (decision 65): how many dates, how old, how many arrive.
+
+    ``now``/``before`` are the open dates today and on the same day a year
+    ago. ``cohorts`` is (last year, this year) over the same ``COHORT_MONTHS``
+    whole months, the latest whose dates have all had their six weeks.
+    ``found``/``set``/``certified`` are (last year, this year) people found,
+    dates set and certified baptisms in those same months — the jump the
+    packet states with both readings, over one window. Measures only:
+    nothing here names a cause (Q-J).
+    """
+
+    now: DateAges
+    before: DateAges
+    cohorts: tuple = ()
+    found: tuple = ()
+    set: tuple = ()
+    certified: tuple = ()
+
+    @staticmethod
+    def ratio(pair) -> float | None:
+        return pair[1] / pair[0] if pair and pair[0] else None
+
+
+def _ages_at(set_ns, conf_ns, t: date) -> DateAges:
+    open_ = _open_at(set_ns, conf_ns, t)
+    ages = (_t(t) - set_ns[open_]) // _DAY
+    return DateAges(asof=t, open=int(open_.sum()),
+                    old=int((ages >= STALE_DAYS).sum()),
+                    fresh=int((ages < 31).sum()))
+
+
+def cohort_window(asof: date, months: int = COHORT_MONTHS) -> tuple | None:
+    """The last ``months`` whole calendar months whose every date has had its
+    ``HORIZON`` days by ``asof``: on 2026-10-16, 1 Jun - 31 Aug."""
+    last = asof - timedelta(days=HORIZON)
+    end = date(last.year, last.month, 1) - timedelta(days=1)
+    if (last + timedelta(days=1)).day == 1:
+        end = last
+    start = date(end.year, end.month, 1)
+    for _ in range(months - 1):
+        start = date(start.year - (start.month == 1),
+                     12 if start.month == 1 else start.month - 1, 1)
+    return start, end
+
+
+def _cohort(found_ns, set_ns, conf_ns, attend_ns, start: date,
+            end: date) -> DateCohort:
+    pick = (set_ns >= _t(start)) & (set_ns < _t(end + timedelta(days=1)))
+    s, c = set_ns[pick], conf_ns[pick]
+    f, a = found_ns[pick], attend_ns[pick]
+    baptized = ~np.isnat(c) & (c >= s) & (c <= s + HORIZON * _DAY)
+    quick = ~np.isnat(f) & (s - f <= QUICK_DAYS * _DAY)
+    after = ~np.isnat(a) & (a <= s)
+    return DateCohort(start=start, end=end, dates=int(pick.sum()),
+                      baptized=int(baptized.sum()), quick=int(quick.sum()),
+                      after_church=int(after.sum()))
+
+
+def _between(values, start: date, end: date) -> int:
+    return int(((values >= _t(start))
+                & (values < _t(end + timedelta(days=1)))).sum())
+
+
+def _months_total(by_month: dict, start: date, end: date) -> int | None:
+    """Certified baptisms over whole months [start, end], or None if any of
+    them has no figure."""
+    total, day = 0, start
+    while day <= end:
+        value = (by_month or {}).get(f"{day:%Y-%m}")
+        if value is None:
+            return None
+        total += value
+        day = date(day.year + (day.month == 12), day.month % 12 + 1, 1)
+    return int(total)
+
+
+def date_quality(found: pd.Series, set_d: pd.Series, conf_d: pd.Series,
+                 attend: pd.Series, asof: date, *,
+                 through: date | None = None,
+                 by_month: dict | None = None) -> DateQuality:
+    """`DateQuality` off Tableau's person rows. ``asof`` ages the open dates
+    (the build day, as `pipeline` does); ``through`` is where the export
+    stops, which bounds the cohorts' six weeks. ``by_month`` is the certified
+    monthly baptisms, read for the cohorts' months."""
+    found_ns, set_ns = _ns(found), _ns(set_d)
+    conf_ns, attend_ns = _ns(conf_d), _ns(attend)
+    year_ago = _same_day(asof, asof.year - 1)
+    out = DateQuality(now=_ages_at(set_ns, conf_ns, asof),
+                      before=_ages_at(set_ns, conf_ns, year_ago))
+    window = cohort_window(min(through or asof, asof))
+    if window is None:
+        return out
+    spans = [(_same_day(window[0], window[0].year + shift),
+              _same_day(window[1], window[1].year + shift))
+             for shift in (-1, 0)]
+    certified = tuple(_months_total(by_month, a, b) for a, b in spans)
+    return replace(
+        out,
+        cohorts=tuple(_cohort(found_ns, set_ns, conf_ns, attend_ns, a, b)
+                      for a, b in spans),
+        found=tuple(_between(found_ns, a, b) for a, b in spans),
+        set=tuple(_between(set_ns, a, b) for a, b in spans),
+        certified=certified if None not in certified else ())
+
+
+def stale_by_area(names: pd.Series, set_d: pd.Series, conf_d: pd.Series,
+                  asof: date, areas) -> tuple:
+    """``((area, open dates STALE_DAYS old or more), ...)`` for each area, in
+    the order given — the district page's "revisar o liberar". Counts only:
+    the packet never names the people (step 3.1)."""
+    set_ns, conf_ns = _ns(set_d), _ns(conf_d)
+    open_ = _open_at(set_ns, conf_ns, asof)
+    old = open_.copy()
+    old[open_] = (_t(asof) - set_ns[open_]) // _DAY >= STALE_DAYS
+    named = np.asarray(names.astype(str).str.strip())
+    return tuple((a, int((old & (named == a)).sum())) for a in areas)
 
 
 # ── The gap to 527 and what would close it (C6, C8, decision 64) ─────────────

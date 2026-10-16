@@ -484,6 +484,12 @@ class Forward:
     #: (step 2.3, decision 64) — `forecast.YearGap`, or None below the
     #: mission.
     gap: object = None
+    #: What a date is worth (step 3.1, decision 65) — `forecast.DateQuality`
+    #: for the mission, None below it.
+    dates: object = None
+    #: A district's open dates STALE_DAYS old or more, per area (step 3.1's
+    #: "revisar o liberar") — ``((area, count), ...)``, counts only.
+    stale: tuple = ()
 
     @property
     def present(self) -> bool:
@@ -2190,7 +2196,10 @@ def _forward(data: ReportData, scope: S.Scope, period: P.Period) -> Forward:
         # likely to become; the renderers say "pocas fechas" under 15.
         return Forward(baptisms=baptisms, pipeline=(
             F.pipeline(set_d, conf, data.today, fit, mask=mask)
-            if fit is not None else None))
+            if fit is not None else None),
+            stale=(F.stale_by_area(names, set_d, conf, data.today,
+                                   sorted(scope.areas))
+                   if names is not None else ()))
 
     finish, label = (), ""
     state, prev_label, previous = "", "", ()
@@ -2227,7 +2236,7 @@ def _forward(data: ReportData, scope: S.Scope, period: P.Period) -> Forward:
                     full_weeks=last.full_weeks, pace_weeks_list=[],
                     goals=g, goals_complete=c)
 
-    year = pipeline = None
+    year = pipeline = quality = None
     zones = ()
     if scope.level == S.MISSION:
         month, count, _ = (data.baptisms_open or (None, None, None))
@@ -2244,6 +2253,7 @@ def _forward(data: ReportData, scope: S.Scope, period: P.Period) -> Forward:
                 (z, z in pilot, F.pipeline(set_d, conf, data.today, fit,
                                            mask=zone_names == z))
                 for z in sorted(set(zone_names) - {"", "nan"}))
+            quality = _date_quality(data)
     elif fit is not None:
         pipeline = F.pipeline(set_d, conf, data.today, fit, mask=mask)
         year = F.year_landing(F.monthly_counts(conf, mask, data.today),
@@ -2253,7 +2263,22 @@ def _forward(data: ReportData, scope: S.Scope, period: P.Period) -> Forward:
     return Forward(transfer=label, finish=finish, year=year,
                    pipeline=pipeline, baptisms=baptisms, zones=zones,
                    transfer_state=state, previous_transfer=prev_label,
-                   previous=previous)
+                   previous=previous, dates=quality)
+
+
+def _date_quality(data: ReportData):
+    """Step 3.1: the mission's dates — age now and a year ago, and what the
+    same months' dates became, 2025 against 2026 (all ten zones)."""
+    from app.analytics import finding_funnel as FF
+    from app.reports import forecast as F
+    det = data.tableau_detail
+    export = data.tableau_export
+    _, set_d, conf, _ = data.tableau_dates()
+    return F.date_quality(
+        FF.parse_dates(det, "event_date_selected"), set_d, conf,
+        FF.parse_dates(det, "first_sacrament_date"), data.today,
+        through=(export.last if export is not None else None),
+        by_month=data.baptisms_by_month)
 
 
 # ── History, change, levers and the goal's reach (PLAN-2026-10-06 Phase 4) ───

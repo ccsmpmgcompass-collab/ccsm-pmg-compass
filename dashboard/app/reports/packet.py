@@ -1587,6 +1587,11 @@ def baptism_page(model, peers=None) -> list:
             f"Sobre la cifra de bautismos. Arriba está la cifra CERTIFICADA "
             f"de Tableau, que es la que cuenta. "
             f"{_form_baptisms_sentence(model)}"), st["note_lead"])]
+    # Step 3.1: after the note that points back at the certified figure,
+    # so "arriba" still means the page's own head.
+    dates = dates_block(model)
+    if dates:
+        flow += [Spacer(0, 8), CondPageBreak(_height(dates) + 2)] + dates
     return flow
 
 
@@ -1896,6 +1901,166 @@ def pipeline_block(model) -> list:
     return flow
 
 
+# ── What a date is worth (PLAN-2026-10-13 step 3.1, decision 65) ─────────────
+
+def _times_of(ratio: float, noun: str) -> str:
+    """"casi el doble de personas", "más del triple de fechas", "un 40% más
+    de personas" — this year's count over last year's, in words."""
+    for lo, hi, words in ((1.85, 1.98, "casi el doble"), (1.98, 2.1, "el doble"),
+                          (2.1, 2.85, "más del doble"),
+                          (2.85, 2.98, "casi el triple"),
+                          (2.98, 3.1, "el triple")):
+        if lo <= ratio < hi:
+            return f"{words} de {noun}"
+    if ratio >= 3.1:
+        return f"más del triple de {noun}"
+    pct = round((ratio - 1) * 100)
+    if pct == 0:
+        return f"tantas {noun} como"
+    return (f"un {es_display.integer(abs(pct))}% "
+            f"{'más' if pct > 0 else 'menos'} de {noun}")
+
+
+def _share_of(share: float, noun: str = "") -> str:
+    """"la mitad de las fechas", "dos de cada tres", "4 de cada 10 fechas"."""
+    words = next((w for f, w in ((1 / 4, "una de cada cuatro"),
+                                 (1 / 3, "una de cada tres"),
+                                 (1 / 2, "la mitad"),
+                                 (2 / 3, "dos de cada tres"),
+                                 (3 / 4, "tres de cada cuatro"))
+                  if abs(share - f) <= 0.035), None)
+    if words == "la mitad":
+        return f"la mitad de las {noun}" if noun else words
+    if words is None:
+        words = f"{es_display.integer(round(share * 10))} de cada 10"
+    return f"{words} {noun}".strip()
+
+
+def _months_words(start, end) -> str:
+    """"junio y julio", "junio y agosto"."""
+    a = es_display.MONTHS[start.month - 1]
+    b = es_display.MONTHS[end.month - 1]
+    return a if a == b else f"{a} y {b}"
+
+
+def dates_sentence(q) -> str:
+    """The 2026 jump, printed once, with both readings (decision 65), in
+    Phase 0.1's words: found and dates up, baptisms up less, part of it may
+    be how finding is recorded, and what a date is worth does not depend on
+    that. It names no cause (Q-J): only the measured change and its date."""
+    if q is None or len(q.cohorts) != 2 or not q.cohorts[0].dates:
+        return ""
+    before, now = q.cohorts
+    span = _months_words(now.start, now.end)
+    year, last = now.start.year, before.start.year
+    found, dates = q.ratio(q.found), q.ratio(q.set)
+    bits = []
+    if found:
+        bits.append(f"encontró {_times_of(found, 'personas')}")
+    if dates:
+        bits.append(f"fijó {_times_of(dates, 'fechas')}")
+    if q.certified and q.certified[0]:
+        pct = round((q.certified[1] / q.certified[0] - 1) * 100)
+        bits.append("bautizó lo mismo" if pct == 0 else
+                    f"bautizó un {es_display.integer(abs(pct))}% "
+                    f"{'más' if pct > 0 else 'menos'}")
+    lead = "Lo que vale una fecha: "
+    if bits:
+        lead = (f"Entre {span} de {year} la misión "
+                + (", ".join(bits[:-1]) + " y " + bits[-1] if len(bits) > 1
+                   else bits[0])
+                + f" que en los mismos meses de {last}. Parte del salto puede "
+                f"ser cómo se registra; lo que no depende de eso es lo que "
+                f"vale una fecha: ")
+    worth = (f"de las fijadas entre {span} de {year}, "
+             f"{es_display.integer(round(now.share(now.baptized) * 100))} de "
+             f"cada 100 terminaron en bautismo dentro de seis semanas; en "
+             f"{last}, {es_display.integer(round(before.share(before.baptized) * 100))}.")
+    how = ""
+    if now.dates:
+        quick = now.share(now.quick)
+        before_church = 1 - now.share(now.after_church)
+        how = (f" En esos meses, {_share_of(quick, 'fechas')} se fijó en la "
+               f"primera semana después de encontrar a la persona, y "
+               f"{_share_of(before_church)} antes de que asistiera a la "
+               f"Iglesia.")
+    return lead + worth + how
+
+
+#: Medida · last year · this year · change.
+DATES_COLUMNS = (230.0, 100.0, 100.0, 90.0)
+
+
+def dates_block(model) -> list:
+    """"Fechas: cuántas, qué edad, cuántas llegan" (step 3.1, C4): the open
+    dates' ages now against a year ago, and what the same months' dates
+    became, 2025 against 2026. Mission only; never coloured."""
+    q = model.forward.dates
+    if model.scope.level != S.MISSION or q is None:
+        return []
+    st = PP.styles()
+
+    def count_share(n, ages_or_cohort):
+        share = ages_or_cohort.share(n)
+        return (f"{_int(n)} · {_pct(share * 100)}" if share is not None
+                else _int(n))
+
+    def times(a, b):
+        return (f"×{es_display.number(b / a, 1)}" if a else es_display.NA)
+
+    def points(a, b):
+        if a is None or b is None:
+            return es_display.NA
+        d = round((b - a) * 100)
+        return ("igual" if d == 0 else
+                f"{'+' if d > 0 else '-'}{es_display.integer(abs(d))} pts")
+
+    then, now = q.before, q.now
+    rows = [[f"Abiertas al {es_display.day_month(now.asof)}",
+             _int(then.open), _int(now.open), times(then.open, now.open)],
+            [f"· de más de {_int(F.STALE_DAYS - 1)} días", count_share(then.old, then),
+             count_share(now.old, now),
+             points(then.share(then.old), now.share(now.old))],
+            ["· de menos de 31 días", count_share(then.fresh, then),
+             count_share(now.fresh, now),
+             points(then.share(then.fresh), now.share(now.fresh))]]
+    if len(q.cohorts) == 2:
+        a, b = q.cohorts
+        span = _months_words(b.start, b.end)
+        rows += [
+            [f"Fijadas entre {span}", _int(a.dates), _int(b.dates),
+             times(a.dates, b.dates)],
+            ["· bautizadas dentro de 6 semanas", count_share(a.baptized, a),
+             count_share(b.baptized, b),
+             points(a.share(a.baptized), b.share(b.baptized))],
+            [f"· fijadas a {F.QUICK_DAYS} días o menos de encontrarla",
+             count_share(a.quick, a), count_share(b.quick, b),
+             points(a.share(a.quick), b.share(b.quick))],
+            ["· fijadas después de que asistió a la Iglesia",
+             count_share(a.after_church, a), count_share(b.after_church, b),
+             points(a.share(a.after_church), b.share(b.after_church))]]
+    year = now.asof.year
+    flow = [PP.SectionHead("Fechas: cuántas, qué edad, cuántas llegan",
+                           "registros de Tableau · las 10 zonas"),
+            Paragraph(PP.text(dates_sentence(q)), st["note_lead"]),
+            Spacer(0, 3),
+            PP.table(rows, DATES_COLUMNS,
+                     headers=("", str(year - 1), str(year),
+                              (str(year), f"contra {year - 1}")),
+                     align=("l", "r", "r", "r")),
+            Spacer(0, 3),
+            Paragraph(PP.text(
+                "Abiertas: fijadas en el último año y sin bautismo. Tableau no "
+                "marca una fecha caída, así que cuentan también personas que "
+                "ya no avanzan. Las fijadas: los últimos "
+                f"{_int(F.COHORT_MONTHS)} meses enteros cuyas fechas ya "
+                "tuvieron sus seis semanas, contra los mismos meses del año "
+                "anterior. Registros por persona, encontradas desde enero de "
+                "2024. Mide el cambio y cuándo empezó, no su causa. Sin "
+                "color."), st["note"])]
+    return flow
+
+
 # ── The president's front section (PLAN-2026-10-06 Phase 3) ──────────────────
 
 def _spark_of(model, key) -> tuple:
@@ -2192,8 +2357,13 @@ def opening(model) -> list:
                         + (f" contra su parte de la meta, {_int(fwd.year.goal)}"
                            if fwd.year.goal else ""))
         if fwd.pipeline is not None:
+            old = fwd.pipeline.old_share
             bits.append(f"{_int(fwd.pipeline.open_dates)} fechas bautismales "
-                        f"abiertas, {_range(fwd.pipeline.low, fwd.pipeline.high)} "
+                        f"abiertas"
+                        + (f" ({_pct(old * 100)} de más de "
+                           f"{_int(F.STALE_DAYS - 1)} días)"
+                           if old is not None else "")
+                        + f", {_range(fwd.pipeline.low, fwd.pipeline.high)} "
                         f"bautismos esperados en seis semanas")
         if bits:
             lines.append("Lo que viene: " + "; ".join(bits)
@@ -2890,13 +3060,28 @@ def _pipeline_sentence(model) -> str:
     pl = model.forward.pipeline
     if pl is None:
         return ""
+    stale = stale_sentence(model)
+    stale = f"; {stale}" if stale else ""
     if pl.open_dates < 15:
         return (f"Lo que viene: {_int(pl.open_dates)} fechas bautismales "
-                f"abiertas — pocas fechas para un pronóstico (registros de "
-                f"Tableau).")
+                f"abiertas — pocas fechas para un pronóstico{stale} "
+                f"(registros de Tableau).")
     return (f"Lo que viene: {_int(pl.open_dates)} fechas bautismales abiertas, "
-            f"{_range(pl.low, pl.high)} bautismos esperados en seis semanas "
-            f"(registros de Tableau, proyección sin color).")
+            f"{_range(pl.low, pl.high)} bautismos esperados en seis "
+            f"semanas{stale} (registros de Tableau; la proyección, sin color).")
+
+
+def stale_sentence(model) -> str:
+    """Step 3.1 on a district's page: per area, the open dates STALE_DAYS old
+    or more, to review or release. Counts only — never the people's names."""
+    stale = model.forward.stale
+    if not stale:
+        return ""
+    days = _int(F.STALE_DAYS - 1)
+    if not any(n for _, n in stale):
+        return f"revisar o liberar: ninguna fecha de más de {days} días"
+    return (f"revisar o liberar, de más de {days} días: "
+            + " · ".join(f"{a}: {_int(n)}" for a, n in stale))
 
 
 def _years_sentence(model) -> str:

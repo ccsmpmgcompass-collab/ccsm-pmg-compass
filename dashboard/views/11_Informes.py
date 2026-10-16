@@ -736,7 +736,10 @@ elif _FWD.pipeline is not None:
     )
     render_kpi_row([
         {"label": "Fechas abiertas", "value": _PL.open_dates,
-         "note": "fijadas en el último año, sin bautismo"},
+         "note": ("fijadas en el último año, sin bautismo"
+                  + (f" · {fmt_percent(_PL.old_share * 100)} de más de "
+                     f"{_PK.F.STALE_DAYS - 1} días"
+                     if _PL.old_share is not None else ""))},
         {"label": "Bautismos esperados", "value": _rng(_PL.low, _PL.high),
          "note": f"en 6 semanas · centro {fmt_int(round(_PL.expected))}"},
         {"label": "Fijadas hace 60 días",
@@ -755,6 +758,15 @@ elif _FWD.pipeline is not None:
                                        key=lambda t: -t[2].expected)],
             value_fmt=lambda v: NA if v is None else fmt_number(v, 1)),
             unsafe_allow_html=True)
+    if _FWD.dates is not None and _PK.dates_sentence(_FWD.dates):
+        # Step 3.1 (decisión 65): the packet's sentence, both readings.
+        render_section_label(
+            "Fechas: cuántas, qué edad, cuántas llegan",
+            right="registros de Tableau · las 10 zonas",
+            info=("Los mismos meses enteros de este año y del anterior, los "
+                  "últimos cuyas fechas ya tuvieron sus seis semanas. Mide el "
+                  "cambio y cuándo empezó, no su causa. Sin color."))
+        st.markdown(_PK.dates_sentence(_FWD.dates))
 
 
 # ── 2 · Semana a semana ───────────────────────────────────────────────────────
