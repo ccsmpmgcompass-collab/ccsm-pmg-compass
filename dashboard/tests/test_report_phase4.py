@@ -121,9 +121,12 @@ def test_no_named_leak_no_lever():
 # ── 4E.1 · the president's one page ──────────────────────────────────────────
 
 def test_the_resumen_is_page_two_and_listed_first():
+    """Page 1 is the story (PLAN-2026-10-13 3.3); the resumen is the first
+    section after it, and "Cómo leer" is an appendix before the guide."""
     sections = PK.sections_for([])
     assert sections[0].key == PK.RESUMEN
-    assert sections[1].key == PK.HOW_TO_READ
+    assert sections[1].key == PK.MISSION
+    assert [s.key for s in sections[-2:]] == [PK.HOW_TO_READ, PK.PRINT_GUIDE]
 
 
 def test_the_resumen_asks_each_zone_one_question():

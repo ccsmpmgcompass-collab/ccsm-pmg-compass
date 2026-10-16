@@ -118,6 +118,7 @@ FURNITURE = Type(6.4, 8.5, FONT, track=0.6)
 
 #: The cover's own two. A cover is the one page in a document that is allowed
 #: a size nothing else uses — it has one job and no neighbours to sit beside.
+FINDING = Type(11.5, 14.5, FONT_BOLD)
 COVER_TITLE = Type(32, 35, FONT_BOLD)
 COVER_LEAD = Type(11, 15.5)
 
@@ -550,6 +551,11 @@ def styles() -> dict[str, ParagraphStyle]:
         "cell_right": make("cell_right", CELL, INK_2, alignment=2),
         "area_title": make("area_title", Type(13, 15, FONT_BOLD), INK,
                            spaceAfter=1),
+        # Page 1's action titles (PLAN-2026-10-13 3.3): the heading is the
+        # conclusion, so it is set as a sentence, not a tracked label.
+        "finding": make("finding", FINDING, INK, spaceBefore=7, spaceAfter=2),
+        "question": make("question", BODY, INK, spaceAfter=3, leftIndent=12,
+                         firstLineIndent=-12),
         "note": make("note", NOTE, INK_3, spaceAfter=3),
         "note_lead": make("note_lead", NOTE, INK_2, spaceAfter=3),
         # A column head's second line: what the tracked label above it is

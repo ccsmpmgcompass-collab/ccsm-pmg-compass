@@ -648,6 +648,11 @@ class YearGap:
         return sum(b.high for b in self.bets)
 
 
+def transfers_left(year: int, today: date) -> float:
+    """Six-week transfers from ``today`` to 31 December of ``year``."""
+    return max(0.0, (date(year, 12, 31) - today).days / 7) / 6
+
+
 def year_gap(year: "YearLanding | None", pipeline: "Pipeline | None",
              levers, today: date) -> YearGap | None:
     """The gap to the annual goal and two bets (PLAN-2026-10-13 step 2.3):
@@ -668,8 +673,7 @@ def year_gap(year: "YearLanding | None", pipeline: "Pipeline | None",
     gap = YearGap(goal=year.goal, low=max(0.0, year.goal - year.high),
                   high=max(0.0, year.goal - year.low))
     bets = []
-    weeks = max(0.0, (date(year.year, 12, 31) - today).days / 7)
-    transfers = weeks / 6
+    transfers = transfers_left(year.year, today)
     sized = [v for v in (levers or ()) if v.baptisms]
     if sized and transfers:
         lo = sum(v.baptisms[0] for v in sized) * transfers

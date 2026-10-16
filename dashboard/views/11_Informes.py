@@ -522,7 +522,22 @@ def _nightly_rows(rows) -> str:
 # armadas del modelo de la misión.
 
 from app.reports import packet as _PK
+from app.reports import story as _ST
 from app.reports import summary as _SM
+
+# Step 3.3: the packet's page 1 — the three largest findings, as conclusions,
+# and the question each puts to the council.
+_STORY = _ST.story(_model)
+if _STORY:
+    render_section_label(
+        "La historia de este mes", right=_model.period.label,
+        info=("Lo que más mueve primero: los hallazgos de bautismos, contra lo "
+              "que falta para la meta del año; los demás, como parte de lo "
+              "que falta para la meta del liderazgo. Sin color."),
+    )
+    for _i, _f in enumerate(_STORY, start=1):
+        st.markdown(f"**{_i}. {_f.title}.** {_f.support}  \n"
+                    f"*Para decidir:* {_f.question}")
 
 _SUMMARY = _SM.summary(_model)
 if _SUMMARY:

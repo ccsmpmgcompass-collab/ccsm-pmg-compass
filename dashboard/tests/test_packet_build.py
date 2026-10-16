@@ -93,8 +93,9 @@ def reader(pdf):
 
 
 def _note(reader):
-    """The data note — the page before the print guide, which is last."""
-    return _pages(reader)[-2]
+    """The data note — every page headed by it. Since step 3.3 "Cómo leer"
+    follows it, before the print guide."""
+    return "\n".join(p for p in _pages(reader) if "NOTA DE DATOS" in p.upper())
 
 
 def _pages(reader):

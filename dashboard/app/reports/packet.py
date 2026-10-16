@@ -362,8 +362,6 @@ def sections_for(models) -> list:
     return [
         Section(RESUMEN, "Resumen para el presidente",
                 "Presidente y asistentes"),
-        Section(HOW_TO_READ, "Cómo leer este paquete",
-                "Quien lo lea por primera vez"),
         Section(MISSION, "La misión", "Todos en el consejo", units=1),
         Section(ZONES, f"Cada zona — {counts[S.ZONE]} zonas",
                 "Se discute zona por zona", units=counts[S.ZONE],
@@ -376,6 +374,8 @@ def sections_for(models) -> list:
                 unit_noun="área", feminine=True),
         Section(DATA_NOTE, "Nota de datos",
                 "Quien pregunte de dónde sale una cifra", "Referencia"),
+        Section(HOW_TO_READ, "Cómo leer este paquete",
+                "Quien lo lea por primera vez", "Referencia"),
         Section(PRINT_GUIDE, "Guía de impresión",
                 "Quien imprime y reparte el paquete", "Referencia"),
     ]
@@ -424,46 +424,105 @@ def _titled(section) -> str:
 
 def front_matter(mission, sections, units, roster, *, total_pages: int,
                  pagination: "Pagination | None" = None) -> list:
-    """The cover and "Cómo leer" — pages 1 and 2 (decisions 4, 40).
+    """Page 1, the story of the month, and page 2, the resumen (step 3.3).
 
-    The print guide used to be page 2 of the president's own copy (AUDIT
-    L1); it is the last page now (`print_guide_pages`), where the person who
-    prints the packet finds it and the president does not have to turn past
-    it. The contents still lists it.
+    The cover shrank to the header band of page 1 (C1): a monthly council
+    reads its conclusions first. "Cómo leer" moved to the back as an
+    appendix (`appendix_pages`); the contents, on page 1, still lists it.
     """
     period = mission.period
-    facts = [
-        ("Preparado para", "Presidente de misión y asistentes"),
-        ("Período", f"{period.label} · {period.window_label}"),
-        ("Semanas completas", period.progress_label),
-        ("Cumplimiento", mission.compliance_label),
-    ]
-    sections = describe(sections)
     return (
-        PP.cover_page(
-            kicker="Consejo de liderazgo misional",
-            title="Paquete del Consejo",
-            standfirst=f"{mission.mission_name} — dónde está la misión, dónde "
-                       f"enfocar y qué viene, en este período.",
-            facts=facts,
-            contents=[(s.title, s.page_label) for s in sections],
-            note="Generado por PMG Compass desde la hoja de datos de la misión el "
-                 f"{es_display.long_date(mission.today)}. Cada cifra viene de lo "
-                 f"que las compañerías informaron o de Tableau; la nota de datos "
-                 f"al final dice qué falta y por qué.")
+        story_page(mission, describe(sections))
         + [PageBreak(),
            PP.SetFurniture(PP.Furniture(
                eyebrow=mission.mission_name, period=period.window_label,
                mission=mission.mission_name, key=False))]
         + ([SectionStart(RESUMEN, pagination)] if pagination else [])
         + resumen_page(mission)
-        + [PageBreak(),
-           PP.SetFurniture(PP.Furniture(
-               eyebrow=mission.mission_name, period=period.window_label,
-               mission=mission.mission_name, key=True))]
-        + ([SectionStart(HOW_TO_READ, pagination)] if pagination else [])
-        + how_to_read(mission, sections)
     )
+
+
+def appendix_pages(mission, sections, *,
+                   pagination: "Pagination | None" = None) -> list:
+    """"Cómo leer este paquete", after the data note (step 3.3)."""
+    return ([PP.SetFurniture(PP.Furniture(
+                eyebrow="Cómo leer este paquete",
+                period=mission.period.window_label,
+                mission=mission.mission_name, key=True))]
+            + ([SectionStart(HOW_TO_READ, pagination)] if pagination else [])
+            + how_to_read(mission, describe(sections)))
+
+
+#: Page 1's contents, two sections to a row: title, pages, title, pages.
+STORY_CONTENTS = (206.0, 54.0, 206.0, 54.0)
+
+
+def story_page(mission, sections) -> list:
+    """"La historia de este mes" (step 3.3, C1): the header band, the three
+    largest findings as action titles with one number each — the year's
+    path drawn under the gap to 527 — the questions they put to the council,
+    and the contents."""
+    from app.reports import story as ST
+    st = PP.styles()
+    W = PP.CONTENT_WIDTH
+    period = mission.period
+    flow = [
+        PP.TrackedLabel("Consejo de liderazgo misional", style=PP.SECTION,
+                        color=PP.ACCENT, pad_bottom=6.0),
+        Paragraph(PP.text(f"Paquete del Consejo · {period.label}"),
+                  st["title"]),
+        Paragraph(PP.text(
+            f"{mission.mission_name} · {period.window_label} · "
+            f"{period.progress_label} · {mission.compliance_label}"),
+            st["subtitle"]),
+        PP.HairRule(color=PP.INK, thickness=1.2, space_before=0,
+                    space_after=2),
+    ]
+    findings = ST.story(mission)
+    flow.append(PP.SectionHead("La historia de este mes",
+                               "lo que más mueve primero · sin color",
+                               space_before=8))
+    if findings:
+        for i, f in enumerate(findings, start=1):
+            flow.append(Paragraph(PP.text(f"{i}. {f.title}."), st["finding"]))
+            flow.append(Paragraph(PP.text(f.support), st["body"]))
+            yl = mission.forward.year
+            if f.key == "gap" and yl is not None:
+                flow += [Spacer(0, 4), year_path(yl, W, 150.0), Spacer(0, 2)]
+        flow.append(PP.SectionHead("Para decidir en este consejo",
+                                   "una pregunta por hallazgo"))
+        for i, f in enumerate(findings, start=1):
+            flow.append(Paragraph(PP.text(f"{i}. {f.question}"),
+                                  st["question"]))
+    else:
+        flow.append(Paragraph(PP.text(
+            "Este período no tiene hallazgos con qué medirse: ni meta del "
+            "liderazgo, ni proyección del año."), st["body"]))
+    present = [s for s in sections]
+    rows = []
+    for i in range(0, len(present), 2):
+        pair = present[i:i + 2]
+        row = []
+        for sec in pair:
+            row += [Paragraph(PP.text(sec.title), st["cell"]),
+                    Paragraph(PP.text(sec.page_label), st["cell_right"])]
+        if len(pair) == 1:
+            row += ["", ""]
+        rows.append(row)
+    flow += [PP.SectionHead("En este paquete", "páginas"),
+             PP.table(rows, STORY_CONTENTS, align=("l", "r", "l", "r"),
+                      pad=2.0),
+             Spacer(0, 6),
+             Paragraph(PP.text(
+                 "Cada hallazgo se ordena por lo que mueve de su brecha: los "
+                 "de bautismos, contra lo que falta para "
+                 f"{_int(mission.forward.year.goal) if mission.forward.year and mission.forward.year.goal else 'la meta del año'}"
+                 "; los demás, como parte de lo que falta para la meta del "
+                 "liderazgo. Cada uno está con su método en las páginas que "
+                 "siguen. Generado por PMG Compass desde la hoja de datos de "
+                 f"la misión el {es_display.long_date(mission.today)}."),
+                 st["note"])]
+    return flow
 
 
 def resumen_page(mission) -> list:
@@ -3835,6 +3894,8 @@ def build_packet(models, roster, goals=None) -> bytes:
         flow = (front_matter(mission, resolved, units, roster,
                              total_pages=total, pagination=measured)
                 + _body(models, goals, measured)
+                + [PageBreak()]
+                + appendix_pages(mission, resolved, pagination=measured)
                 + [PageBreak()]
                 + print_guide_pages(mission, resolved, units, roster,
                                     total_pages=total, pagination=measured))
