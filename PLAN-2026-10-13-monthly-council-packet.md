@@ -935,3 +935,108 @@ failure. Four new tests.
 
 **Next: Phase 3** (new chat), from 3.1. **Zackary must Reboot** the deployed
 app after this push (`dashboard/DEPLOYING.md`).
+
+### 2026-10-16 — Phase 3 built, verified and pushed
+
+- **Commits:**
+  - `426b159` 3.1
+  - `70254c0` 3.2
+  - `53e2d7b` 3.3
+  - this STATUS entry (3.4)
+- **3.1 What a date is worth** (`forecast.date_quality` → `Forward.dates`,
+  mission only; `forecast.stale_by_area` → `Forward.stale`, districts;
+  `Pipeline.old` / `old_share`).
+  - The mission's baptism page gains *"Fechas: cuántas, qué edad, cuántas
+    llegan"*, after the note on the certified figure. It prints the open
+    dates today against the same day a year ago (total, over 90 days, under
+    31 days), and the dates set in the same **three whole months** in 2025
+    and 2026, the latest whose dates have all had six weeks (on 10-16:
+    June–August): how many, baptised within 6 weeks, set within 7 days of
+    being found, set after church.
+  - Live: 451 → 1.247 open (×2,8); over 90 days 71% → 65%; Jun–Aug dates
+    158 → 550; **baptised within 6 weeks 23% → 13%**; set within a week
+    23% → 52%; set after church 73% → 32%. These match Phase 0.1.
+  - **The decision-65 sentence is printed once**, in Phase 0.1's words,
+    over that one window: *"Entre junio y agosto de 2026 la misión encontró
+    casi el doble de personas, fijó más del triple de fechas y bautizó un
+    10% más que en los mismos meses de 2025. Parte del salto puede ser cómo
+    se registra; lo que no depende de eso es lo que vale una fecha: … 13 de
+    cada 100 … dentro de seis semanas; en 2025, 23. En esos meses, la mitad
+    de las fechas se fijó en la primera semana … y dos de cada tres antes de
+    que asistiera a la Iglesia."* It names no cause (a test guards it).
+  - **A build-time choice (amendable):** Phase 0.1's sentence used the
+    *12-week* rate over 1 Jun–20 Jul (13 against 39). The build uses the
+    *6-week* rate over whole months, so the sentence and the table share
+    one window and one figure (13 against 23). The certified change over
+    Jun–Aug reads +10% (Phase 0 had +15% over Jun–Sep).
+  - **Zones:** "Lo que viene" adds the share of open dates over 90 days
+    (Angol 58%, LAN 55%, San Pedro 71%, Temuco Ñielol 62%).
+  - **Districts:** the same line adds *"revisar o liberar, de más de 90
+    días: Alemania 2: 7 · Collipulli 1: 4 · Los Confines: 27"*. Counts
+    only, never names. It is one sentence with the pipeline's, so every
+    district stays on one page.
+  - The screen shows the share on the pipeline tile and the sentence under
+    the pipeline.
+- **3.2 Desde el último consejo** (`model.SinceCouncil`, `CouncilFocus`,
+  `CouncilQuestion`, on `Changes.council`; mission, *Mes pasado* only).
+  - The last council reviewed the comparison month (the month before *Mes
+    pasado*), already rebuilt by `_changes`. Its zone questions come from
+    the mission funnel **as it read a month ago** (`_funnel(..., asof=)`:
+    that day's cohort, and only the stages reached by then, from today's
+    sheet).
+  - The block sits before *Qué cambió* and prints: the top three focus
+    units then (share and productivity, then and now); each pilot zone's
+    question then and now (zone % · mission %); the year's landing then and
+    now (*Qué cambió* drops its own landing line when this prints). Its
+    note says *"rehecho con la hoja de hoy"* and that the cohort moves a
+    month between councils.
+  - The resumen's *Qué cambió* opens with `summary.council_line`.
+  - **The September packet has no council to remember** (August is the
+    form's launch month). It prints *"No hay consejo anterior que recordar:
+    el formulario semanal empezó …"*. A build dated **2026-11-02** prints
+    the real block: Los Confines 16% → 15%, La Marina 1 13% → 12%, San
+    Pedro 1 12% → 4%; Angol fecha→bautismo 6,6% → 4,3%; LAN iglesia→fecha
+    59,7% → 51,7%; Temuco Ñielol 8,3% → 7,3%.
+- **3.3 Page 1, "La historia de este mes"** (new pure module
+  `app/reports/story.py`).
+  - **Candidates:** the gap to 527 · reporting's part of the shortfall ·
+    what a date is worth · the biggest leak (carried to 31 Dec with
+    `forecast.transfers_left`) · the largest zone move (≥ 10 points) · the
+    last council's first unit.
+  - **The common unit (a build-time choice, amendable):** each finding is
+    the part of its gap it moves, 0–100. A baptism finding is its baptisms
+    against what is missing for 527. Any other finding is its share of
+    what is missing for leadership's goal. So the gap to 527 is 100 and
+    leads whenever the year falls short.
+  - **Live September:** (1) *"El año cierra en 446-468 bautismos: faltan
+    59-82 para 527"* with the year path under it; (2) *"El 59% de lo que
+    falta para la meta del liderazgo es de semanas sin informe"*; (3) *"De
+    cada 100 fechas fijadas entre junio y agosto, 13 terminaron en bautismo
+    en seis semanas; en 2025, 23"*. The candidates that did not make page
+    1: Temuco Ñielol 101 → 83 (18) and Angol's leak (7).
+  - **"Para decidir en este consejo":** one question per finding.
+  - **The cover** shrank to page 1's header band. The contents moved to
+    page 1 (two sections a row). **Resumen stays page 2. *Cómo leer*
+    moved to the back**, between the data note and the print guide.
+  - The screen shows the same three findings, each with its question,
+    above the resumen.
+- **3.4 Verify:**
+  - **Suite:** 1 failed / 2054 passed / 1 skipped. The failure is the
+    baseline's date-sensitive one. There are 33 new tests in
+    `test_report_date_quality.py`, `test_report_council_memory.py` and
+    `test_report_story.py`. Four front-matter tests were rewritten for the
+    new order.
+  - **Live builds (data of 2026-10-16):** *Mes pasado* (September) is **51
+    pages** and *Este traslado* (2026-6) is **51 pages**. The mission has 8
+    pages (3–10), the zones 9 and the districts 13 (one each).
+  - **Pages read:** page 1 (as a stranger would read it), the dates block,
+    the council block (2026-11-02 build), the district lines and the print
+    guide.
+  - **Screen (AppTest, live data):** *Mes pasado*, *Mes pasado* dated
+    11-02, and *Este traslado* all run with no exception.
+
+**For Phase 4.1:** the run sheet still gives the zone leaders "La misión y
+su zona" and not page 1. D3's council packet gives them the whole of it.
+
+**Next: Phase 4**, from 4.1. **Zackary must Reboot** the deployed app after
+this push (`dashboard/DEPLOYING.md`).
