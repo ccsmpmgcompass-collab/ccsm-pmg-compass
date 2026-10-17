@@ -63,7 +63,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 from app.analytics.area_goals import weighted_goal
-from app.config.metric_catalog import is_level
+from app.config.levels import is_level
 
 from app.reports import periods as P
 from app.reports import tableau as TB

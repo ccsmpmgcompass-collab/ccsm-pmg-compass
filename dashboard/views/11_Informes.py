@@ -295,9 +295,18 @@ def _ki_cards() -> list[dict]:
                 # Decision 66: a cycle without goals drops its own weeks.
                 card["note"] = (f"sobre {fmt_int(row.lead_area_weeks)} de "
                                 f"{fmt_int(row.lead_area_weeks_possible)} "
-                                f"semanas-área con meta")
+                                + ("áreas con meta esa semana" if row.level
+                                   else "semanas-área con meta"))
         else:
             card["note"] = "sin meta del liderazgo para estas semanas"
+        if row.level and row.level_week is not None and row.actual is not None:
+            # A level is its last week, never the period added up
+            # (PLAN-2026-10-17 L3); the goal is a level to hold.
+            card["note"] = " · ".join(x for x in (
+                f"nivel de la semana del {es_display.day_month(row.level_week)}"
+                + (f", promedio {fmt_int(round(row.average))}"
+                   if row.average is not None else ""),
+                card.get("note", "")) if x)
         # H5, the packet's rule: a small count moves in units, and a move
         # inside Poisson noise is drawn flat and grey.
         if comparable and row.grade.change_count is not None:

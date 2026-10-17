@@ -115,7 +115,7 @@ def transfer_finish(weekly_ki: pd.DataFrame, areas, keys, labels: dict, *,
     one), ``goals`` leadership's whole-transfer goal per key for these areas
     — for a LEVEL key the level to hold (see `KIFinish`).
     """
-    from app.config.metric_catalog import is_level
+    from app.config.levels import is_level
     if weekly_ki is None or weekly_ki.empty:
         return ()
     wanted = set(areas)

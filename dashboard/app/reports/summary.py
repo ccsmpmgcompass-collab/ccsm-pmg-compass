@@ -70,8 +70,10 @@ def where_we_are(m) -> list:
         # Decision 59: every area counts, a silent week as zero; decision 66
         # names the population when a cycle without goals shrinks it.
         basis = "con cada semana sin informe en cero"
-        first = graded[0]
-        if first.lead_area_weeks < first.lead_area_weeks_possible:
+        # A level counts areas, not area-weeks (PLAN-2026-10-17 L3).
+        first = next((r for r in graded if not r.level), graded[0])
+        if (not first.level
+                and first.lead_area_weeks < first.lead_area_weeks_possible):
             basis += (f", sobre {_int(first.lead_area_weeks)} de "
                       f"{_int(first.lead_area_weeks_possible)} semanas-área "
                       f"con meta")

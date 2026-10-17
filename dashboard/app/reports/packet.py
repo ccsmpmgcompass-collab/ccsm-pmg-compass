@@ -646,6 +646,9 @@ def how_to_read(mission, sections) -> list:
         f"semana sin informe en cero: {_band_sentence()}. La columna «Compromiso» es la meta que las "
         f"compañerías se pusieron; se imprime y nunca da color. Los bautismos "
         f"del formulario no llevan color: la meta de bautismos es la anual. "
+        f"Amigos con Fecha Bautismal es un nivel, cuántos amigos tienen fecha "
+        f"esa semana: se lee su última semana contra cuántos mantener, y "
+        f"nunca se suma entre semanas. "
         f"Las unidades se ordenan por su índice de productividad: lo que "
         f"produce cada compañería por semana contra la misión, que es 100, "
         f"con más peso en lo más cercano al bautismo (fechas 3, sacramental y "
@@ -957,9 +960,16 @@ def ki_lines(model, *, comparable: bool, confident: bool = True) -> list:
                 real = row.lead_actual
                 note = (f"sobre {es_display.integer(row.lead_area_weeks)} de "
                         f"{es_display.integer(row.lead_area_weeks_possible)} "
-                        f"semanas-área con meta")
+                        + ("áreas con meta esa semana" if row.level
+                           else "semanas-área con meta"))
             if row.key in UNCOLOURED_KI:
                 note = "sin color: los bautismos se miden contra la meta anual"
+        if row.level and row.level_week is not None and row.actual is not None:
+            # A level: its last week, never the period added up (L3).
+            note = "; ".join(x for x in (
+                f"nivel de la semana del "
+                f"{es_display.day_month(row.level_week)}, "
+                + _level_sub(row).replace("prom.", "promedio"), note) if x)
         lines.append(PP.MetricLine(
             label=row.label, value=_count(real),
             goal=(_goal(row.lead_goal) if row.lead_goal else es_display.NA),
@@ -2269,6 +2279,8 @@ def _partial_goal(model):
     scope (decision 66), else None. Every row shares one population, because
     an area-week has a goal when ANY of its seven does."""
     for row in model.key_indicators:
+        if row.level:
+            continue            # counted in areas, not area-weeks
         if row.lead_goal is not None and row.lead_area_weeks_possible:
             if row.lead_area_weeks < row.lead_area_weeks_possible:
                 return row.lead_area_weeks, row.lead_area_weeks_possible
@@ -2288,6 +2300,13 @@ def tablero_lines(model, *, comparable: bool, confident: bool) -> list:
     for row in model.key_indicators:
         real = (row.lead_actual if partial and row.lead_goal is not None
                 and row.actual is not None else row.actual)
+        if row.level:
+            # Its last week, over the areas with a goal that week when not
+            # all have one (PLAN-2026-10-17 L3).
+            real = (row.lead_actual if row.lead_goal is not None
+                    and row.actual is not None
+                    and row.lead_area_weeks < row.lead_area_weeks_possible
+                    else row.actual)
         # Step 4.4 (C13): the form's baptisms keep their row, under a name
         # that says which baptism figure this is (decision 21).
         label = (f"{row.label} (formulario)" if row.key in NOT_FOR_VERDICTS
@@ -2309,8 +2328,26 @@ def tablero_lines(model, *, comparable: bool, confident: bool) -> list:
             spark=values, boundaries=bounds,
             finish=(_range(k.low, k.high) if k is not None and k.weeks_left > 0
                     else ""),
-            need=need))
+            need=need, real_sub=_level_sub(row)))
     return lines
+
+
+def _level_sub(row) -> str:
+    """"prom. 48" under a level's last week, or "" (PLAN-2026-10-17 L3)."""
+    if not row.level or row.average is None or row.actual is None:
+        return ""
+    return f"prom. {es_display.integer(round(row.average))}"
+
+
+def _level_sentence(model) -> str:
+    """One sentence naming a level's week and what its figures mean, or ""."""
+    row = next((r for r in model.key_indicators if r.level), None)
+    if row is None or row.level_week is None:
+        return ""
+    return (f"{row.label} es un nivel: su real es cuántos amigos tenían fecha "
+            f"la semana del {es_display.day_month(row.level_week)} (debajo, "
+            f"el promedio del período) y su meta, cuántos mantener; nunca se "
+            f"suma entre semanas.")
 
 
 def tablero_block(model) -> list:
@@ -2353,6 +2390,9 @@ def tablero_block(model) -> list:
                 f"{es_display.integer(partial[1])} semanas-área que tienen meta "
                 f"del liderazgo; una semana sin informe cuenta como cero; "
                 f"«Propia» es el compromiso.")
+    level = _level_sentence(model)
+    if level:
+        note += " " + level
     flow.append(Paragraph(PP.text(note), st["note"]))
     reach = _goal_reach_line(model)
     if reach:
@@ -3048,7 +3088,9 @@ def trend_block(model) -> list:
         after = [i for i, w in enumerate(weeks) if w >= day]
         if after and after[0] > 0:
             boundaries.append(after[0])
+    levels = {r.key for r in model.key_indicators if r.level}
     rows = [(s.label, [p.actual for p in s.points],
+             _last_cell(s.points) if s.key in levels else
              _count(sum(p.actual for p in s.points if p.actual is not None)))
             for s in series]
     reporting = [p.reporting for p in series[0].points]
@@ -3071,7 +3113,9 @@ def trend_block(model) -> list:
         Spacer(0, 4),
         Paragraph(PP.text(
             "Cada línea en su escala; la regla punteada, un día de traslado; "
-            "una semana sin informes corta la línea. Total: las doce."),
+            "una semana sin informes corta la línea. Total: las doce"
+            + ("; «últ.», la última semana de un nivel, que no se suma"
+               if levels else "") + "."),
             st["note"]),
     ]
 
@@ -3655,8 +3699,17 @@ def _week_rows(model):
                 if after and after[0] > 0:
                     boundaries.append(after[0])
         rows.append((row.label, [p.actual for p in series.points],
-                     _count(row.actual)))
+                     _last_cell(series.points) if row.level
+                     else _count(row.actual)))
     return weeks, rows, boundaries, reporting
+
+
+def _last_cell(points) -> str:
+    """A level's last column: its latest reported week, "71 últ." — the
+    twelve are never added up (PLAN-2026-10-17 L1)."""
+    last = next((p.actual for p in reversed(points) if p.actual is not None),
+                None)
+    return es_display.NA if last is None else f"{_count(last)} últ."
 
 
 # ── The body ──────────────────────────────────────────────
@@ -3740,7 +3793,9 @@ def data_note(models, goals=None) -> list:
         ["Meta de traslado", source("Metas del liderazgo",
                                     "AREA_TRANSFER_GOALS"),
          "La meta del liderazgo por área por ciclo, prorrateada a la parte "
-         "del traslado que cubre este período."],
+         "del traslado que cubre este período. La de Amigos con Fecha "
+         "Bautismal es un nivel a mantener y no se prorratea; hasta 2026-6 "
+         "se guardó sumada por las semanas del ciclo, y se lee dividida."],
         ["Trabajo nocturno", source("Formulario nocturno", "DAILY_LOG"),
          "Un informe por área por noche. La meta es la de cada sector para "
          "esa semana, recalculada cada lunes, y se mide por noche "
@@ -3853,7 +3908,10 @@ def section_methods(mission) -> list:
          "prorrata del período, con cada semana sin informe en cero; es lo "
          "único con color. Si un ciclo no tiene meta, real y meta cuentan "
          "sólo las semanas-área que la tienen. 12 semanas: su forma, cada "
-         "línea en su escala."),
+         "línea en su escala. Amigos con Fecha Bautismal es un nivel, cuántos "
+         "amigos tienen fecha esa semana: su real es la última semana del "
+         "período, con el promedio debajo, y su meta cuántos mantener; nunca "
+         "se suma entre semanas."),
     ]
     finish = fwd.finish[0] if fwd.finish else None
     if finish is not None:
@@ -3863,7 +3921,10 @@ def section_methods(mission) -> list:
             f"cada una como la peor y la mejor de las últimas "
             f"{es_display.integer(finish.pace_weeks)} semanas completas. "
             f"Falta por semana: lo que haría falta para la meta del traslado "
-            f"entero, y cuántas veces el ritmo de hoy. Es una proyección."
+            f"entero, y cuántas veces el ritmo de hoy. Para Amigos con Fecha "
+            f"Bautismal, un nivel: lleva es la última semana, termina en es "
+            f"ese nivel al cierre al peor y al mejor cambio semanal, y falta "
+            f"es lo que le falta hoy. Es una proyección."
             + _backtest_sentence(mission)))
     out += [
         ("Dónde enfocar",

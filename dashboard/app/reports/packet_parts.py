@@ -1957,6 +1957,9 @@ class TableroLine:
     boundaries: tuple = ()
     finish: str = ""
     need: str = ""
+    #: A second line under REAL, in the note size: a level's period average
+    #: under its last week ("prom. 48", PLAN-2026-10-17 L3).
+    real_sub: str = ""
 
 
 #: The tablero's columns, with and without the forecast (a district has no
@@ -1972,7 +1975,10 @@ def tablero_table(lines, *, headers, forecast: bool = True) -> Table:
     for line in lines:
         row = [
             Paragraph(text(line.label), st["cell_bold"]),
-            Paragraph(text(line.real), st["cell_right"]),
+            ([Paragraph(text(line.real), st["cell_right"]),
+              Paragraph(text(line.real_sub), st["head_sub_right"])]
+             if line.real_sub else
+             Paragraph(text(line.real), st["cell_right"])),
             Paragraph(text(line.per_comp), st["cell_right"]),
             Paragraph(text(line.own), st["cell_right"]),
             bar_vs_goal(widths[4] - 8, pct=line.pct, status=line.status,
