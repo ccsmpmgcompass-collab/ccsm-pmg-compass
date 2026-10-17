@@ -209,6 +209,26 @@ def _levels_as_cycle_totals(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _levels_as_levels(df: pd.DataFrame) -> pd.DataFrame:
+    """`df` (numeric metric columns) with every LEVEL metric read as the
+    level to hold each week: an older row's cycle total divided by its
+    cycle's weeks (2026-6's 29 = 4,83), a newer row as stored. Unrounded on
+    purpose — the sum of 2026-6's levels is 55,7, not the 77 that rounding
+    each area up would make (L5)."""
+    from app.config.metric_catalog import LEVEL_METRICS
+    levels = [c for c in LEVEL_METRICS if c in df.columns]
+    if df.empty or not levels or "transfer_start" not in df.columns:
+        return df
+    weeks = _cycle_weeks()
+    starts = df["transfer_start"].astype(str).str.strip().str[:10]
+    divisor = starts.map(weeks).fillna(1.0).astype(float).where(
+        ~starts.map(stores_levels), 1.0).replace(0, 1.0)
+    df = df.copy()
+    for c in levels:
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0) / divisor
+    return df
+
+
 def get_area_transfer_goals(transfer_start) -> pd.DataFrame:
     """Every area's goals for one cycle, metric columns coerced to numbers."""
     key = _norm_start(transfer_start)
@@ -225,8 +245,11 @@ def get_area_transfer_goals(transfer_start) -> pd.DataFrame:
     return _levels_as_cycle_totals(df)
 
 
-def all_area_transfer_goals() -> pd.DataFrame:
+def all_area_transfer_goals(*, levels: bool = False) -> pd.DataFrame:
     """Every saved row, every cycle — metric columns coerced to numbers.
+
+    ``levels=True`` reads every LEVEL metric as the level to hold
+    (`_levels_as_levels`); without it, as a cycle total (the bridge).
 
     `get_area_transfer_goals` is this, cut to one cycle. Added for the Informes
     packet, which builds 63 scopes over one or two cycles and must read the tab
@@ -242,7 +265,7 @@ def all_area_transfer_goals() -> pd.DataFrame:
                  if c in df.columns else 0)
     df["area"] = df["area"].astype(str).str.strip()
     df["transfer_start"] = df["transfer_start"].astype(str).str.strip().str[:10]
-    return _levels_as_cycle_totals(df)
+    return _levels_as_levels(df) if levels else _levels_as_cycle_totals(df)
 
 
 def get_area_transfer_goal(area: str, transfer_start) -> dict | None:

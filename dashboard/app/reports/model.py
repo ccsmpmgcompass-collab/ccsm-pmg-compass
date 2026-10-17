@@ -41,6 +41,14 @@ all of them; an unreported night is work nobody recorded, and counting it as
 work would flatter. That is also the basis §1.1 measured on and the one decision
 22's 25% floor was calibrated against.
 
+**A level is not a count** (PLAN-2026-10-17-fechas-level.md, L1–L4).
+"Amigos con Fecha Bautismal" is how many friends hold a date that week, so it
+is never added across weeks. A level row's ``actual`` is the unit's level in
+the period's LAST complete week (its areas' reports that week, a silent area
+counting zero), ``average`` the mean of the period's weekly levels, and its
+goal is leadership's goal LEVEL, never multiplied by weeks. Everything a
+level row is divided by is areas, not area-weeks — see `_level_row`.
+
 Loading is separate from building. `load_data()` reads every frame once;
 `build_report` is pure over it. The packet renders 63 scopes from one load.
 
@@ -55,6 +63,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 from app.analytics.area_goals import weighted_goal
+from app.config.metric_catalog import is_level
 
 from app.reports import periods as P
 from app.reports import tableau as TB
@@ -259,6 +268,17 @@ class MetricRow:
 
     grade: Grade = field(default_factory=Grade)
 
+    #: A LEVEL row (`metric_catalog.LEVEL_METRICS`, L1–L3): ``actual`` is the
+    #: level in ``level_week``, the period's last complete week, and
+    #: ``average`` the mean of the period's weekly levels, printed beside it.
+    #: Its ``lead_*`` and ``meta*`` fields count AREAS in that week, not
+    #: area-weeks. ``area_week_sum`` is every report in the period added up —
+    #: the productivity index's event count, and nothing a reader is shown.
+    level: bool = False
+    average: float | None = None
+    level_week: date | None = None
+    area_week_sum: float | None = None
+
     @property
     def meta_per_area_week(self) -> float | None:
         if self.meta is None or not self.meta_area_weeks:
@@ -433,7 +453,8 @@ def productivity(rows, mission_rows) -> Productivity:
         ratio = None
         if row.actual is not None:
             any_reading = True
-            events += row.actual
+            # A level's events are its reports added up, not one week's level.
+            events += (row.area_week_sum or 0.0) if row.level else row.actual
         if base and row.per_active_area_week is not None:
             ratio = min(INDEX_CAP, row.per_active_area_week / base * 100)
             total += weights[row.key] * ratio
@@ -919,6 +940,9 @@ class ReportData:
     daily_log: pd.DataFrame = field(default_factory=pd.DataFrame)
     breakdowns: pd.DataFrame = field(default_factory=pd.DataFrame)
     scores: pd.DataFrame = field(default_factory=pd.DataFrame)
+    #: AREA_TRANSFER_GOALS, every cycle, with each LEVEL metric already the
+    #: level to hold (`goals_queries.all_area_transfer_goals(levels=True)`);
+    #: the flows are cycle totals.
     transfer_goals: pd.DataFrame = field(default_factory=pd.DataFrame)
     cycles: list[dict] = field(default_factory=list)
     ki_keys: tuple[str, ...] = ()
@@ -1089,9 +1113,10 @@ class ReportData:
         The area's AREA_TRANSFER_GOALS row for the cycle the week falls in,
         spread evenly over the cycle's weeks — `_leadership_goals`' own
         pro-rating rule, applied per area-week so a row can be graded on
-        exactly the area-weeks that reported (decision 44, rule 1). None when
-        the area has no goal that cycle: "any of its seven non-zero" is
-        `goals_queries.areas_with_goals`' rule for having one.
+        exactly the area-weeks that reported (decision 44, rule 1). A LEVEL
+        metric is not spread: its goal is the level to hold that week (L2).
+        None when the area has no goal that cycle: "any of its seven non-zero"
+        is `goals_queries.areas_with_goals`' rule for having one.
         """
         if "lead_table" not in self._flags:
             self._flags["lead_table"] = self._lead_table()
@@ -1127,7 +1152,8 @@ class ReportData:
             if not any(values.values()):
                 continue
             out[(str(row["area"]).strip(), start)] = {
-                k: v / spans[start] for k, v in values.items()}
+                k: (v if is_level(k) else v / spans[start])
+                for k, v in values.items()}
         return out
 
     def nightly_goal_flags(self, period: P.Period) -> dict:
@@ -1294,7 +1320,7 @@ def load_data(today: date | None = None) -> ReportData:
         daily_log=daily,
         breakdowns=breakdowns,
         scores=scores,
-        transfer_goals=all_area_transfer_goals(),
+        transfer_goals=all_area_transfer_goals(levels=True),
         cycles=P.load_cycles(),
         ki_keys=ki_keys,
         nightly_keys=nightly_keys,
@@ -1444,6 +1470,9 @@ def _leadership_goals(data: ReportData, scope: S.Scope,
 
     `complete` is False unless EVERY area in scope has a goal in EVERY cycle
     the period touches — see `MetricRow.has_leadership_goal`.
+
+    A LEVEL metric is not pro-rated: its mark is the areas' goal levels for
+    the cycle of the period's last week, the week its figure is read in (L3).
     """
     from app.analytics.transfer_year import weeks_in_cycle
 
@@ -1474,6 +1503,12 @@ def _leadership_goals(data: ReportData, scope: S.Scope,
         min_areas = n if min_areas is None else min(min_areas, n)
         complete = complete and n == scope.area_count
         for key in metrics:
+            if is_level(key):
+                if period.weeks and cycle["start"] <= period.weeks[-1] <= cycle["end"]:
+                    out[key] = float(rows[key].sum())
+                else:
+                    out.setdefault(key, 0.0)
+                continue
             out[key] = out.get(key, 0.0) + float(rows[key].sum()) * share
     return {k: (v, min_areas or 0, complete) for k, v in out.items()}
 
@@ -1548,6 +1583,11 @@ def _ki_rows(data: ReportData, scope: S.Scope, period: P.Period, *,
 
     out: list[MetricRow] = []
     for key in data.ki_keys:
+        if is_level(key):
+            out.append(_level_row(data, scope, period, key, rows, before_rows,
+                                  comparison, marks.get(key, (None, 0, False)),
+                                  graded=reporting_area_weeks > 0))
+            continue
         actual = (float(pd.to_numeric(rows[key], errors="coerce").sum())
                   if not rows.empty and key in rows.columns else None)
         before = (float(pd.to_numeric(before_rows[key], errors="coerce").sum())
@@ -1602,6 +1642,123 @@ def _ki_rows(data: ReportData, scope: S.Scope, period: P.Period, *,
             grade=grade,
         ))
     return out
+
+
+def _week_level(rows: pd.DataFrame, key: str, week: date | None) -> tuple:
+    """`(level, areas that filed)` for one week of `rows`: the areas' reports
+    added up, a silent area counting zero (L4). `(None, 0)` with no week."""
+    if week is None or rows.empty:
+        return (None, 0)
+    mine = rows[rows["_week"] == week.isoformat()]
+    if key not in rows.columns:
+        return (None, int(mine["_area"].nunique()))
+    return (float(pd.to_numeric(mine[key], errors="coerce").fillna(0).sum()),
+            int(mine["_area"].nunique()))
+
+
+def _level_row(data: ReportData, scope: S.Scope, period: P.Period, key: str,
+               rows: pd.DataFrame, before_rows: pd.DataFrame,
+               comparison: P.Comparison | None, mark: tuple, *,
+               graded: bool) -> MetricRow:
+    """A LEVEL Key Indicator for one unit over one period (L1–L4).
+
+    "Amigos con Fecha Bautismal" is how many friends hold a date that week.
+    The period's figure is its LAST complete week (L3) — the unit's areas'
+    reports that week, a silent area counting zero (L4) — and the mean of
+    its weekly levels rides beside it. Leadership's goal is the areas' goal
+    levels, never multiplied by weeks (L2), and the grade is that week
+    against it: the areas carrying a goal that week on both sides (decision
+    66's rule, in areas rather than area-weeks). "Cambio" is that week's
+    level against the comparison period's last week.
+
+    A unit that filed nothing all period reads ``actual`` None ("sin
+    informes"), as a flow row does.
+    """
+    last = period.weeks[-1] if period.weeks else None
+    filed_any = not rows.empty and key in rows.columns
+    level, reporting = _week_level(rows, key, last)
+    actual = level if filed_any else None
+
+    # The mean of the weekly levels, over the weeks the form existed.
+    start = data.weekly_records_from
+    weeks = [w for w in period.weeks if start is None or w >= start]
+    area_week_sum = (float(pd.to_numeric(rows[key], errors="coerce")
+                           .fillna(0).sum()) if filed_any else None)
+    average = None
+    if filed_any and weeks:
+        mine = rows[rows["_week"].isin({w.isoformat() for w in weeks})]
+        average = float(pd.to_numeric(mine[key], errors="coerce")
+                        .fillna(0).sum()) / len(weeks)
+
+    before, before_reporting = (None, 0)
+    if comparison and comparison.period is not None and comparison.period.weeks:
+        if not before_rows.empty and key in before_rows.columns:
+            before, before_reporting = _week_level(
+                before_rows, key, comparison.period.weeks[-1])
+
+    # Leadership's goal level for the areas that carry one in that week, and
+    # what those same areas hold.
+    goal_sum, done_sum, with_goal = 0.0, 0.0, 0
+    if last is not None:
+        week = last.isoformat()
+        held = {}
+        if filed_any:
+            mine = rows[rows["_week"] == week]
+            held = (pd.to_numeric(mine[key], errors="coerce").fillna(0)
+                    .groupby(mine["_area"]).sum().to_dict())
+        for area in scope.areas:
+            goal = data.lead_week_goal(area, week)
+            if goal is None:
+                continue
+            with_goal += 1
+            goal_sum += goal.get(key, 0.0)
+            done_sum += float(held.get(area, 0.0))
+    has_goal = (with_goal > 0
+                and with_goal >= LEAD_MIN_SHARE * scope.area_count)
+
+    # The companionships' own meta for that week — already a level on the
+    # form — over the areas that filed the form it was written on.
+    meta, meta_areas, set_by = None, 0, 0
+    if last is not None:
+        goals, by, _, source_areas = data.ki_goals_for_week(
+            last, frozenset(scope.areas))
+        meta_areas = int(source_areas or 0)
+        meta = float(goals.get(key, 0.0)) if meta_areas else None
+        set_by = int(by.get(key, 0))
+
+    lead_goal = goal_sum if has_goal else None
+    lead_actual = done_sum if has_goal else None
+    per_reporting = (actual / reporting
+                     if actual is not None and reporting else None)
+    n = scope.area_count
+    grade = grade_ki(
+        done_sum / with_goal if lead_goal and graded else None,
+        goal_sum / with_goal if lead_goal and graded else None,
+        before=before, now=actual,
+        counts=((actual, n, before, n)
+                if actual is not None and before is not None and n else None))
+    value, mark_areas, mark_complete = mark
+    return MetricRow(
+        key=key, label=data.labels.get(key, key),
+        actual=actual, actual_area_weeks=reporting,
+        meta=meta, meta_area_weeks=meta_areas, meta_set_by=set_by,
+        leadership_goal=value, leadership_goal_areas=mark_areas,
+        leadership_goal_complete=mark_complete,
+        lead_goal=lead_goal, lead_actual=lead_actual,
+        lead_area_weeks=with_goal if has_goal else 0,
+        lead_area_weeks_possible=n,
+        # The index compares units on the average level per companionship
+        # (an average level, decision 45), as it did before L1.
+        per_active_area_week=(average / n if average is not None and n
+                              else None),
+        per_reporting_area_week=per_reporting,
+        before_per_reporting_area_week=(before / before_reporting
+                                        if before is not None
+                                        and before_reporting else None),
+        grade=grade,
+        level=True, average=average, level_week=last,
+        area_week_sum=area_week_sum,
+    )
 
 
 # ── Nightly (decision 17) ─────────────────────────────────────────────────────
