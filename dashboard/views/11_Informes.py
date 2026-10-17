@@ -676,7 +676,9 @@ if (_FWD.finish and _FWD.previous
               f"Cerró en: todas las áreas de {_FWD.previous_transfer}, con los "
               f"informes de hoy, contra la meta completa del liderazgo. Meta "
               f"por semana: la de {_FWD.transfer} entero, dividida en sus "
-              f"{_full} semanas. Sin color."),
+              f"{_full} semanas. Amigos con Fecha Bautismal es un nivel: "
+              f"cerró en los amigos con fecha de su última semana, y su meta "
+              f"es cuántos mantener cada semana. Sin color."),
     )
     st.markdown(ranked_list([{
         "name": k.label, "rank": "",
@@ -685,8 +687,10 @@ if (_FWD.finish and _FWD.previous
                  + (f" de {fmt_int(round(_was[k.key].goal))}"
                     if _was[k.key].goal else "")
                  if k.key in _was else "")
-                + (f" · {_FWD.transfer}: {fmt_number(k.goal / _full, 1)} por "
-                   f"semana" if k.goal and _full else
+                + ((f" · {_FWD.transfer}: mantener {fmt_int(round(k.goal))}"
+                    if k.level else
+                    f" · {_FWD.transfer}: {fmt_number(k.goal / _full, 1)} por "
+                    f"semana") if k.goal and _full else
                    f" · {_FWD.transfer}: sin meta todavía")),
         "value": (_was[k.key].pct(_was[k.key].actual)
                   if k.key in _was and _was[k.key].goal else None),
@@ -704,11 +708,21 @@ elif _FWD.finish and _FWD.finish[0].weeks_left > 0:
               f"cada una como la peor, el promedio o la mejor de las últimas "
               f"{_FWD.finish[0].pace_weeks} semanas completas, con los "
               f"informes de hoy. Meta: la del liderazgo para el traslado "
-              f"entero, todas las áreas. Sin color: es una proyección."),
+              f"entero, todas las áreas. Amigos con Fecha Bautismal es un "
+              f"nivel: hoy es su última semana, al cierre ese nivel al peor y "
+              f"al mejor cambio semanal reciente, y la meta cuántos mantener. "
+              f"Sin color: es una proyección."),
     )
     st.markdown(ranked_list([{
         "name": k.label, "rank": "",
-        "sub": (f"termina en {_rng(k.low, k.high)}"
+        "sub": ((f"hoy {fmt_int(round(k.actual))} · al cierre "
+                 f"{_rng(k.low, k.high)}"
+                 + (f" · meta mantener {fmt_int(round(k.goal))}"
+                    if k.goal else "")
+                 + (f" · faltan {fmt_int(round(k.gap))}"
+                    if k.gap is not None and k.gap > 0 else ""))
+                if k.level else
+                f"termina en {_rng(k.low, k.high)}"
                 + (f" de {fmt_int(round(k.goal))}" if k.goal else "")
                 + (f" · hacen falta {fmt_int(round(k.needed_per_week))} por "
                    f"semana, {fmt_number(k.factor, 1)}× su ritmo"

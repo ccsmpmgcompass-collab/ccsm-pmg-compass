@@ -133,3 +133,69 @@ def test_the_old_cycles_read_as_levels(monkeypatch):
                         lambda: {"2026-09-07": 6, "2026-10-19": 6})
     every = gq.all_area_transfer_goals(levels=True)
     assert every[FECHA].tolist() == pytest.approx([29 / 6, 4 / 6, 4.0])
+
+
+# ── Step 3: the transfer in progress ─────────────────────────────────────────
+
+def _pace_frame():
+    """The mission's level over six weeks: 30, 29, 49, 41, 35, 45."""
+    weeks = ["2026-08-30", "2026-09-06", "2026-09-13", "2026-09-20",
+             "2026-09-27", "2026-10-04"]
+    return weeks, pd.DataFrame(
+        [{"_week": w, "_area": "A1", FECHA: v, NEW: 10}
+         for w, v in zip(weeks, (30, 29, 49, 41, 35, 45))])
+
+
+def test_a_levels_transfer_is_today_against_the_level_to_hold():
+    from app.reports import forecast as F
+    weeks, frame = _pace_frame()
+    (fin,) = [k for k in F.transfer_finish(
+        frame, {"A1"}, (FECHA,), {}, cycle_weeks=weeks[2:], full_weeks=6,
+        pace_weeks_list=weeks, goals={FECHA: 56.0}, goals_complete=True)]
+    assert fin.level and fin.actual == 45            # hoy, never the sum
+    assert fin.weeks_left == 2
+    # Weekly changes -1, +20, -8, -6, +10: worst -8, best +20.
+    assert fin.low == 45 - 16 and fin.high == 45 + 40
+    assert fin.needed_per_week is None and fin.factor is None
+    assert fin.gap == 11
+
+
+def test_a_level_never_closes_below_zero():
+    from app.reports import forecast as F
+    weeks = ["2026-09-13", "2026-09-20"]
+    frame = pd.DataFrame([{"_week": weeks[0], "_area": "A1", FECHA: 10},
+                          {"_week": weeks[1], "_area": "A1", FECHA: 2}])
+    (fin,) = F.transfer_finish(frame, {"A1"}, (FECHA,), {},
+                               cycle_weeks=weeks, full_weeks=6,
+                               pace_weeks_list=weeks, goals={},
+                               goals_complete=False)
+    assert fin.low == 0.0 and fin.gap is None
+
+
+def test_a_closed_transfer_closes_on_its_last_week():
+    """"Cómo empieza" shows how the last transfer closed: its last week."""
+    from app.reports import forecast as F
+    weeks, frame = _pace_frame()
+    (fin,) = F.transfer_finish(frame, {"A1"}, (FECHA,), {},
+                               cycle_weeks=weeks, full_weeks=6,
+                               pace_weeks_list=[], goals={FECHA: 40.0},
+                               goals_complete=True)
+    assert fin.actual == 45 and fin.weeks_left == 0
+    assert fin.pct(fin.actual) == pytest.approx(112.5)
+
+
+def test_the_packet_prints_a_gap_not_a_weekly_need():
+    from app.reports import forecast as F
+    from app.reports import packet as PK
+    weeks, frame = _pace_frame()
+    fins = F.transfer_finish(
+        frame, {"A1"}, (FECHA, NEW), {}, cycle_weeks=weeks[2:], full_weeks=6,
+        pace_weeks_list=weeks, goals={FECHA: 56.0, NEW: 100.0},
+        goals_complete=True)
+    level, flow = fins
+    assert PK._need_cell(level) == "11"
+    assert "×" in PK._need_cell(flow) or PK._need_cell(flow) == "0"
+    above = F.KIFinish(key=FECHA, label="", actual=71, weeks_done=5,
+                       weeks_left=1, pace_weeks=6, low=60, mid=70, high=80,
+                       goal=56, goal_complete=True, level=True)
+    assert PK._need_cell(above) == "en la meta"

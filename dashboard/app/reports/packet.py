@@ -2294,10 +2294,9 @@ def tablero_lines(model, *, comparable: bool, confident: bool) -> list:
                  else row.label)
         values, bounds = _spark_of(model, row.key)
         k = finish.get(row.key)
-        need = ""
-        if k is not None and k.needed_per_week is not None:
-            need = _int(k.needed_per_week) + (
-                f" · {es_display.number(k.factor, 1)}×" if k.factor else "")
+        need = _need_cell(k) if k is not None else ""
+        if need == es_display.NA:
+            need = ""
         lines.append(PP.TableroLine(
             label=label, real=_count(real),
             own=_count(row.meta) if row.meta else es_display.NA,
@@ -2398,10 +2397,35 @@ def _weeks_words(n: int, noun: str = "semana completa") -> str:
 
 
 def _need_cell(k) -> str:
+    if k.level:
+        # A level's gap today, never a figure per week (PLAN-2026-10-17 L2).
+        if k.gap is None:
+            return es_display.NA
+        return "en la meta" if k.gap <= 0 else _int(k.gap)
     if k.needed_per_week is None:
         return es_display.NA
     return _int(k.needed_per_week) + (
         f" · {es_display.number(k.factor, 1)}×" if k.factor else "")
+
+
+def _level_note(kis, case: str) -> str:
+    """One sentence for a transfer block that carries a level, or ""."""
+    k = next((k for k in kis if k is not None and k.level), None)
+    if k is None:
+        return ""
+    name = _transfer_head(k)
+    name = " ".join(name) if isinstance(name, tuple) else name
+    if case == "running":
+        return (f" {name} es un nivel: «Lleva» es cuántos amigos tienen fecha "
+                f"la última semana; la meta, cuántos mantener; «Termina en», "
+                f"ese nivel al cierre, al peor y al mejor cambio semanal "
+                f"reciente; «Falta», lo que le falta hoy, no por semana.")
+    if case == "starting":
+        return (f" {name} es un nivel: cerró en los amigos con fecha de su "
+                f"última semana, y su meta es cuántos mantener cada semana, "
+                f"no se divide.")
+    return (f" {name} es un nivel: cerró en los amigos con fecha de su última "
+            f"semana, contra cuántos mantener.")
 
 
 def transfer_block(model) -> list:
@@ -2433,7 +2457,7 @@ def transfer_block(model) -> list:
         note = (f"Termina en: al ritmo de la peor y la mejor de las últimas "
                 f"{es_display.integer(first.pace_weeks)} semanas. Falta: por "
                 f"semana, para la meta entera, y cuántas veces el ritmo de "
-                f"hoy.")
+                f"hoy." + _level_note(kis, "running"))
         graded = [k for k in kis if k.goal and k.key not in UNCOLOURED_KI]
         reach = sum(1 for k in graded if k.high >= k.goal)
         conclusion = (f"Al mejor ritmo reciente, {es_display.integer(reach)} de "
@@ -2454,7 +2478,8 @@ def transfer_block(model) -> list:
             + [_pct(w.pct(w.actual)) if w is not None and w.goal
                else es_display.NA for w in was],
             [f"{fwd.transfer}: meta por semana"]
-            + [es_display.number(k.goal / full, 1) if k.goal and full
+            + [(_count(round(k.goal)) if k.level else
+                es_display.number(k.goal / full, 1)) if k.goal and full
                else "sin meta" for k in kis],
         ]
         head = (f"Cómo empieza {fwd.transfer}",
@@ -2463,7 +2488,8 @@ def transfer_block(model) -> list:
                 f"la meta completa. Meta por semana: la de {fwd.transfer} "
                 f"entero, entre sus {es_display.integer(full)} semanas"
                 + ("; «sin meta» es que todavía no está guardada"
-                   if any(not k.goal for k in kis) else "") + ".")
+                   if any(not k.goal for k in kis) else "") + "."
+                + _level_note(kis, "starting"))
         closed = [w for w in was if w is not None and w.goal
                   and w.key not in UNCOLOURED_KI]
         made = sum(1 for w in closed if w.actual >= w.goal)
@@ -2482,7 +2508,7 @@ def transfer_block(model) -> list:
             + [_pct(k.pct(k.actual)) if k.goal else es_display.NA for k in kis],
         ]
         note = ("Cerró en: todas las áreas, con los informes de hoy, contra la "
-                "meta completa del liderazgo.")
+                "meta completa del liderazgo." + _level_note(kis, "ended"))
         closed = [k for k in kis if k.goal and k.key not in UNCOLOURED_KI]
         made = sum(1 for k in closed if k.actual >= k.goal)
         conclusion = (f"{fwd.transfer} cerró con {es_display.integer(made)} de "

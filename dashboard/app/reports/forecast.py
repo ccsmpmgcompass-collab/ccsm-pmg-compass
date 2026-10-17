@@ -49,6 +49,13 @@ class KIFinish:
 
     ``goal`` is leadership's goal for the WHOLE transfer for every area in
     scope; ``goal_complete`` is False when an area has none.
+
+    A LEVEL (``level``, PLAN-2026-10-17 L1–L3) is not added up: ``actual``
+    is the latest complete week's level ("hoy"), ``goal`` the level to hold,
+    and ``low``/``mid``/``high`` carry today's level to the transfer's close
+    at the worst, the average and the best weekly CHANGE of the pace weeks,
+    floored at zero. What is missing is ``gap`` — the goal minus today's
+    level — never a figure per week.
     """
 
     key: str
@@ -62,6 +69,14 @@ class KIFinish:
     high: float
     goal: float | None = None
     goal_complete: bool = False
+    level: bool = False
+
+    @property
+    def gap(self) -> float | None:
+        """A level's distance to its goal today, or None (a flow, no goal)."""
+        if not self.level or not self.goal:
+            return None
+        return self.goal - self.actual
 
     @property
     def weekly_mean(self) -> float:
@@ -71,8 +86,9 @@ class KIFinish:
 
     @property
     def needed_per_week(self) -> float | None:
-        """What each remaining week would need to reach the goal, or None."""
-        if not self.goal or self.weeks_left <= 0:
+        """What each remaining week would need to reach the goal, or None.
+        None for a level, whose goal is held, not accumulated (`gap`)."""
+        if not self.goal or self.weeks_left <= 0 or self.level:
             return None
         return max(0.0, (self.goal - self.actual) / self.weeks_left)
 
@@ -96,8 +112,10 @@ def transfer_finish(weekly_ki: pd.DataFrame, areas, keys, labels: dict, *,
     ``cycle_weeks`` are the transfer's COMPLETE weeks so far (ISO week-end
     dates), ``pace_weeks_list`` the last up-to-six complete weeks the pace is
     read from (they may reach back into the previous transfer early in a new
-    one), ``goals`` leadership's whole-transfer goal per key for these areas.
+    one), ``goals`` leadership's whole-transfer goal per key for these areas
+    — for a LEVEL key the level to hold (see `KIFinish`).
     """
+    from app.config.metric_catalog import is_level
     if weekly_ki is None or weekly_ki.empty:
         return ()
     wanted = set(areas)
@@ -115,6 +133,14 @@ def transfer_finish(weekly_ki: pd.DataFrame, areas, keys, labels: dict, *,
         # A week nobody in scope reported is a zero for a raw total — the
         # pace has to carry the silence it will meet again.
         weekly = [float(by_week.get(w, 0.0)) for w in pace_weeks_list]
+        if is_level(key):
+            out.append(_level_finish(key, labels.get(key, key), done, pace,
+                                     key_weeks=list(cycle_weeks),
+                                     pace_weeks_list=list(pace_weeks_list),
+                                     weeks_left=weeks_left,
+                                     goal=goals.get(key),
+                                     goal_complete=goals_complete))
+            continue
         if weekly:
             lo, mean, hi = min(weekly), sum(weekly) / len(weekly), max(weekly)
         else:
@@ -127,6 +153,36 @@ def transfer_finish(weekly_ki: pd.DataFrame, areas, keys, labels: dict, *,
             high=actual + weeks_left * hi,
             goal=goals.get(key), goal_complete=goals_complete))
     return tuple(out)
+
+
+def _level_finish(key, label, done, pace, *, key_weeks, pace_weeks_list,
+                  weeks_left, goal, goal_complete) -> KIFinish:
+    """A LEVEL's transfer (see `KIFinish`): today's level, carried to the
+    close at the pace weeks' worst, mean and best week-to-week change."""
+    def level_in(frame, week):
+        mine = frame[frame["_week"] == week]
+        return float(pd.to_numeric(mine[key], errors="coerce").fillna(0).sum())
+
+    # Today is the transfer's latest complete week; with none yet, the
+    # latest pace week (the previous transfer's close).
+    today_week = (key_weeks[-1] if key_weeks
+                  else pace_weeks_list[-1] if pace_weeks_list else None)
+    source = done if key_weeks else pace
+    actual = level_in(source, today_week) if today_week else 0.0
+    levels = [level_in(pace, w) for w in pace_weeks_list]
+    steps = [b - a for a, b in zip(levels, levels[1:])]
+    if steps:
+        lo, mean, hi = min(steps), sum(steps) / len(steps), max(steps)
+    else:
+        lo = mean = hi = 0.0
+    return KIFinish(
+        key=key, label=label, actual=actual,
+        weeks_done=len(key_weeks), weeks_left=weeks_left,
+        pace_weeks=len(levels),
+        low=max(0.0, actual + weeks_left * lo),
+        mid=max(0.0, actual + weeks_left * mean),
+        high=max(0.0, actual + weeks_left * hi),
+        goal=goal, goal_complete=goal_complete, level=True)
 
 
 # ── The year's baptisms against the annual goal ───────────────────────────────
