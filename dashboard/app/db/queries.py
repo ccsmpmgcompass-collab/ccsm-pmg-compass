@@ -3282,8 +3282,14 @@ def get_recommended_transfer_goals(area: str, weeks: float) -> dict:
             peers, _ = _peer_means(src_df, missing, area)
             weekly.update(peers)
 
+    # A LEVEL (friends holding a date, PLAN-2026-10-17 L2) is a number to
+    # hold each week, so its goal is the weekly stretch itself: six weeks of
+    # holding four friends with a date is a goal of 4, not 24.
+    from app.config.metric_catalog import is_level
+
     scale = max(1.0, float(weeks or 0))
-    out = {k: max(1, math.ceil(weekly.get(k, 0) * scale))
+    out = {k: max(1, math.ceil(weekly.get(k, 0) * (1.0 if is_level(k)
+                                                     else scale)))
            for k in nightly_keys + weekly_keys}
 
     # A roster-capped metric cannot be stretched past what its roster makes
@@ -3297,7 +3303,8 @@ def get_recommended_transfer_goals(area: str, weeks: float) -> dict:
     # only. A caller that starts showing one should clamp it here too.
     for key in list(out):
         ceiling = roster_ceiling(
-            weekly_df if key in weekly_keys else nightly_df, key, area, weeks)
+            weekly_df if key in weekly_keys else nightly_df, key, area,
+            1 if is_level(key) else weeks)
         if ceiling is not None:
             out[key] = min(out[key], ceiling)
     return out

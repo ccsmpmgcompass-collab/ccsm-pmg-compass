@@ -118,7 +118,16 @@ def _as_date(transfer_start) -> date | None:
 
 
 def _row_to_dict(row: pd.Series) -> dict:
+    from app.config.metric_catalog import is_level
     d = {col: int(float(row.get(col, 0) or 0)) for col in _metric_cols()}
+    start = row.get("transfer_start", "")
+    if not stores_levels(start):
+        # An old cycle's level goal was saved as a cycle total: the box shows
+        # the level it stood for (L5).
+        for col in d:
+            if is_level(col) and d[col]:
+                d[col] = max(1, round(float(row.get(col, 0) or 0)
+                                      / _weeks_of(start)))
     d["area"] = str(row.get("area", ""))
     d["transfer_start"] = _norm_start(row.get("transfer_start", ""))
     d["transfer_number"] = str(row.get("transfer_number", "") or "")
@@ -136,6 +145,69 @@ def _scoped(df: pd.DataFrame, areas=None) -> pd.DataFrame:
 
 
 # ── reads ─────────────────────────────────────────────────────────────────────
+#
+# A LEVEL metric (`metric_catalog.LEVEL_METRICS`, PLAN-2026-10-17 L2) is a
+# number to hold each week. The tab stores it two ways, split at
+# LEVELS_STORED_FROM (decision L5, the cutover):
+#
+#   * a cycle starting before it keeps what was saved then: the six-week
+#     total the old recommender produced (2026-6's 334 = a level of 55,7).
+#     Nothing in the sheet's history was rewritten — rounding small goals up
+#     to whole friends would have turned 55,7 into 77 after the fact;
+#   * a cycle starting on or after it stores the level itself.
+#
+# Every conversion lives in this module. The Metas box reads and writes a
+# level for any cycle (`_row_to_dict` / `_new_row`). The readers that SUM
+# goals over a cycle still get the cycle total they were written for —
+# untouched for an old cycle, the level times the cycle's real weeks for a new
+# one — through `_levels_as_cycle_totals`, so nothing they print changes until
+# PLAN steps 2-6 teach them to read a level. That function is the bridge.
+
+#: The first cycle whose level goals are stored as levels: 2026-7, the bulk
+#: Recomendar of Mon 2026-10-19.
+LEVELS_STORED_FROM = date(2026, 10, 19)
+
+def _cycle_weeks() -> dict:
+    """``{"YYYY-MM-DD" cycle start: real weeks}`` off TRANSFER_SCHEDULE."""
+    try:
+        from app.analytics.transfer_year import weeks_in_cycle
+        from app.utils.transfer_helpers import transfer_cycles
+        return {c["start"].isoformat(): weeks_in_cycle(c["start"], c["end"])
+                for c in transfer_cycles()}
+    except Exception as e:                       # noqa: BLE001
+        _logger.error(t('Failed to read the cycle lengths: {e}', e=e))
+        return {}
+
+
+def stores_levels(transfer_start) -> bool:
+    """Whether this cycle's row holds a level metric as a level (on or after
+    LEVELS_STORED_FROM) rather than as a cycle total."""
+    start = _as_date(transfer_start)
+    return start is not None and start >= LEVELS_STORED_FROM
+
+
+def _weeks_of(transfer_start) -> float:
+    return float(_cycle_weeks().get(_norm_start(transfer_start)) or 1.0)
+
+
+def _levels_as_cycle_totals(df: pd.DataFrame) -> pd.DataFrame:
+    """`df` (numeric metric columns) with each LEVEL metric of a row stored
+    as a level multiplied by its cycle's weeks — the bridge described above.
+    An older row is already a total and is left alone; a row whose cycle is
+    not on the schedule keeps its level."""
+    from app.config.metric_catalog import LEVEL_METRICS
+    levels = [c for c in LEVEL_METRICS if c in df.columns]
+    if df.empty or not levels or "transfer_start" not in df.columns:
+        return df
+    weeks = _cycle_weeks()
+    starts = df["transfer_start"].astype(str).str.strip().str[:10]
+    factor = starts.map(weeks).fillna(1.0).astype(float).where(
+        starts.map(stores_levels), 1.0)
+    df = df.copy()
+    for c in levels:
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0) * factor
+    return df
+
 
 def get_area_transfer_goals(transfer_start) -> pd.DataFrame:
     """Every area's goals for one cycle, metric columns coerced to numbers."""
@@ -150,7 +222,7 @@ def get_area_transfer_goals(transfer_start) -> pd.DataFrame:
         else:
             df[c] = 0
     df["area"] = df["area"].astype(str).str.strip()
-    return df
+    return _levels_as_cycle_totals(df)
 
 
 def all_area_transfer_goals() -> pd.DataFrame:
@@ -170,7 +242,7 @@ def all_area_transfer_goals() -> pd.DataFrame:
                  if c in df.columns else 0)
     df["area"] = df["area"].astype(str).str.strip()
     df["transfer_start"] = df["transfer_start"].astype(str).str.strip().str[:10]
-    return df
+    return _levels_as_cycle_totals(df)
 
 
 def get_area_transfer_goal(area: str, transfer_start) -> dict | None:
@@ -221,6 +293,11 @@ def goals_by_cycle_start(areas=None) -> dict:
     if df.empty:
         return {}
     metrics = [c for c in _metric_cols() if c in df.columns]
+    if "transfer_start" in df.columns:
+        df = df.copy()
+        for m in metrics:
+            df[m] = pd.to_numeric(df[m], errors="coerce").fillna(0)
+        df = _levels_as_cycle_totals(df)
     out: dict = {}
     for _, row in df.iterrows():
         start = _as_date(row.get("transfer_start", ""))
@@ -304,11 +381,19 @@ def _new_row(area: str, transfer_start, transfer_number: str,
     The tab's columns come from the catalogue, and silently widening the schema
     from caller input is how a typo becomes a permanent column.
     """
+    from app.config.metric_catalog import is_level
+    values = {k: int(goals.get(k, 0) or 0) for k in _metric_cols()}
+    if not stores_levels(transfer_start):
+        # A level typed for an old cycle is stored as that cycle's total, as
+        # the rest of its row was (L5).
+        weeks = _weeks_of(transfer_start)
+        values = {k: (int(round(v * weeks)) if is_level(k) else v)
+                  for k, v in values.items()}
     return {
         "area":            area,
         "transfer_start":  _norm_start(transfer_start),
         "transfer_number": str(transfer_number or ""),
-        **{k: int(goals.get(k, 0) or 0) for k in _metric_cols()},
+        **values,
         "set_by":          set_by,
         "notes":           notes,
     }

@@ -81,6 +81,16 @@ RATE_METRICS: frozenset[str] = frozenset(RATE_METRIC_LABELS)
 #: mis-firing against CCSM's (see `views/02_Metas.py`'s KI selection).
 ROSTER_CAPPED_METRICS: frozenset[str] = frozenset({"ki_rc_at_church_real"})
 
+#: Key Indicators whose weekly figure is a LEVEL — how many friends hold a
+#: baptismal date that week — rather than a count of what happened in it
+#: (Zackary, 2026-10-17; PLAN-2026-10-17-fechas-level.md decision L1). The
+#: week's number moves by new dates, minus baptisms, minus dates dropped, so
+#: it is never added across weeks, and leadership's goal for it is a level to
+#: hold (L2), stored as the level itself and never multiplied by a cycle's
+#: weeks. Conversos Recientes and the sacrament counts are weekly Sunday
+#: counts and stay out (L1).
+LEVEL_METRICS: frozenset[str] = frozenset({"ki_baptismal_date_real"})
+
 # ── English labels (display convenience only) ─────────────────────────────────
 # QUESTIONS_CONFIG stores Spanish display names, which is correct: CCSM is a
 # Spanish-speaking mission and those strings are what appear on the real forms.
@@ -261,6 +271,13 @@ def is_roster_capped(key: str) -> bool:
     must clamp to the ceiling rather than stretch past it.
     """
     return key in ROSTER_CAPPED_METRICS
+
+
+def is_level(key: str) -> bool:
+    """True for a Key Indicator whose weekly figure is a level (see
+    LEVEL_METRICS): one week's value stands for the period, and its goal is
+    a level, not a total over weeks."""
+    return key in LEVEL_METRICS
 
 
 def metric_data_type(key: str) -> str:

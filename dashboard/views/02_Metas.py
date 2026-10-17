@@ -11,6 +11,7 @@ from app.components.design_system import (
 )
 from app.config.flavor_loader import flavor, METRIC_LABELS, GOAL_LABELS, GOAL_TO_ACTUAL
 from app.config.metric_catalog import (
+    is_level,
     key_indicator_metrics,
     metric_data_type,
     metric_options,
@@ -1027,7 +1028,9 @@ if selected_section == "Area Goal Customization":
         # matched a CCSM key, so .rename() silently left every column as a raw
         # `ki_*_real` token in a table leadership reads before saving goals for
         # the whole mission.
-        _KI_PREVIEW_LABELS = dict(key_indicator_metrics())
+        _KI_PREVIEW_LABELS = {
+            k: (t("{label} (a level to hold)", label=v) if is_level(k) else v)
+            for k, v in key_indicator_metrics().items()}
         with st.expander(t('Preview — goals for {cycle}', cycle=_bulk_cycle_label)):
             _tr_df = pd.DataFrame.from_dict(_preview["transfer"], orient="index")
             _tr_df.index.name = "Area"
@@ -1490,7 +1493,9 @@ if selected_section == "Area Goal Customization":
             _e = get_area_expectation_entry(selected_area, key)
             if not _e:
                 return None
-            _v = _e["value"] if _e["cadence"] == "transfer" else _e["weekly"] * _tg_weeks
+            # A level (PLAN-2026-10-17 L2) is held each week, not added up.
+            _span = 1 if is_level(key) else _tg_weeks
+            _v = _e["value"] if _e["cadence"] == "transfer" else _e["weekly"] * _span
             return max(1, math.ceil(_v))
 
         _transfer_denominators: dict[str, int] = {}
@@ -1531,6 +1536,12 @@ if selected_section == "Area Goal Customization":
                                                  _transfer_denominators[key])
                     if key in transfer_recommended and _may_edit_transfer:
                         _render_rec_pill("tg", key, widget_key, transfer_recommended[key])
+
+        # PLAN-2026-10-17 L2: said once under the grid rather than in the
+        # label, whose two-line height the grid's alignment depends on.
+        for _lk, _llbl, _lf in transfer_ki_defs:
+            if is_level(_lk):
+                st.caption(t("**{label} is a level to hold**: how many friends with a baptismal date the area should have each week. Its goal and its REC are that weekly number — never multiplied by the cambio's weeks.", label=_llbl))
 
         # A roster-capped KI has a ceiling no amount of work can pass: every
         # recent convert the area has, at church every Sunday of the cycle. The

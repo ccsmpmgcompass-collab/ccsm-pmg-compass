@@ -2896,6 +2896,9 @@ ES: dict[str, str] = {
         "Calcular las metas semanales recomendadas y las metas de este cambio "
         "para cada área activa, previsualizarlas y guardarlas todas de una vez.",
     "Preview — goals for {cycle}": "Previsualización — metas para {cycle}",
+    "{label} (a level to hold)": "{label} (nivel a mantener)",
+    "**{label} is a level to hold**: how many friends with a baptismal date the area should have each week. Its goal and its REC are that weekly number — never multiplied by the cambio's weeks.":
+        "**{label} es un nivel a mantener**: cuántos amigos con fecha bautismal debe tener el área cada semana. Su meta y su REC son esa cifra semanal — nunca se multiplican por las semanas del cambio.",
     "Recommended goals computed for **{count} areas** — each area's own REC "
     "values, exactly what the per-metric REC pills show. Review below, then "
     "**Save All Recommended** to write every area's weekly goals and its goals "
@@ -2974,6 +2977,8 @@ ES: dict[str, str] = {
     # ── goals_queries error messages ─────────────────────────────────────────
     "Failed to fetch area transfer goal: {e}":
         "No se pudo obtener la meta del cambio para el área: {e}",
+    "Failed to read the cycle lengths: {e}":
+        "No se pudo leer la duración de los cambios: {e}",
     "Failed to upsert area transfer goal: {e}":
         "No se pudo guardar la meta del cambio para el área: {e}",
     "Failed to bulk upsert area transfer goals: {e}":
