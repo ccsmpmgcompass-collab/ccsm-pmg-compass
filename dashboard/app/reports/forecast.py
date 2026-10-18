@@ -568,6 +568,49 @@ class DateQuality:
         return pair[1] / pair[0] if pair and pair[0] else None
 
 
+#: The ages the form's level is set beside (PLAN-2026-10-17 L6): Tableau's
+#: open dates set under 30, 60 and 90 days before the form's week, and all.
+LEVEL_AGES = (30, 60, 90)
+
+
+@dataclass(frozen=True)
+class FormLevel:
+    """The weekly form's level of friends with a date beside Tableau's open
+    dates by age, for the same areas on the same Sunday (L6, decision 34:
+    named, never summed). The form counts the dates a companionship still
+    holds; Tableau keeps every date nobody dropped, so they are two readings
+    of one thing and never one sum.
+
+    ``by_age`` is ``((days, count), ...)`` for `LEVEL_AGES`; ``open`` every
+    open date (`_open_at`: set in the year before, not yet baptised).
+    """
+
+    week: date
+    level: int
+    filed: int
+    areas: int
+    by_age: tuple = ()
+    open: int = 0
+
+
+def form_level(level, week: date, filed: int, areas: int, set_d, conf_d,
+               mask=None) -> FormLevel | None:
+    """`FormLevel` for ``week``: Tableau's dates open on that Sunday, aged
+    from it, cut to ``mask`` (the same areas the form's level covers)."""
+    if level is None or week is None:
+        return None
+    set_ns, conf_ns = _ns(set_d), _ns(conf_d)
+    open_ = _open_at(set_ns, conf_ns, week)
+    if mask is not None:
+        open_ = open_ & np.asarray(mask, dtype=bool)
+    ages = (_t(week) - set_ns[open_]) // _DAY
+    return FormLevel(week=week, level=int(round(level)), filed=int(filed),
+                     areas=int(areas),
+                     by_age=tuple((d, int((ages < d).sum()))
+                                  for d in LEVEL_AGES),
+                     open=int(open_.sum()))
+
+
 def _ages_at(set_ns, conf_ns, t: date) -> DateAges:
     open_ = _open_at(set_ns, conf_ns, t)
     ages = (_t(t) - set_ns[open_]) // _DAY

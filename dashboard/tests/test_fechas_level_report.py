@@ -219,3 +219,26 @@ def test_a_levels_silence_is_counted_once(data, period):
     assert silent[FECHA] == pytest.approx(6.0)
     # A flow still adds its goal for every silent area-week (5 of 10).
     assert silent[NEW] == pytest.approx(5 * 30 / 6)
+
+
+# ── Step 7: the form against Tableau (L6) ────────────────────────────────────
+
+def test_the_form_level_sits_beside_tableaus_open_dates_by_age():
+    """Same areas, same Sunday, named and never summed (decision 34)."""
+    from app.reports import forecast as F
+    from app.reports import packet as PK
+    sunday = date(2026, 10, 11)
+    set_d = pd.Series(pd.to_datetime([
+        "2026-10-01", "2026-09-01", "2026-07-20", "2026-01-15",
+        "2025-06-01", "2026-09-20"]))
+    conf = pd.Series(pd.to_datetime([None, None, None, None, None,
+                                     "2026-10-04"]))
+    mask = pd.Series([True, True, True, True, True, True])
+    fl = F.form_level(71, sunday, 38, 45, set_d, conf, mask=mask)
+    # Open: set in the year before and not yet baptised — not the 2025-06
+    # date (over a year) nor the one confirmed on 4 Oct.
+    assert fl.open == 4
+    assert dict(fl.by_age) == {30: 1, 60: 2, 90: 3}
+    line = PK.form_level_line(fl)
+    assert "71 amigos con fecha" in line and "no se suman" in line
+    assert F.form_level(None, sunday, 0, 45, set_d, conf) is None

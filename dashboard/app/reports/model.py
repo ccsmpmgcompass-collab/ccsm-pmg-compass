@@ -489,6 +489,10 @@ class Forward:
     #: at this month of earlier years, and the transfer finish's method run
     #: on Tableau's weekly milestones — ``((label, Backtest), ...)``.
     year_check: object = None
+    #: The mission only (PLAN-2026-10-17 L6): the weekly form's level of
+    #: friends with a date beside Tableau's open dates by age, same areas,
+    #: same Sunday (`forecast.FormLevel`), or None.
+    form_level: object = None
     finish_check: tuple = ()
     #: What closing each zone's largest leak to the mission's rate would add
     #: (PLAN 4C.2, decision 54) — `focus.Lever`s, largest first.
@@ -2489,7 +2493,30 @@ def _forward(data: ReportData, scope: S.Scope, period: P.Period) -> Forward:
     return Forward(transfer=label, finish=finish, year=year,
                    pipeline=pipeline, baptisms=baptisms, zones=zones,
                    transfer_state=state, previous_transfer=prev_label,
-                   previous=previous, dates=quality)
+                   previous=previous, dates=quality,
+                   form_level=(_form_level(data, scope)
+                               if scope.level == S.MISSION else None))
+
+
+def _form_level(data: ReportData, scope: S.Scope):
+    """L6: the form's level in the last complete week against Tableau's open
+    dates for the same areas that Sunday — two readings, never summed."""
+    from app.config.levels import LEVEL_METRICS
+    from app.reports import forecast as F
+    dates = data.tableau_dates()
+    key = next((k for k in data.ki_keys if k in LEVEL_METRICS), None)
+    if not dates or key is None:
+        return None
+    week = P.last_complete_week(data.today)
+    rows = _weekly_rows(data, scope, P.Period(
+        key="form_level", label="", start=week - timedelta(days=6), end=week,
+        weeks=(week,), full_end=week, full_weeks=1))
+    if rows.empty or key not in rows.columns:
+        return None
+    level, filed = _week_level(rows, key, week)
+    names, set_d, conf, _ = dates
+    return F.form_level(level, week, filed, scope.area_count, set_d, conf,
+                        mask=names.isin(set(scope.areas)))
 
 
 def _date_quality(data: ReportData):

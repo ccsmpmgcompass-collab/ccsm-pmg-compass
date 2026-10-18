@@ -2257,7 +2257,26 @@ def dates_block(model) -> list:
                 "Abiertas: fijadas en el último año y sin bautismo (Tableau no "
                 "marca una fecha caída). Mide el cambio y cuándo empezó, no su "
                 "causa."), st["note"])]
+    line = form_level_line(model.forward.form_level)
+    if line:
+        flow += [Spacer(0, 2), Paragraph(PP.text(line), st["note_lead"])]
     return flow
+
+
+def form_level_line(fl) -> str:
+    """L6 (PLAN-2026-10-17): the form's level beside Tableau's open dates by
+    age, the same areas on the same Sunday — named, never summed."""
+    if fl is None:
+        return ""
+    ages = ", ".join(f"{_int(n)} fijadas hace menos de {_int(d)} días"
+                     for d, n in fl.by_age)
+    return (f"Los formularios: {_int(fl.level)} amigos con fecha la semana "
+            f"del {es_display.day_month(fl.week)} ({_int(fl.filed)} de "
+            f"{_int(fl.areas)} áreas informaron). Tableau, en las mismas áreas "
+            f"ese domingo: {ages}; {_int(fl.open)} abiertas en total. Son dos "
+            f"lecturas de lo mismo y no se suman: el formulario cuenta las "
+            f"fechas que la compañería mantiene, y Tableau guarda toda fecha "
+            f"que nadie dio de baja.")
 
 
 # ── The president's front section (PLAN-2026-10-06 Phase 3) ──────────────────
