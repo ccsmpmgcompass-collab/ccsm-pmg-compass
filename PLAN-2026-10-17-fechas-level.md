@@ -174,3 +174,83 @@ Q5 was not asked; its recommendation is L6, amendable. **Next: Step 1**, now.
 
 **Zackary: Reboot before pressing Recomendar on Monday.**
 **Next: Step 2**, when he says go.
+
+### 2026-10-17 — Steps 2–7 built (one commit each)
+
+- **Step 2** (`561a1f0`). The Informes model reads a level (`model._level_row`).
+  - `actual` is the period's last complete week, a silent area counting 0.
+  - `average` is the mean of the period's weekly levels.
+  - The goal is the areas' goal levels, never pro-rated.
+  - Graded on the areas that carry a goal that week. Cambio = that week
+    against the comparison period's last week.
+  - The productivity index keeps the average level per companionship.
+  - **Live:** September **35 against 55,7 (63%)**. The old summed ratio
+    read 74%; the drop is L3 (last week, not average), not a bug.
+    This transfer **71 against 55,7 (128%)**.
+- **Step 3** (`686cb1f`). `forecast.transfer_finish` for a level:
+  - Hoy is the latest week; Meta is the level.
+  - Al cierre: Hoy carried at the pace weeks' worst / mean / best
+    week-to-week change, floored at 0.
+  - Falta is the gap ("en la meta" at or above it), never a figure per week.
+  - "Cómo empieza" prints the new cycle's goal as the level, not ÷ weeks.
+  - **Live:** 71 · 56 · 63–97 · en la meta (was "Falta 93 por semana, 2,1×").
+- **Step 4** (`5427ddd`).
+  - Tablero: Real "71" with "prom. 48" under it, and a note naming the week.
+  - 12-week tables: a level's last column is "71 últ.".
+  - ki_lines and the screen cards: "nivel de la semana del …"; a partial
+    goal counts areas, not area-weeks.
+  - Cómo leer, section methods and the data note are updated.
+  - `LEVEL_METRICS` moved to the Streamlit-free `app/config/levels.py`
+    (re-exported by `metric_catalog`), because the packet must build without
+    Streamlit.
+- **Step 5** (`cf88611`).
+  - `pareto` reads the step-2 row: the gap is the goal level minus the last
+    week's level.
+  - `_silent_goals` counts a level's silence once, in that week.
+- **Step 6** (`3310bc2`). **The bridge is deleted**: every reader gets the
+  level. 2026-6 reads as total ÷ 6, unrounded. A level is read in the last
+  FINISHED week (the form's due rule), because a week still being filed
+  read "1" on the live Panel.
+  - ki_history (cambio point, area window, weekly mark) and the drill-down.
+  - Panel: the "Este cambio" card, and the weekly cards' leadership mark.
+  - Metas: cycle and year rows.
+  - Desgloses: the KI card and the teaching pipeline. The pipeline was not
+    in the audit; it summed fechas to 246.
+  - `period_delta` needed nothing: it reads DAILY_LOG, which has no fechas.
+- **Step 7** (`d559be6`). The mission's Fechas block gains one line: the
+  form's level beside Tableau's open dates for the same areas that Sunday.
+  - **Live:** 71 (38 of 45 filed) · 82 / 153 / 204 under 30 / 60 / 90 days ·
+    562 open.
+- **Tests:**
+  - new: `test_fechas_level_report.py` (15) and `test_fechas_level_pages.py`
+    (5);
+  - `test_fechas_level_goals.py` now asserts levels.
+  - Pre-existing and not from this build: `test_ki_drilldown.py` fails 5
+    tests when run after the render/scoreboard tests (a language leak). It
+    fails the same way at `663ad45`, and passes alone.
+
+### 2026-10-17 — Step 8 verified and pushed: the plan is finished
+
+- **Suite:** 1 failed / 2096 passed / 1 skipped. The one failure is
+  `test_nightly_weekly_trends::test_weekly_totals_are_the_sum_of_that_week_only`,
+  the baseline's date-sensitive failure (it fails the same way at
+  `663ad45`).
+- **Packets rebuilt on live data and read:** September (25 pp) and this
+  transfer (24 pp), plus both annexes.
+  - Mission tablero: 35 · prom. 38 · 63% (September); 71 · prom. 48 · 128%
+    (this transfer).
+  - Zones, districts and areas follow the same reading.
+  - 12-week table: "71 últ.".
+  - Transfer block: 71 · 56 · 63–97 · en la meta.
+  - Fechas block: the form line beside Tableau.
+- **Headless on live data, no exception:** Informes, Panel (Este cambio and
+  the drill-down), Metas (Mission Summary) and Desgloses (This Transfer So
+  Far).
+- **Zackary:**
+  - **Reboot Streamlit** after this push (`dashboard/DEPLOYING.md`). It is
+    still owed from Step 1, before Monday's bulk Recomendar.
+  - Then press Metas bulk *Recomendar* on Mon 2026-10-19, as planned. It
+    saves 2026-7's fecha goals as levels.
+- **Left as it was, B severity, not in the steps:**
+  - the Gemini assistant's "conversion" wording (audit §3.4);
+  - `ki_ranking` `Unit.R/G`'s two-week tie-break sum.
