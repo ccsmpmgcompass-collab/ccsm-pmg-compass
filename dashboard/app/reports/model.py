@@ -2287,10 +2287,15 @@ def _trend_for(data: ReportData, scope: S.Scope, period: P.Period):
 
 def _silent_goals(data: ReportData, scope: S.Scope, period: P.Period) -> dict:
     """Leadership's goal for the area-weeks in the period that filed NOTHING
-    — the part of a unit's shortfall that is silence (PLAN 4A.2)."""
+    — the part of a unit's shortfall that is silence (PLAN 4A.2).
+
+    A LEVEL's shortfall is read in the period's last week only (L3), so its
+    silence is the goal level of the areas silent in that week — never a
+    level added once per silent week."""
     rows = _weekly_rows(data, scope, period)
     filed = (set(zip(rows["_area"], rows["_week"])) if not rows.empty
              else set())
+    last = period.weeks[-1] if period.weeks else None
     out: dict = {}
     for week in period.weeks:
         key = week.isoformat()
@@ -2299,6 +2304,8 @@ def _silent_goals(data: ReportData, scope: S.Scope, period: P.Period) -> dict:
                 continue
             goal = data.lead_week_goal(area, key)
             for k, v in (goal or {}).items():
+                if is_level(k) and week != last:
+                    continue
                 out[k] = out.get(k, 0.0) + v
     return out
 

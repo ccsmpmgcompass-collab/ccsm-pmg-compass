@@ -199,3 +199,23 @@ def test_the_packet_prints_a_gap_not_a_weekly_need():
                        weeks_left=1, pace_weeks=6, low=60, mid=70, high=80,
                        goal=56, goal_complete=True, level=True)
     assert PK._need_cell(above) == "en la meta"
+
+
+# ── Step 5: "Dónde enfocar" ───────────────────────────────────────────────────
+
+def test_a_levels_shortfall_is_its_last_week(data, period):
+    """The mission is 4 short of a goal of 10 in its last week, not 20 - 11."""
+    from app.reports import focus as FC
+    sc = data.mission
+    rows = M._ki_rows_for(data, sc, period, None)
+    (row,) = FC.pareto([(sc, rows, None, None)], {FECHA: 3})
+    assert dict(row.gaps)[FECHA] == pytest.approx(4.0)
+
+
+def test_a_levels_silence_is_counted_once(data, period):
+    """A2, B1 and B2 filed nothing in the last week: their goal levels (2
+    each) are that week's silence — not once for each silent week."""
+    silent = M._silent_goals(data, data.mission, period)
+    assert silent[FECHA] == pytest.approx(6.0)
+    # A flow still adds its goal for every silent area-week (5 of 10).
+    assert silent[NEW] == pytest.approx(5 * 30 / 6)
