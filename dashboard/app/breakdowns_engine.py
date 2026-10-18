@@ -69,6 +69,7 @@ from app.utils.transfer_helpers import (
     transfer_cycles, transfer_period_bounds, transfer_window,
 )
 from app.analytics import transfer_year
+from app.config.levels import is_level
 from app.db.goals_queries import areas_with_goals, group_goal_totals
 from app.utils.area_helpers import (
     build_calendar_data,
@@ -792,6 +793,13 @@ def _render_teaching_pipeline(
         from an absent one."""
         if frame is None or frame.empty or col not in frame.columns:
             return None
+        if is_level(col) and "week_end_date" in frame.columns:
+            # A level (friends holding a date that week) is its last finished
+            # week, never the period added up (PLAN-2026-10-17 L1, L3).
+            weeks = frame["week_end_date"].astype(str).str[:10]
+            done = weeks[weeks <= latest_due_sunday().isoformat()]
+            last = done.max() if not done.empty else weeks.max()
+            frame = frame[weeks == last]
         return float(pd.to_numeric(frame[col], errors="coerce").fillna(0).sum())
 
     stages = [(ki_short_label(k), _total(weekly_wk, k)) for k in _PIPELINE_STAGES]
@@ -815,7 +823,9 @@ def _render_teaching_pipeline(
                "stages is a ratio of two counts and not a survival rate. Amigos "
                "en sacramental is a weekly headcount rather than a roster of "
                "names, so someone who attends several Sundays in this period is "
-               "counted each week.")
+               "counted each week. Con fecha bautismal is a level — how many "
+               "friends hold a date — so it is the period's last week, never its "
+               "weeks added up.")
         + (" " + t("The thin bar under each stage is {twin}.", twin=twin_label)
            if has_twin and twin_label else ""),
     )
@@ -1720,7 +1730,10 @@ def render_group_breakdown(
             # different denominators.
             _ki_transfer_basis = areas_with_goals(_ki_cycle["start"],
                                                   group_areas)
-            _ki_transfer_weekly = {k: v / _cyc_weeks for k, v in _cyc_totals.items() if v}
+            # A level's goal is the level to hold each week, never spread
+            # over the cycle (PLAN-2026-10-17 L2).
+            _ki_transfer_weekly = {k: (v if is_level(k) else v / _cyc_weeks)
+                                   for k, v in _cyc_totals.items() if v}
             if _ki_transfer_weekly:
                 _ki_transfer_note = t(
                     "goal for {cycle}, spread over its {weeks} weeks",
@@ -1736,10 +1749,39 @@ def render_group_breakdown(
         _ki_row_cards = []
         _ki_any_goal = False
         _ki_any_meta = False
+        # A LEVEL (friends holding a date that week) is read in the window's
+        # LAST week, never added across its weeks (PLAN-2026-10-17 L1, L3):
+        # its value, its prior, its meta and its basis all come from one week.
+        # A finished week (the form's due rule) when the window holds one:
+        # a level read in a week still being filed reads a handful of areas.
+        _ki_due = latest_due_sunday().isoformat()
+        _ki_done = [w for w in _ki_week_ends if str(w)[:10] <= _ki_due]
+        _ki_last_week = (max(_ki_done) if _ki_done
+                         else max(_ki_week_ends) if _ki_week_ends else None)
+        _ki_cur_last = (_ki_cur[_ki_cur["week_end_date"] == _ki_last_week]
+                        if _ki_last_week is not None else _ki_cur)
+        _ki_prior_last = (
+            _ki_prior[_ki_prior["week_end_date"]
+                      == max(_ki_prior["week_end_date"])]
+            if _ki_prior is not None and not _ki_prior.empty
+            and "week_end_date" in _ki_prior.columns else _ki_prior)
+        _ki_lvl_meta, _ki_lvl_meta_basis = (
+            _metas_for_weeks(_ki_wk_all, [_ki_last_week],
+                             [k for k in _ki_keys_weekly if is_level(k)])
+            if _ki_last_week is not None else ({}, {}))
+
         for _k in _ki_keys_weekly:
             if _k not in _ki_cur.columns:
                 continue
-            _v = int(pd.to_numeric(_ki_cur[_k], errors="coerce").fillna(0).sum())
+            _lvl = is_level(_k)
+            _src_cur = _ki_cur_last if _lvl else _ki_cur
+            _src_prior = _ki_prior_last if _lvl else _ki_prior
+            _cur_basis = (int(_src_cur["area"].nunique())
+                          if _lvl and not _src_cur.empty else _ki_value_basis)
+            _pri_basis = (int(_src_prior["area"].nunique())
+                          if _lvl and _src_prior is not None
+                          and not _src_prior.empty else _ki_prior_basis)
+            _v = int(pd.to_numeric(_src_cur[_k], errors="coerce").fillna(0).sum())
             # The whole card opens the drill-down on this metric, and the link
             # carries the scope so the full reload it causes lands back here
             # (render_scope_selectors seeds from the same params).
@@ -1752,12 +1794,12 @@ def render_group_breakdown(
             # that filed. The prior week must carry at least half as many of
             # them, or a week gets reconstructed by scaling one companionship up
             # to stand for eight.
-            if (_ki_prior is not None and not _ki_prior.empty
-                    and _k in _ki_prior.columns and _ki_prior_basis
-                    and _ki_prior_basis >= max(1, _ki_value_basis * REPORTING_MIN_SHARE)):
-                _pv = int(pd.to_numeric(_ki_prior[_k], errors="coerce").fillna(0).sum())
-                _chg = period_delta(_v, _pv, current_basis=_ki_value_basis,
-                                    prior_basis=_ki_prior_basis, min_basis=1)
+            if (_src_prior is not None and not _src_prior.empty
+                    and _k in _src_prior.columns and _pri_basis
+                    and _pri_basis >= max(1, _cur_basis * REPORTING_MIN_SHARE)):
+                _pv = int(pd.to_numeric(_src_prior[_k], errors="coerce").fillna(0).sum())
+                _chg = period_delta(_v, _pv, current_basis=_cur_basis,
+                                    prior_basis=_pri_basis, min_basis=1)
                 if _chg is not None:
                     _c["change"] = _chg
                     _c["delta_label"] = _vs
@@ -1768,8 +1810,11 @@ def render_group_breakdown(
             # precedence chain — an entered GOALS_CONFIG goal, or leadership's
             # target scaled to the period, is still a target; it is just not
             # theirs, and the note says which one it is.
-            _goal_total = _ki_meta_total.get(_k, 0.0)
-            _goal_basis = _ki_meta_basis.get(_k, 0)
+            _goal_total = (_ki_lvl_meta if _lvl else _ki_meta_total).get(_k, 0.0)
+            _goal_basis = (_ki_lvl_meta_basis if _lvl else _ki_meta_basis).get(_k, 0)
+            # A level is held, not accumulated: its goal is not multiplied by
+            # the period's weeks.
+            _factor = 1.0 if _lvl else _goal_factor
             _is_meta = _goal_total > 0 and _goal_basis > 0
             _goal_note = (t("the companionships' own goal — {n} areas set one",
                             n=fmt_int(_goal_basis)) if _is_meta else "")
@@ -1779,8 +1824,8 @@ def render_group_breakdown(
                     transfer_weekly=_ki_transfer_weekly,
                     transfer_note=_ki_transfer_note,
                     transfer_basis=_ki_transfer_basis)
-                if _goal_factor and _wg > 0:
-                    _goal_total, _goal_basis = _wg * _goal_factor, _b
+                if _factor and _wg > 0:
+                    _goal_total, _goal_basis = _wg * _factor, _b
 
             if _goal_total > 0:
                 _ki_any_goal = True
@@ -1788,15 +1833,15 @@ def render_group_breakdown(
                 _c["goal"] = _goal_total
                 if _goal_note:
                     _c["goal_note"] = _goal_note
-                if _ki_value_basis and _goal_basis:
-                    _c["value_basis"] = _ki_value_basis
+                if _cur_basis and _goal_basis:
+                    _c["value_basis"] = _cur_basis
                     _c["goal_basis"] = _goal_basis
                 # The violet mark beside the amber bar: leadership's goal for
                 # this period. Drawn only when the bar IS the metas — a card
                 # whose bar is already the leadership goal would otherwise
                 # carry two ticks saying one thing.
                 _mark = (float(_ki_transfer_weekly.get(_k, 0) or 0)
-                         * float(_goal_factor or 0))
+                         * float(_factor or 0))
                 if _is_meta and _mark > 0:
                     _c["mark"] = _mark
                     _c["mark_label"] = t("Leadership goal for this period")

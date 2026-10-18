@@ -35,6 +35,7 @@ import pandas as pd
 import streamlit as st
 
 from app.analytics import ki_history as kh
+from app.config.levels import is_level
 from app.components.charts import (
     bars_vs_goal, change_text, chart, ranked_list,
 )
@@ -359,7 +360,10 @@ def _render_cycle(ctx: _Ctx) -> None:
 
     cur_i = next((i for i, p in enumerate(points) if p.is_current), None)
     pace_value = None
-    if cur_i is not None and points[cur_i].leadership:
+    # A level is held, not accumulated: its goal has no pace through the
+    # cambio (PLAN-2026-10-17 L2).
+    if (cur_i is not None and points[cur_i].leadership
+            and not is_level(ctx.metric)):
         c = points[cur_i]
         days = (c.end - c.start).days + 1
         elapsed = (ctx.today - c.start).days + 1
@@ -394,6 +398,9 @@ def _render_cycle(ctx: _Ctx) -> None:
             parts.append(t("cambio goal {goal}", goal=fmt_int(c.leadership)))
         parts.append(t("{n} of {m} weeks reported",
                        n=fmt_int(c.weeks_covered), m=fmt_int(c.weeks_total)))
+        if is_level(ctx.metric):
+            parts.append(t("a level: each cambio is its last reported week, "
+                           "never its weeks added up"))
         st.caption(" · ".join(parts))
 
 
@@ -465,6 +472,9 @@ def _render_area(ctx: _Ctx) -> None:
             t("Ranked by % of the companionships' own meta, cambio {cycle} "
               "through {day}. Tap an area to open it on Desgloses.",
               cycle=_cycle_name(ctx.cycle), day=fmt_day_month(end)))
+    if is_level(ctx.metric):
+        line += " " + t("A level: each area's figure is the last week "
+                        "reported, against its meta for that week.")
     if ctx.prev:
         line += " " + t("The arrow compares the same weeks of cambio {prev}.",
                         prev=_cycle_name(ctx.prev))

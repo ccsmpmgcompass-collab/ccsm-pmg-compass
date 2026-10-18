@@ -131,7 +131,7 @@ def test_the_old_cycles_read_as_levels(monkeypatch):
     monkeypatch.setattr(gq, "_metric_cols", lambda: [FECHA])
     monkeypatch.setattr(gq, "_cycle_weeks",
                         lambda: {"2026-09-07": 6, "2026-10-19": 6})
-    every = gq.all_area_transfer_goals(levels=True)
+    every = gq.all_area_transfer_goals()
     assert every[FECHA].tolist() == pytest.approx([29 / 6, 4 / 6, 4.0])
 
 

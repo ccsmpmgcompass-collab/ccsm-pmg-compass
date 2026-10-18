@@ -3,9 +3,8 @@
 "Amigos con Fecha Bautismal" is how many friends hold a date that week, and
 leadership's goal for it is a level to hold. So the transfer recommender gives
 it the weekly stretch itself, never multiplied by the cycle's weeks, and the
-tab stores that level. The readers that SUM goals over a cycle get the level
-times the cycle's weeks back (the bridge), so they print what they printed
-before until steps 2-6 teach them to read a level.
+tab stores that level. Every reader that adds areas up gets the level back
+(step 6); 2026-6's six-week totals read divided by the cycle's weeks.
 """
 
 from datetime import date
@@ -113,16 +112,19 @@ def test_the_metas_box_always_reads_a_level(sheet):
     assert gq.get_area_transfer_goal("A1", T6)["ki_new_people_real"] == 30
 
 
-def test_summed_readers_get_the_totals_they_had(sheet):
-    """History untouched (29 + 4); 2026-7's level times its six weeks."""
-    assert gq.group_goal_totals(T6) == {"ki_new_people_real": 42.0,
-                                        FECHA: 33.0}
+def test_summed_readers_get_levels(sheet):
+    """Step 6 removed the bridge: every reader that adds areas up gets the
+    level to hold. 2026-6's totals read divided by its six weeks, unrounded
+    (29/6 + 4/6 = 5,5); 2026-7 stores the level."""
+    totals = gq.group_goal_totals(T6)
+    assert totals["ki_new_people_real"] == 42.0
+    assert totals[FECHA] == pytest.approx(33 / 6)
     by_cycle = gq.goals_by_cycle_start()
-    assert by_cycle[date(2026, 9, 7)][FECHA] == 33.0
-    assert by_cycle[date(2026, 10, 19)][FECHA] == 24.0
+    assert by_cycle[date(2026, 9, 7)][FECHA] == pytest.approx(33 / 6)
+    assert by_cycle[date(2026, 10, 19)][FECHA] == 4.0
     every = gq.all_area_transfer_goals()
-    assert sorted(every[FECHA].tolist()) == [4.0, 24.0, 29.0]
-    # A flow is never touched by the bridge.
+    assert sorted(every[FECHA].tolist()) == pytest.approx([4 / 6, 4.0, 29 / 6])
+    # A flow is never touched.
     assert sorted(every["ki_new_people_real"].tolist()) == [12.0, 30.0, 36.0]
 
 

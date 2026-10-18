@@ -156,12 +156,13 @@ def _scoped(df: pd.DataFrame, areas=None) -> pd.DataFrame:
 #     to whole friends would have turned 55,7 into 77 after the fact;
 #   * a cycle starting on or after it stores the level itself.
 #
-# Every conversion lives in this module. The Metas box reads and writes a
-# level for any cycle (`_row_to_dict` / `_new_row`). The readers that SUM
-# goals over a cycle still get the cycle total they were written for —
-# untouched for an old cycle, the level times the cycle's real weeks for a new
-# one — through `_levels_as_cycle_totals`, so nothing they print changes until
-# PLAN steps 2-6 teach them to read a level. That function is the bridge.
+# Every conversion lives in this module, and every reader gets a LEVEL back:
+# the Metas box (`_row_to_dict` / `_new_row`, rounded to whole friends, at
+# least 1) and every reader that sums areas (`_levels_as_levels`, unrounded —
+# 2026-6's mission level is 55,7). The step-1 bridge that handed the summing
+# readers cycle totals was removed in PLAN step 6, once each of them read a
+# level as a level. A level is never pro-rated by weeks: a caller that spreads
+# a cycle goal over its weeks must skip `metric_catalog.is_level` keys.
 
 #: The first cycle whose level goals are stored as levels: 2026-7, the bulk
 #: Recomendar of Mon 2026-10-19.
@@ -188,25 +189,6 @@ def stores_levels(transfer_start) -> bool:
 
 def _weeks_of(transfer_start) -> float:
     return float(_cycle_weeks().get(_norm_start(transfer_start)) or 1.0)
-
-
-def _levels_as_cycle_totals(df: pd.DataFrame) -> pd.DataFrame:
-    """`df` (numeric metric columns) with each LEVEL metric of a row stored
-    as a level multiplied by its cycle's weeks — the bridge described above.
-    An older row is already a total and is left alone; a row whose cycle is
-    not on the schedule keeps its level."""
-    from app.config.metric_catalog import LEVEL_METRICS
-    levels = [c for c in LEVEL_METRICS if c in df.columns]
-    if df.empty or not levels or "transfer_start" not in df.columns:
-        return df
-    weeks = _cycle_weeks()
-    starts = df["transfer_start"].astype(str).str.strip().str[:10]
-    factor = starts.map(weeks).fillna(1.0).astype(float).where(
-        starts.map(stores_levels), 1.0)
-    df = df.copy()
-    for c in levels:
-        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0) * factor
-    return df
 
 
 def _levels_as_levels(df: pd.DataFrame) -> pd.DataFrame:
@@ -242,14 +224,12 @@ def get_area_transfer_goals(transfer_start) -> pd.DataFrame:
         else:
             df[c] = 0
     df["area"] = df["area"].astype(str).str.strip()
-    return _levels_as_cycle_totals(df)
+    return _levels_as_levels(df)
 
 
-def all_area_transfer_goals(*, levels: bool = False) -> pd.DataFrame:
-    """Every saved row, every cycle — metric columns coerced to numbers.
-
-    ``levels=True`` reads every LEVEL metric as the level to hold
-    (`_levels_as_levels`); without it, as a cycle total (the bridge).
+def all_area_transfer_goals() -> pd.DataFrame:
+    """Every saved row, every cycle — metric columns coerced to numbers, a
+    LEVEL metric as the level to hold (`_levels_as_levels`).
 
     `get_area_transfer_goals` is this, cut to one cycle. Added for the Informes
     packet, which builds 63 scopes over one or two cycles and must read the tab
@@ -265,7 +245,7 @@ def all_area_transfer_goals(*, levels: bool = False) -> pd.DataFrame:
                  if c in df.columns else 0)
     df["area"] = df["area"].astype(str).str.strip()
     df["transfer_start"] = df["transfer_start"].astype(str).str.strip().str[:10]
-    return _levels_as_levels(df) if levels else _levels_as_cycle_totals(df)
+    return _levels_as_levels(df)
 
 
 def get_area_transfer_goal(area: str, transfer_start) -> dict | None:
@@ -290,7 +270,8 @@ def get_area_transfer_goal(area: str, transfer_start) -> dict | None:
 
 def group_goal_totals(transfer_start, areas=None) -> dict:
     """``{metric: summed goal}`` for one cycle across `areas` — the whole
-    mission when `areas` is None.
+    mission when `areas` is None. A LEVEL metric is the areas' levels added
+    up: the level the group should hold each week (L2).
 
     This is the mission's (or a zone's, or a district's) figure for the cycle.
     There is no separate mission row to read instead — see the module docstring.
@@ -305,7 +286,8 @@ def group_goal_totals(transfer_start, areas=None) -> dict:
 
 
 def goals_by_cycle_start(areas=None) -> dict:
-    """``{cycle start date: {metric: summed goal}}`` across every saved cycle.
+    """``{cycle start date: {metric: summed goal}}`` across every saved cycle
+    — a LEVEL metric as the summed level to hold, never a cycle total.
 
     Keyed by a real `date`, which is the shape `analytics.transfer_year`'s
     `year_goal_total()` takes, so the year summary hands one to the other with
@@ -320,7 +302,7 @@ def goals_by_cycle_start(areas=None) -> dict:
         df = df.copy()
         for m in metrics:
             df[m] = pd.to_numeric(df[m], errors="coerce").fillna(0)
-        df = _levels_as_cycle_totals(df)
+        df = _levels_as_levels(df)
     out: dict = {}
     for _, row in df.iterrows():
         start = _as_date(row.get("transfer_start", ""))

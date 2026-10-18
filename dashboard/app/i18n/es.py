@@ -2974,6 +2974,23 @@ ES: dict[str, str] = {
     "Goals per Transfer": "Metas por Cambio",
     "Weekly Goals": "Metas Semanales",
 
+    # ── Fechas are a level (PLAN-2026-10-17 step 6) ──────────────────────────
+    "Goal: the level to hold": "Meta: el nivel a mantener",
+    "level in the week of {day}": "nivel de la semana del {day}",
+    "vs the same week of the previous cambio":
+        "vs la misma semana del cambio anterior",
+    "a level: each cambio is its last reported week, never its weeks added up":
+        "es un nivel: cada cambio es su última semana informada, nunca sus "
+        "semanas sumadas",
+    "A level: each area's figure is the last week reported, against its meta for that week.":
+        "Es un nivel: la cifra de cada área es la última semana informada, "
+        "contra su meta de esa semana.",
+    "{label} is a level: its actual is the week of {day}, against the level to hold — never the weeks added up.":
+        "{label} es un nivel: su real es la semana del {day}, contra el nivel "
+        "a mantener — nunca las semanas sumadas.",
+    "{label} is a level: its row is the week of {day} against {cycle}'s level to hold, never the year added up.":
+        "{label} es un nivel: su fila es la semana del {day} contra el nivel a "
+        "mantener de {cycle}, nunca el año sumado.",
     # ── goals_queries error messages ─────────────────────────────────────────
     "Failed to fetch area transfer goal: {e}":
         "No se pudo obtener la meta del cambio para el área: {e}",
@@ -3295,7 +3312,9 @@ ES: dict[str, str] = {
     "either, so a percentage between two stages is a ratio of two counts and "
     "not a survival rate. Amigos en sacramental is a weekly headcount rather "
     "than a roster of names, so someone who attends several Sundays in this "
-    "period is counted each week.":
+    "period is counted each week. Con fecha bautismal is a level — how many "
+    "friends hold a date — so it is the period's last week, never its weeks "
+    "added up.":
         "Los cinco Indicadores Clave en el orden en que va la obra, contando "
         "lo que ocurrió dentro de este período — no una cohorte: las personas "
         "bautizadas aquí no son necesariamente las que se encontraron aquí. "
@@ -3303,7 +3322,9 @@ ES: dict[str, str] = {
         "etapas es la razón entre dos conteos y no una tasa de permanencia. "
         "Amigos en sacramental es un conteo semanal de asistentes y no una "
         "lista de nombres, así que quien asiste varios domingos en este "
-        "período se cuenta cada semana.",
+        "período se cuenta cada semana. Con fecha bautismal es un nivel — "
+        "cuántos amigos tienen fecha —, así que es la última semana del "
+        "período, nunca sus semanas sumadas.",
 
 
     # ── Desgloses §5: compliance is scoped now (plan step D6) ────────────────

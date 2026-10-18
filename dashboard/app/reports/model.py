@@ -941,7 +941,7 @@ class ReportData:
     breakdowns: pd.DataFrame = field(default_factory=pd.DataFrame)
     scores: pd.DataFrame = field(default_factory=pd.DataFrame)
     #: AREA_TRANSFER_GOALS, every cycle, with each LEVEL metric already the
-    #: level to hold (`goals_queries.all_area_transfer_goals(levels=True)`);
+    #: level to hold (`goals_queries.all_area_transfer_goals`);
     #: the flows are cycle totals.
     transfer_goals: pd.DataFrame = field(default_factory=pd.DataFrame)
     cycles: list[dict] = field(default_factory=list)
@@ -1320,7 +1320,7 @@ def load_data(today: date | None = None) -> ReportData:
         daily_log=daily,
         breakdowns=breakdowns,
         scores=scores,
-        transfer_goals=all_area_transfer_goals(levels=True),
+        transfer_goals=all_area_transfer_goals(),
         cycles=P.load_cycles(),
         ki_keys=ki_keys,
         nightly_keys=nightly_keys,

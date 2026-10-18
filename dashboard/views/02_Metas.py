@@ -770,6 +770,21 @@ if selected_section == "Mission Summary":
     def _pct(actual: float, goal: float) -> str:
         return f"{round(actual / goal * 100)}%" if goal > 0 else "—"
 
+    def _last_week(df):
+        """The latest week in ``df`` (a date), or None."""
+        if df.empty or "week_end_date" not in df.columns:
+            return None
+        wk = pd.to_datetime(df["week_end_date"], errors="coerce").dt.date
+        return wk.max() if wk.notna().any() else None
+
+    def _level_in(df, key: str, week) -> float:
+        """A LEVEL's figure: the rows of ``week`` added up across areas, a
+        silent area counting 0 (PLAN-2026-10-17 L1, L4)."""
+        if week is None or df.empty:
+            return 0.0
+        wk = pd.to_datetime(df["week_end_date"], errors="coerce").dt.date
+        return _sum_ki(df[wk == week], key)
+
     def _style_summary(row):
         styles = [""] * len(row)
         idx = list(row.index).index(t("% of Goal"))
@@ -811,10 +826,23 @@ if selected_section == "Mission Summary":
                      through=fmt_day_month(_to)))
 
         _cycle_rows = []
+        _cycle_weekly = _weekly_between(_wf_all, _from, _to)
+        _cycle_last = _last_week(_cycle_weekly)
+        _cycle_level_note = ""
         for _key, _raw in _ki_catalog.items():
             _goal = float(_cycle_goals.get(_key, 0) or 0)
-            _actual = _sum_ki(_weekly_between(_wf_all, _from, _to), _key)
             _label = _strip_real_suffix(_raw)
+            if is_level(_key):
+                # A level: the cambio's last week against the level to hold,
+                # never its weeks added up (PLAN-2026-10-17 L2, L3).
+                _actual = _level_in(_cycle_weekly, _key, _cycle_last)
+                if _cycle_last is not None:
+                    _cycle_level_note = t(
+                        "{label} is a level: its actual is the week of {day}, "
+                        "against the level to hold — never the weeks added up.",
+                        label=_label, day=fmt_day_month(_cycle_last))
+            else:
+                _actual = _sum_ki(_cycle_weekly, _key)
             # §7.7: a transfer window cannot carry a certified baptism count —
             # TABLEAU_BAPTISMS holds whole calendar months and a cycle never is
             # one. The mission's own weekly figure is used and NAMED, never
@@ -832,6 +860,8 @@ if selected_section == "Mission Summary":
         st.caption(t("Baptisms here are the mission's own weekly report, which "
                      "under-counts. The certified Tableau figure is monthly and "
                      "cannot describe a cambio; it is shown in the year below."))
+        if _cycle_level_note:
+            st.caption(_cycle_level_note)
 
     st.divider()
 
@@ -874,11 +904,30 @@ if selected_section == "Mission Summary":
                 year=_year))
 
         _y_weekly = _weekly_between(_wf_all, _y_from, _y_to)
+        _y_last = _last_week(_y_weekly)
+        # The cambio a level is read in: the one holding the year's last
+        # reported week (its goal is a level, never added across cambios).
+        _y_last_cycle = next((c for c in _all_cycles if _y_last is not None
+                              and c["start"] <= _y_last <= c["end"]), None)
+        _year_level_note = ""
         _year_rows = []
         for _key, _raw in _ki_catalog.items():
-            _goal = ty.year_goal_total(_all_cycles, _goals_by_cycle, _key, _year)
-            _actual = _sum_ki(_y_weekly, _key)
             _label = _strip_real_suffix(_raw)
+            if is_level(_key):
+                _goal = float((_goals_by_cycle.get(_y_last_cycle["start"]) or {})
+                              .get(_key, 0) or 0) if _y_last_cycle else 0.0
+                _actual = _level_in(_y_weekly, _key, _y_last)
+                if _y_last is not None:
+                    _year_level_note = t(
+                        "{label} is a level: its row is the week of {day} "
+                        "against {cycle}'s level to hold, never the year added "
+                        "up.", label=_label, day=fmt_day_month(_y_last),
+                        cycle=(_cycle_label(_y_last_cycle)
+                               if _y_last_cycle else "—"))
+            else:
+                _goal = ty.year_goal_total(_all_cycles, _goals_by_cycle, _key,
+                                           _year)
+                _actual = _sum_ki(_y_weekly, _key)
             if _key == _BAPTISM_KEY:
                 _label = t("{label} (weekly report)", label=_label)
             _year_rows.append({
@@ -905,6 +954,8 @@ if selected_section == "Mission Summary":
             })
 
         render_table(pd.DataFrame(_year_rows).style.apply(_style_summary, axis=1))
+        if _year_level_note:
+            st.caption(_year_level_note)
         st.caption(t("A year's goal is every cambio's goal for that year, with a "
                      "cambio that crosses New Year split by days. Results are "
                      "counted by the week they were reported in, always by real "

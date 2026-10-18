@@ -19,6 +19,10 @@ Three rules the rest of the app already lives by, applied here as well:
   offset in ``breakdowns_engine``'s Key Indicator cards).
 * **No meta written is "sin meta", never a zero goal.** A blank meta counts
   as nothing set; the point carries ``None`` and the chart draws no dash.
+* **A level is never added across weeks** (PLAN-2026-10-17-fechas-level.md
+  L1–L3). "Amigos con Fecha Bautismal" is how many friends hold a date that
+  week, so a cambio's or a window's figure is its LAST reported week, its
+  meta that week's meta, and leadership's goal the level to hold.
 * **Membership is the caller's roster.** ``scope_areas`` is the set of area
   names MISSION_ORG lists for the scope today; the frames are filtered on the
   area name, never on their own Zone column (``_scope_to_areas``' reasoning).
@@ -33,6 +37,7 @@ from typing import Iterable
 import pandas as pd
 
 from app.analytics.period_delta import period_delta
+from app.config.levels import is_level
 
 
 # ── The shapes ───────────────────────────────────────────────────────────────
@@ -63,7 +68,9 @@ class CyclePoint:
     ``actual`` sums the weeks that have data; ``meta_so_far`` sums the metas
     written for the weeks up to and including the current one (§1.1: actual
     so far against metas set so far); ``leadership`` is the transfer goal
-    from Metas for the areas in scope, or None when none is saved.
+    from Metas for the areas in scope, or None when none is saved. For a
+    LEVEL, ``actual`` is the last reported week, ``meta_so_far`` that week's
+    meta and ``leadership`` the level to hold.
     """
     number: str
     start: date
@@ -286,9 +293,17 @@ def cycle_series(scope_areas: Iterable[str], metric: str, *,
         covered = [p for p in points if p.reporting]
         if not covered:
             continue
-        actual = sum(p.actual or 0.0 for p in covered)
-        metas = [p.meta for p in points if not p.is_future and p.meta is not None]
-        meta_so_far = sum(metas) if metas else None
+        if is_level(metric):
+            # The cambio's figure is its last FINISHED reported week (L3): a
+            # week still in progress holds a handful of early reports.
+            done = [p for p in covered if p.end < today]
+            actual = (done[-1].actual or 0.0) if done else None
+            meta_so_far = done[-1].meta if done else None
+        else:
+            actual = sum(p.actual or 0.0 for p in covered)
+            metas = [p.meta for p in points
+                     if not p.is_future and p.meta is not None]
+            meta_so_far = sum(metas) if metas else None
         lead = float((goals_by_cycle.get(cycle["start"]) or {}).get(metric, 0) or 0)
         out.append(CyclePoint(
             number=str(cycle.get("number") or "").strip(),
@@ -301,9 +316,25 @@ def cycle_series(scope_areas: Iterable[str], metric: str, *,
     return out
 
 
+def _last_reported_sunday(df: pd.DataFrame, start: date,
+                          end: date) -> date | None:
+    """The latest Sunday in [start, end] on which ANY area of ``df`` filed —
+    a level's week for every area of the scope, silent ones reading 0 (L4)."""
+    if df.empty or "week_end_date" not in df.columns:
+        return None
+    filed = set(df["week_end_date"].astype(str).str[:10])
+    return next((d for d in reversed(sundays_between(start, end))
+                 if d.isoformat() in filed), None)
+
+
 def _area_window(df: pd.DataFrame, area: str, metric: str,
-                 start: date, end: date) -> tuple[float, float | None, int]:
-    """(actual, meta or None, weeks with a row) for one area over a window."""
+                 start: date, end: date, *,
+                 level_week: date | None = None) -> tuple[float, float | None, int]:
+    """(actual, meta or None, weeks with a row) for one area over a window.
+
+    For a LEVEL, ``level_week`` is the week its figure is read in: the
+    area's report that week (0 when it filed none) and that week's meta,
+    never the window added up."""
     if df.empty or "area" not in df.columns:
         mine = pd.DataFrame()
     else:
@@ -321,6 +352,11 @@ def _area_window(df: pd.DataFrame, area: str, metric: str,
         if m is not None:
             any_meta = True
             meta_total += m
+    if is_level(metric):
+        if level_week is None:
+            return 0.0, None, weeks
+        m, _set_by = _meta_for_week(mine, metric, level_week)
+        return _sum(_week_rows(mine, level_week), metric), m, weeks
     return actual, (meta_total if any_meta else None), weeks
 
 
@@ -356,12 +392,20 @@ def area_rows(scope_areas: Iterable[str], metric: str,
     df = _load_weekly(weekly, areas)
     today = _today(today)
     start, end = window
+    # A level's week must be finished: the Sunday before today at the latest.
+    level_week = _last_reported_sunday(
+        df, start, min(end, today - timedelta(days=1)))
+    twin_week = (_last_reported_sunday(df, *twin_window)
+                 if twin_window is not None else None)
     out: list[AreaRow] = []
     for area in areas:
-        actual, meta, weeks = _area_window(df, area, metric, start, end)
+        actual, meta, weeks = _area_window(df, area, metric, start, end,
+                                           level_week=level_week)
         change = None
         if twin_window is not None:
-            t_actual, _t_meta, t_weeks = _area_window(df, area, metric, *twin_window)
+            t_actual, _t_meta, t_weeks = _area_window(df, area, metric,
+                                                      *twin_window,
+                                                      level_week=twin_week)
             if t_weeks:
                 change = period_delta(actual, t_actual, current_basis=1,
                                       prior_basis=1, min_basis=1)
@@ -646,10 +690,11 @@ def leadership_weekly_mark(scope_areas: Iterable[str], cycle: dict, metric: str,
                            totals: dict | None = None) -> float | None:
     """The leadership transfer goal's weekly share for the mark on the weekly
     bars: the cycle total for the scope ÷ the cycle's real weeks. None when
-    no goal is saved for the metric."""
+    no goal is saved for the metric. A LEVEL's goal is already weekly — the
+    level to hold — and is returned as it is."""
     value = leadership_total(scope_areas, cycle, metric, totals=totals)
-    if value is None:
-        return None
+    if value is None or is_level(metric):
+        return value
     from app.analytics.transfer_year import weeks_in_cycle
     weeks = max(1.0, weeks_in_cycle(cycle["start"], cycle["end"]))
     return value / weeks

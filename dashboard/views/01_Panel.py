@@ -77,6 +77,7 @@ from app.utils.transfer_helpers import (
 )
 from app.analytics import transfer_year as ty
 from app.analytics import ki_history as kh
+from app.config.levels import is_level
 from app.db.goals_queries import areas_with_goals, group_goal_totals
 from app.analytics import annual_baptisms as ab
 from app.analytics import effort_breakdown as eb
@@ -467,7 +468,10 @@ def _leadership_week_goal(week_end) -> tuple[dict, int, str]:
         totals = group_goal_totals(cycle["start"])
         if not any(totals.values()):
             return {}, 0, ""
-        return ({k: v / weeks for k, v in totals.items() if v},
+        # A level's goal is already weekly — the level to hold
+        # (PLAN-2026-10-17 L2) — and is never spread over the weeks.
+        return ({k: (v if is_level(k) else v / weeks)
+                 for k, v in totals.items() if v},
                 areas_with_goals(cycle["start"]), _cycle_label(cycle))
     return {}, 0, ""
 
@@ -656,7 +660,48 @@ if _ki_period == _KI_PERIOD_CYCLE and _ki_cycle is not None and _ki_metrics:
         for p in next(iter(_ki_cycle_twin_points.values()), [])[:_ki_cycle_elapsed])
 
 
+def _ki_level_cycle_card(metric: str) -> dict:
+    """A LEVEL on the "Este cambio" card (PLAN-2026-10-17 L1–L3): the cambio's
+    last reported week against that week's companionship meta, leadership's
+    goal level as the mark, and the change against the same week of the
+    previous cambio, per area that filed each side."""
+    points = _ki_cycle_points.get(metric) or []
+    # A finished week only (the weekly form's due rule): the week in progress
+    # holds a handful of early reports, and a level read there reads ~0.
+    due = latest_due_sunday()
+    covered = [p for p in points
+               if not p.is_future and p.reporting and p.end <= due]
+    last = covered[-1] if covered else None
+    i = points.index(last) if last is not None else None
+    twin = _ki_cycle_twin_points.get(metric) or []
+    then = twin[i] if i is not None and i < len(twin) else None
+    change = None
+    if last is not None and then is not None and then.reporting:
+        change = period_delta(last.actual or 0.0, then.actual or 0.0,
+                              current_basis=last.reporting,
+                              prior_basis=then.reporting,
+                              min_basis=_ki_min_areas)
+    return {
+        "label": ki_short_label(metric),
+        "href": ki_href(metric),
+        "value": int(last.actual or 0) if last is not None else "—",
+        "spark": _ki_spark(metric),
+        "goal": (last.meta or 0) if last is not None else 0,
+        "mark": kh.leadership_total(_ki_scope_areas, _ki_cycle, metric,
+                                    totals=_ki_cycle_totals),
+        "mark_label": t("Goal: the level to hold"),
+        "value_basis": 1 if last is not None else 0,
+        "goal_basis": 1 if last is not None and last.meta else 0,
+        "change": change,
+        "delta_label": t("vs the same week of the previous cambio"),
+        "note": (t("level in the week of {day}", day=fmt_day_month(last.end))
+                 if last is not None else t("arrives Sunday")),
+    }
+
+
 def _ki_cycle_card(metric: str) -> dict:
+    if is_level(metric):
+        return _ki_level_cycle_card(metric)
     points = _ki_cycle_points.get(metric) or []
     elapsed = [p for p in points if not p.is_future]
     covered = [p for p in elapsed if p.reporting]
