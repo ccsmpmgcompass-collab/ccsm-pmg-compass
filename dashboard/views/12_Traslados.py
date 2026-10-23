@@ -431,9 +431,10 @@ def _render_roster_tab() -> None:
               "every area in the roster is activated.")
         )
     st.caption(
-        t("Office areas (names starting with \"Oficina\") are always left out — "
-          "they are not teaching areas, so they never appear on the forms or "
-          "count as missing.")
+        t("The office, MLS couples and service missionaries (names starting "
+          "with \"Oficina\" or \"MLS\", ending in \"Service\", or zone Sión) are "
+          "always left out — they are not teaching areas, so they never appear "
+          "on the forms or count as missing.")
     )
 
     import_rows = sc.read_values("TRANSFER_IMPORT")

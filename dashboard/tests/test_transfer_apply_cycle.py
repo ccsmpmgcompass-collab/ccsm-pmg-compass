@@ -224,11 +224,29 @@ def test_apply_refuses_on_an_unknown_pilot_zone(monkeypatch):
 
 # ── the office is not a teaching area (Zackary, 2026-10-23) ──────────────────
 
-def test_office_names_are_not_teaching_areas():
-    for name in ("Oficina 1", "  oficina 2 ", "OFICINA", "Office"):
+def test_office_mls_and_service_rows_are_not_teaching_areas():
+    for name in ("Oficina 1", "  oficina 2 ", "OFICINA", "Office", "MLS Pucón",
+                 "mls temuco", "Arauco Service", "San Pedro Service"):
         assert te.is_non_teaching_area(name), name
-    for name in ("Los Huertos 1", "Boca de la Costa 3", "", None):
+    for name in ("Los Huertos 1", "Boca de la Costa 3", "Pucón 1", "", None):
         assert not te.is_non_teaching_area(name), name
+
+
+def test_the_service_zone_is_left_out_whatever_the_area_is_called():
+    for zone in ("Sión", "sion", " SERVICE "):
+        assert te.is_non_teaching_area("Uno", zone), zone
+    assert not te.is_non_teaching_area("Uno", "San Pedro")
+
+
+def test_going_mission_wide_still_leaves_them_out():
+    """With PILOT_ZONES cleared, nothing but this rule keeps them out."""
+    roster = te.parse_roster([
+        {"Area": "MLS Pucón", "Zone": "Villarrica", "Companion1_Name": "Susan Bright"},
+        {"Area": "Arauco Service", "Zone": "Sión", "Companion1_Name": "Laura Vigueras"},
+        {"Area": "Oficina 1", "Zone": "San Pedro", "Companion1_Name": "Lawrence Heywood"},
+        {"Area": "Gorbea", "Zone": "Villarrica", "Companion1_Name": "Elder Uno"}])
+    kept, _ = te.filter_roster_to_zones(te.drop_non_teaching_areas(roster), [])
+    assert [r["Area_Name"] for r in kept] == ["Gorbea"]
 
 
 def test_load_state_leaves_the_office_out(monkeypatch):

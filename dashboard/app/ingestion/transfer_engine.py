@@ -184,28 +184,44 @@ def filter_roster_to_zones(roster_rows: list[dict],
     return kept, unknown
 
 
-#: Area names that are the mission office, not a teaching area. IMOS files the
-#: office couple under an ordinary zone and district ("Oficina 1", San Pedro /
-#: Boca de la Costa 3 on the 2026-10-19 pull), so the transform's district-based
-#: `_is_non_area_row` never catches it.
-_NON_TEACHING_PREFIXES = ("oficina", "office")
+#: Rows that are not teaching areas, none of which the transform's district-based
+#: `_is_non_area_row` catches. As seen on the 2026-10-19 pull:
+#:   "Oficina 1"           — the office couple, under San Pedro / Boca de la Costa 3
+#:   "MLS Pucón"           — a member-and-leader-support senior couple, Villarrica
+#:   "Arauco Service", "San Pedro Service" — service missionaries, zone "Sión"
+#: (MISSION_ORG carries the older zone name "Service" for the same rows).
+_NON_TEACHING_PREFIXES = ("oficina", "office", "mls")
+_NON_TEACHING_SUFFIXES = (" service",)
+_NON_TEACHING_ZONES = {"sion", "service"}
 
 
-def is_non_teaching_area(name) -> bool:
-    """True for an area name that is the mission office rather than a teaching
-    area. Case and padding are ignored."""
-    return str(name or "").strip().casefold().startswith(_NON_TEACHING_PREFIXES)
+def _plain(text) -> str:
+    """Lower-case, accent-free, trimmed — so "Sión" and "sion" compare equal."""
+    s = unicodedata.normalize("NFKD", str(text or ""))
+    return "".join(c for c in s if not unicodedata.combining(c)).casefold().strip()
+
+
+def is_non_teaching_area(name, zone="") -> bool:
+    """True for a row that is the office, a senior support couple or service
+    missionaries rather than a teaching area. Case, accents and padding are
+    ignored."""
+    n = _plain(name)
+    return (n.startswith(_NON_TEACHING_PREFIXES) or n.endswith(_NON_TEACHING_SUFFIXES)
+            or _plain(zone) in _NON_TEACHING_ZONES)
 
 
 def drop_non_teaching_areas(roster_rows: list[dict]) -> list[dict]:
-    """`roster_rows` without the office areas.
+    """`roster_rows` without the rows that are not teaching areas.
 
-    Zackary, 2026-10-23: the office couple is not a teaching area and must never
-    show on the forms or count as missing. An area absent from the roster is
-    deactivated by `apply_transfer` and never reactivated, so dropping it here —
-    before the zone filter, the diff and every guard — is all it takes.
+    Zackary, 2026-10-23: the office couple, the MLS couple and the service
+    missionaries must never show on the forms or count as missing. An area
+    absent from the roster is deactivated by `apply_transfer` and never
+    reactivated, so dropping it here — before the zone filter, the diff and
+    every guard — is all it takes. It matters most once PILOT_ZONES is cleared,
+    when nothing else would keep them out.
     """
-    return [r for r in roster_rows if not is_non_teaching_area(r.get("Area_Name"))]
+    return [r for r in roster_rows
+            if not is_non_teaching_area(r.get("Area_Name"), r.get("Zone"))]
 
 
 def _roster_map(roster_rows: list[dict]) -> dict:
