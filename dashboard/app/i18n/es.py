@@ -2589,6 +2589,12 @@ ES: dict[str, str] = {
     "in the roster is activated.":
         "PILOT_ZONES no está configurado, así que Aplicar abarca TODA la "
         "misión — se activa cada área de la organización.",
+    "Office areas (names starting with \"Oficina\") are always left out — "
+    "they are not teaching areas, so they never appear on the forms or count "
+    "as missing.":
+        "Las áreas de oficina (nombres que empiezan con \"Oficina\") siempre "
+        "quedan fuera: no son áreas de enseñanza, así que nunca aparecen en "
+        "los formularios ni cuentan como faltantes.",
     "PILOT_ZONES names zone(s) that appear nowhere in TRANSFER_IMPORT: "
     "{zones}. Fix the spelling to match the roster's own Zone column — "
     "applying now would deactivate every area in them.":

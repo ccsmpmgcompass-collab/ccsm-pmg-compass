@@ -184,6 +184,30 @@ def filter_roster_to_zones(roster_rows: list[dict],
     return kept, unknown
 
 
+#: Area names that are the mission office, not a teaching area. IMOS files the
+#: office couple under an ordinary zone and district ("Oficina 1", San Pedro /
+#: Boca de la Costa 3 on the 2026-10-19 pull), so the transform's district-based
+#: `_is_non_area_row` never catches it.
+_NON_TEACHING_PREFIXES = ("oficina", "office")
+
+
+def is_non_teaching_area(name) -> bool:
+    """True for an area name that is the mission office rather than a teaching
+    area. Case and padding are ignored."""
+    return str(name or "").strip().casefold().startswith(_NON_TEACHING_PREFIXES)
+
+
+def drop_non_teaching_areas(roster_rows: list[dict]) -> list[dict]:
+    """`roster_rows` without the office areas.
+
+    Zackary, 2026-10-23: the office couple is not a teaching area and must never
+    show on the forms or count as missing. An area absent from the roster is
+    deactivated by `apply_transfer` and never reactivated, so dropping it here —
+    before the zone filter, the diff and every guard — is all it takes.
+    """
+    return [r for r in roster_rows if not is_non_teaching_area(r.get("Area_Name"))]
+
+
 def _roster_map(roster_rows: list[dict]) -> dict:
     return {r["Area_Name"].lower().strip(): r for r in roster_rows}
 

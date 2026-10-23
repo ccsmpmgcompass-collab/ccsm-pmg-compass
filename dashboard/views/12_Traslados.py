@@ -430,6 +430,11 @@ def _render_roster_tab() -> None:
             t("PILOT_ZONES is not set, so Apply covers the WHOLE mission — "
               "every area in the roster is activated.")
         )
+    st.caption(
+        t("Office areas (names starting with \"Oficina\") are always left out — "
+          "they are not teaching areas, so they never appear on the forms or "
+          "count as missing.")
+    )
 
     import_rows = sc.read_values("TRANSFER_IMPORT")
     if len(import_rows) <= 1:

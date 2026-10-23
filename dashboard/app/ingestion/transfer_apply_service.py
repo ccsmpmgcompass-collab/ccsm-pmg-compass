@@ -92,12 +92,13 @@ def pilot_zones() -> list[str]:
 def load_state() -> tuple[list[str], list[dict], list[dict], list[str]]:
     """(MISSION_ORG headers, MISSION_ORG rows, roster rows, unknown pilot zones).
 
-    The roster is already cut to `pilot_zones()`; `unknown` names any configured
+    The roster is already cut to `pilot_zones()` and has no office areas
+    (`transfer_engine.drop_non_teaching_areas`); `unknown` names any configured
     zone that matched no roster row, which the callers treat as a hard stop.
     """
     org_headers, org = read_records(MISSION_ORG_TAB)
     _, imp = read_records(IMPORT_TAB)
-    roster = te.parse_roster(imp)
+    roster = te.drop_non_teaching_areas(te.parse_roster(imp))
     roster, unknown = te.filter_roster_to_zones(roster, pilot_zones())
     return org_headers, org, roster, unknown
 

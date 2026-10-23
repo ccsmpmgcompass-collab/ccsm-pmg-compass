@@ -222,6 +222,44 @@ def test_apply_refuses_on_an_unknown_pilot_zone(monkeypatch):
     assert "deactivate" in str(exc.value)
 
 
+# ── the office is not a teaching area (Zackary, 2026-10-23) ──────────────────
+
+def test_office_names_are_not_teaching_areas():
+    for name in ("Oficina 1", "  oficina 2 ", "OFICINA", "Office"):
+        assert te.is_non_teaching_area(name), name
+    for name in ("Los Huertos 1", "Boca de la Costa 3", "", None):
+        assert not te.is_non_teaching_area(name), name
+
+
+def test_load_state_leaves_the_office_out(monkeypatch):
+    """IMOS files the office couple under an ordinary pilot zone and district,
+    as it did on the 2026-10-19 pull."""
+    imp = [{"Area": "Oficina 1", "Zone": "San Pedro", "District": "Boca de la Costa 3",
+            "Companion1_Name": "Lawrence Heywood", "Companion2_Name": "Sherrie Heywood"},
+           {"Area": "Los Huertos 1", "Zone": "San Pedro", "District": "Los Huertos 1",
+            "Companion1_Name": "Collin Anderson"}]
+    monkeypatch.setattr(tas, "read_records",
+                        lambda tab: (["Area_Name"], []) if tab == tas.MISSION_ORG_TAB
+                        else (list(imp[0]), imp))
+    monkeypatch.setattr(tas, "pilot_zones", lambda: ["San Pedro"])
+    _, _, roster, unknown = tas.load_state()
+    assert [r["Area_Name"] for r in roster] == ["Los Huertos 1"]
+    assert unknown == []
+
+
+def test_an_active_office_is_deactivated_and_stays_out():
+    headers = ["Area_Name", "Zone", "Companion1_Name", "Companion1_Email",
+               "Companion2_Name", "Companion2_Email", "Active"]
+    org = [{"Area_Name": "Oficina 1", "Zone": "San Pedro", "Companion1_Name": "Lawrence Heywood",
+            "Companion1_Email": "", "Companion2_Name": "", "Companion2_Email": "",
+            "Active": "TRUE"}]
+    roster = te.drop_non_teaching_areas(te.parse_roster(
+        [{"Area": "Oficina 1", "Zone": "San Pedro", "Companion1_Name": "Lawrence Heywood"}]))
+    new_rows, _ = te.apply_transfer(roster, org, headers)
+    office = [r for r in new_rows if r["Area_Name"] == "Oficina 1"]
+    assert len(office) == 1 and office[0]["Active"] == "FALSE"
+
+
 # ── lineage at Apply (PLAN-2026-10-05 R6) ────────────────────────────────────
 
 def _stub_apply(monkeypatch, recorded):
