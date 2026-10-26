@@ -1082,13 +1082,15 @@ if selected_section == "Area Goal Customization":
         _KI_PREVIEW_LABELS = {
             k: (t("{label} (a level to hold)", label=v) if is_level(k) else v)
             for k, v in key_indicator_metrics().items()}
-        with st.expander(t('Preview — goals for {cycle}', cycle=_bulk_cycle_label)):
+        # render_table, not st.dataframe: the canvas grid painted this preview
+        # blank on the live app (Zackary, 2026-10-26) — the same failure
+        # render_table exists for. Open by default: it is what Save writes.
+        with st.expander(t('Preview — goals for {cycle}', cycle=_bulk_cycle_label),
+                         expanded=True):
             _tr_df = pd.DataFrame.from_dict(_preview["transfer"], orient="index")
-            _tr_df.index.name = "Area"
-            st.dataframe(
-                _tr_df[_BULK_KI_KEYS].rename(columns=_KI_PREVIEW_LABELS),
-                height=420,
-            )
+            _tr_df.index.name = t("Area")
+            render_table(_tr_df[_BULK_KI_KEYS].rename(columns=_KI_PREVIEW_LABELS),
+                         index=True)
         _col_bulk_save, _col_bulk_cancel = st.columns([1, 1])
         with _col_bulk_save:
             if st.button(t("Save All Recommended"), type="primary", key="bulk_rec_save"):
