@@ -152,8 +152,9 @@ def ki_from_raw(raw, cutoff=None):
     section by header text, the self-reported date maps to the Sunday on or
     after it, and the latest submission per area+week wins.
 
-    With `cutoff` (a naive mission-time datetime), a form stamped after it is
-    left out, exactly as if it had not arrived yet.
+    With `cutoff` (a naive datetime on the SHEET's clock, the one the form
+    stamps are written in — ki_pdf_runner.to_sheet_clock), a form stamped
+    after it is left out, exactly as if it had not arrived yet.
     """
     table = raw["WEEKLY_FORM_RAW"]
     head = [str(h).strip() for h in table[0]]

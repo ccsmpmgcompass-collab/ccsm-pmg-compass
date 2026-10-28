@@ -786,8 +786,19 @@ function recordMessageSent(areaKey, messageId, category, growthMetric) {
  * Creates a one-time time-based trigger to run a function after a delay.
  * Used to chain agents: Agent1A → Agent1B → Agent1C.
  * Always deletes any existing trigger for the same function first.
+ *
+ * So it refuses a handler that has a FIXED trigger in CCSM_TRIGGER_SCHEDULE:
+ * scheduling it would delete that one. The letter watchdog restarted Agent1A
+ * this way on 2026-10-19, which deleted the Monday 21:30 trigger, and on
+ * 10-26 Agent1A never started (AUDIT-2026-10-28-monday-letters.md, A).
+ * Schedule a one-shot alias instead (runAgent1ARetry).
  */
 function scheduleNext(functionName, delayMinutes) {
+  if (typeof CCSM_TRIGGER_SCHEDULE !== 'undefined' &&
+      CCSM_TRIGGER_SCHEDULE.some(function(s) { return s.fn === functionName; })) {
+    throw new Error('scheduleNext: ' + functionName + ' has a fixed trigger in CCSM_TRIGGER_SCHEDULE, ' +
+                    'and scheduling it would delete that trigger. Schedule a one-shot alias instead.');
+  }
   deleteTriggerByName(functionName);
   var delayMs = Math.max(delayMinutes, 1) * 60 * 1000;
   ScriptApp.newTrigger(functionName).timeBased().after(delayMs).create();

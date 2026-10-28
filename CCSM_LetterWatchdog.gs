@@ -29,6 +29,12 @@
  * Two handler names because CCSM_Helpers.scheduleNext() deletes every trigger
  * of the function it schedules: one name for the fixed weekly trigger, which
  * must survive, and one for the one-shot re-checks.
+ *
+ * Agent1A needs the same: its restart goes through runAgent1ARetry, never
+ * runAgent1A. Until 2026-10-28 it went through runAgent1A, so the 10-19
+ * restart deleted the Monday 21:30 trigger and on 10-26 Agent1A never
+ * started (AUDIT-2026-10-28-monday-letters.md, A). Every check now also puts
+ * that weekly trigger back if it is missing.
  */
 
 // A run older than this is past Apps Script's 6-minute limit: dead.
@@ -37,11 +43,40 @@ var LW_RUNNING_MAX_MS   = 7 * 60 * 1000;
 // without the step starting means it never will (17 Aug, 28 Sep).
 var LW_SCHEDULED_MAX_MS = 10 * 60 * 1000;
 var LW_RECHECK_MIN      = 15;
-var LW_STEP_FN          = { '1A': 'runAgent1A', '1B': 'runAgent1B', '1C': 'runAgent1C' };
+var LW_STEP_FN          = { '1A': 'runAgent1ARetry', '1B': 'runAgent1B', '1C': 'runAgent1C' };
 
 /** The fixed weekly trigger (CCSM_TRIGGER_SCHEDULE, Monday ~11 PM). */
 function runLetterWatchdog() {
   letterWatchdogCheck_(new Date());
+}
+
+/** The watchdog's one-shot restart of Agent1A (see the header). */
+function runAgent1ARetry() {
+  runAgent1A();
+}
+
+/**
+ * Puts the Monday runAgent1A trigger back when no trigger runs runAgent1A.
+ * Returns true when it had to. Never throws: a failed repair must not stop the
+ * check that restarts this week's letters.
+ */
+function lw_ensureWeeklyTrigger_() {
+  try {
+    if (typeof CCSM_TRIGGER_SCHEDULE === 'undefined') return false;
+    var have = ScriptApp.getProjectTriggers().some(function(t) {
+      return t.getHandlerFunction() === 'runAgent1A';
+    });
+    if (have) return false;
+    var spec = CCSM_TRIGGER_SCHEDULE.filter(function(s) { return s.fn === 'runAgent1A'; })[0];
+    if (!spec) return false;
+    installScheduledTrigger_(spec, getMissionTimezone());
+    logRun('LetterWatchdog', 'REPAIRED', null, null, null,
+           'The weekly runAgent1A trigger was missing -- reinstalled (' + spec.describe + ')');
+    return true;
+  } catch (e) {
+    Logger.log('LetterWatchdog: could not check the runAgent1A trigger -- ' + e.message);
+    return false;
+  }
 }
 
 /** The one-shot re-checks (Agent1A's first one, then the watchdog's own). */
@@ -68,6 +103,7 @@ function letterWatchdogCheck_(now) {
 }
 
 function lw_check_(now) {
+  lw_ensureWeeklyTrigger_();
   var tz  = getMissionTimezone();
   var win = lw_window_(now, tz);
   var nowStr = Utilities.formatDate(now, tz, 'yyyy-MM-dd HH:mm');

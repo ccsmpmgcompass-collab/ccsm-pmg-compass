@@ -357,6 +357,7 @@ function a1c_prevWeekEnd_(weekEnd) {
 
 // ─── MAIN ENTRY POINT ──────────────────────────────────────────────────────────
 function runAgent1C() {
+  var started = Date.now();   // AGENT_RUN_LOG's Duration_Sec (AUDIT-2026-10-28 F3)
   var status = 'SUCCESS';
   var notes = [];
   // The week this chain is on (PLAN-2026-10-13-letter-watchdog.md), until
@@ -394,7 +395,7 @@ function runAgent1C() {
         scheduleNext('runAgent1C', 2);
         letterChainMark_(weekEnd, '1C', 'scheduled', 'waiting for the KI PDFs');
         Logger.log('Agent1C: KI PDFs not ready -- waiting (' + (waits + 1) + '/' + A1C_KI_PDF_MAX_WAITS + ')');
-        logRun('Agent1C', 'WAITING', null, null, null,
+        logRun('Agent1C', 'WAITING', null, null, Date.now() - started,
                'KI PDFs for ' + weekEnd + ' not ready; retry ' + (waits + 1) + ' of ' + A1C_KI_PDF_MAX_WAITS + ' in 2 min');
         return;
       }
@@ -447,6 +448,12 @@ function runAgent1C() {
     var alreadySent = a1c_loadSent_(weekEnd);
     var skippedSent = 0;
 
+    // How big the biggest letter is (AUDIT-2026-10-28 F6): Gmail clips one
+    // over ~102 KB behind "View entire message", and on 10-13 the Los Angeles
+    // Norte ZL letter was already 97.7 KB.
+    var largest = { bytes: 0, subject: '' };
+    var overWarn = 0;
+
     Object.keys(peopleMap).forEach(function(email) {
       if (!email || email.indexOf('@') < 0) return;
       if (email.toLowerCase().indexOf('notreadyyet') >= 0) return;
@@ -469,6 +476,9 @@ function runAgent1C() {
         var letter  = a1c_v2letter_(person, areas, summaries, weekEnd, docs);
         var subject = letter.subject;
         var body    = letter.html;
+        var bytes   = a1c_utf8Bytes_(body);
+        if (bytes > largest.bytes) largest = { bytes: bytes, subject: subject };
+        if (bytes > A1C_LETTER_WARN_BYTES) overWarn++;
         var sent    = sendEmail(email, subject, body, 'Agent1C',
                                 docs.length ? { attachments: docs.map(function(d) { return d.blob; }) } : undefined);
         if (docs.length) {
@@ -487,6 +497,14 @@ function runAgent1C() {
 
     notes.push('Emails sent: ' + emailsSent + ', errors: ' + emailErrors);
     if (skippedSent > 0) notes.push('Already sent before a restart, skipped: ' + skippedSent);
+    if (largest.bytes > 0) {
+      notes.push('Largest letter: ' + (largest.bytes / 1024).toFixed(1) + ' KB (' +
+                 String(largest.subject).slice(0, 60) + ')');
+    }
+    if (overWarn > 0) {
+      notes.push('WARNING: ' + overWarn + ' letter(s) over ' + Math.round(A1C_LETTER_WARN_BYTES / 1024) +
+                 ' KB -- Gmail clips at ~102 KB');
+    }
     if (kiPdfs.ready) notes.push('KI PDFs attached: ' + kiAttached);
     if (kiDropped > 0) {
       status = 'ERROR';
@@ -525,7 +543,17 @@ function runAgent1C() {
     Logger.log('Agent1C FATAL: ' + e.message + '\n' + (e.stack || ''));
     letterChainMark_(weekEnd, '1C', 'failed', e.message);
   }
-  logRun('Agent1C', status, null, null, null, notes.join(' | '));
+  logRun('Agent1C', status, null, null, Date.now() - started, notes.join(' | '));
+}
+
+// ─── LETTER SIZE (AUDIT-2026-10-28-monday-letters.md F6) ───────────────────────
+
+// Gmail clips a message whose HTML passes ~102 KB; warn with room to spare.
+var A1C_LETTER_WARN_BYTES = 95 * 1024;
+
+/** The UTF-8 size of `s` in bytes (Spanish accents count two). */
+function a1c_utf8Bytes_(s) {
+  return encodeURIComponent(String(s || '')).replace(/%[0-9A-F]{2}/gi, 'x').length;
 }
 
 // ─── WHO HAS THIS WEEK'S LETTER (PLAN-2026-10-13-letter-watchdog.md D5) ───────

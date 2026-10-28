@@ -11,6 +11,12 @@ name: Weekly KI PDFs
 # back for Agent1C to attach. The timing of the letter does not change: a form
 # sent after the cutoff waits for next week in both.
 #
+# Since 2026-10-28 Agent1A STARTS this job itself (workflow_dispatch with
+# week_end) the moment it writes the request (AUDIT-2026-10-28-monday-letters.md
+# F2): GitHub ran the schedule below 2.5-4.25 hours late every week, past
+# Agent1C's 10-minute wait. The schedule stays as the backup; a run that finds
+# the PDFs already built for the request does nothing.
+#
 # The repository is public — the job prints counts only, never a sector's name
 # or figures.
 

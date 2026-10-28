@@ -83,6 +83,12 @@ function lastRun(ss) {
   assert.ok(!to.includes('ap.uno@missionary.org') && !to.includes('presidente@churchofjesuschrist.org'),
     'nobody the killed run reached gets the letter twice: ' + to.join(', '));
   assert.ok(/Already sent before a restart, skipped: 2/.test(lastRun(ss)[7]), lastRun(ss)[7]);
+  // AUDIT-2026-10-28 F3 + F6: the run says how long it took and how big its
+  // biggest letter was.
+  assert.ok(/Largest letter: \d+\.\d KB \(/.test(lastRun(ss)[7]), lastRun(ss)[7]);
+  assert.ok(!/WARNING: \d+ letter\(s\) over/.test(lastRun(ss)[7]), 'the fixture letters are small');
+  assert.strictEqual(typeof lastRun(ss)[3], 'number');
+  assert.strictEqual(scope.a1c_utf8Bytes_('añ'), 3, 'an accented letter counts two bytes');
   assert.deepStrictEqual([state(env).step, state(env).state], ['1C', 'done'], 'Agent1C marks the week done');
 
   const ledger = JSON.parse(props(env)['A1C_SENT_' + week]);
@@ -126,7 +132,8 @@ function mark(env, step, st, at, week) {
   // The 2026-10-12 case: started 21:27, nothing since -- Apps Script killed it.
   mark(env, '1A', 'running', MON(21, 27));
   assert.strictEqual(check(MON(21, 38)), 'restarted 1A');
-  assert.ok(handlers(env).includes('runAgent1A'), 'Agent1A is scheduled again');
+  assert.ok(handlers(env).includes('runAgent1ARetry'), 'Agent1A is scheduled again, through its one-shot alias');
+  assert.ok(!handlers(env).includes('runAgent1A'), 'never through runAgent1A itself');
   assert.strictEqual(props(env)['LETTER_RETRIES_' + WEEK], '1');
   assert.deepStrictEqual([state(env).step, state(env).state], ['1A', 'scheduled']);
   let run = lastRun(ss);
@@ -185,6 +192,56 @@ function mark(env, step, st, at, week) {
   const run = lastRun(ss);
   assert.strictEqual(run[2], 'ERROR');
   assert.ok(/no LETTER_ALERT_EMAIL/.test(run[7]), run[7]);
+}
+
+// ── C. A restart keeps the Monday 21:30 trigger (AUDIT-2026-10-28, A). ───────
+// On 2026-10-19 the watchdog restarted Agent1A with scheduleNext('runAgent1A'),
+// which deleted the weekly trigger, and on 10-26 Agent1A never started.
+{
+  const env = makeGasEnv({
+    urlFetch: () => ({ getResponseCode: () => 200, getContentText: () => geminiEnvelope }),
+  });
+  const scope = loadGs(GS.concat(['CCSM_Setup.gs']), env.globals);
+  const ss = makeCcsmSpreadsheet(env, scope);
+  setConfig(env, ss, 'TEST_MODE', 'FALSE');
+  scope.setupAllCcsmTriggers();
+  const weekly = () => env.state.triggers.filter((t) => t.handlerFunctionName === 'runAgent1A');
+  assert.strictEqual(weekly().length, 1, 'the installer puts in one Monday runAgent1A trigger');
+  assert.strictEqual(weekly()[0].onWeekDay, 'MONDAY');
+
+  mark(env, '1A', 'running', MON(21, 27));
+  assert.strictEqual(scope.letterWatchdogCheck_(MON(21, 38)), 'restarted 1A');
+  assert.strictEqual(weekly().length, 1, 'the restart leaves the weekly trigger alone');
+  assert.strictEqual(weekly()[0].onWeekDay, 'MONDAY');
+  assert.ok(handlers(env).includes('runAgent1ARetry'));
+
+  // scheduleNext refuses any handler that has a fixed trigger.
+  assert.throws(() => scope.scheduleNext('runAgent1A', 1), /fixed trigger/);
+  assert.throws(() => scope.scheduleNext('runLetterWatchdog', 1), /fixed trigger/);
+  assert.strictEqual(weekly().length, 1, 'and a refused call deletes nothing');
+
+  // The trigger went missing anyway (a hand edit, or the old code on 10-19):
+  // the next check puts it back and says so.
+  env.globals.ScriptApp.deleteTrigger(weekly()[0]);
+  mark(env, '1C', 'done', MON(23, 0));
+  assert.strictEqual(scope.letterWatchdogCheck_(MON(23, 5)), 'done');
+  assert.strictEqual(weekly().length, 1, 'the check reinstalls it');
+  assert.deepStrictEqual([weekly()[0].onWeekDay, weekly()[0].atHour, weekly()[0].nearMinute,
+    weekly()[0].timeZone], ['MONDAY', 21, 30, 'America/Santiago']);
+  const run = lastRun(ss);
+  assert.deepStrictEqual([run[1], run[2]], ['LetterWatchdog', 'REPAIRED']);
+  assert.ok(/runAgent1A trigger was missing/.test(run[7]), run[7]);
+
+  // With the trigger there, a check adds nothing.
+  const n = env.state.triggers.length;
+  scope.letterWatchdogCheck_(MON(23, 10));
+  assert.strictEqual(weekly().length, 1);
+  assert.strictEqual(env.state.triggers.length, n);
+
+  // runAgent1ARetry is the real chain's entry point.
+  addNightlyRaw(env, ss, []);
+  scope.runAgent1ARetry();
+  assert.ok(scope.loadTempData('A1A_DATA'), 'runAgent1ARetry runs Agent1A');
 }
 
 console.log('letter watchdog OK');

@@ -182,3 +182,43 @@ def test_no_streamlit_on_the_job_path():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-q"])
+
+
+# ── The form clock (AUDIT-2026-10-28-monday-letters.md D / F7) ───────────────
+# The live sheet's time zone is America/Denver, so the form stamps are Denver
+# time, while Agent1A's cutoff is Santiago time.
+
+def test_the_cutoff_moves_to_the_sheets_clock():
+    # Santiago is UTC-3 all of October-November 2026 (summer time).
+    # Denver is UTC-6 until Sun 2026-11-01, then UTC-7.
+    assert R.to_sheet_clock(datetime(2026, 10, 26, 23, 41, 11), "America/Santiago",
+                            "America/Denver") == datetime(2026, 10, 26, 20, 41, 11)
+    assert R.to_sheet_clock(datetime(2026, 11, 2, 21, 30), "America/Santiago",
+                            "America/Denver") == datetime(2026, 11, 2, 17, 30)
+    same = datetime(2026, 10, 26, 21, 30)
+    assert R.to_sheet_clock(same, "America/Santiago", "America/Santiago") == same
+    assert R.to_sheet_clock(same, "America/Santiago", "Not/AZone") == same
+
+
+def test_a_form_sent_after_the_cutoff_on_a_denver_sheet_is_left_out(monkeypatch):
+    # The request was read at 21:31 Santiago = 18:31 Denver. Alfa 2's form is
+    # stamped 19:00 Denver = 22:00 Santiago: after the letter read the forms.
+    # Compared raw (19:00 < 21:31) it used to be counted in the PDFs only.
+    late = form_row("10/5/2026 19:00:00", "Norte", 0, "Alfa 2", "10/4/2026", 2, 3)
+    tabs = dict(raw([late]), AGENT_CONFIG=[["Key", "Value"], ["MISSION_TIMEZONE", "America/Santiago"]])
+    tabs[R.OUTBOX_TAB] = [R.OUTBOX_HEADER, ["REQUEST", "2026-10-04", "", "", "2026-10-05 21:31:07"]]
+    sheet = FakeSheet(tabs)
+    sheet.timezone = "America/Denver"
+    built = {}
+    real = KR.build_documents
+
+    def spy(raw_, w2, cutoff=None, stamp=""):
+        built["cutoff"] = cutoff
+        built["model"] = KR.build_model(raw_, w2, cutoff, stamp)
+        return real(raw_, w2, cutoff, stamp)
+    monkeypatch.setattr(KR, "build_documents", spy)
+    run_main(monkeypatch, sheet, "--week-end", "2026-10-04", "--wait-minutes", "0")
+    assert built["cutoff"] == datetime(2026, 10, 5, 18, 31, 7)
+    assert reported(built["model"], "Alfa 2") == 0
+    # The footer and the outbox still speak mission time.
+    assert all(r[4] == "2026-10-05 21:31:07" for r in sheet.tabs[R.OUTBOX_TAB][2:])

@@ -81,6 +81,18 @@ var A1A_WEEKLY_DATE_COL = '¿Qué fecha está ingresando?';
 // --- MAIN ENTRY POINT -------------------------------------------------------
 
 function runAgent1A() {
+  // How long each phase took (AUDIT-2026-10-28 F3). The 21:27 runs of 10-12
+  // and 10-19 were killed at Apps Script's 6 minutes and left no row behind,
+  // so every lap is also written to the execution log the moment it ends:
+  // the last lap there says where a killed run was.
+  var started = Date.now(), lapAt = started, laps = [];
+  function lap(what) {
+    var now = Date.now();
+    laps.push(what + ' ' + Math.round((now - lapAt) / 1000) + 's');
+    Logger.log('Agent1A: ' + what + ' took ' + Math.round((now - lapAt) / 1000) + ' s');
+    lapAt = now;
+  }
+
   // Wait until 9:15 PM before processing -- gives missionaries until 9:15 to submit.
   // Utilities.sleep is capped at 5 min and this account's execution limit is
   // 6 min, so cap the wait at 4 min. The trigger aims for ~9:30 (see
@@ -105,6 +117,7 @@ function runAgent1A() {
     var goalDefaults = a1a_loadGoalDefaults();
     var feedback     = a1a_loadFeedbackHistory();
     var rateTargets  = a1a_loadRateTargets();
+    lap('config');
 
     // Most recent Sunday in the mission's timezone (works when run Monday)
     var _now      = new Date();
@@ -131,7 +144,19 @@ function runAgent1A() {
     // later waits for next week in both.
     var kiCutoff = Utilities.formatDate(new Date(), _tz, 'yyyy-MM-dd HH:mm:ss');
     notes.push(a1a_refreshWeeklyKi_());
+    lap('WEEKLY_KI rebuild');
     notes.push(a1a_requestKiPdfs_(weekEnd, kiCutoff));
+    lap('PDF request');
+
+    // From here on each heavy tab is read once (F4). WEEKLY_KI was rebuilt
+    // just above, so it is safe to hold. NIGHTLY_FORM_RAW is read only from
+    // 14 days before the oldest of the eight weeks the letter looks at.
+    A1A_RUN_CACHE_ = {};
+    var oldestWeekStart = a1a_getWeekStart(a1a_lastNWeekEnds_(weekEnd, 8)[0]);
+    var oldest = a1a_parseLocalDate(oldestWeekStart);
+    A1A_RUN_CACHE_.NIGHTLY_FORM_RAW = a1a_readNightlyTail_(
+      a1a_toDateString(new Date(oldest.getFullYear(), oldest.getMonth(), oldest.getDate() - 14)));
+    lap('nightly forms read (' + Math.max(A1A_RUN_CACHE_.NIGHTLY_FORM_RAW.length - 1, 0) + ' rows)');
 
     // Each sector's own nightly goals (PLAN-2026-10-02-goals.md, G11). The
     // week being graded is held to the goals that were in force FOR that
@@ -166,6 +191,7 @@ function runAgent1A() {
         if (history.byArea[area][we]) history.byArea[area][we].effort_score = multiWeekEffort[area][we];
       });
     });
+    lap('nightly history');
 
     // Weekly Key Indicators (WEEKLY_KI) -- the 7 real/meta pairs the coaching
     // letter now leads with. Separate from everything above, which is nightly.
@@ -199,6 +225,7 @@ function runAgent1A() {
     var kiWeekEnds  = a1a_lastNWeekEnds_(weekEnd, 5);
     var letterWeeks = kiWeekEnds.slice(1);
     var kiRows      = a1a_loadKiRows_(kiWeekEnds, weekEnd);
+    lap('weekly KI');
 
     var areaData = {};
     missionOrg.forEach(function(areaObj) {
@@ -268,6 +295,7 @@ function runAgent1A() {
                (weeklyFilings === null ? 'TAB UNAVAILABLE' : Object.keys(weeklyFilings).length + ' areas'));
 
     var summaries  = a1a_buildSummaries(areaData, missionOrg, prevWeekEnd, history, trendWeeks, weeklyFilings);
+    lap('build');
 
     saveTempData('A1A_DATA', {
       weekStart: weekStart,
@@ -275,6 +303,7 @@ function runAgent1A() {
       areas:     areaData,
       summaries: summaries
     });
+    lap('save');
 
     notes.push('Analyzed ' + missionOrg.length + ' areas for week ending ' + weekEnd);
     scheduleNext('runAgent1B', 1);
@@ -288,9 +317,11 @@ function runAgent1A() {
     Logger.log('Agent1A FATAL: ' + e.message + '\n' + (e.stack || ''));
     letterChainMark_(weekEnd, '1A', 'failed', e.message);
   }
+  A1A_RUN_CACHE_ = null;
+  if (laps.length) notes.push('Timings: ' + laps.join(', '));
 
   // logRun(agent, status, recordsProcessed, emailsSent, durationMs, notes, error)
-  logRun('Agent1A', status, null, null, null, notes.join(' | '));
+  logRun('Agent1A', status, null, null, Date.now() - started, notes.join(' | '));
 }
 
 // --- TRIGGER SETUP ----------------------------------------------------------
@@ -558,11 +589,21 @@ function a1a_requestKiPdfs_(weekEnd, cutoff) {
     var sheet = getSpreadsheet().getSheetByName(A1A_KI_OUTBOX_TAB);
     if (!sheet) return 'KI PDFs not requested: no ' + A1A_KI_OUTBOX_TAB + ' tab (the Monday job creates it)';
     if (sheet.getLastRow() >= 2) {
-      var kept = null;
-      sheet.getDataRange().getValues().slice(1).forEach(function(r) {
+      var kept = null, built = false;
+      var grid = sheet.getDataRange().getValues().slice(1);
+      grid.forEach(function(r) {
         if (String(r[0]) === 'REQUEST' && String(r[1]) === weekEnd) kept = String(r[4]);
       });
-      if (kept !== null) return 'KI PDFs: kept this week\'s request (forms read at ' + kept + ') and its PDFs';
+      if (kept !== null) {
+        grid.forEach(function(r) {
+          if (String(r[0]) === 'PDF' && String(r[1]) === weekEnd && String(r[4]) === kept) built = true;
+        });
+        // Not built yet: the first try's start of the job may never have
+        // happened (killed before it) or failed. Starting it again is safe:
+        // the job does nothing when the PDFs for this request exist.
+        return 'KI PDFs: kept this week\'s request (forms read at ' + kept + ') and its PDFs' +
+               (built ? '' : ' | ' + a1a_dispatchKiPdfJob_(weekEnd));
+      }
     }
     var rows = [A1A_KI_OUTBOX_HEADER, ['REQUEST', weekEnd, '', '', cutoff, '', '']];
     sheet.clearContents();
@@ -570,10 +611,56 @@ function a1a_requestKiPdfs_(weekEnd, cutoff) {
     range.setNumberFormat('@');
     range.setValues(rows);
     SpreadsheetApp.flush();
-    return 'KI PDFs requested for ' + weekEnd + ' (forms read at ' + cutoff + ')';
+    return 'KI PDFs requested for ' + weekEnd + ' (forms read at ' + cutoff + ') | ' +
+           a1a_dispatchKiPdfJob_(weekEnd);
   } catch (e) {
     Logger.log('Agent1A WARNING: could not request the KI PDFs -- ' + e.message);
     return 'WARNING: KI PDFs not requested (' + e.message + ')';
+  }
+}
+
+// Starting the PDF job from here (AUDIT-2026-10-28-monday-letters.md F2).
+// GitHub ran the job's Monday `schedule:` 2.5 to 4.25 hours late every week
+// on record, while Agent1C waits 10 minutes, so on 10-19 the letters went
+// without the PDFs. A `workflow_dispatch` starts within a minute or so; the
+// schedule stays in ki-pdfs.yml as the backup.
+//
+// The token is a fine-grained GitHub token for this one repository with
+// "Actions: Read and write", kept in Script Properties (never in the sheet,
+// which more people can read). AGENT_CONFIG.GITHUB_REPO overrides the repo.
+var A1A_GITHUB_TOKEN_PROP = 'GITHUB_DISPATCH_TOKEN';
+var A1A_GITHUB_REPO       = 'ccsmpmgcompass-collab/ccsm-pmg-compass';
+var A1A_KI_PDF_WORKFLOW   = 'ki-pdfs.yml';
+
+/**
+ * Asks GitHub to run the KI PDF workflow now, for `weekEnd`. Returns a note
+ * for the run log; never throws (without it, the schedule still builds the
+ * PDFs, only late).
+ */
+function a1a_dispatchKiPdfJob_(weekEnd) {
+  try {
+    var token = PropertiesService.getScriptProperties().getProperty(A1A_GITHUB_TOKEN_PROP);
+    if (!token) return 'PDF job not started: no ' + A1A_GITHUB_TOKEN_PROP + ' in Script Properties (the late schedule will build them)';
+    var repo = (getConfig('GITHUB_REPO') || A1A_GITHUB_REPO).trim();
+    var res = UrlFetchApp.fetch('https://api.github.com/repos/' + repo + '/actions/workflows/' +
+                                A1A_KI_PDF_WORKFLOW + '/dispatches', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: {
+        Authorization: 'Bearer ' + token.trim(),
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+      },
+      payload: JSON.stringify({ ref: 'main', inputs: { week_end: weekEnd } }),
+      muteHttpExceptions: true
+    });
+    var code = res.getResponseCode();
+    if (code === 204) return 'PDF job started';
+    return 'WARNING: PDF job NOT started (GitHub answered ' + code + ': ' +
+           String(res.getContentText() || '').slice(0, 120) + ')' +
+           (code === 401 || code === 403 ? ' -- the token is wrong or expired' : '');
+  } catch (e) {
+    return 'WARNING: PDF job NOT started (' + e.message + ')';
   }
 }
 
@@ -1670,10 +1757,51 @@ function a1a_emptySummary() {
 
 // --- UTILITIES --------------------------------------------------------------
 
+// One read per heavy tab per run (AUDIT-2026-10-28-monday-letters.md F4).
+// runAgent1A used to read DAILY_LOG twice, NIGHTLY_FORM_RAW twice and
+// WEEKLY_KI three times; the 2026-10-12 run was killed inside those reads.
+// runAgent1A sets the cache up after it has rebuilt WEEKLY_KI and drops it
+// when it ends; outside a run (the tests' direct calls) every call reads.
+var A1A_RUN_CACHE_ = null;
+var A1A_CACHED_TABS_ = { DAILY_LOG: true, NIGHTLY_FORM_RAW: true, WEEKLY_KI: true };
+
 function a1a_getSheetData(tabName) {
+  if (A1A_RUN_CACHE_ && A1A_RUN_CACHE_[tabName]) return A1A_RUN_CACHE_[tabName];
   var sheet = getTab(tabName);
+  var data = (!sheet || sheet.getLastRow() === 0) ? [] : sheet.getDataRange().getValues();
+  if (A1A_RUN_CACHE_ && A1A_CACHED_TABS_[tabName]) A1A_RUN_CACHE_[tabName] = data;
+  return data;
+}
+
+/**
+ * NIGHTLY_FORM_RAW's header plus only the rows SUBMITTED on or after
+ * `sinceStr` ('yyyy-MM-dd'). The letter looks at eight weeks of nightly
+ * reports, and the tab keeps every report ever sent: ~270 columns, growing by
+ * about a hundred rows a night once the whole mission reports.
+ *
+ * Forms append in submission order, so the first row stamped on or after the
+ * cutoff starts the slice; one narrow read of column A finds it. A report is
+ * submitted on or after the night it describes, so nothing in the window is
+ * lost (the caller leaves 14 days of slack for a date typed a week ahead).
+ * A stamp that is not a date means the tab is not what this expects: read it
+ * all, as before.
+ */
+function a1a_readNightlyTail_(sinceStr) {
+  var sheet = getTab('NIGHTLY_FORM_RAW');
   if (!sheet || sheet.getLastRow() === 0) return [];
-  return sheet.getDataRange().getValues();
+  var last = sheet.getLastRow(), lastCol = sheet.getLastColumn();
+  var header = sheet.getRange(1, 1, 1, lastCol).getValues();
+  if (last < 2) return header;
+  var since  = a1a_parseLocalDate(sinceStr).getTime();
+  var stamps = sheet.getRange(2, 1, last - 1, 1).getValues();
+  var first  = -1;
+  for (var i = 0; i < stamps.length; i++) {
+    var ts = stamps[i][0];
+    if (!ts || typeof ts.getTime !== 'function' || isNaN(ts.getTime())) return sheet.getDataRange().getValues();
+    if (ts.getTime() >= since) { first = i; break; }
+  }
+  if (first < 0) return header;
+  return header.concat(sheet.getRange(first + 2, 1, last - 1 - first, lastCol).getValues());
 }
 
 function a1a_toDateString(val) {

@@ -229,7 +229,7 @@ var CCSM_TRIGGER_SCHEDULE = [
  * never part of CCSM_TRIGGER_SCHEDULE, but deleteAllCcsmTriggers() and the
  * smoke test's inventory both need to know they are legitimate.
  */
-var CCSM_CHAINED_HANDLERS = ['runAgent1B', 'runAgent1C', 'runAgent6', 'runLetterWatchdogRetry'];
+var CCSM_CHAINED_HANDLERS = ['runAgent1B', 'runAgent1C', 'runAgent6', 'runLetterWatchdogRetry', 'runAgent1ARetry'];
 
 /**
  * The project's two INSTALLABLE FORM-SUBMIT triggers. They are not on
@@ -345,6 +345,23 @@ function cs_isTimeBased_(trigger) {
  * Nothing calls this automatically. Installing triggers means real emails
  * start flowing on a schedule, so it stays a deliberate human action.
  */
+/**
+ * Creates the one trigger a CCSM_TRIGGER_SCHEDULE row describes, in `tz`.
+ * Shared by setupAllCcsmTriggers() and the letter watchdog, which puts the
+ * Monday runAgent1A trigger back if it ever goes missing.
+ */
+function installScheduledTrigger_(spec, tz) {
+  var builder = ScriptApp.newTrigger(spec.fn).timeBased();
+  if (spec.weekDay) {
+    builder = builder.onWeekDay(ScriptApp.WeekDay[spec.weekDay]);
+  } else {
+    builder = builder.everyDays(spec.everyDays);
+  }
+  builder = builder.atHour(spec.hour);
+  if (spec.minute !== undefined) builder = builder.nearMinute(spec.minute);
+  return builder.inTimezone(tz).create();
+}
+
 function setupAllCcsmTriggers() {
   var tz = getMissionTimezone();
 
@@ -361,16 +378,7 @@ function setupAllCcsmTriggers() {
   }
 
   CCSM_TRIGGER_SCHEDULE.forEach(function(spec) {
-    var builder = ScriptApp.newTrigger(spec.fn).timeBased();
-    if (spec.weekDay) {
-      builder = builder.onWeekDay(ScriptApp.WeekDay[spec.weekDay]);
-    } else {
-      builder = builder.everyDays(spec.everyDays);
-    }
-    builder = builder.atHour(spec.hour);
-    if (spec.minute !== undefined) builder = builder.nearMinute(spec.minute);
-    builder.inTimezone(tz).create();
-
+    installScheduledTrigger_(spec, tz);
     Logger.log('CCSM_Setup: installed ' + spec.fn + ' — ' + spec.describe + ' (' + tz + ')');
   });
 

@@ -106,6 +106,35 @@ def _sheet_io():
     return _open_sheet, _grid, _overwrite
 
 
+def to_sheet_clock(cutoff: datetime, mission_tz: str, sheet_tz: str) -> datetime:
+    """Agent1A's cutoff (naive, mission time) on the clock the form stamps are
+    written in: the SPREADSHEET's time zone, which on the live sheet is
+    America/Denver, not Santiago. Compared raw, the PDFs kept forms sent up to
+    3 h after the letter's cutoff (4 h once US daylight time ends) —
+    AUDIT-2026-10-28-monday-letters.md D / F7. Unknown zones change nothing."""
+    try:
+        import zoneinfo
+        aware = cutoff.replace(tzinfo=zoneinfo.ZoneInfo(mission_tz))
+        return aware.astimezone(zoneinfo.ZoneInfo(sheet_tz)).replace(tzinfo=None)
+    except Exception:
+        return cutoff
+
+
+def _sheet_tz(sh) -> str:
+    """The spreadsheet's own time zone (Settings > Time zone)."""
+    tz = getattr(sh, "timezone", None)
+    if not tz:
+        try:
+            tz = sh.fetch_sheet_metadata()["properties"]["timeZone"]
+        except Exception:
+            tz = ""
+    return tz or ""
+
+
+def _mission_tz(cfg_grid: list) -> str:
+    return next((r[1] for r in cfg_grid if len(r) > 1 and r[0] == "MISSION_TIMEZONE"), "") or "America/Santiago"
+
+
 def _mission_now(cfg_grid: list) -> datetime:
     """Now on the mission's clock, naive — the clock the form stamps use."""
     tz = next((r[1] for r in cfg_grid if len(r) > 1 and r[0] == "MISSION_TIMEZONE"), "")
@@ -160,7 +189,10 @@ def main() -> None:
 
     _status("Reading the weekly forms")
     raw = {t: grid_of(sh, t) for t in SOURCE_TABS}
-    docs = KR.build_documents(raw, week_end, cutoff, stamp[:16])
+    sheet_tz = _sheet_tz(sh)
+    docs = KR.build_documents(raw, week_end,
+                              to_sheet_clock(cutoff, _mission_tz(cfg), sheet_tz) if cutoff and sheet_tz else cutoff,
+                              stamp[:16])
     rows = pdf_rows(docs, week_end, stamp)
     _status(f"Built {len(docs)} documents, {sum(d['pages'] for d in docs)} pages, "
             f"{sum(int(r[6]) for r in rows)} cells")

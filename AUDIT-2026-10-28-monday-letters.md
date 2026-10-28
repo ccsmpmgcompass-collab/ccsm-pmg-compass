@@ -265,3 +265,52 @@ the app reads, so it needs its own audit.
    now.
 4. **F6:** whether trimming the history columns is the right cut for large ZL
    letters.
+
+## STATUS
+
+**2026-10-28: F1, F2, F3, F4, the logging half of F6, and F7 BUILT.** Zackary
+OK'd it, and said to keep 21:30 (F5 = measure first).
+
+- **F1:** the watchdog restarts Agent1A through `runAgent1ARetry`
+  (CCSM_LetterWatchdog.gs). `scheduleNext()` throws for any handler in
+  CCSM_TRIGGER_SCHEDULE (CCSM_Helpers.gs). Every watchdog check reinstalls a
+  missing Monday runAgent1A trigger and logs `LetterWatchdog REPAIRED`. The
+  installer's builder is shared as `installScheduledTrigger_` (CCSM_Setup.gs).
+- **F2:** `a1a_dispatchKiPdfJob_` (CCSM_Agent1A.gs) POSTs a
+  `workflow_dispatch` for ki-pdfs.yml with `week_end`, when it writes the
+  REQUEST, and again on a retry while the PDFs are not built. The token is the
+  Script Property `GITHUB_DISPATCH_TOKEN`; without it the note says so and the
+  late schedule stays the only builder. The cron is unchanged, as the backup.
+- **F3:** Agent1A/1B/1C pass their real duration to `logRun` (Duration_Sec).
+  Agent1A adds `Timings: config, WEEKLY_KI rebuild, PDF request, nightly forms
+  read (N rows), nightly history, weekly KI, build, save`, and logs each lap to
+  the execution log as it ends.
+- **F4:** Agent1A caches DAILY_LOG, NIGHTLY_FORM_RAW and WEEKLY_KI for the
+  run (one read each), and reads NIGHTLY_FORM_RAW only from 14 days before the
+  oldest of its 8 weeks (`a1a_readNightlyTail_`). DAILY_LOG stays a full read:
+  the consistency streak looks further back.
+- **F6 (logging):** Agent1C notes `Largest letter: N KB (subject)`, and a
+  WARNING when any letter is over 95 KB. Trimming the letter is still his
+  design call.
+- **F7:** ki_pdf_runner moves the cutoff onto the sheet's clock
+  (`to_sheet_clock`, using the spreadsheet's own time zone) before `ki_ranking`
+  compares it with the form stamps. The outbox and the PDF footer still say
+  mission time. Swept: the other Python reads of form timestamps
+  (queries.py's weekly submission week, and the nightly on-time check, whose
+  English headers never match CCSM's forms) use only the DATE, so a few
+  late-night forms can land a day early. Not changed. Setting the spreadsheet
+  itself to America/Santiago needs its own audit.
+
+Tests: JS 41 pass, the same 5 known failures as HEAD (same messages). New:
+`tests/test_agent1a_nightly_tail.js` and `tests/test_agent1a_ki_dispatch.js`;
+`test_letter_watchdog.js` has a part C. Python: `test_ki_pdf_runner.py` adds 2.
+
+**Owed by Zackary:** paste CCSM_Helpers, CCSM_Setup, CCSM_LetterWatchdog,
+CCSM_Agent1A, CCSM_Agent1B and CCSM_Agent1C into Apps Script. Make the GitHub
+token and add the Script Property. Run `setupAllCcsmTriggers()` once
+(not Mon 21:00–Tue 01:00). The ki-pdfs.yml / runner changes are live on push.
+
+**Check on Tue Nov 3:** Agent1A's row has `Timings:` and `PDF job started`,
+Agent1C has `KI PDFs attached` and `Largest letter`, and there is no
+`LetterWatchdog RETRY` row. If there is a RETRY, the first run's Timings
+(execution log) say where it stalled.

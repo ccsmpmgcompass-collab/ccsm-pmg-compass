@@ -48,6 +48,7 @@
 // ─── MAIN ENTRY POINT ────────────────────────────────────────────────────────
 
 function runAgent1B() {
+  var started = Date.now();   // AGENT_RUN_LOG's Duration_Sec (AUDIT-2026-10-28 F3)
   var status = 'SUCCESS';
   var notes  = [];
   // The week this chain is on (PLAN-2026-10-13-letter-watchdog.md), until
@@ -105,7 +106,7 @@ function runAgent1B() {
   }
 
   // logRun(agent, status, recordsProcessed, emailsSent, durationMs, notes, error)
-  logRun('Agent1B', status, null, null, null, notes.join(' | '));
+  logRun('Agent1B', status, null, null, Date.now() - started, notes.join(' | '));
 }
 
 // ─── MESSAGE SELECTION ──────────────────────────────────────────────────────
