@@ -109,10 +109,16 @@ def test_mission_org_still_names_area_mailboxes():
     ("500388234@missionary.org", False),                   # a zone leader's mailbox
     ("500495012@missionary.org", False),                   # an ordinary area
     ("hyrum.turner@missionary.org", False),                # inactive row
-    ("grayden16gmc@gmail.com", False),                     # signs in, is not leadership
+    ("grayden16gmc@gmail.com", False),                     # the removed deploy-check account
 ])
 def test_is_leadership(email, expected):
     assert auth.is_leadership(email) is expected
+
+
+def test_the_temporary_deploy_account_no_longer_signs_in():
+    """It was 'remove before go-live'; removed 2026-10-28."""
+    assert "grayden16gmc@gmail.com" not in auth._ALWAYS_ALLOWED
+    assert "grayden16gmc@gmail.com" not in auth.allowed_emails()
 
 
 def test_a_zone_leader_still_signs_in():

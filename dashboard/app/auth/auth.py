@@ -47,12 +47,9 @@ _OWNER_ACCOUNTS = {
 #: carries the mailbox 500407562@missionary.org that four missionaries share.
 #: Since 2026-10-05 they are rows of MISSION_LEADERSHIP instead
 #: (PLAN-2026-10-05-roster-access.md D1) — a new AP is a row on Traslados, not
-#: a code change. Do not add them back here.
-_ALWAYS_ALLOWED = _OWNER_ACCOUNTS | {
-    # TEMPORARY — deploy verification only, remove before go-live. Signs in;
-    # is NOT leadership and does not set goals.
-    "grayden16gmc@gmail.com",
-}
+#: a code change. Do not add them back here. (The temporary deploy-check
+#: gmail that sat here was removed before the mission-wide go-live, 2026-10-28.)
+_ALWAYS_ALLOWED = _OWNER_ACCOUNTS
 
 #: The roles that open the leadership pages. "leader" (ZL / STL / DL) was in
 #: this set until 2026-10-05 and is not now — D2.
